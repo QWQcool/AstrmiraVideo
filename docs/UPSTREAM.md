@@ -1,35 +1,17 @@
-# 上游复刻台账
+# 上游参考与复刻台账（UPSTREAM）
 
-> 原则：**借鉴模式不受限；复刻代码必须登记来源、版本与许可证。**
-> 复刻前先读对方 `LICENSE`；复刻后在代码注释中标注来源与版本/commit。
-> 若缺陷源自上游实现 → 反向提 issue + 最小复现（同时在本表登记链接）。
+> 本文记录本项目参考、复刻及直接引用的优质开源项目与组件，方便团队追溯实现来源与快速借鉴。
 
-## 登记表
+---
 
-| # | 上游项目 | 版本 / commit | 许可证 | 复刻范围 | 上游 issue |
-|---|---|---|---|---|---|
-| 1 | [React Flow](https://github.com/xyflow/xyflow) | TBD | **MIT** | 未来画布视图的节点/连线/MiniMap（优先直接依赖，其次抄 examples） | — |
-| 2 | [MoneyPrinterTurbo](https://github.com/harry0703/MoneyPrinterTurbo) | TBD | **MIT** | 配置优先级模型、批量清单格式、`--stop-at` 检查点思路（**学结构为主**） | — |
-| 3 | [rate-limiter-flexible](https://github.com/animir/node-rate-limiter-flexible) | TBD | MIT（待核实） | 滑动窗口限流（直接依赖） | — |
-| 4 | [Langfuse](https://github.com/langfuse/langfuse) | TBD | MIT | 提示词版本模型 `name/version/label`（学模型，或自托管） | — |
-| 5 | [promptfoo](https://github.com/promptfoo/promptfoo) | TBD | MIT（待核实） | 提示词回归测试的 YAML 断言思路 | — |
-| 6 | [pyJianYingDraft](https://github.com/GuanYixuan/pyJianYingDraft) | TBD | **待核实** | 剪映草稿高级效果（转场/花字/气泡）的 `draft_content.json` 结构 | — |
-| 7 | [Dify](https://github.com/langgenius/dify) | — | modified Apache-2.0 | **仅阅读实现理解模式，不复制代码、不照搬视觉**（外观专利与前端 LOGO 条款见 `COMPLIANCE.md`） | — |
-| 8 | [ComfyUI](https://github.com/comfyanonymous/ComfyUI) | TBD | GPL-3.0（待核实） | **不作为代码来源**，仅通过 HTTP 调用其服务 | — |
-| 9 | [MiniMax H3](https://github.com/MiniMax-AI/MiniMax-H3) | TBD | MiniMax H3 社区许可 | 提示词 schema 与官方 `h3-prompt-writing` 指南（作为提示词工程基准） | — |
-| 10 | WebLockShot（自有） | TBD | MIT（自有） | TTS 落盘、ffmpeg 渲染并发互斥、剪映草稿主实现、视频 provider 实现与签名、retry 策略、契约 fixtures | — |
-| 11 | AI-SVWF（自有） | TBD | 自有 | 计费三态护栏、双闸门、指纹幂等、任务状态机与事件流、QA 规则、提示词积木（TS 重写 + 对拍测试） | — |
+## 核心参考与复刻清单
 
-## 明确禁止的复刻
-
-| 项目 | 原因 |
-|---|---|
-| Dify `web/` 前端代码 | 许可证要求保留其 LOGO 与版权信息；且其交互设计受**外观专利**保护 |
-| 任何 FSL 许可项目（如 Vidia-Open-Studio） | 限制竞争性使用，2 年后才转 Apache-2.0 |
-| 将 ComfyUI 代码内嵌进本仓库分发 | GPL-3.0 传染风险 → 仅作为外部服务调用 |
-
-## 待办
-
-- [ ] 逐项核实「待核实」的许可证（指派：平台/安全负责人）
-- [ ] 每项复刻完成后补齐版本/commit 与代码内来源注释
-- [ ] 建立「上游引发的缺陷」记录：本仓库 issue ↔ 上游 issue 双向链接
+| # | 项目 | 用途与复刻范围 | 参考链接 |
+|---|---|---|---|
+| 1 | **DiffSynth-Studio** | 本地 MiniMax H3 NF4 推理调用封装、Disk Offload 显存配置、Windows 段错误规避逻辑 | [ModelScope/DiffSynth-Studio](https://github.com/modelscope/DiffSynth-Studio) |
+| 2 | **MiniMax H3** | 官方提示词工程规范、双引号台词音频合成语法、FL2V 处理器配置 | [MiniMax-AI/MiniMax-H3](https://github.com/MiniMax-AI/MiniMax-H3) |
+| 3 | **Volcano ModelArk SDK** | 火山方舟（Seedance）异步生成任务提交、轮询与成片下载参考 | [火山方舟 API 文档](https://www.volcengine.com/) |
+| 4 | **ComfyUI-VideoHelperSuite** | 视频帧预处理、32 倍数智能补边与居中裁切算法 (Smart Pad/Crop) | [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) |
+| 5 | **React Flow / @xyflow/react** | 交互节点与画布组件（用于后续进阶流程视图） | [xyflow/xyflow](https://github.com/xyflow/xyflow) |
+| 6 | **WebLockShot** | 视频播放器组件、重试/退避策略 (`retry.ts`)、本地文件存储管理 | 自有参考项目 |
+| 7 | **AI-SVWF** | 任务队列状态机、事件流设计、视频生成参数归一化 | 自有参考项目 |

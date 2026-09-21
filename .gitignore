@@ -49,6 +49,7 @@ media-cache/
 .idea/
 .DS_Store
 Thumbs.db
+.workbuddy/
 desktop.ini
 
 # playwright / e2e

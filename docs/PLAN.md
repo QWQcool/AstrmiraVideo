@@ -1,357 +1,170 @@
-# AI 视频生成工作流水线 · 立项计划书 V6.0
+# AstrmiraVideo · 产品与开发规划（PLAN V8.0）
 
-> 2026-09-21 · 两项目审计 + 22 项调研 + Astrmira 设计规范实测
-> 三人团队（你 / 朋友 A / 朋友 B），纯 VibeCoding · **方案已定稿，可开工**
-> **V6.0 变更**：开工前三项拍板（模板降级先行 / Pexels 主素材源 / **W1 直接上星尘视觉**）· W1 前端改为与后端**并行开发** · 补充星尘在 W1 的低成本落地方式
-
----
-
-## 0. 本版核心结论
-
-| 项 | 结论 |
-|---|---|
-| **先做什么** | **先做素材型 L1（MPT 式一句话跑完八步）** —— 正确，且理由比预想更充分（§1） |
-| **为什么** | 素材型与模型型的架构差异**只有「片段获取」一个节点**；做 L1 = 搭好 ~80% 中台 + **零成本产出真实可看的视频**（真正替代 mock）+ **多人跑测零门槛（无需 GPU / 无需付费 Key）** |
-| **交互形态** | 三档交互深度（L1 一键 / L2 纵向步骤流卡片 / L3 画布）+ 检查点机制 |
-| **Dify 画布** | 列入 L3（延后）；实现从 **React Flow（MIT）** 抄，**Dify 前端代码不复制、视觉不照搬**（许可边界见 §4） |
-| **多人跑测** | 素材型 = 服务器直接跑（无 GPU）· 模型型 = 本地 Worker 或 BYOK |
-| **开工状态** | ✅ **方案已定稿**：三项拍板（模板降级先行 / Pexels 主素材源 / **W1 直接上星尘**）→ 可按 §10.2 Day 0 → §10.3 W1 直接推进 |
+> **修订说明（V8.0）**
+> 1. 合并原 ROADMAP.md：进度日志、Step 清单、接力信息统一收归本文，全项目仅此一份进度权威；
+> 2. 全文脱敏占位符化：真实 IP / 路径 / 凭证只存本地 `.env`（模板见根目录 `.env.example`）；
+> 3. 每个 Step 补齐验收标准（AC）与验证方式；
+> 4. 新增 §6 决策记录，关键取舍的 why 留档，后续删改有据可查；
+> 5. 引入三级标记：**【已验证】**＝实测确认；**【待验证】**＝数字/能力未经实测；**【规划】**＝文件/功能尚不存在，不得当作事实引用。
 
 ---
 
-## 1. ★ 双模式架构：一份中台，两种「片段获取」
-
-### 1.1 关键洞察：两条流水线只差一个节点
+## 1. 架构总览：双轨生成中枢
 
 ```
-公共中台（≈80% 工作量，两条线完全共用）
-  brief → 脚本生成(LLM) → 分镜/段落切分 → ┃片段获取┃ → 音频(TTS) → 字幕 → 合成(ffmpeg) → 导出
-                                              ↑
-                                    唯一的差异点
-  素材型（L1 低成本模式）：脚本关键词 → 免版权库检索(Pexels/Pixabay) → 下载片段
-                           特点：免费 · 秒级 · 确定性高 · 可无脑全自动
-  模型型（L2/L3 高质量模式）：提示词编译(H3 schema) → AI 生成(H3/Seedance) → 下载片段
-                           特点：付费 · 分钟级 · 不确定性高 · 必须有人工检查点
+                           【客户端浏览器】 (React 19 + Astrmira 视觉)
+           - Prompt 输入（带字数提示）+ ✨一键扩写
+           - 参考图上传（带 32 倍数裁切预览）
+           - BYOK 云端 Key 输入 / 本地 Worker 目录配置
+           - localStorage 任务 ID 持久化（刷新自动重挂载）
+                                       │
+                                       ▼ HTTP（轮询；SSE 为【规划】）
+┌────────────────────────────────────────────────────────────────────────┐
+│                        【Fastify 后端调度中枢】                         │
+│  ├─ 图像清洗网关 (HEIC/WebP/CMYK 转码，大图下采样)                      │
+│  ├─ 短窗口防抖限流 (60s 冷却，防连点刷 Token)                           │
+│  ├─ 磁盘 LRU 管理 (中间帧即时删除，画廊容量可控)                        │
+│  ├─ 任务存储 (SQLite：任务状态 + 参数快照 + 画廊元数据)                 │
+│  └─ 双轨调度器 (Cloud 并发队列 / Local 单卡互斥队列 Concurrency=1)     │
+└───────────────────┬────────────────────────────────┬───────────────────┘
+                    │                                │
+                    ▼                                ▼
+         【云端 API 引擎】                      【本地推理 Worker】
+       火山方舟 (Seedance API)                MiniMax H3 (DiffSynth-Studio)
+    - 用户自备 Key (BYOK)                 - 单机或局域网私有 GPU
+    - 异步轮询任务获取成片直链             - 单卡排队互斥执行
+    - 无需本地显卡                        - 0 Token 成本，原生立体声对白
+                    │                                │
+                    └────────────────┬───────────────┘
+                                     ▼
+                     【流式输出】HTTP 206 断点续传播放器 + MP4 下载
 ```
 
-**所以「先做素材型」不是弯路，而是性价比最高的第一步**：
-1. 它把**队列 / DSL / 护栏 / 资产库 / 导出 / 前端 / 任务恢复**全部搭好并跑通
-2. 它产出的是**真实可看的视频**（免版权画面 + 配音 + 字幕 + 配乐），**真替代 mock 模式**
-3. 后面接模型型 = **换掉一个节点的实现**，中台零改动
-4. **素材型不需要 GPU、不需要付费 Key** → 服务器上就能跑 → **多人/多测试者零门槛**（正好满足你「其他人没本地模型也能跑测」）
+**双轨调度原则**：硬件探针（`GET /api/providers/status`）动态扫描 CPU / 内存 / GPU / 空闲显存，评级 Tier 0~3（分级矩阵见 [GUIDE.md](GUIDE.md) §一）；Tier 0 自动锁定云端并置灰本地开关，Tier 1~3 激活本地选项。**不硬编码任何具体显卡型号或本机路径。**
 
-### 1.2 素材型流水线的八步（对齐 MPT，但换成我们的中台）
+---
 
-| # | 步骤 | 实现 | 成本 |
+## 2. Phase 1 MVP 功能特性（P0）
+
+### 2.1 核心工作流
+1. **多模态输入控制台**
+   - 文本提示词输入（双引号对白可生成带语音视频，带字数安全指示）；
+   - ✨ 提示词扩写助手：一键补充景深、光影、运镜描述词；
+   - 参考图拖拽槽：起始帧（I2V）/ 结束帧（FL2V），自动 32 倍数居中裁切；
+   - 参考视频拖拽槽：动作/风格参考（V2V）；
+   - 画幅与模式切换：16:9 / 9:16（MVP）；1:1 为云端可选项（【待验证】本地 H3 支持度）。
+2. **双模执行引擎**
+   - 云端模式（BYOK）：设置抽屉填入火山方舟 Key 即可出片；
+   - 本地模式（H3）：配置 `<LOCAL_H3_DIR>`（env `H3_WORKDIR`，默认 `%USERPROFILE%\Desktop\MiniMaxH3`），或输入已有 ComfyUI 地址，单卡互斥锁保护。
+3. **沉浸式视窗与画廊**
+   - 播放视窗：全屏 / 循环 / 音量 / MP4 下载；
+   - 历史画廊：参数一键回填、单片删除释放磁盘。
+
+### 2.2 健壮性要求
+全部见 §3 六大防线，本节不重复。
+
+---
+
+## 3. 六大业务防线（全项目唯一详写处，其他文档只准链接本节）
+
+| # | 防线 | 机制 |
+|---|---|---|
+| 1 | 本地单卡排队互斥锁 | Local 队列 Concurrency = 1，防显存崩溃；后续任务进入 `queued` |
+| 2 | 刷新断线不丢任务 | 任务状态落 SQLite（`data/app.db`），前端 `localStorage` 存任务 ID，刷新自动重挂载进度 |
+| 3 | 磁盘空间防护 | 合成结束立即物理清理中间帧与临时音频；画廊 LRU 淘汰；前端一键删除 |
+| 4 | 图像格式清洗网关 | HEIC/WebP/CMYK 自动转码，大图下采样，防爆显存 |
+| 5 | 短窗口防抖限流 | 提交后 60s 冷却，防连点刷光云端 Token |
+| 6 | 台词长度友好引导 | 双引号对白建议 ≤ 20 字，匹配 5 秒镜头节奏 |
+
+---
+
+## 4. 实施步骤（任务 + 验收标准 + 验证方式）
+
+```
+[Step 1 骨架] ──► [Step 2 双轨中枢] ──► [Step 3 前端工作台] ──► [Step 4 本地验收] ──► [Step 5 公网部署]
+```
+
+### Step 1：全栈骨架与设计 Token 落地
+- **任务**：`backend/`（Fastify + TS + tsx + zod + pino）；`frontend/`（Vite + React 19 + TS）；`tokens.css` 落地 Astrmira 19 个 CSS Tokens；根目录 `pnpm dev` 并行启动脚本。
+- **AC1**：`pnpm dev` 一条命令同时拉起前后端，前端能拿到后端 `GET /api/health` 的 200 响应。
+- **AC2**：前端页面渲染出 Astrmira 暗色基底（`#090c12`）与金色点缀，无默认白页。
+- **验证**：人工开箱 + `curl /api/health`。
+
+### Step 2：双轨 Provider 与核心调度
+- **任务**：`pipeline/smartCrop.ts`（32 倍数居中裁切）；`providers/VolcanoSeedanceProvider.ts`（提交+轮询+下载）；`providers/LocalH3Provider.ts`（子进程调度+互斥锁）；路由挂载 `/api/generate`、`/api/tasks/:taskId`、`/api/providers/status`、`/api/prompt/enhance`、`/api/upload`、`/api/history`；SQLite 任务存储。
+- **AC1**：mock provider 契约测试全绿（`pnpm test:contract`，覆盖 CONTRACT.md 全部路由与错误码）。
+- **AC2**：Seedance 真实冒烟出片 1 次，记录实际耗时与费用，回填 §8 成本表（消除【待验证】标记）。
+- **AC3**：本地并发提交 2 个任务，第 2 个任务状态为 `queued`，无第二个推理进程被拉起。
+- **AC4**：服务重启后，进行中的任务能从 SQLite 恢复状态，前端刷新可重挂载。
+
+### Step 3：前端 Astrmira 工作台
+- **任务**：左栏（Prompt + ✨扩写 + 拖拽槽 + 画幅 + BYOK 抽屉）；中栏（播放视窗 + 进度环 + 下载）；右栏（任务队列 + 画廊回填/删除）。
+- **AC1**：T2V 全流程可在界面完成，无需任何手工 API 调用。
+- **AC2**：生成中刷新页面，进度条自动恢复（localStorage 重挂载）。
+- **AC3**：画廊【复用参数】点击后，prompt / mode / 参考图 / seed 完整还原至控制台。
+- **AC4**：提交后 60s 内生成按钮置灰。
+
+### Step 4：端到端验收与体验打磨
+- **AC1**：T2V（含双引号台词人声）与 I2V（含 32 倍数裁切）各跑通 1 次完整链路。
+- **AC2**：HEIC / WebP / 超大图各上传 1 次，清洗网关无报错、输出合规。
+- **AC3**：项目级 DoD 达成——后端契约测试全绿 + 上述两条 e2e 全绿。
+- **产出**：`walkthrough.md` 验收记录【规划】。
+
+### Step 5：公网部署与交付
+- **任务**：`Dockerfile` + `docker-compose.yml`；反向代理 + HTTP 206；部署至 `DEPLOY_HOST`（值在本地 `.env`，勿写入文档）。
+- **AC1**：外部手机浏览器访问公网地址，无卡环境下默认云端轨出片成功。
+- **AC2**：探针返回 `local.available: false`，前端本地开关置灰并展示说明。
+- **AC3**：`.env`、SQLite、outputs 均不入镜像、不入 git。
+
+---
+
+## 5. 进度日志（唯一进度权威，其他文档只准链接本节）
+
+**截至 2026-09-22 · 当前指针：Step 2 待开工**
+
+- [x] 架构纠偏：淘汰素材拼贴路线，确立【描述 + 参考图/视频 → 双轨生成】多模态管线（见 §6-D1）；
+- [x] 本地算力验证【已验证】：MiniMax H3 NF4 在 Tier 2 机器（16GB 显存）全量缓存并跑通 T2V / I2V / 双引号立体声台词；
+- [x] 云端调研：火山方舟 Seedance API 与 BYOK 模式对齐（实际耗时/费用【待验证】，Step 2-AC2 回填）；
+- [x] Astrmira 视觉：19 CSS Tokens + 8 Keyframes 提取，三张概念设计图归档（`docs/assets/`）；
+- [x] 文档体系 V8.0 整改：9 → 6 份、脱敏占位符化、Step 补 AC、单一事实源确立；
+- [x] **Step 1 全栈骨架与设计 Token 落地【已验证】**：Fastify 后端 + React 19 前端 + Astrmira 19 Tokens 就绪，前后端联通探针与算力探测通过，构建无报错；
+- [ ] Step 2 ~ Step 5：见 §4。
+
+---
+
+## 6. 决策记录（ADR-lite，新的关键决策追加在此）
+
+| # | 决策 | 理由 | 日期 |
 |---|---|---|---|
-| 1 | 输入 brief / 关键词 | 表单 + 一键入口 | 0 |
-| 2 | LLM 生成脚本（可多语言） | LLM profile（OpenAI 兼容 / 火山），无 Key 降级为模板 | ~¥0.003 |
-| 3 | 脚本 → 素材关键词 | 规则 + LLM 抽取 | 0 |
-| 4 | **片段获取** | Pexels / Pixabay API 检索 + 下载 + 裁剪对齐 | **0（免版权）** |
-| 5 | 配音 | Edge TTS（**免费无需 Key**；WebLockShot `server/tts.mjs` + AI-SVWF `tts_service.py` 两处现成可复刻） | 0 |
-| 6 | 字幕 | 先「按脚本文本直出」（确定性、零成本）；后接 Whisper 对齐 | 0 |
-| 7 | 合成 | ffmpeg（WebLockShot `server/render.mjs` 已有并发互斥实现可抄） | 0 |
-| 8 | 导出 | MP4 / 剪映草稿 zip（WebLockShot `src/export/jianyingDraft.ts` 现成） | 0 |
-
-**→ 整条素材型流水线的边际成本 ≈ ¥0**，只有步骤 2 的 LLM 调用有几分钱开销。
-
-### 1.3 必须明确的三件事（避免验收扯皮）
-
-1. **验收标准是「流程跑通」，不是「成片质量」**。素材型产出的是「免版权画面拼贴 + 配音 + 字幕」，与「AI 生成电影感画面」观感差距巨大。一阶段验收看：全链路是否自动跑完、产物是否完整可播、错误是否可读、重跑是否准确。
-2. **新增依赖**：免版权素材库 API（免费注册，有速率限制——**具体额度以官方文档为准**）、ffmpeg、Edge TTS。注意素材库的**人物肖像与品牌标识限制**（有搜索结果显示部分素材存在此类限制，选材要做过滤）。
-3. **合规标注**：素材型产物**不得声明为「AI 生成视频」**（它是素材拼贴），应在导出物/界面如实标注来源。
+| D1 | 弃素材拼接，改真实多模态生成 | 拼贴存量素材是"伪 AI"，无差异化价值 | 2026-09 |
+| D2 | 双轨（云端 BYOK + 本地 H3）而非单轨 | 无卡用户零门槛体验；有卡用户 0 成本私密生成；共享大部分管线 | 2026-09 |
+| D3 | BYOK 而非平台代付 | 个人项目无计费资质与资金兜底；Key 不出服务端、日志脱敏 | 2026-09 |
+| D4 | Fastify + React 19 + 原生 CSS Tokens | 轻量、schema 校验一等公民；原生 Tokens 杜绝组件库与 AI 生成样式错位 | 2026-09 |
+| D5 | 任务存储用 SQLite（better-sqlite3） | 零运维、单文件、重启可恢复任务；`data/` 已入 .gitignore | 2026-09-22 |
+| D6 | 探针端点统一为 `/api/providers/status` | 原 `/api/system/probe` 与路由表矛盾，以语义更准者为准 | 2026-09-22 |
+| D7 | MVP 通信用轮询，SSE 标记【规划】 | 轮询实现成本低且够用；长任务体验优化留待 Step 4 后评估 | 2026-09-22 |
 
 ---
 
-## 2. 三档交互深度 + 纵向步骤流卡片 + 检查点机制（已入册）
+## 7. 安全与合规（吸收原 COMPLIANCE.md，唯一详写处）
 
-### 2.1 三档交互深度（共用一份 JSON DSL）
+1. **密钥管理**：火山 Key 由服务端环境变量或会话内存持有，绝不回传前端明文、绝不入日志；日志中 Token 强制掩码（如 `sk-****abcd`）；前端保存后只回显掩码。
+2. **本地模型边界**：MiniMax H3 全程本地离线，图像与音频不出本机；ComfyUI 仅限回环或受控局域网。
+3. **公网部署形态**：默认路由云端轨，不开放任何本地 Shell 执行面；单任务时长上限 5~10s，防任务堆叠。
+4. **文档卫生**：IP / 绝对路径 / 凭证永不入 md（占位符化），真实值只存本地 `.env`；`.env`、`data/`、`outputs/`、媒体文件已入 `.gitignore`。
+5. **视觉版权**：Astrmira 视觉语言仅作参考，本项目与其站点无任何隶属关系（见 README 免责）。
 
-```
-L1 一键全自动     填 brief → 跑完 → 出片          = 预设 DSL · 免编辑执行
-L2 分步可介入     每步可见可改 · 可重跑 · 可中断    = DSL 的「纵向步骤视图」★ V1 主体
-L3 可视化编排     节点画布 + 节点即表单            = DSL 的「横向画布视图」（延后）
-```
+---
 
-**L1 不是额外功能**，而是「预设 DSL 跑一遍」；**L3 不是 V2 才有的东西**，而是同一份 DSL 的另一个视图。所以**先把 DSL 定对**，三档都能长出来。
+## 8. 成本与风险
 
-### 2.2 V1 主体界面：纵向步骤流卡片
-
-```
-┌ [1] Brief & 参考图        ✓ 可编辑 · 可重跑 ┐
-├ [2] 脚本 / 提示词         ✓ ★检查点：停下确认 ┤   ← MPT 的流程清晰
-├ [3] 片段获取（素材/模型）  ✓ 目标与预算 ¥0/¥14.9 ┤   ← 我们的护栏
-├ [4] 音频 & 字幕           ▓▓▓░░ 62%         ┤   ← 每卡片 = 一个「节点」
-├ [5] 合成                 ⏳ 进行中            ┤
-└ [6] 产出                 QA 87 分 · 可重跑此步 ┘
-```
-
-**设计价值**：卡片流本质就是「**纵向节点流 + 节点即表单**」——同时拿到 MPT 的流程清晰度与 Dify 的核心交互模型，实现成本只是画布的零头。未来换横向画布是**渐进增强**（同 DSL 换视图），不是重构。
-
-### 2.3 检查点机制（checkpoint）—— 素材型/模型型不同策略
-
-| 检查点 | 素材型（免费） | 模型型（付费） |
+| 项 | 数字 | 标记 |
 |---|---|---|
-| 脚本/提示词生成后 | 默认不停（可开） | **默认停下确认**（最便宜的修改点） |
-| 片段获取前 | 不停 | **必停 + 显示成本预估 + 二次确认** |
-| 生成完成后 | 不停 | 停：QA 评分 + 选变体 |
-| 出母版前 | 不适用 | 停：本地抽卡 → 云端母版确认 |
+| 本地 H3 出片耗时 | 480x832 / 124 帧 / 50 步：Tier 2（16GB）约 6~10 分钟；Tier 3 约 2~4 分钟 | 【已验证】Tier 2 实测 |
+| 云端 Seedance 耗时 | 约 30 秒~1 分钟 | 【待验证】Step 2-AC2 回填 |
+| 云端 Seedance 单次成本 | 待冒烟后按官方计费回填 | 【待验证】 |
 
-**实现方式**：抄 MPT 的 `--stop-at <stage>` 思路 —— DSL 每个 stage 声明 `checkpoint: none | confirm`，执行器到此暂停并等待用户动作（继续 / 修改参数后继续 / 中止）。
-
-### 2.4 从两个项目各抄什么（具体清单）
-
-**从 MPT 抄（MIT，可放心复刻代码；语言无关的资产可直接扒）**
-1. **参数优先级分层**：显式参数 > UI 保存值 > 内置默认 → 我们的 DSL 覆盖链（项目级 > 用户级 > 默认）
-2. **每环节三态**：自动 / 上传自备 / 关闭 → 提示词（LLM / 手写 / 模板库）、参考图（上传 / 资产库 / 无）、音频（AI 原生 / TTS / 无）
-3. **`--stop-at`** → 检查点机制
-4. **试听/预览（不消耗生成）** → 提示词预览 + 成本预估
-5. **批量清单**：JSON/JSONL、上限、**单条失败不阻断**、统一汇总
-6. **任务历史 + 配置导入导出**
-7. **素材关键词提取的提示词模板**（可直接拿来改）
-
-**从 Dify 抄（只抄「交互模式」，不抄代码）**
-1. **Workflow vs Chatflow 的区分** → 我们的双入口：`一键创作`（Workflow）+ `对话引导`（Chatflow，「几句描述 + 参考图」天然对话式）
-2. **节点即表单**（点节点 → 右侧面板变表单）
-3. **变量引用**（上游输出作为下游输入）→ DSL 数据流
-4. **单节点试运行 + 运行历史** → 「只重跑这一步」
-5. **版本控制 + Snippets** → 预设/Skill 库
-
----
-
-## 3. 多人跑测的三条零门槛路径（满足你的需求 2）
-
-| 路径 | 谁用 | 需要什么 | 成本 |
-|---|---|---|---|
-| **素材型 L1**（服务器直跑） | **任何人**（零门槛，最终验收前的跑测主力） | 只需浏览器 | **≈¥0** |
-| **模型型 + BYOK** | 没本地模型的测试者 | 自带视频 API Key | 用户自付 |
-| **模型型 + 本地 Worker** | 有 GPU 的成员（3080 / 4060Ti） | 启动本地 Worker | ¥0（电费） |
-
-**这就是「初期简化、验证流程跑通」的最佳落地**：素材型让人人可测，模型型由你们自己验证。
-
----
-
-## 4. Dify 的许可边界（已核对 LICENSE 原文）
-
-Dify 使用的是 **modified Apache License 2.0**（修改版 Apache 2.0）。逐条核对后的准确边界如下：
-
-| 条款 | 原文要点 | 对我们的适用性 |
-|---|---|---|
-| **Multi-tenant service** | "Unless explicitly authorized by Dify in writing, you may not use the Dify source code to operate a **multi-tenant environment**."（一个 tenant = 一个 workspace） | ✅ **已放弃多租户服务 → 不触发** |
-| **LOGO / copyright** | "In the process of using Dify's **frontend**, you may not remove or modify the LOGO or copyright information... **This restriction is inapplicable to uses of Dify that do not involve its frontend.**"（「frontend」定义 = 源码的 `web/` 目录，或 Docker 的 `web` 镜像） | ⚠️ **只要不复用它的 `web/` 前端代码就不适用** → 结论：**抄后端逻辑可以，抄前端代码不行**（否则得挂着 Dify 的 LOGO 与版权，产品不可接受） |
-| **★ 外观专利** | "**The interactive design of this product is protected by appearance patent.**" | ⚠️ **不要照搬它的 UI 视觉与布局**。学交互**逻辑**可以，视觉必须做出自己的样子——我们的 Astrimira 星尘风天然规避 |
-| **Apache 2.0 兜底** | 未覆盖部分遵循 Apache 2.0 | 若复用了非前端代码，需在 `NOTICE`/`UPSTREAM.md` 保留版权声明 |
-
-**结论**：你「能抄代码实现」的目标可以达成，而且有一条**更干净的路**：画布能力从 **React Flow（MIT，无任何附加条款）** 抄——Dify 自己也建立在它之上。Dify 的正确用法是「**读它的实现理解模式 + 自己重写**」，前端代码不复制、视觉不照搬。
-
-### 4.2 工程现实
-- Dify 前端是 **Next.js 几十万行** + React Flow + 变量系统 + 调试器 + 版本发布；我们只需要其中约 1% 的模式（节点即表单 + 变量引用 + 单节点调试）。
-- 抄进来的**维护成本远高于自研**（每次上游破坏性变更都要跟着改），且我们拿不到它的内部支持——**大项目不会帮我们 debug 我们的集成**。
-
-### 4.3 正确做法
-| 抄什么 | 从哪抄 | 许可 |
-|---|---|---|
-| 画布交互、节点、连线、MiniMap、缩放 | **React Flow / @xyflow/react** 官方示例（examples 仓库有大量可直接复制的实现） | **MIT** ✅ |
-| 「节点即表单」的交互模式 | Dify 的**产品行为**（看它的用法，自己实现） | 模式不受版权保护 |
-| 变量引用 / 单节点调试 / 版本发布 | 同上，学模式 | — |
-| 素材型流水线结构、配置优先级、批量清单格式 | **MoneyPrinterTurbo** | **MIT** ✅ |
-| 护栏三态、状态机、任务事件、QA 规则 | **AI-SVWF**（你们自己的项目） | 自有 |
-
-**结论**：**「抄小库（MIT）+ 学大产品」比「抄大产品」更现实**；而且 React Flow 这类小库的 issue 响应速度远快于 Dify，你想要的「出问题能提 PR」在小库上才真正成立。
-
----
-
-## 5. 更新后的排期（W1 即有真实视频产出）
-
-| 周 | 目标 | 验收 |
-|---|---|---|
-| **W1** | 契约冻结 + 骨架 + **素材型 L1 全链路打通**（脚本 → 素材 → TTS → 字幕 → ffmpeg 合成 → 导出）+ 一键入口 + **星尘视觉前端（前后端并行）** | **输入一句话 → 服务器跑出一条真实可播的短视频，成本 ¥0**；界面符合 Astrmira token |
-| **W2** | 纵向步骤流卡片 + 检查点机制 + 队列/重启恢复 + **LLM 选材打分** + 进阶动效（滚动揭示） | 每步可见可改可重跑；断点可继续 |
-| **W3** | **模型型片段获取节点**：提示词管线（H3 schema 主干 + AI-SVWF 积木）+ 云端 provider **逐家直连**（Seedance / 即梦 / MiniMax / ComfyUI）+ 护栏 + BYOK | 云端各跑通 1 次；3 并发只过 2；BYOK 可用 |
-| **W4** | 部署（国内云 + Docker + TLS + 共享口令）+ 监控告警 + 备案 | 内网成员可访问跑测 |
-| **W5** | **本地算力落地**（Pull Worker + ComfyUI + 模型选型：H3 4bit+ClipProj vs Wan 2.2） | 本地出片；Worker 断线重连 |
-| **W6** | QA 两级（LLM 评 → 人工校准）+ 资产库/一致性 + 剪映草稿导出 + 文档 + 真实验收 | 全链路；RUNBOOK |
-
-> **W1 最大的价值**：产品闭环从第一周就成立（**真实视频 + 真实界面**），此后每个能力都是在「能跑的闭环」上增量，而不是等到后期才第一次看到成品。
-
----
-
-## 6. 技术栈与前端（结论不变，压缩保留）
-
-- **后端 Node + TypeScript**：核心工作是「编排 + HTTP 调用 + 状态管理」，瓶颈在外部 API 与 GPU；TS 在「与现有可复刻代码语言重合、AI 辅助效率、前后端契约共享、部署简单」四项全胜。Python 只作外部模型服务（ComfyUI/SGLang 独立进程），**Rust 不用**（除非日后单独做转码微服务）。
-- **前端**：React 19 + Vite + TS；主界面骨架参考 **InvokeAI**（28k★：左参数/中预览/底队列/右画廊），产品流程参考 **MoneyPrinterTurbo**（125k★），视觉交互参考 **Lobe Chat**（83k★）+ **Open WebUI**（153k★），V3 画布参考 **Dify**（157k★）+ **n8n**（206k★）。
-
----
-
-## 7. Astrmira 设计规范（实测，可复刻）
-
-**实现特征**：Astro 静态站 + **纯 CSS 动效 + Canvas 粒子，无 GSAP/Three/Framer**；全页仅 3 个常驻动画 —— **慢（6s/18s/42s）+ 克制（位移 4–7px、±2°~7°）** 是高级感的来源。
-
-```css
---bg:#090c12  --panel:#10141c  --panel2:#121822
---text:#eeeae1   /* 暖米白，非纯白 */
---muted:#9ba5b6  --faint:#7d889b
---line:#b3c3db29 /* 蓝灰 + 16% alpha 微光描边 */
---gold:#d6b881   --blue:#91b9d5
---action-fill:#e7dfd1  --action-hover:#f2ece2
---radius-control:8px  --radius-surface:18px
---ease-ui:cubic-bezier(.22,.61,.36,1)
---serif:Georgia,"Noto Serif","Songti SC",serif   /* 标题用衬线 */
---sans:Arial,"PingFang SC","Microsoft YaHei",sans-serif
-```
-**排版**：H1 实测 serif · 189.44px · 字距 **-14.208px**（超大 + 负字距 + 衬线标题 vs 无衬线正文 = 碑文感）。
-
-**8 个 keyframes（原值）**：
-```css
-@keyframes star-gather{0%{opacity:0;transform:scale(1.15) rotate(-8deg)}16%{opacity:1}65%{opacity:1}100%{opacity:0;transform:scale(.04) rotate(14deg)}}
-@keyframes mira-breathe{0%,100%{opacity:.9;transform:scale(.98) rotate(-2deg)}50%{opacity:1;transform:scale(1.04) rotate(2deg)}}
-@keyframes mira-orbit-turn{100%{transform:rotate(360deg)}}
-@keyframes origin-orbit-sway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}
-@keyframes flow{100%{stroke-dashoffset:-140px}}
-@keyframes motion-bootstrap{0%,65%{opacity:0}100%{opacity:1}}
-@keyframes navigation-enter{0%{opacity:0;transform:translateY(-6px)}100%{opacity:1;transform:translateY(0)}}
-@keyframes language-appear{0%{opacity:0;transform:translateY(-4px)}100%{opacity:1;transform:translateY(0)}}
-```
-
-**双层视觉**：展示区（`#090c12` + 粒子 + 星芒金/冰蓝呼吸）／表单区（`#0b0f1a` + 实线边框 + 无入场动画 + 对比度 ≥4.5:1）。**必须尊重 `prefers-reduced-motion`**。
-
-截图与探测脚本：`WebLockShot/.tmp/astrmira/`（hero.png / full.png / probe.js）
-
----
-
-## 8. 护栏 / 成本 / 合规（更新）
-
-### 8.1 护栏
-窗口限流 60s ≤2 次（按用户维度）· in-flight ≤2 · 内容指纹幂等 · **不确定性不自动重提** · 三态计费风险 · 成本预估 + 二次确认 · 熔断默认关。
-（素材型路径**完全不触发**云端付费护栏，是"免费安全区"。）
-
-### 8.2 成本
-| 项 | 成本 |
-|---|---|
-| 素材型全链路 | **≈¥0**（仅 LLM 脚本生成几分钱） |
-| 模型型 15 秒 720P 云端 | ¥14.9（2.0 mini）/ ¥45（2.5）/ ¥74（1080p 2.0 增强） |
-| 模型型本地（W5 后） | ¥0（电费） |
-| 开发期首月 | **≈¥120–400** |
-| 月度基建 | 服务器 2C4G ¥60–120 + 对象存储 ¥10–25 ≈ **¥80–150/月** |
-
-### 8.3 合规红线（B 主责）
-1. **H3 商用界面必须显著标注 "MiniMax H3"**（现在做，成本为零）
-2. H3 年收入 >2000 万美元需授权；产出/权重不得训练非 H3 模型
-3. **Dify 代码不得复制使用**（多租户 SaaS 禁令 + LOGO 禁令）→ 只学模式
-4. ComfyUI GPL-3.0 → 只 HTTP 调用；Vidia FSL-1.1 → 只学架构
-5. 素材库素材：注意**人物肖像与品牌标识限制**；素材型产物**不得标注为「AI 生成」**
-6. BYOK 用户 Key：内存优先 + 加密存储 + 日志脱敏 + 永不回显
-7. 备案个人；**付费开放前**再评估主体变更 + AUP/审核/算法备案
-
----
-
-## 9. 决策台账（本轮更新）
-
-**已定**
-- 不接 OFox / MuAPI（拒绝中间商加价）→ 逐家直连
-- 剪映草稿导出**要做**（拿来主义，见 §10.9）
-- 字幕：先「脚本直出 + TTS 时长推算时间轴」（零成本、确定性）；Whisper 对齐后置
-- 选材质量：**做 LLM 打分选材**（对候选片段按脚本语义打分再下载，几分钱换明显观感提升）→ 排入 W2
-- 复刻代码时：抄 React Flow（MIT）而非 Dify 前端；Dify 只读模式不抄代码
-
-**待定**
-1. **本地模型选型**（W5 前定）：H3 4bit+ClipProj（带音频、慢）vs Wan 2.2（快、无音频）
-2. **对话引导入口（Chatflow）**：V1 是否要有——我的建议是 **V1 只做「表单 + 一键」**，对话入口放 W2 之后（它需要多轮状态管理，会拖慢竖切）
-
----
-
-## 10. 开工步骤（可执行）
-
-### 10.1 总原则：竖切优先（vertical slice）
-
-**先把「一句话 → MP4」这条竖切用最粗糙的实现跑通，再逐层加固。**
-W1 的目标**不是**做好素材型流水线，而是**让闭环先成立**——此后每加一个能力，都是在能跑的闭环上增量。
-
-### 10.2 阶段 0 · Day 0（半天，开工当天）
-
-| # | 动作 | 谁 |
-|---|---|---|
-| 1 | 建仓库 `video-pipeline`（`backend/ frontend/ deploy/ docs/ scripts/`）+ `.gitignore` | 你 |
-| 2 | Node 22 + pnpm + TS strict + oxlint + vitest + GitHub Actions 三件套（lint/type/test） | A |
-| 3 | `docs/CONTRACT.md`（空模板待填）/ `docs/UPSTREAM.md`（复刻台账）/ `docs/COMPLIANCE.md`（合规台账） | B |
-| 4 | 账号准备：Pexels API Key（免费）、Pixabay API Key、LLM Key（火山/OpenAI） | 你 |
-| 5 | 云服务器开通 + **提交 ICP 备案**（周期 1–3 周，务必 Day 0 就交） | B |
-
-### 10.3 阶段 1 · W1 —— 竖切打通（一句话 → 一条真视频）
-
-| Day | 任务 | 谁 | 交付 |
-|---|---|---|---|
-| 1–2 | 后端骨架（Fastify + zod + better-sqlite3 + pino）；**DSL v0**（stage 列表 + params + checkpoint）；任务表/状态机/事件表（设计抄 AI-SVWF）；单进程队列 worker | A | 能建 job、能跑 stage、能追事件 |
-| 1–2 | **设计 token 落地**：把 §7 的 19 个 CSS 变量写成 `tokens.css`（含字体栈/圆角/缓动/间距）+ 前端骨架（Vite + React 19 + TS） | 你 | 设计系统就绪 |
-| 2–3 | **展示区星尘**：单层粒子 Canvas + 星芒 `star-gather`（一次性 + `↺` 重播）+ 关键词跑马灯（`✧` 分隔）；**高对比表单区**：实线卡片 + 无入场动画 + 对比度达标 | 你 | 首屏 + 表单骨架（先对 mock 数据） |
-| 2–3 | stage `script`（**先模板降级**，Day 3 再接 LLM）→ stage `keywords`（规则抽取 + LLM 优化） | A | 一句话 → 脚本 + 素材关键词 |
-| 3–4 | stage `footage`（Pexels 搜索 → 选片 → 下载 → 裁剪对齐时长） | A | 可用片段集合 |
-| 4 | stage `tts`（复刻 WebLockShot `server/tts.mjs`）+ stage `subtitle`（脚本直出 + 时长推算时间轴） | A | 音轨 + 字幕数据 |
-| 4–5 | stage `compose`（复刻 `server/render.mjs` 的并发互斥思路：ffmpeg 拼接 + 音轨 + 淡入淡出） | A | **MP4 产物** |
-| 5 | 前端接真实 API：`POST /api/jobs/oneclick` + SSE 进度 + 结果卡片（`<video>` + 下载） | 你 | 浏览器端到端可跑 |
-| 6 | 部署（Docker + Caddy TLS + 内网访问） | B | 成员可访问 |
-| 7 | 端到端验收 + **视觉走查**（对比度 / 动效 / `prefers-reduced-motion`）+ 补 CONTRACT.md | 全员 | **W1 验收通过** |
-
-**W1 验收标准**：
-1. 服务器上输入一句话 → 3–5 分钟内产出可播放的 MP4，成本 ≈¥0，多人可同时跑；
-2. 界面符合 Astrmira token（展示区星尘 + 表单区高对比），axe 对比度检查通过，`prefers-reduced-motion` 生效。
-
-**星尘为什么能在 W1 落地**：设计 token 已**实测拿到**（§7 的 19 个 CSS 变量 + 8 个 keyframes），核心工作只是「一份 `tokens.css` + 一个单层粒子 Canvas 组件 + 卡片组件」——不需要设计探索、不需要试色。
-**W1 只做静态层与 hover 层**，滚动揭示等进阶动效放 W2。
-
-**W1 明确不做**：LLM 选材打分 · 断点恢复 · 批量清单 · 检查点 · 模型型生成 · 进阶滚动动效
-
-### 10.4 阶段 2 · W2 —— 从「能跑」到「好用」
-1. 纵向步骤流卡片（每 stage 一卡片 + 折叠 + 独立重跑）
-2. 检查点机制（`checkpoint: none|confirm` + 继续/改参后继续/中止）
-3. 断点恢复（重启扫描未完成任务并续跑）
-4. **LLM 选材打分**（候选片段按脚本语义排序）
-5. 批量清单（JSON/JSONL，单条失败不阻断，统一汇总）
-6. 任务历史 + 配置导入导出
-7. 星尘视觉上身（展示区星尘 + 表单区高对比）
-
-### 10.5 阶段 3 · W3 —— 模型型接入
-1. DSL 的 `footage` 增加第二种实现（模型型），其余 stage 零改动 ← **这是双模式架构的验证点**
-2. 提示词管线（H3 官方 schema 主干 + AI-SVWF 积木去商品化）
-3. provider 抽象 + 适配器（Seedance / 即梦 / MiniMax / ComfyUI / mock）
-4. 护栏全量（窗口限流 60s≤2 / 指纹幂等 / 并发 ≤2 / 不确定性不重提 / 三态计费 / 成本预估）
-5. BYOK（内存优先 + 加密存储 + 日志脱敏 + 永不回显）
-6. 检查点差异化（付费路径必停 + 二次确认）
-
-### 10.6 阶段 4 · W4 —— 部署与账号
-共享口令 + 邀请码鉴权 · `/metrics` + 阈值告警 · 备份与恢复演练 · 对象存储接入（产物直传）
-
-### 10.7 阶段 5 · W5 —— 本地算力
-Pull Worker（主动长轮询，不开公网端口）· ComfyUI 接入（LTX/Wan 抽卡）· H3 部署（4bit+ClipProj 或 8bit）· 模型选型拍板
-
-### 10.8 阶段 6 · W6 —— QA 与交付
-L1 技术质量（ffprobe / 黑帧 / 静帧 / 音轨）· L2 LLM 评审 + 前 50 条人工校准 · 一致性资产库（角色/场景/风格 + 全局种子）· 剪映草稿导出 · RUNBOOK 文档
-
-### 10.9 拿来主义清单（直接复刻，省最多时间）
-
-| 复刻什么 | 从哪 | 许可 |
-|---|---|---|
-| TTS（Edge TTS + 落盘） | WebLockShot `server/tts.mjs` | 自有 |
-| ffmpeg 渲染（并发互斥 + 忙时 429） | WebLockShot `server/render.mjs` | 自有 |
-| **剪映草稿** | 主干：WebLockShot `src/export/jianyingDraft.ts`（TS，语言一致）；补高级效果（转场/花字/气泡）：**pyJianYingDraft**（`GuanYixuan/pyJianYingDraft`，Python，可读其草稿结构）/ JianYingApi | 自有 + **需核实第三方 LICENSE** |
-| 视频 provider 实现 | WebLockShot `src/media/providers/*`（jimeng/kling/comfyui…）+ `src/media/auth/jimengAuth.ts`（即梦 AK/SK 签名） | 自有 |
-| provider 契约测试 fixtures | WebLockShot `test/fixtures/*` + `src/media/__tests__/providerContract.test.ts` | 自有 |
-| 重试/退避/Retry-After | WebLockShot `src/ai/retry.ts` | 自有 |
-| 护栏三态 / 状态机 / 任务事件 / QA 规则 | AI-SVWF `core/{database,quota,qa_engine,repair_engine}.py` | 自有（TS 重写 + 对拍测试） |
-| SQLite 三级降级 | WebLockShot `server/storage.mjs` | 自有 |
-| 提示词积木（20 模块去商品化） | AI-SVWF `core/modules.py` + `core/prompt_builder.py` | 自有 |
-| a11y 对比度扫描 | WebLockShot `scripts/a11y-canvas.mjs` | 自有 |
-| 素材型配置优先级 / 批量清单 / `--stop-at` 模式 | MoneyPrinterTurbo（学结构，语言不同） | MIT |
-| 画布（L3，延后） | **React Flow 官方 examples** | MIT |
-
-### 10.10 开工前已拍板（三项，2026-09-21）
-
-1. ✅ **W1 先不接 LLM**：Day 1–2 用**模板降级**跑通全链路，Day 3 再接 LLM —— 避免被 Key 调不通卡住进度。
-2. ✅ **素材源**：**Pexels 为主**（摄影质感）、**Pixabay 备用**。
-3. ✅ **W1 直接上星尘视觉**（不做裸表单）→ 因此前端改为**与后端并行开发**：
-   - Day 1–2：设计 token 落地（`tokens.css`）+ 前端骨架
-   - Day 2–3：展示区星尘（粒子 Canvas + 星芒 + 跑马灯）+ 高对比表单区（先对 mock 数据）
-   - Day 5：对接真实 API（一键 + SSE 进度 + 结果卡）
-   - 可落地的前提：token 已实测（§7），W1 只做静态与 hover 层，进阶动效顺延 W2
-
-> **开工令**：三项已定，可按 §10.2（Day 0）→ §10.3（W1 按天）直接推进。
+**风险登记**：
+- R1：DiffSynth-Studio / H3 权重版本漂移 → 锁版本号并记录于 UPSTREAM.md；
+- R2：Seedance API 变更 → Provider 接口隔离，变更只动 `VolcanoSeedanceProvider`；
+- R3：画廊磁盘膨胀 → 防线 3（LRU + 一键删除）已在设计内。

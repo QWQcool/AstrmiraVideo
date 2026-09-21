@@ -1,0 +1,78 @@
+:root {
+  /* Astrmira 色彩 Tokens */
+  --bg: #090c12;
+  --panel: #10141c;
+  --panel2: #121822;
+  --panel-glass: rgba(16, 20, 28, 0.85);
+  --text: #eeeae1;
+  --muted: #9ba5b6;
+  --faint: #7d889b;
+  --line: rgba(179, 195, 219, 0.16);
+  --line-gold: rgba(214, 184, 129, 0.35);
+  --gold: #d6b881;
+  --gold-glow: rgba(214, 184, 129, 0.2);
+  --blue: #91b9d5;
+  --blue-glow: rgba(145, 185, 213, 0.2);
+  --action-fill: #e7dfd1;
+  --action-hover: #f2ece2;
+
+  /* 几何与缓动 */
+  --radius-control: 8px;
+  --radius-surface: 16px;
+  --ease-ui: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* 字体栈 */
+  --serif: "Cinzel", Georgia, "Noto Serif SC", "Songti SC", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* Astrmira 原生 8 个 Keyframes */
+@keyframes star-gather {
+  0% { opacity: 0; transform: scale(1.15) rotate(-8deg); }
+  16% { opacity: 1; }
+  65% { opacity: 1; }
+  100% { opacity: 0; transform: scale(0.04) rotate(14deg); }
+}
+
+@keyframes mira-breathe {
+  0%, 100% { opacity: 0.9; transform: scale(0.98) rotate(-2deg); }
+  50% { opacity: 1; transform: scale(1.04) rotate(2deg); }
+}
+
+@keyframes mira-orbit-turn {
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes origin-orbit-sway {
+  0%, 100% { transform: rotate(-7deg); }
+  50% { transform: rotate(7deg); }
+}
+
+@keyframes flow {
+  100% { stroke-dashoffset: -140px; }
+}
+
+@keyframes motion-bootstrap {
+  0%, 65% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes navigation-enter {
+  0% { opacity: 0; transform: translateY(-6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes language-appear {
+  0% { opacity: 0; transform: translateY(-4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* 动效降级保障 */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
