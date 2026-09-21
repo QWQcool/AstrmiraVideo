@@ -1,0 +1,57 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build
+dist/
+build/
+*.tsbuildinfo
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+logs/
+
+# temp
+.tmp/
+.temp/
+
+# test / coverage
+coverage/
+.nyc_output/
+
+# data (SQLite fact store, artifacts)
+data/
+artifacts/
+outputs/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# media cache
+media-cache/
+*.mp4
+*.mp3
+*.wav
+*.srt
+
+# editors / OS
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# playwright / e2e
+playwright-report/
+test-results/
+.playwright-cli/
