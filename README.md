@@ -99,7 +99,7 @@ AI 视频生成有两条成本结构完全不同的路径。我们没有二选�
 
 ```bash
 # 计划中的形态（暂不可用）
-git clone https://github.com/<owner>/AstrmiraVideo.git
+git clone https://github.com/QWQcool/AstrmiraVideo.git
 cd AstrmiraVideo
 pnpm install
 pnpm dev
