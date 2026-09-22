@@ -14,7 +14,7 @@ export const TaskStatusSchema = z.enum(['queued', 'running', 'succeeded', 'faile
  */
 export const ErrorDispositionSchema = z.enum(['retryable', 'terminal', 'uncertain']);
 
-/** CONTRACT §6：9 个错误码全量 */
+/** CONTRACT §6（V1.8）：12 个错误码全量 —— 后 3 个为 V1.8 新增 */
 export const ErrorCodeSchema = z.enum([
   'PROVIDER_UNAVAILABLE', // 所选引擎健康检查失败
   'GPU_BUSY', // 本地队列已有任务在执行
@@ -25,6 +25,10 @@ export const ErrorCodeSchema = z.enum([
   'UNCERTAIN_RESULT', // 已提交但无法确认结果：轮询中断 / 进程重启 / 上游超时无响应
   'TASK_NOT_FOUND', // taskId 不存在或已清理
   'DISK_FULL', // 输出目录磁盘不足
+  // ── V1.8 新增（决策 PLAN §6-D23 / D24）──
+  'LLM_NOT_CONFIGURED', // 扩写未配置 LLM（demo 版恒返回，/api/prompt/enhance → 501）
+  'KEY_INVALID', // 凭据被上游拒绝（校验路由见 PLAN §9 台账 B2）
+  'KEY_MISSING', // 需要凭据的端点既未收到 X-Provider-Key，服务端也无 env 兜底 Key
 ]);
 
 export const TaskErrorSchema = z.object({

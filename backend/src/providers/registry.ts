@@ -1,5 +1,6 @@
 import type { ProviderType, VideoProvider } from '@astrmira/shared';
 import { FixtureLocalProvider } from './fixture/FixtureLocalProvider.js';
+import { createFaultInjectedProvider, resolveFaultPlanFromEnv } from './withFaultInjection.js';
 
 /**
  * Provider **唯一注册点**（PLAN §4「Step 2 补充」约束 1）。
@@ -39,10 +40,18 @@ const testOverrides = new Map<ProviderType, VideoProvider | null>();
 
 /** 取 provider 实例；未实现或被门控关闭时返回 `null`（调用方须显式报 `PROVIDER_UNAVAILABLE`） */
 export function getProvider(id: ProviderType): VideoProvider | null {
-  if (testOverrides.has(id)) {
-    return testOverrides.get(id) ?? null;
-  }
-  return REGISTRY[id]();
+  const base = testOverrides.has(id) ? (testOverrides.get(id) ?? null) : REGISTRY[id]();
+  if (base === null) return null;
+  return applyEnvFaultInjection(base);
+}
+
+/**
+ * env 驱动的故障注入（PLAN §4「Step 2 补充」）：
+ * `FAULT_INJECT=1` 时在 provider 与调度器之间插一层包装；生产环境挂载会**直接抛错**。
+ */
+function applyEnvFaultInjection(provider: VideoProvider): VideoProvider {
+  const plan = resolveFaultPlanFromEnv();
+  return plan === null ? provider : createFaultInjectedProvider(provider, plan);
 }
 
 /** ⚠️ 仅供测试：临时覆盖某个 provider（用于计数桩 / 故障桩） */
