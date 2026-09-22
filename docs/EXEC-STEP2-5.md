@@ -103,7 +103,7 @@ NEXT_SESSION_PROMPT.md 当前指针）。版本号：PLAN → V8.2、CONTRACT �
 | `better-sqlite3` | backend | PLAN §6-D5 任务存储；Node 22 有预编译，Windows 若缺 build tools 需 VS Build Tools |
 | `@fastify/multipart` | backend | `/api/upload` 上传（fastify 5 对应 v9） |
 | `file-type` | backend | 魔数嗅探（§7-6 要求不信任 `Content-Type`） |
-| `sharp` | backend | 图像清洗网关（防线 4：WebP/CMYK→sRGB、大图下采样、32 倍数裁切）。**HEIC 解码能力需实测**【待验证：prebuilt libvips 的 HEIF 支持】；若不支持则走 ffmpeg 或诚实拒绝 `INVALID_ASSET` |
+| `sharp` | backend | 图像清洗网关（防线 4：WebP/CMYK→sRGB、大图下采样、32 倍数规整）。**HEIC 解码能力已实测**（2026-09-22，`sharp` 0.35.4 / libvips 8.18.6）：HEIF 容器可用（AVIF 通过）但**预编译版缺 HEVC 解码器** → `.heic` 走**诚实拒绝**（415 + 转格式指引）；结论与证据见 PLAN §5 的 S6 条目、台账 B21 |
 | `oxlint` | 根 devDeps | CI 三件套的 lint（零配置、单二进制、CI 秒级；避免为 demo 铺 eslint 全家桶） |
 | — | frontend | **零新增**：React 19 + `fetch` 足够（Step 3 不引入路由/状态库） |
 
@@ -246,7 +246,7 @@ NEXT_SESSION_PROMPT.md 当前指针）。版本号：PLAN → V8.2、CONTRACT �
 - 接入 `/api/upload`；与 `smartCrop` 共用尺寸规则
 
 **关键口径（易做错，必须按此）**：**上传阶段不知道目标画幅** → 上传只做「清洗 + 下采样 + 规整到 32 倍数（保原纵横比）」；**按 `aspectRatio` 的居中裁切发生在生成时**（两段都走 `smartCrop` 的同一组纯函数）。
-**HEIC**【待验证】：`sharp` prebuilt 的 HEIF 解码能力需实测；不支持则走 ffmpeg，或**诚实拒绝** `INVALID_ASSET` 并给出转格式指引（不许静默失败）。
+**HEIC**：`sharp` prebuilt 的 HEIF 解码能力**已实测**（2026-09-22）——HEIF **容器**可用（AV1/AVIF 通过），但预编译版**没有 HEVC 解码器**，`.heic`（iPhone 默认格式）当前走**诚实拒绝** `INVALID_ASSET` + 转格式指引（不许静默失败）；结论与证据见 PLAN §5 的 S6 条目，让其真正可用的候选路径见台账 B21。
 **AC1 / 破坏性验证**：HEIC / WebP / 超大图各上传 1 次，输出合规；把下采样阈值改大 → 超大图用例必须失败。
 
 ### S7 · 契约层测试 + CI 三件套（AC1 / AC8）

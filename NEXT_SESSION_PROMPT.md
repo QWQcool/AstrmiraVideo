@@ -31,7 +31,7 @@
 
 **唯一剩余卡点是一把可用的火山方舟 Key** —— 它同时解锁 Step 2-AC2（真实出片冒烟 + 回填 §8 成本表）与 Step 4（端到端验收，其 AC1 明确要求用真实云端轨跑 T2V + I2V）。
 
-**改服务器配置前先读这三条**（都是实测踩出来的）：① 目标服务器**访问不了 github.com**，所以代码只能从 CI/本机 scp 推过去，不能让它 `git pull`；② IP 档访问时客户端**不发 SNI**，Caddy 必须有 `default_sni`，否则握手直接失败（症状是浏览器连登录框都看不到）；③ 运行层构建 `better-sqlite3` **需要编译器**（无 prebuilt），当前 Dockerfile 是"临时装工具链 → 编译 → 立刻卸掉"。
+**改服务器配置前先读这四条**（都是实测踩出来的）：① 目标服务器**访问不了 github.com**，所以代码只能从 CI/本机 scp 推过去，不能让它 `git pull`；② IP 档访问时客户端**不发 SNI**，Caddy 必须有 `default_sni`，否则握手直接失败（症状是浏览器连登录框都看不到）；③ 运行层构建 `better-sqlite3` **需要编译器**（无 prebuilt），当前 Dockerfile 是"临时装工具链 → 编译 → 立刻卸掉"；④ **本机到服务器只有 80/443 可达**（SSH 端口本机探测全部超时），所以"进容器看一眼"这类运维查询要借 **runner 的 SSH 通道**（CI 里已有端口与口令；本次查容器内 ffmpeg 版本就是这么做的——`.github/workflows/ops-ffmpeg-version.yml` 临时工作流，用完即删）。
 
 开工前注意两条**尚未实测**的边界：① S5b 的上游字段（请求体结构、`--` 尾缀参数、`status` 枚举、`content.video_url` 位置）全部集中在 `backend/src/providers/seedanceProtocol.ts` 并逐项标注【待验证】，AC2 冒烟时逐项核对，**不得当作已验证事实引用**；② 云端轨凭据为 **B 方案**（进程内暂存至终态），进程重启会清空暂存 Key，此时在途已提交任务如实归 `UNCERTAIN_RESULT`——这是**设计代价，不是缺陷**，任何情况下都不得改成自动重提。
 

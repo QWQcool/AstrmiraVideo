@@ -50,6 +50,8 @@ export default defineConfig({
         'src/security/keyVault.ts': { statements: 95, branches: 95, functions: 95, lines: 95 },
         // 防线 4：32 倍数规整与居中裁切（所有画幅分支都从这里过）
         'src/pipeline/smartCrop.ts': { statements: 90, branches: 85, functions: 100, lines: 90 },
+        // 防线 4：图像清洗网关（EXIF 方向 / CMYK→sRGB / 下采样 / 规整 / 拒收分支）
+        'src/pipeline/imageSanitize.ts': { statements: 90, branches: 85, functions: 100, lines: 90 },
         // 防线 3：中间帧目录清理
         'src/pipeline/cleanup.ts': { statements: 90, branches: 70, functions: 100, lines: 90 },
         // 提交入口：幂等键解析 + 冷却判定 + 凭据交接的顺序

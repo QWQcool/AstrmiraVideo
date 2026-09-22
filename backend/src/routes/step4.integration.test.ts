@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import sharp, { type Metadata } from 'sharp';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -31,6 +32,11 @@ const SAMPLE_PNG = path.join(TMP_IMAGE_DIR, 'sample.png');
  */
 function realPngBytes(): Buffer {
   return readFileSync(SAMPLE_PNG);
+}
+
+/** 读落盘产物的元数据（防线 4 的"输出合规"要靠它核对，而不是看响应字段自证） */
+function probeImage(filePath: string): Promise<Metadata> {
+  return sharp(filePath).metadata();
 }
 
 const GIF_HEADER = Buffer.from('GIF89a', 'ascii'); // 白名单外（真类型 image/gif）
@@ -231,7 +237,7 @@ describe('AC9 · 防线 5 防抖限流（60s 冷却，IP 单键）', () => {
 });
 
 describe('AC10 · 上传加固（体积 / 数量 / 魔数 / 白名单 / 路径）', () => {
-  it('正常 PNG 上传成功，返回 assetId / kind / mime / size', async () => {
+  it('正常 PNG 上传成功，返回 assetId / kind / mime / size（图像过防线 4 清洗）', async () => {
     const res = await postUpload([
       { filename: 'ok.png', contentType: 'image/png', content: realPngBytes() },
     ]);
@@ -239,9 +245,23 @@ describe('AC10 · 上传加固（体积 / 数量 / 魔数 / 白名单 / 路径�
     expect(res.statusCode).toBe(200);
     const body = res.json() as UploadResponse;
     expect(body.assets).toHaveLength(1);
-    expect(body.assets[0]?.mime).toBe('image/png');
     expect(body.assets[0]?.kind).toBe('image');
     expect(body.assets[0]?.assetId).toMatch(/^[0-9a-f-]{36}$/);
+
+    // 防线 4（S6）：响应的 mime / size 是**清洗后的产物事实**，不是客户端声明的类型。
+    // 64×64 不透明 PNG → 清洗后是 JPEG（省体积、上游通用），落盘扩展名随之为 .jpg。
+    expect(body.assets[0]?.mime).toBe('image/jpeg');
+
+    const assetId = body.assets[0]?.assetId as string;
+    const storedPath = path.join(TMP_OUTPUTS_DIR, 'assets', `${assetId}.jpg`);
+    expect(existsSync(storedPath)).toBe(true);
+
+    // 产物确实是可解码的 32 倍数 JPEG
+    const meta = await probeImage(storedPath);
+    expect(meta.format).toBe('jpeg');
+    expect(meta.width % 32).toBe(0);
+    expect(meta.height % 32).toBe(0);
+    expect(body.assets[0]?.size).toBe(statSync(storedPath).size);
   });
 
   it('单文件 > 20MB → 413（显式拒绝，不静默截断）', async () => {
@@ -305,8 +325,8 @@ describe('AC10 · 上传加固（体积 / 数量 / 魔数 / 白名单 / 路径�
 
     const assetsDir = path.join(TMP_OUTPUTS_DIR, 'assets');
     const written = readdirSync(assetsDir);
-    // 只有 <uuid>.png，没有 evil.png，也没有越出 assets 目录
-    expect(written).toContain(`${assetId}.png`);
+    // 只有 <uuid>.<清洗后扩展名>，没有 evil.png，也没有越出 assets 目录
+    expect(written).toContain(`${assetId}.jpg`);
     expect(written.some((name) => name.includes('evil'))).toBe(false);
   });
 });

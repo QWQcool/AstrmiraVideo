@@ -6,6 +6,7 @@
 >   ② **§3**：LLM 配置与 `engine` 字段登记为 **V2.0【规划】**；demo 版 `/api/prompt/enhance` 以 `501 LLM_NOT_CONFIGURED` 诚实落地（禁止静默降级 / 规则引擎冒充）。
 >   ③ **§5**：路由表新增 `GET /media/*`（`outputs/` 的 Range 静态媒体服务）与 `POST /api/providers/keys/verify`（【规划·B2】）；新增「**凭据传递约定**」注记段——`X-Provider-Key` / `X-LLM-Key` 仅走请求头，禁 query / URL / body；服务端**零留存**（不落库、不入日志、不回显）。
 >      **补登（S2 落地时）**：`/api/generate`、`/api/tasks/:taskId`、`/cancel`、`/api/history`、`DELETE /api/history/:taskId` 的**响应形状**已随实现补入路由表，类型以 `packages/shared/src/api.ts` 为单一事实源（此前只写语义描述、无形状定义）。
+>      **补登（S6 落地时，2026-09-22）**：`/api/upload` 的 `mime` / `size` 语义收紧为「**防线 4 清洗后的产物事实**」（图像会被转码 / 下采样 / 32 倍数规整）；清洗失败与 `.heic`（HEVC 编码，本构建无解码器）均归 **415 `INVALID_ASSET`**。响应形状（`UploadResponseSchema`）不变。
 >   ④ **§6**：新增 `LLM_NOT_CONFIGURED` / `KEY_INVALID` / `KEY_MISSING`（均 `terminal`）；**硬规则 2 适用范围收窄**为「有持久副作用的任务型上游」，无副作用调用（文本生成）不适用（D28）。
 >   ⑤ **§7**：存储表新增「BYOK Key：**服务端零留存**」一行；「中间帧 / 临时音频」行补 client 本地轨落点（【规划】，见 PLAN §6-D26）。
 > **V1.7 修订（2026-09-22）**：新增 §8 `HealthResponse`，补齐 `/api/health` 的响应契约——此前路由表只写「存活探针」而无响应形状定义，`packages/shared` 契约包（PLAN §6-D18）无法为它定义 schema（原为 T2 的施工阻塞点）。
@@ -181,7 +182,7 @@ export interface VideoProvider {
 | `GET` | `/api/tasks/:taskId` | 轮询任务状态与结果。**200 → `TaskProgress`（§4）**；不存在或已清理 → **404 `TASK_NOT_FOUND`** |
 | `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消）。**200 → `{ ok, taskId }`** |
 | `POST` | `/api/prompt/enhance` | 提示词扩写助手 —— **demo 版返回 `501` + `LLM_NOT_CONFIGURED`**（前端 ✨ 置灰）；完整实现见 §3 的 V2.0【规划】 |
-| `POST` | `/api/upload` | 上传参考图/视频（multipart，≤20MB × ≤4，**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**；超体积 / 超数量 → **413**；白名单外或伪造类型 → **415**（加固细则见 PLAN §7-6） |
+| `POST` | `/api/upload` | 上传参考图/视频（multipart，≤20MB × ≤4，**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目） |
 | `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[] }`**（最近 50 条） |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
 

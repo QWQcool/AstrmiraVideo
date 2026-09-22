@@ -6,16 +6,24 @@ import { fileTypeFromBuffer } from 'file-type';
 import { ErrorResponseSchema, UploadResponseSchema } from '@astrmira/shared';
 import type { UploadedAsset } from '@astrmira/shared';
 import { createErrorResponse } from '../errors.js';
+import {
+  ImageSanitizeError,
+  sanitizeImage,
+  type SanitizedImage,
+} from '../pipeline/imageSanitize.js';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
 
 /**
- * `POST /api/upload`（CONTRACT §5 + PLAN §7-6 上传加固）。
+ * `POST /api/upload`（CONTRACT §5 + PLAN §7-6 上传加固 + 防线 4）。
  *
- * 四条加固（缺一即公网裸奔）：
+ * 五条（缺一即公网裸奔 / 上游被喂脏数据）：
  * 1. 体积 ≤ 20MB × 数量 ≤ 4（超限**显式拒绝**，不静默截断）；
  * 2. **魔数嗅探**（`file-type`）决定类型 —— **不信任** `Content-Type`；
  * 3. 类型白名单：jpg / png / webp / heic / mp4 / mov；
- * 4. 产物路径**只含服务端生成的随机 ID**（用户提供的文件名一律不参与路径构造）。
+ * 4. **图像走防线 4 清洗网关**（`pipeline/imageSanitize.ts`：EXIF 方向矫正、CMYK→sRGB、
+ *    超大图下采样、32 倍数规整、剥离元数据）。因此响应的 `mime` / `size` 是**清洗后的产物事实**
+ *    （HEIC / WebP 会变成 JPEG）；视频原样落盘。清洗失败 → 415 `INVALID_ASSET` + 可读原因；
+ * 5. 产物路径**只含服务端生成的随机 ID**（用户提供的文件名一律不参与路径构造）。
  */
 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -104,16 +112,36 @@ export const createUploadRoutes =
                 );
             }
 
-            // 路径只含服务端随机 ID + 嗅探出的扩展名；用户文件名不参与构造
+            // 路径只含服务端随机 ID；用户文件名不参与构造
             const assetId = randomUUID();
-            await writeFile(path.join(assetsDir, `${assetId}.${sniffed.ext}`), buffer);
 
-            assets.push({
-              assetId,
-              kind: sniffed.mime.startsWith('video/') ? 'video' : 'image',
-              mime: sniffed.mime,
-              size: buffer.length,
-            });
+            if (sniffed.mime.startsWith('image/')) {
+              // 防线 4（S6）：图像必须过清洗网关。清洗后**类型 / 体积 / 扩展名都以产物为准**
+              // （HEIC / WebP 会变成 JPEG），响应的 `mime` 与 `size` 因此是"清洗后的事实"。
+              let sanitized: SanitizedImage;
+
+              try {
+                sanitized = await sanitizeImage(buffer);
+              } catch (error) {
+                const message =
+                  error instanceof ImageSanitizeError ? error.message : '图像清洗失败';
+                return reply.code(415).send(createErrorResponse('INVALID_ASSET', message));
+              }
+
+              await writeFile(path.join(assetsDir, `${assetId}.${sanitized.ext}`), sanitized.buffer);
+              assets.push({
+                assetId,
+                kind: 'image',
+                mime: sanitized.mime,
+                size: sanitized.buffer.length,
+              });
+
+              continue;
+            }
+
+            // 视频：原样落盘（时长与尺寸的对齐发生在生成阶段）
+            await writeFile(path.join(assetsDir, `${assetId}.${sniffed.ext}`), buffer);
+            assets.push({ assetId, kind: 'video', mime: sniffed.mime, size: buffer.length });
           }
         } catch (err) {
           // 用 @fastify/error 生成的稳定 code 判定（不依赖实例标识，插件封装下更可靠）

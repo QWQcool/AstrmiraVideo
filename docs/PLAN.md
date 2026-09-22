@@ -135,7 +135,7 @@
 
 ### Step 4：端到端验收与体验打磨
 - **AC1**：T2V（含双引号台词人声）与 I2V（含 32 倍数裁切）各跑通 1 次完整链路，**必须用真实云端轨**（本地轨全量出片 7~10 小时/条，不作为验收手段，见 §8）。**当前阻塞：与 Step 2-AC2 同一把 Key。**
-- **AC2**：HEIC / WebP / 超大图各上传 1 次，清洗网关无报错、输出合规。
+- **AC2**：WebP / 超大图各上传 1 次，清洗网关**输出合规**（sRGB、32 倍数、长边 ≤ 2048、透明通道保留）——**断言以落盘产物为准**（`ffprobe` / sharp 元数据复核），不看响应字段自证；**HEIC 按实测能力走"诚实拒绝"**：`.heic`（HEVC）返回 **415 `INVALID_ASSET`** + 可执行转格式指引，**不得**静默放行、也不得假装成功（实测：预编译 libvips 与 ffmpeg 都没有 HEVC 解码器，见 §5 的 S6 条目；让它真正可用的路径见台账 B21）。
 - **AC3**：项目级 DoD 达成——后端契约测试全绿 + 上述两条 e2e 全绿。
 - **AC4**：CI 以 OI-2（`fixture-local`）跑通端到端并产出可播 MP4（**已完成**：`backend/src/e2e/` 走真实 TCP + `/media` 206 Range + `ffprobe` 校验，见 §5 的 B9 条目）；OI-1（`stock-local`）已按非目标跳过（台账 B7），**不参与验收**——验收记录必须如实写明，不得含糊带过。
 - **产出**：`walkthrough.md` 验收记录【规划】。
@@ -262,7 +262,12 @@
         - **启动调解的归类**：有 `upstreamTaskId` 或 `submitting=true` → `UNCERTAIN_RESULT`；干净现场 → `UPSTREAM_ERROR`（retryable，但**我们仍不自动重跑**，等用户决定）。
         - **B 方案的已知代价（明确记录，不是缺陷）**：进程重启清空暂存 Key → 在途已提交任务归 uncertain。**任何情况下都不会自动重提**。
         - **⚠️ 尚未证明的事**：上游字段名、`content` 数组结构、`--` 尾缀参数、`status` 枚举、`content.video_url` 位置**均未实测**（仓库无可用 Key；官方文档页是 SPA，静态抓取拿不到正文——仅有端点被官方公开信息确认）。协议细节已全部隔离在 `seedanceProtocol.ts`，AC2 冒烟时逐项核对即可，改动面为一个文件。**不得**把这批字段当成已验证事实引用。
-      - [ ] **S6 · 图像清洗网关（防线 4）【未实现】**：`pipeline/imageSanitize.ts` 不存在 —— `pipeline/` 目前只有 `cleanup.ts` 与 `smartCrop.ts`（纯函数），`lib/` 只有 `ffmpeg.ts`，依赖里也**没有 `sharp`**；`/api/upload` 只做魔数嗅探 + 类型白名单 + 体积/数量限制 + 随机 ID 路径，**不做转码 / 下采样 / 32 倍数规整**。后果：HEIC 会原样存盘并直接交给上游，§4 Step 4-**AC2**（HEIC / WebP / 超大图各上传 1 次、输出合规）照现状**无法通过**。**已登记 §9 台账 B20，并已补齐施工口径**（规格见 B20）。
+      - [x] **S6 · 图像清洗网关（防线 4）【已验证】**（2026-09-22，`pipeline/imageSanitize.ts`）：新增 `backend/src/pipeline/imageSanitize.ts`（`sharp` 0.35.4 / libvips 8.18.6）—— **EXIF 方向矫正**（orientation 5~8 会交换宽高，先按"人看到的方向"算目标尺寸再烘焙进像素）、**CMYK/AdobeRGB → sRGB**、**超大图下采样**（长边 > `MAX_LONG_EDGE=2048` 等比缩小）、**32 倍数规整**（复用生成阶段的 `snapSize`，两段共用同一组纯函数）、**剥离元数据**（EXIF/ICC，含可能的 GPS）；透明通道保 PNG、其余统一 JPEG(q90)；接进 `/api/upload`（**只有图像走清洗，视频原样落盘**，失败 → 415 `INVALID_ASSET` + 可读原因）。`actions[]` 逐条记账做了哪些处理，不做静默改图。
+        - **测试**：新增 `imageSanitize.test.ts` **15 项**（尺寸钉死具体数字：3000×2000 → **2048×1344**；831×479 → **800×448**；已合规图不产生多余动作；WebP→JPEG；HEIF 容器（AV1/AVIF）→JPEG；CMYK→srgb；透明保 PNG；EXIF orientation=6 宽高交换且方向标记被清；元数据剥离；过小图 / 损坏字节显式报错；`MAX_LONG_EDGE % 32 === 0` 的常量守卫）；上传集成用例同步改为断言**清洗后的产物事实**（mime / size / 落盘 `<uuid>.jpg` + `ffprobe` 复核 32 倍数）。后端 199 → **214 项**。
+        - **破坏性验证**：把 `MAX_LONG_EDGE` 临时调到 9999 → 两条断言精确变红（`expected 2976 to be 2048`；`expected 15 to be +0`，即常量不再是 32 的倍数），还原后全绿。
+        - **⚠️ HEIC 的真实结论（实测，与第一版判断相反）**：拿真实样本（libheif 仓库 `examples/example.heic`，1280×854，HEVC 编码）走**完整管线**实测，预编译 libvips **没有 HEVC 解码器**（`heif: Error while loading plugin: Support for this compression format has not been built in`）；本机 ffmpeg 也没有 heic 解码器 → **不存在 ffmpeg 兜底**。所以按手册允许的"或**诚实拒绝**"分支落地：`.heic` 上传返回 **415 `INVALID_ASSET`** + 可执行指引（"该 HEIC 用的是 HEVC 编码，本服务图像库未编译该解码器；请改 JPEG/PNG（iPhone：设置 → 相机 → 格式 → 兼容性最佳）"），**实测报文已复现**。
+          - **踩坑留痕**：`sharp(buf).metadata()` 对同一份 HEIC **成功返回 1280×854** —— 它只读容器头，**不能作为"能解码"的证据**；第一版结论就是这样误判的，直到走完整管线才暴露。因此单测一律 `await sanitizeImage(...)` 走全链路，不接受"仅 metadata 通过"。**§4 Step 4-AC2 的措辞据此按事实改写**（见 §4）。
+          - HEIF 容器本身可用：AV1 编码的 AVIF 走同一路径实测通过（已在单测覆盖）；缺的只是 HEVC 那一支。真正支持 `.heic` 的两条候选路径见台账 **B21**。
         - ⚠️ **编号勘误（2026-09-22）**：本条此前被误写成「S6 · OI-1 `stock-local` 素材 provider【跳过】」——把 **OI-1**（属台账 B7）放进了 **S6** 槽位，于是手册里真正的 S6（图像清洗网关）在进度日志中**没有任何记录**，"没做"被"已跳过"掩盖。现按手册 §6 的编号归位：OI-1 只作台账 B7，S6 就是图像清洗网关。
       - [x] **OI-1 `stock-local` 素材 provider【跳过：非目标】**：本次**明确不做**（PLAN §1-2 非目标），已转 §9 台账 **B7**（**不占 S6 编号**）。
       - [x] **S7 · 契约层测试 + CI 三件套【已验证】**（AC1 / AC8）：`contract.test.ts` **直接解析 `docs/CONTRACT.md` 校验实现**（§5 全部路由经 `app.hasRoute` 覆盖；§6 错误码**双向**比对——"契约有实现缺"与"实现有契约缺"都会红）；补 `POST /api/prompt/enhance` 的 **501 + `LLM_NOT_CONFIGURED`** 诚实兜底（demo 版不做 LLM，禁止规则引擎冒充）；根脚本 `lint`（oxlint `--deny-warnings`）/ `type`（三包 `tsc --noEmit`）/ `test:contract`；新增 `.github/workflows/ci.yml`（install → apt ffmpeg → shared build → lint → type → test:contract → test）；**144 项测试全绿 + lint 0 warning**；破坏性验证两处均命中（删映射表一项 → 编译期 `TS7053 Property 'UNCERTAIN_RESULT' does not exist`；删 CONTRACT 一行 → `实现中的 KEY_MISSING 未写入 CONTRACT §6`）。
@@ -349,7 +354,7 @@
 3. **公网部署形态**：默认路由云端轨，不开放任何本地 Shell 执行面；**不向访客开放 host 本地轨**（`EXPOSE_HOST_LOCAL_TRACK` 默认 `0`，见 §6-D26）；单任务时长上限 5~10s，防任务堆叠。
 4. **公网最小鉴权（V8.1 新增，Step 5 前必须落地）**：公网部署时所有 `/api/*` 要求 `Authorization: Bearer <PUBLIC_API_TOKEN>`（值在 `.env`）。**免鉴权名单（两层，口径唯一）**：① **回环来源**（127.0.0.1 / ::1）的全部请求免鉴权——保证单机开发零摩擦；② **任何来源**的 `/api/health` 免鉴权——存活探针。除这两层外一律要求 Bearer；无鉴权公网裸奔视为验收不通过。
 5. **限流键定义（V8.1 新增）**：防线 5 的 60s 防抖按「来源 IP + BYOK Key 指纹（Key SHA-256 前 8 位；无 Key 时仅用 IP）」复合计数；本地部署无 Key 场景退化为 IP 单键。防抖状态存 SQLite，重启不丢失冷却窗口。**落地时点（V8.2）**：Step 2 按 **IP 单键**落地（限流器签名先预留 `keyFingerprint?` 参数），复合键随 §7-4 的最小鉴权在 **Step 5 前置**落地（§6-D25 / §9 台账 B8）。
-6. **上传与静态面加固（V8.1 新增）**：`/api/upload` 限制单文件 ≤ 20MB、总数 ≤ 4，MIME 以魔数嗅探为准（不信任 Content-Type 头），白名单：jpg/png/webp/heic/mp4/mov；`outputs/` 直链路径只含服务端生成的随机 ID，禁止任何用户输入拼入文件路径（防路径穿越）；CORS 由 `origin: true` 收紧为 `.env` 白名单（`CORS_ORIGINS`，本地开发默认 `http://localhost:5173`）；安全响应头（`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`）统一挂载。
+6. **上传与静态面加固（V8.1 新增；V8.2 起含防线 4 清洗）**：`/api/upload` 限制单文件 ≤ 20MB、总数 ≤ 4，MIME 以魔数嗅探为准（不信任 Content-Type 头），白名单：jpg/png/webp/heic/mp4/mov；**图像必须过防线 4 清洗网关**（`pipeline/imageSanitize.ts`：EXIF 方向矫正、CMYK→sRGB、超大图下采样到长边 ≤ 2048、32 倍数规整、剥离元数据；透明通道保 PNG、其余统一 JPEG）——因此响应的 `mime` / `size` 是**清洗后的产物事实**而非客户端声明；`.heic`（HEVC）按实测能力**诚实拒绝**（415 `INVALID_ASSET` + 转格式指引，见台账 B21），视频原样落盘；`outputs/` 直链路径只含服务端生成的随机 ID，禁止任何用户输入拼入文件路径（防路径穿越）；CORS 由 `origin: true` 收紧为 `.env` 白名单（`CORS_ORIGINS`，本地开发默认 `http://localhost:5173`）；安全响应头（`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`）统一挂载。
 7. **文档卫生**：IP / 绝对路径 / 凭证永不入 md（占位符化），真实值只存本地 `.env`；`.env`、`data/`、`outputs/`、媒体文件已入 `.gitignore`。
 8. **视觉版权**：Astrmira 视觉语言仅作参考，本项目与其站点无任何隶属关系（见 README 免责）。
 
@@ -374,7 +379,7 @@
 ## 9. 待优化台账（backlog · 唯一权威位置）
 
 > 本节的项**不在 Step 2 ~ Step 5 的实施范围内**；它们是本次架构决策中**主动降级 / 延后**的项与已识别但暂不处理的问题，逐项登记「何时必须做」，避免遗忘或临时拍脑袋。施工手册只引用本节（`docs/EXEC-STEP2-5.md` §13），**不复制内容**。
-> **B16 ~ B20** 为 2026-09-22 随 B9 落地（端到端 / 覆盖率 / UI 冒烟 / 基准脚本）、UI 冒烟实测发现，以及一次编号勘误（S6 归位后补登）的追加项。
+> **B16 ~ B21** 为 2026-09-22 随 B9 落地（端到端 / 覆盖率 / UI 冒烟 / 基准脚本）、UI 冒烟实测发现、S6 编号勘误与图像清洗网关落地后的追加项。
 
 | # | 项 | 来源 | 何时必须做 |
 |---|---|---|---|
@@ -397,4 +402,5 @@
 | B17 | 性能基准的 **CI 门限**（当前只提供 `scripts/bench.mjs` 本地手动测量，CI 不设门） | §9-B9 余项 | 有自托管 runner，或出现性能投诉时 |
 | B18 | 开发机与 CI / 镜像的 **Node 版本对齐**（本机实测 `v24.14.0`，CI 与 `Dockerfile` 均为 22；建议 `.nvmrc` + `engines` 收口） | 本次实测发现 | 下次出现「本地绿、CI 红」时立刻做（环境漂移类问题最难查） |
 | B19 | **中文衬线字的自托管策略**：`--serif` 里的 `"Noto Serif SC"` 现仅是本机字体候选（不再从网络加载），中文衬线会回落系统字体；要统一观感需自托管 CJK 子集（体积大） | 本次实测发现（生产 CSP 拦掉外部字体引发） | 动视觉体系时（与 B16 一起做） |
-| B20 | **防线 4 图像清洗网关**（施工手册 **S6**，当前**未实现**）：`pipeline/imageSanitize.ts` —— HEIC/WebP/CMYK → sRGB 统一、超大图下采样、EXIF 方向矫正；与 `smartCrop` 共用 32 倍数规则；`sharp` 的 HEIF 支持需实测，不支持则走 ffmpeg 或**诚实拒绝** `INVALID_ASSET`（不许静默失败） | §3 防线 4 / §4 Step 2（S6） | **Step 4-AC2 通过前必须做**（HEIC / WebP / 超大图的上传验收依赖它；`/api/upload` 现状只做嗅探 + 白名单 + 体积/数量） |
+| B20 | ~~防线 4 图像清洗网关未实现~~ → **已实现**（`backend/src/pipeline/imageSanitize.ts` + 接入 `/api/upload`，见 §5 的 S6 条目）；本行只留一条教训：**编号错位会让"没做"读成"已跳过"**（当时 S6 槽位被 OI-1 占用） | §3 防线 4 / §4 Step 2（S6） | — |
+| B21 | 让 `.heic` **真正可用**（当前按实测能力走"诚实拒绝" 415 + 指引）。两条候选路径：① 镜像内加 Debian 的 `libheif-examples`（`heif-convert` CLI，走子进程，与 ffmpeg 同一套路）；② 换用带 HEVC 解码器的 libvips 构建（sharp 预编译不含 x265/libde265） | 本次实测发现（HEVC 解码器缺失） | 出现"iPhone 用户上传 HEIC"的真实诉求时；**在此之前保持 415 + 可执行指引**，不许静默放行 |
