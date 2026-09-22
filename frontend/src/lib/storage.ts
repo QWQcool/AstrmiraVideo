@@ -20,6 +20,8 @@ export const STORAGE_KEYS = {
   seedLocked: 'astrmira.seedLocked',
   /** 最近使用的 seed 值 */
   lastSeed: 'astrmira.lastSeed',
+  /** 提交后的冷却截止时间戳（Step 3 AC4：60s 内生成按钮置灰，刷新后仍生效） */
+  cooldownUntil: 'astrmira.cooldownUntil',
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];

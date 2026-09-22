@@ -1,0 +1,731 @@
+/*
+ * Astrmira 工作台样式（Step 3）。
+ *
+ * 三条纪律：
+ * 1. 字号/字距**只**取 `tokens.css` 的变量（AC6；组件里写 `14px` 会被 F6 的静态检查拦下）；
+ * 2. 8 个 keyframes 全部有实际使用位，且都落在功能语义上（AC5）——
+ *    `mira-breathe`(生成中/logo) `mira-orbit-turn`(logo 轨道) `star-gather`(完成标记，可重播)
+ *    `origin-orbit-sway`(空态) `flow`(进度环流光) `motion-bootstrap`(首屏引导)
+ *    `navigation-enter`(面板进入) `language-appear`(说明文字出现)；
+ * 3. 动效降级统一由 `tokens.css` 的 `prefers-reduced-motion` 兜底，这里不重复写。
+ */
+
+.wb-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg);
+  color: var(--text);
+  animation: motion-bootstrap 0.9s var(--ease-ui) both;
+}
+
+/* ── 顶栏 ───────────────────────────────────────────── */
+.wb-header {
+  height: 64px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--panel-glass);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  animation: navigation-enter 0.5s var(--ease-ui) both;
+}
+
+.wb-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wb-brand-mark {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--gold);
+  font-size: var(--fs-display);
+  animation: mira-breathe 6s infinite ease-in-out;
+}
+
+/* logo 轨道：与呼吸错频，避免两个动画同拍显得僵 */
+.wb-brand-mark::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid var(--line-gold);
+  border-top-color: transparent;
+  border-left-color: transparent;
+  animation: mira-orbit-turn 9s linear infinite;
+}
+
+.wb-brand-title {
+  font-family: var(--serif);
+  font-size: var(--fs-display);
+  font-weight: 700;
+  letter-spacing: var(--track-tight);
+  color: var(--text);
+}
+
+.wb-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── eyebrow 标签体系 ───────────────────────────────── */
+.wb-eyebrow {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--serif-caps);
+  font-size: var(--fs-eyebrow);
+  font-weight: 500;
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.wb-eyebrow-gold {
+  color: var(--gold);
+}
+
+/* 3 位索引号：分区标题与卡片共用（AC6） */
+.wb-eyebrow-index {
+  font-family: var(--mono);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--track-caps);
+  color: var(--gold);
+  opacity: 0.75;
+}
+
+/* ── 三栏布局 ───────────────────────────────────────── */
+.wb-main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(320px, 380px) 1fr minmax(300px, 360px);
+  gap: 20px;
+  padding: 20px 24px;
+  max-width: 1800px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 1180px) {
+  .wb-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wb-panel {
+  background-color: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: navigation-enter 0.5s var(--ease-ui) both;
+}
+
+.wb-panel-center {
+  min-height: 520px;
+}
+
+.wb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wb-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wb-label {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wb-note {
+  font-size: var(--fs-note);
+  color: var(--faint);
+  line-height: 1.6;
+  animation: language-appear 0.4s var(--ease-ui) both;
+}
+
+.wb-warn {
+  font-size: var(--fs-note);
+  color: var(--danger);
+  line-height: 1.6;
+}
+
+.wb-textarea,
+.wb-input {
+  width: 100%;
+  box-sizing: border-box;
+  background-color: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  padding: 12px;
+  font-size: var(--fs-body);
+  font-family: var(--sans);
+  line-height: 1.6;
+  outline: none;
+  transition: border-color 0.2s var(--ease-ui);
+}
+
+.wb-textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.wb-input:focus,
+.wb-textarea:focus {
+  border-color: var(--line-gold);
+}
+
+.wb-input-mono {
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+}
+
+.wb-counter {
+  font-family: var(--mono);
+  font-size: var(--fs-note);
+  color: var(--faint);
+}
+
+.wb-counter-over {
+  color: var(--danger);
+}
+
+/* ── 按钮 ───────────────────────────────────────────── */
+.wb-btn {
+  border: 1px solid var(--line);
+  background-color: var(--panel2);
+  color: var(--muted);
+  font-size: var(--fs-label);
+  font-family: var(--sans);
+  padding: 8px 12px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: all 0.2s var(--ease-ui);
+}
+
+.wb-btn:hover:not(:disabled) {
+  border-color: var(--line-gold);
+  color: var(--text);
+}
+
+.wb-btn:disabled,
+.wb-btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.wb-btn-gold {
+  color: var(--gold);
+  border-color: var(--line-gold);
+  background-color: rgba(214, 184, 129, 0.1);
+}
+
+.wb-btn-primary {
+  background-color: var(--action-fill);
+  color: var(--on-action);
+  border: none;
+  font-weight: 600;
+  font-size: var(--fs-body);
+  padding: 12px;
+  box-shadow: 0 4px 14px rgba(214, 184, 129, 0.2);
+}
+
+.wb-btn-primary:hover:not(:disabled) {
+  background-color: var(--action-hover);
+  color: var(--on-action);
+}
+
+.wb-btn-block {
+  width: 100%;
+}
+
+/* ── 分段控件 / 选项块 ──────────────────────────────── */
+.wb-segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  padding: 4px;
+  background-color: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.wb-segment {
+  padding: 8px 10px;
+  font-size: var(--fs-label);
+  font-family: var(--sans);
+  border: none;
+  border-radius: 6px;
+  background-color: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s var(--ease-ui);
+}
+
+.wb-segment[aria-pressed='true'] {
+  background-color: var(--action-fill);
+  color: var(--on-segment);
+  font-weight: 600;
+}
+
+.wb-segment:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── 上传槽 ─────────────────────────────────────────── */
+.wb-dropzone {
+  border: 1px dashed var(--line-gold);
+  border-radius: var(--radius-control);
+  padding: 16px;
+  background-color: rgba(214, 184, 129, 0.02);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s var(--ease-ui);
+  text-align: center;
+}
+
+.wb-dropzone-active {
+  border-style: solid;
+  background-color: rgba(214, 184, 129, 0.08);
+}
+
+.wb-dropzone-icon {
+  font-size: var(--fs-display);
+  color: var(--gold);
+  animation: origin-orbit-sway 7s infinite ease-in-out;
+}
+
+.wb-preview {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+/* 32 倍数裁切预览：容器比例 = 目标画幅，object-fit: cover 展示裁切后效果 */
+.wb-preview-frame {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background-color: var(--canvas);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.wb-preview-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.wb-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--fs-note);
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.wb-preview-meta code {
+  font-family: var(--mono);
+  color: var(--gold);
+}
+
+/* ── 状态徽标 ───────────────────────────────────────── */
+.wb-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--serif-caps);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.wb-badge-ok {
+  border-color: rgba(145, 185, 213, 0.3);
+  background-color: rgba(145, 185, 213, 0.08);
+  color: var(--text);
+}
+
+.wb-badge-bad {
+  border-color: rgba(248, 113, 113, 0.3);
+  background-color: rgba(248, 113, 113, 0.08);
+  color: var(--danger);
+}
+
+.wb-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.wb-dot-ok {
+  background-color: var(--success);
+  box-shadow: 0 0 8px var(--success);
+}
+
+.wb-dot-bad {
+  background-color: var(--danger);
+}
+
+.wb-dot-busy {
+  background-color: var(--gold);
+  animation: mira-breathe 1.6s infinite ease-in-out;
+}
+
+/* ── 抽屉（BYOK） ───────────────────────────────────── */
+.wb-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(5, 7, 10, 0.6);
+  z-index: 40;
+  animation: motion-bootstrap 0.25s var(--ease-ui) both;
+}
+
+.wb-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 92vw);
+  background-color: var(--panel);
+  border-left: 1px solid var(--line);
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  animation: navigation-enter 0.3s var(--ease-ui) both;
+}
+
+.wb-drawer-head {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wb-drawer-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+}
+
+.wb-drawer-foot {
+  margin-top: auto;
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 10px;
+}
+
+.wb-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--fs-note);
+  color: var(--muted);
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+/* ── 中栏：视窗 / 进度环 ────────────────────────────── */
+.wb-viewport {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  min-height: 0;
+}
+
+.wb-viewport-stage {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  overflow: hidden;
+}
+
+.wb-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background-color: var(--canvas);
+}
+
+.wb-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 0 24px;
+  z-index: 1;
+}
+
+.wb-empty-icon {
+  font-size: var(--fs-display);
+  color: var(--gold);
+  animation: origin-orbit-sway 8s infinite ease-in-out;
+}
+
+.wb-empty-title {
+  font-family: var(--serif);
+  font-size: var(--fs-title);
+  color: var(--text);
+}
+
+/* 环形进度：底环 + 进度弧（进度弧的 dashoffset 由内联 style 驱动） */
+.wb-ring {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  display: grid;
+  place-items: center;
+}
+
+.wb-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.wb-ring-track {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 2;
+}
+
+.wb-ring-value {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.6s var(--ease-ui);
+}
+
+/* 流光：沿环扫过的短弧（AC5 的 `flow` 使用位） */
+.wb-ring-flow {
+  fill: none;
+  stroke: url(#wb-ring-flow-gradient);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 18 220;
+  animation: flow 2.4s linear infinite;
+}
+
+.wb-ring-label {
+  font-family: var(--mono);
+  font-size: var(--fs-title);
+  color: var(--text);
+}
+
+.wb-ring-caption {
+  font-size: var(--fs-note);
+  color: var(--faint);
+  text-align: center;
+}
+
+.wb-transport {
+  height: 56px;
+  background-color: var(--panel2);
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  gap: 12px;
+}
+
+.wb-timecode {
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  color: var(--muted);
+}
+
+/* ── 右栏：任务队列 / 画廊 ──────────────────────────── */
+.wb-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wb-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background-color: var(--panel2);
+  font-size: var(--fs-label);
+  color: var(--muted);
+}
+
+.wb-queue-item-active {
+  border-color: var(--line-gold);
+  color: var(--text);
+}
+
+.wb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.wb-card {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background-color: var(--panel2);
+  animation: navigation-enter 0.4s var(--ease-ui) both;
+}
+
+.wb-card-thumb {
+  width: 84px;
+  height: 47px;
+  border-radius: 6px;
+  background-color: var(--canvas);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  font-size: var(--fs-note);
+}
+
+.wb-card-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.wb-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wb-card-prompt {
+  font-size: var(--fs-label);
+  color: var(--text);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wb-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wb-card-done {
+  color: var(--gold);
+}
+
+/* 完成标记：star-gather 可重播（AC5） */
+.wb-done-mark {
+  display: inline-block;
+  animation: star-gather 5s infinite ease-out;
+}
+
+/* ── 水印 / 页脚 ────────────────────────────────────── */
+.wb-watermark {
+  font-family: var(--serif-caps);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--faint);
+  opacity: 0.35;
+  user-select: none;
+}
+
+.wb-footer {
+  border-top: 1px solid var(--line);
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: var(--fs-note);
+  color: var(--faint);
+  background-color: var(--bg);
+}
+
+/* ── 人工核对提示（UNCERTAIN_RESULT，AC7） ──────────── */
+.wb-uncertain {
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background-color: rgba(248, 113, 113, 0.06);
+  border-radius: var(--radius-control);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wb-uncertain-title {
+  font-family: var(--serif);
+  font-size: var(--fs-body);
+  color: var(--danger);
+}
+
+.wb-uncertain-body {
+  font-size: var(--fs-note);
+  color: var(--muted);
+  line-height: 1.7;
+}

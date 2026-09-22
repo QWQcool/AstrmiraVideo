@@ -258,7 +258,12 @@
       - [ ] **S5b · Seedance 真实 provider + 真实冒烟【阻塞】**（AC2）：**阻塞点 = 云端轨的 Key 生命周期与异步队列语义冲突**（施工单要求"Key 只从请求上下文取"，但队列执行时已无请求上下文，且方舟轮询查询同样需要 Authorization）——三条解法（A 前端每次带 Key / B 进程内暂存至终态 / C 仅 env 兜底）待用户裁定；另需一把可用的火山 Key 才能跑 AC2 的真实出片冒烟并回填 §8 成本表。
       - [ ] **S6 · OI-1 `stock-local` 素材 provider【跳过】**：本次**明确不做**（PLAN §1-2 非目标），已转 §9 台账 **B7**。
       - [x] **S7 · 契约层测试 + CI 三件套【已验证】**（AC1 / AC8）：`contract.test.ts` **直接解析 `docs/CONTRACT.md` 校验实现**（§5 全部路由经 `app.hasRoute` 覆盖；§6 错误码**双向**比对——"契约有实现缺"与"实现有契约缺"都会红）；补 `POST /api/prompt/enhance` 的 **501 + `LLM_NOT_CONFIGURED`** 诚实兜底（demo 版不做 LLM，禁止规则引擎冒充）；根脚本 `lint`（oxlint `--deny-warnings`）/ `type`（三包 `tsc --noEmit`）/ `test:contract`；新增 `.github/workflows/ci.yml`（install → apt ffmpeg → shared build → lint → type → test:contract → test）；**144 项测试全绿 + lint 0 warning**；破坏性验证两处均命中（删映射表一项 → 编译期 `TS7053 Property 'UNCERTAIN_RESULT' does not exist`；删 CONTRACT 一行 → `实现中的 KEY_MISSING 未写入 CONTRACT §6`）。
-- [ ] Step 3 ~ Step 5：见 §4。
+- [x] **Step 3 前端 Astrmira 工作台（F1~F6，AC2~AC7 已验证；AC1 待云端 provider）**：`frontend/src/lib/`（`api.ts` 契约驱动 + 响应过 zod + Key 只进请求头 / `storage.ts` 键集中登记且永不抛 / `byok.ts` 默认 sessionStorage、显式勾选才落本机、HTTPS 守卫 / `assets.ts` 参数复用时允许元数据缺失而不是伪造 / `format.ts` 32 倍数目标尺寸与 3 位索引号）、`components/`（`Eyebrow` 索引号体系 / `LeftPanel` / `AssetDropZone` 含 32 倍数裁切预览 / `ByokDrawer` / `CenterPanel`+`ProgressRing` / `RightPanel`+`GalleryCard` / `UncertainNotice`）、`hooks/useTaskPolling.ts`（2s 间隔；终态即停；契约错误即停；网络抖动续试）、`styles/workbench.css`（8 个 keyframes 全部落功能位）、`scripts/visual-selfcheck.mjs`（AC5/AC6 变成可执行断言）；`vite.config.ts` 补 `/media` 代理。
+      - **Playwright 实机验证（localhost:5173）**：AC2 刷新后进度环 64% 自动重挂载 ✓；AC3 复用参数完整还原（提示词 / 文生视频 / 9:16 / 云端 Seedance / seed=123456）✓；AC4 提交后按钮「冷却中 59s」且 `disabled=true` ✓；AC7 注入 `UNCERTAIN_RESULT` → 「可能已产生费用，请到服务商后台核对后手动处理」+「标记已核对 / 放弃任务」，**无任何一键重跑入口** ✓；AC6 3 位索引号（001/002/003）与 eyebrow 体系 ✓；页面截图 3 张存 `.tmp/step3-0*.png`。
+      - **破坏性验证**：视觉自检临时移除 `flow` 功能位 + 塞一处 `fontSize: '14px'` → 两项均精确报错（含行号）后恢复 ✓。
+      - **顺手修掉的两个真实缺陷**：① React StrictMode 双挂载下 `AbortController.abort()` 的报错被当作"后端未连通"（只有实机才暴露，单测抓不到）；② `vite.config.ts` 缺 `/media` 代理会导致"任务成功但播放器黑屏"（请求落到 SPA fallback 拿回 `index.html`，HTTP 还是 200）。
+      - **AC1 待补**：端到端 T2V 需云端 provider（S5b 阻塞中），本轮以 mock 验证了「提交 → 轮询 → 冷却」链路。
+- [ ] Step 4 ~ Step 5：见 §4。
 
 ---
 

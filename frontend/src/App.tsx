@@ -1,598 +1,493 @@
-import React, { useEffect, useState } from 'react';
-import type { HealthResponse, ProviderStatus } from '@astrmira/shared';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  AspectRatio,
+  GenerationMode,
+  ProviderStatus,
+  ProviderType,
+  TaskProgress,
+  VideoGenerateRequest,
+} from '@astrmira/shared';
+import { ByokDrawer } from './components/ByokDrawer';
+import { CenterPanel } from './components/CenterPanel';
+import { Eyebrow } from './components/Eyebrow';
+import { LeftPanel } from './components/LeftPanel';
+import { RightPanel } from './components/RightPanel';
+import { useTaskPolling } from './hooks/useTaskPolling';
+import {
+  ApiError,
+  deleteHistory,
+  fetchHistory,
+  fetchProviderStatus,
+  submitGenerate,
+  uploadAssets,
+} from './lib/api';
+import type { AssetState } from './lib/assets';
+import type { ByokConfig } from './lib/byok';
+import {
+  clearByok,
+  isPersistEnabled,
+  readByok,
+  resolveProviderKey,
+  writeByok,
+} from './lib/byok';
+import {
+  STORAGE_KEYS,
+  browserStorage,
+  readBool,
+  readLocal,
+  removeLocal,
+  writeBool,
+  writeLocal,
+} from './lib/storage';
+import { formatClock } from './lib/format';
+
+/** AC4：提交后 60s 内生成按钮置灰（与后端防线 5 的冷却窗口对齐） */
+const COOLDOWN_MS = 60_000;
+
+/** demo 版：扩写未实现（服务端 501）。按钮保持可点并把原因讲清楚，不做静默置灰。 */
+const ENHANCE_NOTICE = '未配置扩写模型：本版本未实现 LLM 扩写（见 PLAN §9 台账 B3）';
 
 export default function App() {
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [providers, setProviders] = useState<ProviderStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const storage = useMemo(() => browserStorage(), []);
+  const previewRef = useRef<string | null>(null);
 
-  // 工作台基础状态
-  const [prompt, setPrompt] = useState('竖屏短剧，女孩站在雨夜街头微笑着说："我们终于成功了！"，电影感光影');
-  const [selectedEngine, setSelectedEngine] = useState<'cloud' | 'local'>('cloud');
-  const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('16:9');
+  // ── 服务状态 ──
+  const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
+  const [serviceError, setServiceError] = useState<string | null>(null);
 
+  // ── 创作输入 ──
+  const [prompt, setPrompt] = useState(
+    '竖屏短剧，女孩站在雨夜街头微笑着说：“我们终于成功了！”，电影感光影',
+  );
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
+  const [mode, setMode] = useState<GenerationMode>('t2v');
+  const [provider, setProvider] = useState<ProviderType>('cloud-volcano-seedance');
+  const [seed, setSeed] = useState(() => readLocal(storage, STORAGE_KEYS.lastSeed) ?? '');
+  const [seedLocked, setSeedLocked] = useState(() => readBool(storage, STORAGE_KEYS.seedLocked));
+
+  // ── 参考资产 ──
+  const [asset, setAsset] = useState<AssetState | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // ── 任务（taskId 持久化：刷新后向服务端重挂载，AC2） ──
+  const [taskId, setTaskId] = useState<string | null>(() =>
+    readLocal(storage, STORAGE_KEYS.activeTaskId),
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // ── 画廊 ──
+  const [history, setHistory] = useState<TaskProgress[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // ── BYOK ──
+  const [byok, setByok] = useState<ByokConfig>(() => readByok(storage));
+  const [byokPersist, setByokPersist] = useState(() => isPersistEnabled(storage));
+  const [byokOpen, setByokOpen] = useState(false);
+
+  // ── 冷却与计时（冷却时间戳持久化，刷新后仍置灰） ──
+  const [cooldownUntil, setCooldownUntil] = useState(() =>
+    Number(readLocal(storage, STORAGE_KEYS.cooldownUntil) ?? '0'),
+  );
+  const [now, setNow] = useState(() => Date.now());
+
+  // 服务状态探针
   useEffect(() => {
-    // 检查后端探针 AC1
-    fetch('/api/health')
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
+    const controller = new AbortController();
+
+    fetchProviderStatus(controller.signal)
+      .then((status) => {
+        if (controller.signal.aborted) return;
+        setProviderStatus(status);
+        setServiceError(null);
       })
-      .then((data: HealthResponse) => {
-        setHealth(data);
-        setError(null);
-      })
-      .catch((err) => {
-        console.error('后端连接失败:', err);
-        setError('后端服务未连通 (请确保 Fastify 启动于 3000 端口)');
+      .catch((caught: unknown) => {
+        // StrictMode 双挂载 / 组件卸载都会 abort，那不是"后端挂了"——
+        // 早期版本没判这一条，界面会稳定显示"后端未连通"而后端其实是好的。
+        if (controller.signal.aborted) return;
+        setServiceError(caught instanceof Error ? caught.message : String(caught));
       });
 
-    // 检查算力探针
-    fetch('/api/providers/status')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: ProviderStatus | null) => {
-        if (data) {
-          setProviders(data);
-          // V1.8（PLAN §6-D22）：状态端点只报告**本服务自身**的本地引擎配置状态，不替访客下结论。
-          // 因此：未配置本地引擎时保持初始建议 'cloud'，但**不剥夺用户手选**（本地按钮不再置灰，
-          // 提交未配置的本地轨会得到 PROVIDER_UNAVAILABLE）。
-          setSelectedEngine((prev) =>
-            data.local.available && data.defaultProvider === 'local-minimax-h3' ? 'local' : prev,
-          );
-        }
-      })
-      .catch(() => {});
+    return () => controller.abort();
   }, []);
 
+  const refreshHistory = useCallback(async (): Promise<void> => {
+    setLoadingHistory(true);
+    try {
+      const data = await fetchHistory();
+      setHistory(data.items);
+      setHistoryError(null);
+    } catch (caught) {
+      setHistoryError(describeError(caught));
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshHistory();
+  }, [refreshHistory]);
+
+  // 轮询当前任务；拿到终态就刷新画廊
+  const { task, error: pollingError } = useTaskPolling(taskId, {
+    onSettled: (settled) => {
+      if (settled !== null) {
+        writeLocal(storage, STORAGE_KEYS.lastTaskId, settled.taskId);
+      }
+      void refreshHistory();
+    },
+  });
+
+  // 冷却倒计时：只在冷却期内跑定时器
+  const cooldownRemaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
+  const cooling = cooldownRemaining > 0;
+
+  useEffect(() => {
+    if (!cooling) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [cooling]);
+
+  // 观察时长：用 taskId 作 key，切任务自然归零（避免在 effect 里同步 setState）
+  const taskActive = task !== null && (task.status === 'running' || task.status === 'queued');
+  const elapsedKey = task?.taskId ?? '';
+  const [elapsed, setElapsed] = useState<{ key: string; seconds: number }>({
+    key: '',
+    seconds: 0,
+  });
+
+  useEffect(() => {
+    if (!taskActive) return undefined;
+
+    const timer = setInterval(() => {
+      setElapsed((prev) =>
+        prev.key === elapsedKey
+          ? { key: prev.key, seconds: prev.seconds + 1 }
+          : { key: elapsedKey, seconds: 1 },
+      );
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [taskActive, elapsedKey]);
+
+  function startCooldown(): void {
+    const until = Date.now() + COOLDOWN_MS;
+    setCooldownUntil(until);
+    setNow(Date.now());
+    writeLocal(storage, STORAGE_KEYS.cooldownUntil, String(until));
+  }
+
+  function handleAssetSelect(file: File): void {
+    setUploadError(null);
+    setUploading(true);
+
+    const objectUrl = URL.createObjectURL(file);
+    if (previewRef.current !== null) URL.revokeObjectURL(previewRef.current);
+    previewRef.current = objectUrl;
+    setAsset({ assetId: '', meta: null, previewUrl: objectUrl });
+
+    void uploadAssets([file])
+      .then((result) => {
+        const first = result.assets[0];
+        if (first === undefined) {
+          setUploadError('上传未返回任何资产');
+          setAsset(null);
+          return;
+        }
+        setAsset({ assetId: first.assetId, meta: first, previewUrl: objectUrl });
+        setMode('i2v');
+      })
+      .catch((caught: unknown) => {
+        setUploadError(describeError(caught));
+        setAsset(null);
+      })
+      .finally(() => setUploading(false));
+  }
+
+  function handleAssetClear(): void {
+    if (previewRef.current !== null) {
+      URL.revokeObjectURL(previewRef.current);
+      previewRef.current = null;
+    }
+    setAsset(null);
+    setUploadError(null);
+    setMode('t2v');
+  }
+
+  async function handleSubmit(): Promise<void> {
+    if (cooling || submitting) return;
+
+    setSubmitError(null);
+    setNotice(null);
+    setSubmitting(true);
+
+    // 幂等键：一次点击一个键（重试须由用户重新点击，届时是新键 → 新任务）
+    const idempotencyKey = newIdempotencyKey();
+    const providerKey = resolveProviderKey(byok);
+
+    const request: VideoGenerateRequest = {
+      prompt,
+      mode,
+      aspectRatio,
+      provider,
+      // provider 私有参数：BYOK 的服务端地址与模型名（未识别键由服务端忽略）
+      options: { baseUrl: byok.baseUrl, model: byok.model },
+      ...(asset === null ? {} : { assets: { firstFrameImage: asset.assetId } }),
+      ...(seedLocked && seed.trim() !== ''
+        ? { params: { seed: Number.parseInt(seed, 10), seedLocked: true } }
+        : {}),
+    };
+
+    try {
+      const created = await submitGenerate(request, {
+        idempotencyKey,
+        ...(providerKey === undefined ? {} : { providerKey }),
+      });
+
+      writeLocal(storage, STORAGE_KEYS.activeTaskId, created.taskId);
+      setTaskId(created.taskId);
+      setElapsed({ key: created.taskId, seconds: 0 });
+      startCooldown();
+      await refreshHistory();
+    } catch (caught) {
+      setSubmitError(describeError(caught));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handleReuse(target: TaskProgress): void {
+    const snapshot = target.requestSnapshot;
+
+    setPrompt(snapshot.prompt);
+    setMode(snapshot.mode);
+    setAspectRatio(snapshot.aspectRatio);
+    setProvider(snapshot.provider);
+    setSubmitError(null);
+
+    if (snapshot.params?.seed === undefined) {
+      setSeedLocked(false);
+    } else {
+      setSeed(String(snapshot.params.seed));
+      setSeedLocked(true);
+    }
+
+    if (snapshot.assets?.firstFrameImage === undefined) {
+      handleAssetClear();
+      setNotice('已复用该任务的参数（提示词 / 模式 / 画幅 / seed）。');
+      return;
+    }
+
+    if (previewRef.current !== null) {
+      URL.revokeObjectURL(previewRef.current);
+      previewRef.current = null;
+    }
+    setAsset({ assetId: snapshot.assets.firstFrameImage, meta: null, previewUrl: null });
+    setNotice('已复用参数，并带回参考资产编号；该图本地没有备份，因此不显示预览。');
+  }
+
+  async function handleDelete(targetId: string): Promise<void> {
+    setDeletingId(targetId);
+    try {
+      await deleteHistory(targetId);
+      if (targetId === taskId) {
+        removeLocal(storage, STORAGE_KEYS.activeTaskId);
+        setTaskId(null);
+      }
+      await refreshHistory();
+    } catch (caught) {
+      setHistoryError(describeError(caught));
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  function handleSaveByok(next: ByokConfig, persist: boolean): void {
+    writeByok(storage, next, persist);
+    setByok(next);
+    setByokPersist(persist);
+    setByokOpen(false);
+    setNotice(persist ? '凭据已明文保存在本机（仅限信任设备）。' : '凭据仅保存在本次会话。');
+  }
+
+  function handleClearByok(): void {
+    clearByok(storage);
+    setByok(readByok(storage));
+    setByokPersist(false);
+    setNotice('已清除本地凭据；服务端不保存任何 Key。');
+  }
+
+  function handleSeedLockedChange(locked: boolean): void {
+    setSeedLocked(locked);
+    writeBool(storage, STORAGE_KEYS.seedLocked, locked);
+  }
+
+  function handleSeedChange(value: string): void {
+    setSeed(value);
+    writeLocal(storage, STORAGE_KEYS.lastSeed, value);
+  }
+
+  const submitLabel = submitting
+    ? '提交中…'
+    : cooling
+      ? `冷却中 ${cooldownRemaining}s`
+      : '立即生成视频';
+
+  const byokSummary =
+    resolveProviderKey(byok) === undefined
+      ? '未填写 Key：服务端将回落到其自身配置的兜底 Key（若未配置会返回 KEY_MISSING）。'
+      : byokPersist
+        ? '已填写 Key · 明文保存在本机（仅限信任设备）'
+        : '已填写 Key · 仅本次会话有效';
+
   return (
-    <div style={styles.container}>
-      {/* 顶部导航栏 */}
-      <header style={styles.header}>
-        <div style={styles.brand}>
-          <span style={styles.brandIcon}>✧</span>
-          <h1 style={styles.brandTitle}>AstrmiraVideo</h1>
-          <span style={styles.brandTag}>Step 1 骨架</span>
+    <div className="wb-shell">
+      <header className="wb-header">
+        <div className="wb-brand">
+          <span className="wb-brand-mark">✧</span>
+          <span className="wb-brand-title">AstrmiraVideo</span>
+          <Eyebrow tone="gold">workbench</Eyebrow>
         </div>
 
-        <div style={styles.headerRight}>
-          {health ? (
-            <div style={styles.statusBadgeSuccess}>
-              <span style={styles.statusDotGreen}></span>
-              <span>服务在线 (v{health.version})</span>
-            </div>
-          ) : error ? (
-            <div style={styles.statusBadgeError}>
-              <span style={styles.statusDotRed}></span>
-              <span>{error}</span>
-            </div>
+        <div className="wb-header-right">
+          {serviceError !== null ? (
+            <span className="wb-badge wb-badge-bad" title={serviceError}>
+              <span className="wb-dot wb-dot-bad" />
+              后端未连通
+            </span>
+          ) : providerStatus === null ? (
+            <span className="wb-badge">
+              <span className="wb-dot" />
+              探测中
+            </span>
           ) : (
-            <div style={styles.statusBadgeWaiting}>
-              <span>探测中...</span>
-            </div>
+            <span className="wb-badge wb-badge-ok">
+              <span className="wb-dot wb-dot-ok" />
+              服务在线
+            </span>
           )}
-
         </div>
       </header>
 
-      {/* 主工作台布局 (3 栏自适应) */}
-      <main style={styles.mainLayout}>
-        {/* 左栏：参数与控制区 */}
-        <section style={styles.leftColumn}>
-          <div style={styles.panelTitle}>
-            <span>✦ 创作输入</span>
-          </div>
+      <main className="wb-main">
+        <LeftPanel
+          prompt={prompt}
+          onPromptChange={setPrompt}
+          onEnhance={() => setNotice(ENHANCE_NOTICE)}
+          enhanceNotice={ENHANCE_NOTICE}
+          enhancing={false}
+          aspectRatio={aspectRatio}
+          onAspectRatioChange={setAspectRatio}
+          mode={mode}
+          onModeChange={setMode}
+          provider={provider}
+          onProviderChange={setProvider}
+          providerStatus={providerStatus}
+          asset={asset}
+          uploading={uploading}
+          uploadError={uploadError}
+          onAssetSelect={handleAssetSelect}
+          onAssetClear={handleAssetClear}
+          seed={seed}
+          onSeedChange={handleSeedChange}
+          seedLocked={seedLocked}
+          onSeedLockedChange={handleSeedLockedChange}
+          byokSummary={byokSummary}
+          onOpenByok={() => setByokOpen(true)}
+          onSubmit={() => void handleSubmit()}
+          submitDisabled={submitting || cooling || prompt.trim() === ''}
+          submitLabel={submitLabel}
+        />
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>
-              <span>提示词 (Prompt)</span>
-              <button style={styles.enhanceBtn} title="提示词扩写助手 (Step 2 接入)">
-                ✨ 润色
-              </button>
-            </label>
-            <textarea
-              style={styles.textarea}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={4}
-              placeholder="输入镜头运动、主体对白（引号内）或画面氛围..."
-            />
-            <div style={styles.hintText}>
-              台词长度建议 ≤ 20 字，完美匹配 5 秒镜头
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+          {submitError === null ? null : (
+            <div className="wb-uncertain">
+              <span className="wb-uncertain-title">提交未成功</span>
+              <span className="wb-uncertain-body">{submitError}</span>
             </div>
-          </div>
+          )}
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>参考资产 (Reference Assets)</label>
-            <div style={styles.dropZone}>
-              <span style={styles.dropIcon}>🖼️</span>
-              <span style={styles.dropText}>拖拽首帧参考图 (Smart 32x 裁切)</span>
+          {notice === null ? null : (
+            <div className="wb-queue-item">
+              <span className="wb-dot" />
+              <span className="wb-note">{notice}</span>
             </div>
-          </div>
+          )}
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>执行引擎 (Engine)</label>
-            <div style={styles.segmentedControl}>
-              <button
-                style={{
-                  ...styles.segmentBtn,
-                  ...(selectedEngine === 'cloud' ? styles.segmentBtnActive : {}),
-                }}
-                onClick={() => setSelectedEngine('cloud')}
-              >
-                云端 Seedance (BYOK)
-              </button>
-              <button
-                style={{
-                  ...styles.segmentBtn,
-                  ...(selectedEngine === 'local' ? styles.segmentBtnActive : {}),
-                }}
-                onClick={() => setSelectedEngine('local')}
-                title={
-                  providers?.local?.available
-                    ? '使用本服务已配置的本地引擎'
-                    : '本服务未配置本地引擎：可以选，提交时会返回 PROVIDER_UNAVAILABLE'
-                }
-              >
-                本地 MiniMax H3
-              </button>
-            </div>
-          </div>
+          <CenterPanel
+            task={task}
+            pollingError={pollingError}
+            aspectRatio={aspectRatio}
+            elapsedSeconds={elapsed.key === elapsedKey ? elapsed.seconds : 0}
+            uncertainAcknowledged={false}
+            onAcknowledgeUncertain={() => setNotice('已标记核对：请到服务商后台确认是否产生费用。')}
+            onAbandonUncertain={() => {
+              removeLocal(storage, STORAGE_KEYS.activeTaskId);
+              setTaskId(null);
+              setNotice('已放弃该任务：本服务不会自动重试，也不会再次向上游提交。');
+            }}
+            onCancel={() => setNotice('取消请求已记录；若上游已受理，仍可能产生费用，请留意核对。')}
+            onRequestReuse={() => {
+              if (task !== null) handleReuse(task);
+            }}
+          />
+        </div>
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>画幅比例 (Aspect Ratio)</label>
-            <div style={styles.ratioGroup}>
-              <button
-                style={{
-                  ...styles.ratioBtn,
-                  ...(aspectRatio === '16:9' ? styles.ratioBtnActive : {}),
-                }}
-                onClick={() => setAspectRatio('16:9')}
-              >
-                16:9 横屏 (832×480)
-              </button>
-              <button
-                style={{
-                  ...styles.ratioBtn,
-                  ...(aspectRatio === '9:16' ? styles.ratioBtnActive : {}),
-                }}
-                onClick={() => setAspectRatio('9:16')}
-              >
-                9:16 竖屏 (480×832)
-              </button>
-            </div>
-          </div>
-
-          <button style={styles.submitBtn}>
-            立即生成视频 (Generate)
-          </button>
-        </section>
-
-        {/* 中栏：中央视窗播放器 */}
-        <section style={styles.centerColumn}>
-          <div style={styles.viewportHeader}>
-            <span style={styles.panelTitle}>✦ 实时视窗 (Viewport)</span>
-            <span style={styles.viewportRatio}>{aspectRatio} 渲染模式</span>
-          </div>
-
-          <div style={styles.playerContainer}>
-            <div style={styles.playerCanvas}>
-              <div style={styles.cosmicGlow}></div>
-              <div style={styles.emptyState}>
-                <span style={styles.emptyStateIcon}>✧</span>
-                <p style={styles.emptyStateTitle}>等待生成任务下发</p>
-                <p style={styles.emptyStateDesc}>
-                  配置左侧提示词与参考图后，点击【立即生成视频】
-                </p>
-              </div>
-            </div>
-
-            {/* 底部传输栏 */}
-            <div style={styles.transportBar}>
-              <div style={styles.transportControls}>
-                <button style={styles.transportBtn} disabled>▶</button>
-                <span style={styles.timecode}>00:00 / 00:05</span>
-              </div>
-              <button style={styles.downloadBtn} disabled>
-                下载 MP4
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* 右栏：任务队列与历史画廊 */}
-        <section style={styles.rightColumn}>
-          <div style={styles.panelTitle}>
-            <span>✦ 历史画廊 (Gallery)</span>
-          </div>
-          <div style={styles.galleryPlaceholder}>
-            <span style={styles.emptyGalleryIcon}>🎞️</span>
-            <p style={styles.emptyGalleryText}>暂无历史成片</p>
-            <p style={styles.emptyGallerySub}>生成后的成片将在此处沉淀，支持参数一键回填</p>
-          </div>
-        </section>
+        <RightPanel
+          current={task}
+          history={history}
+          historyError={historyError}
+          loadingHistory={loadingHistory}
+          deletingId={deletingId}
+          onReuse={handleReuse}
+          onDelete={(targetId) => void handleDelete(targetId)}
+          onRefresh={() => void refreshHistory()}
+        />
       </main>
 
-      {/* 底部信息栏 */}
-      <footer style={styles.footer}>
-        <span>AstrmiraVideo V8.0 · 纯 CSS Tokens 美学基底 · 响应式视口适配</span>
-        <span>后端协议: Fastify REST / SQLite 持久化</span>
+      <footer className="wb-footer">
+        <span className="wb-watermark">Astrmira · video workbench</span>
+        <span>
+          本地演示版本 ·
+          {task === null
+            ? ' 等待任务'
+            : ` 最近任务 ${task.taskId.slice(0, 8)} · 观察 ${formatClock(elapsed.seconds * 1000)}`}
+        </span>
       </footer>
+
+      {byokOpen ? (
+        <ByokDrawer
+          config={byok}
+          persist={byokPersist}
+          pageLocation={{
+            protocol: window.location.protocol,
+            hostname: window.location.hostname,
+          }}
+          onSave={handleSaveByok}
+          onClear={handleClearByok}
+          onClose={() => setByokOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
 
-/**
- * eyebrow 标签体系（P1-6 / T5）：参考稿最具辨识度的元素——全大写 + 极小字 + 大字母间距。
- * 字号与字距一律取自 tokens.css（--fs-eyebrow / --track-caps），禁止硬编码；
- * 字体走 --serif-caps（碑体仅在这种全大写场景成立）。
- */
-const eyebrowStyle: React.CSSProperties = {
-  fontFamily: 'var(--serif-caps)',
-  fontSize: 'var(--fs-eyebrow)',
-  fontWeight: 500,
-  letterSpacing: 'var(--track-caps)',
-  textTransform: 'uppercase',
-  color: 'var(--faint)',
-};
+/** 幂等键：非安全上下文下 `crypto.randomUUID` 不可用，需降级 */
+function newIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `idem-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    backgroundColor: 'var(--bg)',
-    color: 'var(--text)',
-  },
-  header: {
-    height: '64px',
-    padding: '0 24px',
-    borderBottom: '1px solid var(--line)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'var(--panel-glass)',
-    backdropFilter: 'blur(12px)',
-    position: 'sticky',
-    top: 0,
-    zIndex: 10,
-  },
-  brand: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  brandIcon: {
-    color: 'var(--gold)',
-    fontSize: '20px',
-    animation: 'mira-breathe 6s infinite ease-in-out',
-  },
-  brandTitle: {
-    fontFamily: 'var(--serif)',
-    fontSize: '20px',
-    fontWeight: 700,
-    letterSpacing: '-0.5px',
-    color: 'var(--text)',
-  },
-  brandTag: {
-    ...eyebrowStyle,
-    padding: '2px 8px',
-    borderRadius: '12px',
-    border: '1px solid var(--line-gold)',
-    color: 'var(--gold)',
-    backgroundColor: 'rgba(214, 184, 129, 0.08)',
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  },
-  statusBadgeSuccess: {
-    ...eyebrowStyle,
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    color: 'var(--text)',
-    padding: '4px 10px',
-    borderRadius: '20px',
-    border: '1px solid rgba(145, 185, 213, 0.3)',
-    backgroundColor: 'rgba(145, 185, 213, 0.08)',
-  },
-  statusBadgeError: {
-    ...eyebrowStyle,
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    color: 'var(--danger)',
-    padding: '4px 10px',
-    borderRadius: '20px',
-    border: '1px solid rgba(248, 113, 113, 0.3)',
-    backgroundColor: 'rgba(248, 113, 113, 0.08)',
-  },
-  statusBadgeWaiting: {
-    ...eyebrowStyle,
-    color: 'var(--muted)',
-  },
-  statusDotGreen: {
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-    backgroundColor: 'var(--success)',
-    boxShadow: '0 0 8px var(--success)',
-  },
-  statusDotRed: {
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-    backgroundColor: 'var(--danger)',
-  },
-  mainLayout: {
-    flex: 1,
-    display: 'grid',
-    gridTemplateColumns: 'minmax(320px, 380px) 1fr minmax(280px, 340px)',
-    gap: '20px',
-    padding: '20px 24px',
-    maxWidth: '1800px',
-    margin: '0 auto',
-    width: '100%',
-  },
-  panelTitle: {
-    ...eyebrowStyle,
-    fontWeight: 600,
-    color: 'var(--gold)',
-    marginBottom: '16px',
-    display: 'block',
-  },
-  leftColumn: {
-    backgroundColor: 'var(--panel)',
-    borderRadius: 'var(--radius-surface)',
-    border: '1px solid var(--line)',
-    padding: '20px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  formGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  label: {
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--muted)',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  enhanceBtn: {
-    fontSize: '12px',
-    color: 'var(--gold)',
-    border: '1px solid var(--line-gold)',
-    padding: '2px 8px',
-    borderRadius: '6px',
-    backgroundColor: 'rgba(214, 184, 129, 0.1)',
-  },
-  textarea: {
-    width: '100%',
-    backgroundColor: 'var(--panel2)',
-    border: '1px solid var(--line)',
-    borderRadius: 'var(--radius-control)',
-    color: 'var(--text)',
-    padding: '12px',
-    fontSize: '13px',
-    lineHeight: '1.6',
-    resize: 'none',
-    outline: 'none',
-  },
-  hintText: {
-    fontSize: '11px',
-    color: 'var(--faint)',
-  },
-  dropZone: {
-    border: '1px dashed var(--line-gold)',
-    borderRadius: 'var(--radius-control)',
-    padding: '24px 16px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    backgroundColor: 'rgba(214, 184, 129, 0.02)',
-    cursor: 'pointer',
-  },
-  dropIcon: {
-    fontSize: '24px',
-  },
-  dropText: {
-    fontSize: '12px',
-    color: 'var(--muted)',
-  },
-  segmentedControl: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    backgroundColor: 'var(--panel2)',
-    borderRadius: 'var(--radius-control)',
-    padding: '4px',
-    gap: '4px',
-    border: '1px solid var(--line)',
-  },
-  segmentBtn: {
-    padding: '8px 12px',
-    fontSize: '12px',
-    borderRadius: '6px',
-    color: 'var(--muted)',
-    transition: 'all 0.2s var(--ease-ui)',
-  },
-  segmentBtnActive: {
-    backgroundColor: 'var(--action-fill)',
-    color: 'var(--on-segment)',
-    fontWeight: 600,
-  },
-  ratioGroup: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '8px',
-  },
-  ratioBtn: {
-    padding: '8px',
-    fontSize: '12px',
-    border: '1px solid var(--line)',
-    borderRadius: 'var(--radius-control)',
-    color: 'var(--muted)',
-    backgroundColor: 'var(--panel2)',
-  },
-  ratioBtnActive: {
-    borderColor: 'var(--gold)',
-    color: 'var(--gold)',
-    backgroundColor: 'rgba(214, 184, 129, 0.08)',
-  },
-  submitBtn: {
-    marginTop: 'auto',
-    backgroundColor: 'var(--action-fill)',
-    color: 'var(--on-action)',
-    fontWeight: 600,
-    fontSize: '14px',
-    padding: '12px',
-    borderRadius: 'var(--radius-control)',
-    border: 'none',
-    boxShadow: '0 4px 14px rgba(214, 184, 129, 0.2)',
-  },
-  centerColumn: {
-    backgroundColor: 'var(--panel)',
-    borderRadius: 'var(--radius-surface)',
-    border: '1px solid var(--line)',
-    padding: '20px',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  viewportHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '16px',
-  },
-  viewportRatio: {
-    ...eyebrowStyle,
-    color: 'var(--muted)',
-  },
-  playerContainer: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    backgroundColor: 'var(--canvas)',
-    borderRadius: 'var(--radius-control)',
-    border: '1px solid var(--line)',
-    overflow: 'hidden',
-  },
-  playerCanvas: {
-    flex: 1,
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '400px',
-  },
-  cosmicGlow: {
-    position: 'absolute',
-    width: '260px',
-    height: '260px',
-    borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(214, 184, 129, 0.08) 0%, transparent 70%)',
-    pointerEvents: 'none',
-  },
-  emptyState: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-    zIndex: 1,
-  },
-  emptyStateIcon: {
-    fontSize: '32px',
-    color: 'var(--gold)',
-    marginBottom: '8px',
-    animation: 'star-gather 18s infinite',
-  },
-  emptyStateTitle: {
-    fontSize: '15px',
-    fontFamily: 'var(--serif)',
-    color: 'var(--text)',
-  },
-  emptyStateDesc: {
-    fontSize: '12px',
-    color: 'var(--faint)',
-  },
-  transportBar: {
-    height: '52px',
-    backgroundColor: 'var(--panel2)',
-    borderTop: '1px solid var(--line)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '0 16px',
-  },
-  transportControls: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  transportBtn: {
-    color: 'var(--gold)',
-    fontSize: '14px',
-  },
-  timecode: {
-    fontFamily: 'var(--mono)',
-    fontSize: '12px',
-    color: 'var(--muted)',
-  },
-  downloadBtn: {
-    fontSize: '12px',
-    color: 'var(--muted)',
-    border: '1px solid var(--line)',
-    padding: '4px 10px',
-    borderRadius: '6px',
-  },
-  rightColumn: {
-    backgroundColor: 'var(--panel)',
-    borderRadius: 'var(--radius-surface)',
-    border: '1px solid var(--line)',
-    padding: '20px',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  galleryPlaceholder: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    textAlign: 'center',
-    padding: '0 20px',
-  },
-  emptyGalleryIcon: {
-    fontSize: '32px',
-    marginBottom: '8px',
-    opacity: 0.5,
-  },
-  emptyGalleryText: {
-    fontSize: '14px',
-    color: 'var(--muted)',
-  },
-  emptyGallerySub: {
-    fontSize: '11px',
-    color: 'var(--faint)',
-    lineHeight: '1.5',
-  },
-  footer: {
-    height: '40px',
-    borderTop: '1px solid var(--line)',
-    padding: '0 24px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    fontSize: '11px',
-    color: 'var(--faint)',
-    backgroundColor: 'var(--bg)',
-  },
-};
+function describeError(caught: unknown): string {
+  if (caught instanceof ApiError) {
+    const code = caught.failure.code === undefined ? '' : `【${caught.failure.code}】`;
+    return `${code}${caught.failure.message}`;
+  }
+  return caught instanceof Error ? caught.message : String(caught);
+}

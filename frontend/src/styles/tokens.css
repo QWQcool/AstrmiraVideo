@@ -39,6 +39,16 @@
   /* eyebrow 标签体系（P1-6）：全大写 + 极小字 + 大字母间距 */
   --fs-eyebrow: 11px;
   --track-caps: 0.18em;
+
+  /* 语义字号（Step 3 F2 追加）：组件里**只允许**引用这些变量，不得写字面量
+     （AC6「无新引入的硬编码字号 / 字距」，F6 有静态检查兜底） */
+  --fs-display: 20px;
+  --fs-title: 15px;
+  --fs-body: 13px;
+  --fs-label: 12px;
+  --fs-note: 11px;
+  --fs-micro: 10px;
+  --track-tight: -0.01em;
 }
 
 /* Astrmira 原生 8 个 Keyframes */
