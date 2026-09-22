@@ -22,9 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 刻意**不写** `version`：pnpm 版本由根 package.json 的 `packageManager` 提供。
+      # 两处都写会直接失败（"Multiple versions of pnpm specified"）——
+      # 而这正是单一事实源的意义：本地 / CI / 镜像三处都必须解析到同一个 pnpm，
+      # Docker 里的 corepack 读的也是同一个字段。
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
