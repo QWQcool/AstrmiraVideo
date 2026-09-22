@@ -4,7 +4,12 @@ import { ProgressRing } from './ProgressRing';
 import { UncertainNotice } from './UncertainNotice';
 import type { ApiError } from '../lib/api';
 import { resolveMediaUrl } from '../lib/api';
-import { formatClock, resolveTargetSize, statusLabel } from '../lib/format';
+import {
+  formatClock,
+  resolveTargetSize,
+  statusLabel,
+  type ResolutionTier,
+} from '../lib/format';
 
 /**
  * 中栏视窗（施工单 §7）。
@@ -17,6 +22,8 @@ export interface CenterPanelProps {
   task: TaskProgress | null;
   pollingError: ApiError | null;
   aspectRatio: AspectRatio;
+  /** 清晰度档：与左栏选择联动，决定顶部显示的目标尺寸 */
+  resolutionTier: ResolutionTier;
   elapsedSeconds: number;
   uncertainAcknowledged: boolean;
   onAcknowledgeUncertain: () => void;
@@ -29,6 +36,7 @@ export function CenterPanel({
   task,
   pollingError,
   aspectRatio,
+  resolutionTier,
   elapsedSeconds,
   uncertainAcknowledged,
   onAcknowledgeUncertain,
@@ -36,7 +44,7 @@ export function CenterPanel({
   onCancel,
   onRequestReuse,
 }: CenterPanelProps) {
-  const target = resolveTargetSize(aspectRatio);
+  const target = resolveTargetSize(aspectRatio, resolutionTier);
   const videoUrl = task === null ? null : resolveMediaUrl(task.outputVideoUrl);
 
   return (

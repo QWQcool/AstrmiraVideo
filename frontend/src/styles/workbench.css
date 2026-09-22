@@ -112,7 +112,8 @@
   grid-template-columns: minmax(320px, 380px) 1fr minmax(300px, 360px);
   gap: 20px;
   padding: 20px 24px;
-  max-width: 1800px;
+  /* 上限只用来挡"超宽屏下单行文字过长"，不挡 2K/4K 的填满（此前 1800px 会在 2560 宽屏两侧留 ~380px 空白） */
+  max-width: 2400px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
@@ -120,6 +121,25 @@
 
 @media (max-width: 1180px) {
   .wb-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 大屏档（≥ 1800px）：左右栏放宽、中栏继续吸收剩余宽度；画廊改双列，避免 50 张卡排成一条长龙 */
+@media (min-width: 1800px) {
+  .wb-main {
+    grid-template-columns: minmax(360px, 420px) 1fr minmax(340px, 400px);
+    gap: 24px;
+  }
+
+  .wb-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+  }
+
+  /* 双列下每张卡只剩 ~170px 宽：改成"预览在上、文案在下"，否则 84px 的侧栏缩略图会把正文挤爆 */
+  .wb-card {
     grid-template-columns: 1fr;
   }
 }

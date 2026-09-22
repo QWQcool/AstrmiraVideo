@@ -16,14 +16,64 @@ export interface TargetSize {
   height: number;
 }
 
-const TARGET_SIZES: Record<AspectRatio, TargetSize> = {
-  '16:9': { width: 832, height: 480 },
-  '9:16': { width: 480, height: 832 },
-  '1:1': { width: 640, height: 640 },
+/**
+ * 清晰度档（对齐上游 `--resolution` 的取值集合：480p / 720p / 1080p）。
+ * 后端 `seedanceProtocol.resolutionToTier` 按**短边**归档：< 640 → 480p，640~999 → 720p，≥ 1000 → 1080p。
+ * 下表每一格的短边都落在对应档位区间内，因此"界面显示的目标尺寸"与"发给上游的档位"不会互相打架。
+ */
+export type ResolutionTier = '480p' | '720p' | '1080p';
+
+export const RESOLUTION_TIERS = ['480p', '720p', '1080p'] as const;
+
+export const DEFAULT_RESOLUTION_TIER: ResolutionTier = '480p';
+
+/** 可选时长（秒）：`DurationSecSchema` 是 `positive().max(10)`，所以这里最大只能到 10 */
+export const DURATION_OPTIONS = [3, 5, 8, 10] as const;
+
+export const DEFAULT_DURATION_SEC = 5;
+
+/** 时长被夹进契约允许的区间（1~10 的整数） */
+export function clampDurationSec(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_DURATION_SEC;
+  return Math.min(10, Math.max(1, Math.round(value)));
+}
+
+/** 每一格都必须落在 32 的倍数上（AC/契约要求；单测逐格断言） */
+const TARGET_SIZES: Record<ResolutionTier, Record<AspectRatio, TargetSize>> = {
+  '480p': {
+    '16:9': { width: 832, height: 480 },
+    '9:16': { width: 480, height: 832 },
+    '1:1': { width: 480, height: 480 },
+  },
+  '720p': {
+    '16:9': { width: 1280, height: 704 },
+    '9:16': { width: 704, height: 1280 },
+    '1:1': { width: 704, height: 704 },
+  },
+  '1080p': {
+    '16:9': { width: 1920, height: 1056 },
+    '9:16': { width: 1056, height: 1920 },
+    '1:1': { width: 1056, height: 1056 },
+  },
 };
 
-export function resolveTargetSize(ratio: AspectRatio): TargetSize {
-  return TARGET_SIZES[ratio];
+/**
+ * 由像素尺寸反推档位（用于"参数一键回填"：快照里存的是 `resolution` 像素，不是档位名）。
+ * 归档口径与后端 `seedanceProtocol.resolutionToTier` 一致：按**短边**。
+ */
+export function tierForSize(width: number, height: number): ResolutionTier {
+  const shortSide = Math.min(width, height);
+  if (shortSide >= 1000) return '1080p';
+  if (shortSide >= 640) return '720p';
+  return '480p';
+}
+
+/** 目标渲染尺寸 = 画幅 × 清晰度档（默认 480p，与历史行为一致） */
+export function resolveTargetSize(
+  ratio: AspectRatio,
+  tier: ResolutionTier = DEFAULT_RESOLUTION_TIER,
+): TargetSize {
+  return TARGET_SIZES[tier][ratio];
 }
 
 export function isMultipleOf32(value: number): boolean {

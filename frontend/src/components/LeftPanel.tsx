@@ -7,7 +7,13 @@ import type {
 import { AssetDropZone } from './AssetDropZone';
 import { Eyebrow } from './Eyebrow';
 import type { AssetState } from '../lib/assets';
-import { dialogueLength, resolveTargetSize } from '../lib/format';
+import {
+  DURATION_OPTIONS,
+  RESOLUTION_TIERS,
+  dialogueLength,
+  resolveTargetSize,
+  type ResolutionTier,
+} from '../lib/format';
 
 /**
  * 左栏控制台（施工单 §7）。
@@ -28,6 +34,12 @@ export interface LeftPanelProps {
 
   aspectRatio: AspectRatio;
   onAspectRatioChange: (ratio: AspectRatio) => void;
+  /** 目标时长（秒）；受契约 `durationSec ≤ 10` 约束 */
+  durationSec: number;
+  onDurationChange: (value: number) => void;
+  /** 清晰度档：决定目标渲染尺寸，并透传给上游 `--resolution` */
+  resolutionTier: ResolutionTier;
+  onResolutionTierChange: (tier: ResolutionTier) => void;
   mode: GenerationMode;
   onModeChange: (mode: GenerationMode) => void;
 
@@ -66,6 +78,10 @@ export function LeftPanel(props: LeftPanelProps) {
     enhancing,
     aspectRatio,
     onAspectRatioChange,
+    durationSec,
+    onDurationChange,
+    resolutionTier,
+    onResolutionTierChange,
     mode,
     onModeChange,
     provider,
@@ -88,7 +104,7 @@ export function LeftPanel(props: LeftPanelProps) {
   } = props;
 
   const isCloud = provider === PROVIDER_CLOUD;
-  const target = resolveTargetSize(aspectRatio);
+  const target = resolveTargetSize(aspectRatio, resolutionTier);
   const dialogue = dialogueLength(prompt);
 
   return (
@@ -196,6 +212,46 @@ export function LeftPanel(props: LeftPanelProps) {
           >
             1:1
           </button>
+        </div>
+      </div>
+
+      <div className="wb-field">
+        <div className="wb-field-head">
+          <span className="wb-label">时长</span>
+          <span className="wb-note">单段上限 10 秒（公网部署防线，CONTRACT §1）</span>
+        </div>
+        <div className="wb-segmented">
+          {DURATION_OPTIONS.map((seconds) => (
+            <button
+              key={seconds}
+              type="button"
+              className="wb-segment"
+              aria-pressed={durationSec === seconds}
+              onClick={() => onDurationChange(seconds)}
+            >
+              {seconds}s
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="wb-field">
+        <div className="wb-field-head">
+          <span className="wb-label">清晰度</span>
+          <span className="wb-note">透传上游 `--resolution`；目标尺寸随之变化</span>
+        </div>
+        <div className="wb-segmented">
+          {RESOLUTION_TIERS.map((tier) => (
+            <button
+              key={tier}
+              type="button"
+              className="wb-segment"
+              aria-pressed={resolutionTier === tier}
+              onClick={() => onResolutionTierChange(tier)}
+            >
+              {tier}
+            </button>
+          ))}
         </div>
       </div>
 

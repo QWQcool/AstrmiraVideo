@@ -85,6 +85,22 @@ describe('取值映射', () => {
     expect(resolutionToTier(1920, 1080)).toBe('1080p');
   });
 
+  it('前端清晰度档的**每一格**都落在预期档位（跨端一致性守卫）', () => {
+    // 与 `frontend/src/lib/format.ts` 的 TARGET_SIZES 逐格对齐：
+    // 前端表改动而这里没同步（或阈值被挪动）→ 本用例红，避免"界面显示 720p、上游收到 480p"。
+    expect(resolutionToTier(832, 480)).toBe('480p');
+    expect(resolutionToTier(480, 832)).toBe('480p');
+    expect(resolutionToTier(480, 480)).toBe('480p');
+
+    expect(resolutionToTier(1280, 704)).toBe('720p');
+    expect(resolutionToTier(704, 1280)).toBe('720p');
+    expect(resolutionToTier(704, 704)).toBe('720p');
+
+    expect(resolutionToTier(1920, 1056)).toBe('1080p');
+    expect(resolutionToTier(1056, 1920)).toBe('1080p');
+    expect(resolutionToTier(1056, 1056)).toBe('1080p');
+  });
+
   it('画幅显式映射：契约新增比例时应当报错而不是静默传错值', () => {
     expect(aspectRatioToUpstream('16:9')).toBe('16:9');
     expect(aspectRatioToUpstream('9:16')).toBe('9:16');

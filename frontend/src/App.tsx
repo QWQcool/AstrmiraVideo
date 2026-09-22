@@ -39,7 +39,15 @@ import {
   writeBool,
   writeLocal,
 } from './lib/storage';
-import { formatClock } from './lib/format';
+import {
+  DEFAULT_DURATION_SEC,
+  DEFAULT_RESOLUTION_TIER,
+  clampDurationSec,
+  formatClock,
+  resolveTargetSize,
+  tierForSize,
+  type ResolutionTier,
+} from './lib/format';
 
 /** AC4：提交后 60s 内生成按钮置灰（与后端防线 5 的冷却窗口对齐） */
 const COOLDOWN_MS = 60_000;
@@ -60,6 +68,9 @@ export default function App() {
     '竖屏短剧，女孩站在雨夜街头微笑着说：“我们终于成功了！”，电影感光影',
   );
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
+  // 时长与清晰度：两者都会进入请求（`params.durationSec` / `resolution`），上游按 `--duration` / `--resolution` 使用
+  const [durationSec, setDurationSec] = useState<number>(DEFAULT_DURATION_SEC);
+  const [resolutionTier, setResolutionTier] = useState<ResolutionTier>(DEFAULT_RESOLUTION_TIER);
   const [mode, setMode] = useState<GenerationMode>('t2v');
   const [provider, setProvider] = useState<ProviderType>('cloud-volcano-seedance');
   const [seed, setSeed] = useState(() => readLocal(storage, STORAGE_KEYS.lastSeed) ?? '');
@@ -233,13 +244,18 @@ export default function App() {
       prompt,
       mode,
       aspectRatio,
+      // 目标尺寸 = 画幅 × 清晰度档（都是 32 的倍数）；上游据此落到 `--resolution 480p|720p|1080p`
+      resolution: resolveTargetSize(aspectRatio, resolutionTier),
       provider,
       // provider 私有参数：BYOK 的服务端地址与模型名（未识别键由服务端忽略）
       options: { baseUrl: byok.baseUrl, model: byok.model },
       ...(asset === null ? {} : { assets: { firstFrameImage: asset.assetId } }),
-      ...(seedLocked && seed.trim() !== ''
-        ? { params: { seed: Number.parseInt(seed, 10), seedLocked: true } }
-        : {}),
+      params: {
+        durationSec,
+        ...(seedLocked && seed.trim() !== ''
+          ? { seed: Number.parseInt(seed, 10), seedLocked: true }
+          : {}),
+      },
     };
 
     try {
@@ -268,6 +284,14 @@ export default function App() {
     setAspectRatio(snapshot.aspectRatio);
     setProvider(snapshot.provider);
     setSubmitError(null);
+
+    // 时长与清晰度也要回填（快照里存的是像素尺寸，档位由短边反推）
+    if (snapshot.params?.durationSec !== undefined) {
+      setDurationSec(clampDurationSec(snapshot.params.durationSec));
+    }
+    if (snapshot.resolution !== undefined) {
+      setResolutionTier(tierForSize(snapshot.resolution.width, snapshot.resolution.height));
+    }
 
     if (snapshot.params?.seed === undefined) {
       setSeedLocked(false);
@@ -382,6 +406,10 @@ export default function App() {
           enhancing={false}
           aspectRatio={aspectRatio}
           onAspectRatioChange={setAspectRatio}
+          durationSec={durationSec}
+          onDurationChange={setDurationSec}
+          resolutionTier={resolutionTier}
+          onResolutionTierChange={setResolutionTier}
           mode={mode}
           onModeChange={setMode}
           provider={provider}
@@ -422,6 +450,7 @@ export default function App() {
             task={task}
             pollingError={pollingError}
             aspectRatio={aspectRatio}
+            resolutionTier={resolutionTier}
             elapsedSeconds={elapsed.key === elapsedKey ? elapsed.seconds : 0}
             uncertainAcknowledged={false}
             onAcknowledgeUncertain={() => setNotice('已标记核对：请到服务商后台确认是否产生费用。')}

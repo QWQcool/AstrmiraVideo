@@ -192,7 +192,30 @@ try {
   await page.screenshot({ path: homeShot, fullPage: false });
   note(`截图留档（仅 artifact，不参与判定）：${path.relative(ROOT, homeShot)} · ${path.relative(ROOT, drawerShot)}`);
 
-  console.log('\n[4] 控制台卫生');
+  console.log('\n[4] 生成参数控件（V8.3 批次 1：时长 / 清晰度 → 目标尺寸联动）');
+  const durationButtons = page.locator('.wb-segment', { hasText: /^\d+s$/ });
+  assert((await durationButtons.count()) >= 3, `时长选项 ≥ 3 个（实际 ${await durationButtons.count()}）`);
+  assert(
+    (await page.locator('.wb-segment[aria-pressed="true"]', { hasText: /^\d+s$/ }).count()) === 1,
+    '时长默认选中恰好一个选项',
+  );
+
+  // 清晰度切到 1080p：顶部与左栏的目标尺寸必须跟着变（这是"参数真的接进请求"的最直观证据）
+  await page.getByRole('button', { name: '1080p', exact: true }).click();
+  await page.getByText('1920×1056 · 32 倍数对齐').waitFor({ timeout: 5_000 });
+  assert(true, '切到 1080p 后目标尺寸变为 1920×1056（与画幅 16:9 相乘，仍为 32 倍数）');
+  assert(
+    await page.getByText('渲染为 1920×1056').isVisible(),
+    '左栏「画幅」旁的目标尺寸同步更新',
+  );
+
+  await page.getByRole('button', { name: '10s', exact: true }).click();
+  assert(
+    (await page.locator('.wb-segment[aria-pressed="true"]', { hasText: '10s' }).count()) === 1,
+    '时长可以切到 10s 且选中态正确',
+  );
+
+  console.log('\n[5] 控制台卫生');
   const realConsoleErrors = consoleErrors.filter(
     (text) => !IGNORED_CONSOLE.some((pattern) => pattern.test(text)),
   );
