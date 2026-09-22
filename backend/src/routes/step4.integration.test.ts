@@ -2,7 +2,6 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type {
   TaskProgress,
@@ -20,7 +19,6 @@ import { MAX_FILE_BYTES, MAX_FILES } from './upload.js';
  * 用 `remoteAddress` 指定来源 IP 来隔离用例（inject 默认 127.0.0.1 会全部落进同一个冷却桶）。
  */
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const TMP_DATA_DIR = mkdtempSync(path.join(tmpdir(), 'astrmira-step4-'));
 const TMP_OUTPUTS_DIR = mkdtempSync(path.join(tmpdir(), 'astrmira-step4-out-'));
 

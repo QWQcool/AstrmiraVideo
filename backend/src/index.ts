@@ -12,6 +12,7 @@ import { getProvider } from './providers/registry.js';
 import { runLocalEngineSelfCheck } from './providers/statusProbe.js';
 import { JobDispatcher } from './queue/dispatcher.js';
 import { SqliteJobQueue } from './queue/SqliteJobQueue.js';
+import { createEnhanceRoutes } from './routes/enhance.js';
 import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
 import { createHistoryRoutes } from './routes/history.js';
@@ -148,6 +149,7 @@ export async function buildApp() {
     createGenerateRoutes({ store, queue, resolveProvider: getProvider, cooldown }),
   );
   await app.register(createUploadRoutes());
+  await app.register(createEnhanceRoutes());
   await app.register(createTaskRoutes({ store }));
   await app.register(createHistoryRoutes({ store }));
   await registerStaticOutputs(app);

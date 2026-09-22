@@ -1,0 +1,51 @@
+name: CI
+
+# CI 三件套（PLAN §6-D14 / 施工单 S7）：lint / type / test，外加契约层专项。
+# ffmpeg 走**系统安装**（D10 / 施工单 §2 P0-2）：仓库与镜像都不内置二进制；
+# OI-2 夹具片段由 ffmpeg 现场合成，因此 runner 必须先装好。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 安装 ffmpeg / ffprobe（夹具合成与产物校验必需）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: 契约包构建（backend / frontend 消费 dist 而非 src）
+        run: pnpm --filter @astrmira/shared build
+
+      - name: lint
+        run: pnpm lint
+
+      - name: type
+        run: pnpm type
+
+      - name: 契约层测试
+        run: pnpm test:contract
+
+      - name: 全部测试（契约层 + 真实产物层）
+        run: pnpm test

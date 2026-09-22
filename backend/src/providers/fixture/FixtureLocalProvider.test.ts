@@ -14,7 +14,6 @@ import { FixtureLocalProvider } from './FixtureLocalProvider.js';
  */
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
-const CLIPS_DIR = path.join(ROOT, 'tests', 'fixtures', 'clips');
 const OUTPUTS_DIR = path.join(ROOT, 'outputs');
 
 const provider = new FixtureLocalProvider();

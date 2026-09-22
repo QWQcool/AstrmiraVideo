@@ -225,7 +225,7 @@ export type ErrorDisposition =
 | `DISK_FULL` | 输出目录磁盘不足 | `terminal`（清理后手动重试） |
 | `LLM_NOT_CONFIGURED` | 扩写未配置 LLM（demo 版恒返回，`/api/prompt/enhance` → `501`） | `terminal` |
 | `KEY_INVALID` | 凭据被上游拒绝（首次真实调用时产生；校验路由见 PLAN §9 台账 B2） | `terminal` |
-| `KEY_MISSING` | 需要凭据的端点既未收到 `X-Provider-Key`，服务端也无 env 兜底 Key | `terminal` |
+| `KEY_MISSING` | 需要凭据的端点既未收到 `X-Provider-Key`，服务端也无 env 兜底 Key（也用于访问令牌缺失） | `terminal` |
 
 **V1.3 三条硬规则**：
 
