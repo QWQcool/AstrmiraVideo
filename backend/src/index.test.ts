@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HealthResponseSchema, ProviderStatusSchema } from '@astrmira/shared';
 import { buildApp } from './index.js';
@@ -96,6 +99,53 @@ describe('GET /api/providers/status（CONTRACT §2 V1.8 / PLAN §6-D22、D27）'
     expect(res.body).not.toMatch(HARDWARE_DETAIL_PATTERN);
     expect(res.body).not.toMatch(VISITOR_JUDGEMENT_PATTERN);
     expect(res.json().defaultProvider).toBe('cloud-volcano-seedance');
+  });
+
+  it('AC6：EXPOSE=1 但未配置引擎 → available:false + 「本服务未配置本地引擎」', async () => {
+    process.env.EXPOSE_HOST_LOCAL_TRACK = '1';
+    const local = await buildApp();
+
+    try {
+      const res = await local.inject({ method: 'GET', url: '/api/providers/status' });
+      const body = res.json();
+
+      expect(body.local.available).toBe(false);
+      expect(body.local.reason).toBe('本服务未配置本地引擎');
+      expect(body.local.tier).toBeUndefined();
+      // 与 R1 同源的取反断言：**未配置态**的文案同样不得夹带任何硬件细节（型号 / 显存数字）
+      expect(res.body).not.toMatch(HARDWARE_DETAIL_PATTERN);
+    } finally {
+      await local.close();
+      delete process.env.EXPOSE_HOST_LOCAL_TRACK;
+    }
+  });
+
+  it('AC6：EXPOSE=1 且 H3_WORKDIR 合法 → available:true、tier 来自显式声明，且不回显路径/型号', async () => {
+    const workdir = mkdtempSync(path.join(tmpdir(), 'astrmira-probe-int-'));
+    process.env.EXPOSE_HOST_LOCAL_TRACK = '1';
+    process.env.H3_WORKDIR = workdir;
+    process.env.H3_TIER = '2';
+
+    const local = await buildApp();
+
+    try {
+      const res = await local.inject({ method: 'GET', url: '/api/providers/status' });
+      const body = res.json();
+
+      expect(body.local.available).toBe(true);
+      expect(body.local.tier).toBe(2);
+      // 键集合仍与契约一致：不得因"可用"就塞回硬件字段
+      expect(Object.keys(body.local).sort()).toEqual(['available', 'provider', 'reason', 'tier']);
+      expect(res.body).not.toMatch(HARDWARE_DETAIL_PATTERN);
+      // 脱敏：不得回显部署者的绝对路径
+      expect(res.body).not.toContain(workdir);
+    } finally {
+      await local.close();
+      delete process.env.EXPOSE_HOST_LOCAL_TRACK;
+      delete process.env.H3_WORKDIR;
+      delete process.env.H3_TIER;
+      rmSync(workdir, { recursive: true, force: true, maxRetries: 3 });
+    }
   });
 });
 

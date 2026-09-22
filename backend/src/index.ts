@@ -9,12 +9,13 @@ import {
 } from 'fastify-type-provider-zod';
 import { cleanupTaskTemp } from './pipeline/cleanup.js';
 import { getProvider } from './providers/registry.js';
+import { runLocalEngineSelfCheck } from './providers/statusProbe.js';
 import { JobDispatcher } from './queue/dispatcher.js';
 import { SqliteJobQueue } from './queue/SqliteJobQueue.js';
 import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
 import { createHistoryRoutes } from './routes/history.js';
-import { providerRoutes } from './routes/providers.js';
+import { providerRoutes, setLocalEngineSelfCheck } from './routes/providers.js';
 import { createTaskRoutes } from './routes/tasks.js';
 import { createUploadRoutes, MAX_FILE_BYTES } from './routes/upload.js';
 import {
@@ -110,6 +111,9 @@ export async function buildApp() {
       'authorization',
     ],
   });
+
+  // 本地引擎**配置自检**：启动时一次、写内存缓存（不扫描硬件 —— CONTRACT §2 V1.8 / PLAN §6-D22）
+  setLocalEngineSelfCheck(runLocalEngineSelfCheck());
 
   // 路由目录惯例：backend/src/routes/<域>.ts（Step 2 的 6 条新路由沿用同一惯例）
   await app.register(healthRoutes);
