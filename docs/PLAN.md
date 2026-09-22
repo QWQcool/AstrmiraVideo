@@ -262,7 +262,9 @@
         - **启动调解的归类**：有 `upstreamTaskId` 或 `submitting=true` → `UNCERTAIN_RESULT`；干净现场 → `UPSTREAM_ERROR`（retryable，但**我们仍不自动重跑**，等用户决定）。
         - **B 方案的已知代价（明确记录，不是缺陷）**：进程重启清空暂存 Key → 在途已提交任务归 uncertain。**任何情况下都不会自动重提**。
         - **⚠️ 尚未证明的事**：上游字段名、`content` 数组结构、`--` 尾缀参数、`status` 枚举、`content.video_url` 位置**均未实测**（仓库无可用 Key；官方文档页是 SPA，静态抓取拿不到正文——仅有端点被官方公开信息确认）。协议细节已全部隔离在 `seedanceProtocol.ts`，AC2 冒烟时逐项核对即可，改动面为一个文件。**不得**把这批字段当成已验证事实引用。
-      - [ ] **S6 · OI-1 `stock-local` 素材 provider【跳过】**：本次**明确不做**（PLAN §1-2 非目标），已转 §9 台账 **B7**。
+      - [ ] **S6 · 图像清洗网关（防线 4）【未实现】**：`pipeline/imageSanitize.ts` 不存在 —— `pipeline/` 目前只有 `cleanup.ts` 与 `smartCrop.ts`（纯函数），`lib/` 只有 `ffmpeg.ts`，依赖里也**没有 `sharp`**；`/api/upload` 只做魔数嗅探 + 类型白名单 + 体积/数量限制 + 随机 ID 路径，**不做转码 / 下采样 / 32 倍数规整**。后果：HEIC 会原样存盘并直接交给上游，§4 Step 4-**AC2**（HEIC / WebP / 超大图各上传 1 次、输出合规）照现状**无法通过**。**已登记 §9 台账 B20，并已补齐施工口径**（规格见 B20）。
+        - ⚠️ **编号勘误（2026-09-22）**：本条此前被误写成「S6 · OI-1 `stock-local` 素材 provider【跳过】」——把 **OI-1**（属台账 B7）放进了 **S6** 槽位，于是手册里真正的 S6（图像清洗网关）在进度日志中**没有任何记录**，"没做"被"已跳过"掩盖。现按手册 §6 的编号归位：OI-1 只作台账 B7，S6 就是图像清洗网关。
+      - [x] **OI-1 `stock-local` 素材 provider【跳过：非目标】**：本次**明确不做**（PLAN §1-2 非目标），已转 §9 台账 **B7**（**不占 S6 编号**）。
       - [x] **S7 · 契约层测试 + CI 三件套【已验证】**（AC1 / AC8）：`contract.test.ts` **直接解析 `docs/CONTRACT.md` 校验实现**（§5 全部路由经 `app.hasRoute` 覆盖；§6 错误码**双向**比对——"契约有实现缺"与"实现有契约缺"都会红）；补 `POST /api/prompt/enhance` 的 **501 + `LLM_NOT_CONFIGURED`** 诚实兜底（demo 版不做 LLM，禁止规则引擎冒充）；根脚本 `lint`（oxlint `--deny-warnings`）/ `type`（三包 `tsc --noEmit`）/ `test:contract`；新增 `.github/workflows/ci.yml`（install → apt ffmpeg → shared build → lint → type → test:contract → test）；**144 项测试全绿 + lint 0 warning**；破坏性验证两处均命中（删映射表一项 → 编译期 `TS7053 Property 'UNCERTAIN_RESULT' does not exist`；删 CONTRACT 一行 → `实现中的 KEY_MISSING 未写入 CONTRACT §6`）。
 - [x] **Step 3 前端 Astrmira 工作台（F1~F6，AC2~AC7 已验证；AC1 待云端 provider）**：`frontend/src/lib/`（`api.ts` 契约驱动 + 响应过 zod + Key 只进请求头 / `storage.ts` 键集中登记且永不抛 / `byok.ts` 默认 sessionStorage、显式勾选才落本机、HTTPS 守卫 / `assets.ts` 参数复用时允许元数据缺失而不是伪造 / `format.ts` 32 倍数目标尺寸与 3 位索引号）、`components/`（`Eyebrow` 索引号体系 / `LeftPanel` / `AssetDropZone` 含 32 倍数裁切预览 / `ByokDrawer` / `CenterPanel`+`ProgressRing` / `RightPanel`+`GalleryCard` / `UncertainNotice`）、`hooks/useTaskPolling.ts`（2s 间隔；终态即停；契约错误即停；网络抖动续试）、`styles/workbench.css`（8 个 keyframes 全部落功能位）、`scripts/visual-selfcheck.mjs`（AC5/AC6 变成可执行断言）；`vite.config.ts` 补 `/media` 代理。
       - **Playwright 实机验证（localhost:5173）**：AC2 刷新后进度环 64% 自动重挂载 ✓；AC3 复用参数完整还原（提示词 / 文生视频 / 9:16 / 云端 Seedance / seed=123456）✓；AC4 提交后按钮「冷却中 59s」且 `disabled=true` ✓；AC7 注入 `UNCERTAIN_RESULT` → 「可能已产生费用，请到服务商后台核对后手动处理」+「标记已核对 / 放弃任务」，**无任何一键重跑入口** ✓；AC6 3 位索引号（001/002/003）与 eyebrow 体系 ✓；页面截图 3 张存 `.tmp/step3-0*.png`。
@@ -372,7 +374,7 @@
 ## 9. 待优化台账（backlog · 唯一权威位置）
 
 > 本节的项**不在 Step 2 ~ Step 5 的实施范围内**；它们是本次架构决策中**主动降级 / 延后**的项与已识别但暂不处理的问题，逐项登记「何时必须做」，避免遗忘或临时拍脑袋。施工手册只引用本节（`docs/EXEC-STEP2-5.md` §13），**不复制内容**。
-> **B16 ~ B19** 为 2026-09-22 随 B9 落地（端到端 / 覆盖率 / UI 冒烟 / 基准脚本）与实测发现的追加项。
+> **B16 ~ B20** 为 2026-09-22 随 B9 落地（端到端 / 覆盖率 / UI 冒烟 / 基准脚本）、UI 冒烟实测发现，以及一次编号勘误（S6 归位后补登）的追加项。
 
 | # | 项 | 来源 | 何时必须做 |
 |---|---|---|---|
@@ -395,3 +397,4 @@
 | B17 | 性能基准的 **CI 门限**（当前只提供 `scripts/bench.mjs` 本地手动测量，CI 不设门） | §9-B9 余项 | 有自托管 runner，或出现性能投诉时 |
 | B18 | 开发机与 CI / 镜像的 **Node 版本对齐**（本机实测 `v24.14.0`，CI 与 `Dockerfile` 均为 22；建议 `.nvmrc` + `engines` 收口） | 本次实测发现 | 下次出现「本地绿、CI 红」时立刻做（环境漂移类问题最难查） |
 | B19 | **中文衬线字的自托管策略**：`--serif` 里的 `"Noto Serif SC"` 现仅是本机字体候选（不再从网络加载），中文衬线会回落系统字体；要统一观感需自托管 CJK 子集（体积大） | 本次实测发现（生产 CSP 拦掉外部字体引发） | 动视觉体系时（与 B16 一起做） |
+| B20 | **防线 4 图像清洗网关**（施工手册 **S6**，当前**未实现**）：`pipeline/imageSanitize.ts` —— HEIC/WebP/CMYK → sRGB 统一、超大图下采样、EXIF 方向矫正；与 `smartCrop` 共用 32 倍数规则；`sharp` 的 HEIF 支持需实测，不支持则走 ffmpeg 或**诚实拒绝** `INVALID_ASSET`（不许静默失败） | §3 防线 4 / §4 Step 2（S6） | **Step 4-AC2 通过前必须做**（HEIC / WebP / 超大图的上传验收依赖它；`/api/upload` 现状只做嗅探 + 白名单 + 体积/数量） |
