@@ -148,13 +148,34 @@ jobs:
           # accept-new：首次连接自动接受主机密钥，同时保留后续的变更检测
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
+      # 用实测代替猜测：配置步里私钥能过 `ssh-keygen -y`，scp 却报
+      # `Load key ...: error in libcrypto` —— 那说明两者之间有东西变了或被干扰。
+      # 这里把关键事实（文件大小、可解析性、ssh -v 的握手细节）一次性打出来。
+      - name: 连通性诊断
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          echo "私钥字节数: $(wc -c < ~/.ssh/id_ed25519)"
+          echo "私钥首行: $(head -1 ~/.ssh/id_ed25519)"
+          echo "私钥末行: $(tail -1 ~/.ssh/id_ed25519)"
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null && echo "此刻仍可解析"
+          echo "--- ssh 详细握手（末 18 行）---"
+          ssh -v -p "$DEPLOY_PORT" -i ~/.ssh/id_ed25519 \
+            -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'echo SSH_OK' 2>&1 | tail -18
+
       - name: 上传代码包
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
+          # IdentitiesOnly=yes：只试这一把钥匙。runner 上通常跑着 ssh-agent，
+          # 不限定的话它会先试 agent 里的其它钥匙，失败信息会混在一起。
           scp -P "$DEPLOY_PORT" -i ~/.ssh/id_ed25519 \
+            -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=accept-new \
             /tmp/deploy.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/root/astrmira/deploy.tar.gz"
 
