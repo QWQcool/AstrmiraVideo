@@ -172,6 +172,111 @@ if (!existsSync(INDEX_HTML)) {
   }
 }
 
+// ── ⑨ 非 tokens 文件零硬编码色值（主题化的前提）──
+//
+// 来自 2026-09-22 的主题改造：组件层原先散着 13 处 `rgba(...)`（本质都是"token 色 + alpha"），
+// 它们会**绕过主题**——日间模式下仍然是暗色主题的那几个数值。收进 tokens.css 之后，
+// 这条断言防止以后有人"顺手写一个颜色"又把主题撕出一个洞。
+const HARDCODED_COLOR = /#[0-9a-fA-F]{3,8}\b|\brgba?\(/;
+
+for (const [file, text] of contents) {
+  if (path.resolve(file) === TOKENS) continue;
+
+  text.split('\n').forEach((line, position) => {
+    if (!HARDCODED_COLOR.test(line)) return;
+    if (/^\s*(?:\*|\/\/|\/\*)/.test(line)) return; // 注释里讨论不算
+    failures.push(
+      `${rel(file)}:${position + 1} 出现硬编码色值（应改用 tokens.css 的变量，否则日间主题会漏）`,
+    );
+  });
+}
+
+// ── ⑩ 两套主题的对比度（WCAG 相对亮度公式，逐对核算）──
+//
+// 为什么放进静态检查：对比度是"眼睛会骗人"的典型 —— 上次调参就出现过
+// "看着够" 而实测 3.64:1 的情况。这里按公式算，谁改 token 谁立刻知道。
+const THEMES = [
+  { name: '暗色（:root）', pattern: /:root\s*\{([^}]*)\}/ },
+  { name: '日间（:root[data-theme=day]）', pattern: /:root\[data-theme='day'\]\s*\{([^}]*)\}/ },
+];
+
+function parseTokens(blockText) {
+  const tokens = {};
+  for (const match of blockText.matchAll(/--([\w-]+)\s*:\s*([^;]+);/g)) {
+    tokens[match[1]] = match[2].trim();
+  }
+  return tokens;
+}
+
+function toRgb(value) {
+  const hex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(value);
+  if (hex) {
+    const raw = hex[1];
+    const full = raw.length === 3 ? [...raw].map((c) => c + c).join('') : raw;
+    return [0, 2, 4].map((i) => Number.parseInt(full.slice(i, i + 2), 16));
+  }
+  const rgba = /^rgba?\(([^)]+)\)$/.exec(value);
+  if (rgba) {
+    const parts = rgba[1].split(',').map((part) => Number.parseFloat(part.trim()));
+    if (parts.length >= 3 && parts.slice(0, 3).every((n) => Number.isFinite(n))) {
+      return parts.slice(0, 3);
+    }
+  }
+  return null;
+}
+
+function relativeLuminance([r, g, b]) {
+  const channel = (value) => {
+    const s = value / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+function contrastRatio(foreground, background) {
+  const a = relativeLuminance(foreground);
+  const b = relativeLuminance(background);
+  const [lighter, darker] = a > b ? [a, b] : [b, a];
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** [前景 token, 背景 token, 最低比值, 说明] —— 正文类按 WCAG AA 4.5；低对比水印按 AC5 的定位放宽到 3.0 */
+const CONTRAST_RULES = [
+  ['text', 'bg', 4.5, '正文 / 页面底'],
+  ['text', 'panel', 4.5, '正文 / 卡片'],
+  ['muted', 'panel', 4.5, '次要文字 / 卡片'],
+  ['gold', 'panel', 4.5, '主色（eyebrow / 描边 / 主按钮） / 卡片'],
+  ['on-action', 'action-fill', 4.5, '主按钮文字 / 主按钮底'],
+  ['faint', 'panel', 3.0, '低对比水印字标（AC5 明确要求"低对比"）'],
+];
+
+for (const theme of THEMES) {
+  const block = theme.pattern.exec(tokensText);
+  if (block === null) {
+    failures.push(`tokens.css 缺少主题块：${theme.name}`);
+    continue;
+  }
+
+  const tokens = parseTokens(block[1]);
+
+  for (const [fgName, bgName, min, label] of CONTRAST_RULES) {
+    const fg = toRgb(tokens[fgName] ?? '');
+    const bg = toRgb(tokens[bgName] ?? '');
+
+    if (fg === null || bg === null) {
+      failures.push(`${theme.name} 的 --${fgName} / --${bgName} 无法解析（${label}）`);
+      continue;
+    }
+
+    const ratio = contrastRatio(fg, bg);
+    if (ratio < min) {
+      failures.push(
+        `${theme.name} 对比度不足：${label} 实测 ${ratio.toFixed(2)}:1 < ${min}:1（--${fgName} on --${bgName}）`,
+      );
+    }
+  }
+}
+
 // ── 汇总 ──
 if (failures.length > 0) {
   console.error(`✗ 视觉自检失败（${failures.length} 项）：`);
@@ -182,5 +287,6 @@ if (failures.length > 0) {
 console.log(
   `✓ 视觉自检通过：${REQUIRED_KEYFRAMES.length} 个 keyframes 均有功能位、` +
     `无硬编码字号/字距、${PANELS_EXPECTING_EYEBROW.length} 处分区标题走 eyebrow 体系、` +
-    `水印 ${watermarkUsers.length} 处、数据路径零 innerHTML、index.html 零跨源资源`,
+    `水印 ${watermarkUsers.length} 处、数据路径零 innerHTML、index.html 零跨源资源、` +
+    `组件层零硬编码色值、两套主题对比度全部达标（${CONTRAST_RULES.length} 对 × ${THEMES.length} 套）`,
 );

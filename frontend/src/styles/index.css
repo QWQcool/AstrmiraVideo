@@ -42,10 +42,10 @@ button {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(179, 195, 219, 0.2);
+  background: var(--line-strong);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(214, 184, 129, 0.4);
+  background: var(--gold-line);
 }

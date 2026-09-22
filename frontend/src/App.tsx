@@ -48,6 +48,17 @@ import {
   tierForSize,
   type ResolutionTier,
 } from './lib/format';
+import {
+  THEME_LABELS,
+  THEME_PREFS,
+  applyTheme,
+  readThemePref,
+  resolveTheme,
+  systemPrefersDark,
+  watchSystemTheme,
+  writeThemePref,
+  type ThemePref,
+} from './lib/theme';
 
 /** AC4：提交后 60s 内生成按钮置灰（与后端防线 5 的冷却窗口对齐） */
 const COOLDOWN_MS = 60_000;
@@ -58,6 +69,9 @@ const ENHANCE_NOTICE = '未配置扩写模型：本版本未实现 LLM 扩写（
 export default function App() {
   const storage = useMemo(() => browserStorage(), []);
   const previewRef = useRef<string | null>(null);
+
+  // ── 主题（默认跟随系统；`applyTheme` 只往 <html> 上打 data-theme，颜色全在 tokens.css） ──
+  const [themePref, setThemePref] = useState<ThemePref>(() => readThemePref(storage));
 
   // ── 服务状态 ──
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
@@ -105,6 +119,21 @@ export default function App() {
     Number(readLocal(storage, STORAGE_KEYS.cooldownUntil) ?? '0'),
   );
   const [now, setNow] = useState(() => Date.now());
+
+  // 主题：偏好变化（或系统主题变化、且当前跟随系统时）同步到 <html data-theme>
+  useEffect(() => {
+    const sync = (): void => applyTheme(resolveTheme(themePref, systemPrefersDark()));
+    sync();
+
+    // 手动档自己说了算，不必订阅系统
+    if (themePref !== 'system') return () => {};
+    return watchSystemTheme(sync);
+  }, [themePref]);
+
+  const handleThemeChange = useCallback((next: ThemePref): void => {
+    setThemePref(next);
+    writeThemePref(storage, next);
+  }, [storage]);
 
   // 服务状态探针
   useEffect(() => {
@@ -378,6 +407,21 @@ export default function App() {
         </div>
 
         <div className="wb-header-right">
+          {/* 主题切换（默认跟随系统；覆盖后存本机） */}
+          <div className="wb-segmented wb-segmented-compact" role="group" aria-label="主题">
+            {THEME_PREFS.map((pref) => (
+              <button
+                key={pref}
+                type="button"
+                className="wb-segment"
+                aria-pressed={themePref === pref}
+                onClick={() => handleThemeChange(pref)}
+              >
+                {THEME_LABELS[pref]}
+              </button>
+            ))}
+          </div>
+
           {serviceError !== null ? (
             <span className="wb-badge wb-badge-bad" title={serviceError}>
               <span className="wb-dot wb-dot-bad" />

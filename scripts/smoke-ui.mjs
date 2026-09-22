@@ -134,6 +134,9 @@ try {
     deviceScaleFactor: 1,
     // 关动效：截图可复现，顺带确认 AC5 的 reduced-motion 降级不会把布局弄坏
     reducedMotion: 'reduce',
+    // 固定系统主题偏好为 dark：主题默认是"跟随系统"，不固定的话截图会随 runner 的环境漂移。
+    // 顺带把"跟随系统"这条路径也验了——系统是暗色时不应打 data-theme（暗色是 :root 默认值）。
+    colorScheme: 'dark',
   });
   const page = await context.newPage();
 
@@ -215,7 +218,44 @@ try {
     '时长可以切到 10s 且选中态正确',
   );
 
-  console.log('\n[5] 控制台卫生');
+  console.log('\n[5] 主题（V8.3 批次 2：默认跟随系统 + 可覆盖，日间为"现代简洁·蔚蓝"）');
+  const themeAttr = () =>
+    page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+
+  assert((await themeAttr()) === null, '默认（跟随系统）下不打 data-theme —— 暗色是 :root 默认值');
+
+  await page.getByRole('button', { name: '日间', exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'day', {
+    timeout: 5_000,
+  });
+  assert(true, '切到日间后 <html data-theme="day"> 生效');
+
+  // 颜色真的换了（不是只打了个属性）：检查落地后的计算样式。
+  // ⚠️ 必须**轮询等待**：切换瞬间读到的还是过渡的起始帧（即使 reduced-motion 把过渡压到 0.01ms，
+  // 仍要等一帧），直接断言会拿到旧颜色 —— 这个坑实测踩过一次。
+  await page.waitForFunction(
+    () =>
+      getComputedStyle(document.querySelector('.wb-shell')).backgroundColor ===
+      'rgb(244, 247, 251)',
+    { timeout: 5_000 },
+  );
+  assert(true, '日间底色生效（.wb-shell 计算样式 = rgb(244,247,251)，等过渡完成后读）');
+  assert(
+    (await page.evaluate(() => window.localStorage.getItem('astrmira.themePref'))) === 'day',
+    '主题偏好已持久化到 localStorage',
+  );
+
+  mkdirSync(SHOT_DIR, { recursive: true });
+  await page.screenshot({ path: path.join(SHOT_DIR, 'day.png'), fullPage: false });
+  note(`日间截图留档：${path.relative(ROOT, path.join(SHOT_DIR, 'day.png'))}`);
+
+  await page.getByRole('button', { name: '星尘', exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === null, {
+    timeout: 5_000,
+  });
+  assert(true, '切回星尘后属性被移除（不会留下一个永假的选择器）');
+
+  console.log('\n[6] 控制台卫生');
   const realConsoleErrors = consoleErrors.filter(
     (text) => !IGNORED_CONSOLE.some((pattern) => pattern.test(text)),
   );

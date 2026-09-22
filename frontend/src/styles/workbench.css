@@ -261,7 +261,7 @@
 .wb-btn-gold {
   color: var(--gold);
   border-color: var(--line-gold);
-  background-color: rgba(214, 184, 129, 0.1);
+  background-color: var(--gold-wash);
 }
 
 .wb-btn-primary {
@@ -271,7 +271,7 @@
   font-weight: 600;
   font-size: var(--fs-body);
   padding: 12px;
-  box-shadow: 0 4px 14px rgba(214, 184, 129, 0.2);
+  box-shadow: 0 4px 14px var(--gold-shadow);
 }
 
 .wb-btn-primary:hover:not(:disabled) {
@@ -293,6 +293,18 @@
   background-color: var(--panel2);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
+}
+
+/* 顶栏里的紧凑分段（主题切换）：按内容宽度排布、不拉伸，字号降一档 */
+.wb-segmented-compact {
+  grid-auto-columns: auto;
+  gap: 2px;
+  padding: 3px;
+}
+
+.wb-segmented-compact .wb-segment {
+  padding: 5px 10px;
+  font-size: var(--fs-note);
 }
 
 .wb-segment {
@@ -323,7 +335,7 @@
   border: 1px dashed var(--line-gold);
   border-radius: var(--radius-control);
   padding: 16px;
-  background-color: rgba(214, 184, 129, 0.02);
+  background-color: var(--gold-tint);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -335,7 +347,7 @@
 
 .wb-dropzone-active {
   border-style: solid;
-  background-color: rgba(214, 184, 129, 0.08);
+  background-color: var(--gold-soft);
 }
 
 .wb-dropzone-icon {
@@ -397,14 +409,14 @@
 }
 
 .wb-badge-ok {
-  border-color: rgba(145, 185, 213, 0.3);
-  background-color: rgba(145, 185, 213, 0.08);
+  border-color: var(--blue-line);
+  background-color: var(--blue-soft);
   color: var(--text);
 }
 
 .wb-badge-bad {
-  border-color: rgba(248, 113, 113, 0.3);
-  background-color: rgba(248, 113, 113, 0.08);
+  border-color: var(--danger-line);
+  background-color: var(--danger-soft);
   color: var(--danger);
 }
 
@@ -434,7 +446,7 @@
 .wb-drawer-backdrop {
   position: fixed;
   inset: 0;
-  background-color: rgba(5, 7, 10, 0.6);
+  background-color: var(--canvas-veil);
   z-index: 40;
   animation: motion-bootstrap 0.25s var(--ease-ui) both;
 }
@@ -729,8 +741,8 @@
 
 /* ── 人工核对提示（UNCERTAIN_RESULT，AC7） ──────────── */
 .wb-uncertain {
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  background-color: rgba(248, 113, 113, 0.06);
+  border: 1px solid var(--danger-line-strong);
+  background-color: var(--danger-tint);
   border-radius: var(--radius-control);
   padding: 14px;
   display: flex;

@@ -22,6 +22,8 @@ export const STORAGE_KEYS = {
   lastSeed: 'astrmira.lastSeed',
   /** 提交后的冷却截止时间戳（Step 3 AC4：60s 内生成按钮置灰，刷新后仍生效） */
   cooldownUntil: 'astrmira.cooldownUntil',
+  /** 主题偏好（V8.3 批次 2）：`system`（默认，跟随系统）/ `dark` / `day` */
+  themePref: 'astrmira.themePref',
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];

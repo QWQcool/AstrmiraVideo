@@ -34,18 +34,23 @@
 }
 
 :root {
-  /* Astrmira 色彩 Tokens */
-  --bg: #090c12;
-  --panel: #10141c;
-  --panel2: #121822;
-  --panel-glass: rgba(16, 20, 28, 0.85);
+  /* ── Astrmira 色彩 Tokens（暗色 = 星尘内核，2026-09-22 批次 2 略微提亮）──
+     提亮依据：`docs/assets/01~03` 三张参考图的底色明显比原先的 #090c12 亮、金线更显眼。
+     这里**只向参考图靠一点**（底色 #090c12 → #111726，面板 #10141c → #1a2130，金线 0.35 → 0.42），
+     不做整体趋同：星尘（深底 + 微光金）仍是内核。 */
+  --bg: #111726;
+  --panel: #1a2130;
+  --panel2: #1e2636;
+  --panel-glass: rgba(26, 33, 48, 0.88);
   --text: #eeeae1;
-  --muted: #9ba5b6;
-  --faint: #7d889b;
-  --line: rgba(179, 195, 219, 0.16);
-  --line-gold: rgba(214, 184, 129, 0.35);
+  --muted: #a8b3c4;
+  --faint: #8794a8;
+  --line: rgba(179, 195, 219, 0.18);
+  --line-gold: rgba(214, 184, 129, 0.42);
   --gold: #d6b881;
-  --gold-glow: rgba(214, 184, 129, 0.2);
+  --gold-glow: rgba(214, 184, 129, 0.22);
+  /* ⚠️ --blue / --blue-glow 目前**没有任何使用点**（历史遗留；核对时发现）。
+     保留定义是为了不制造"token 消失"的额外变更，后续要么用它、要么删。 */
   --blue: #91b9d5;
   --blue-glow: rgba(145, 185, 213, 0.2);
   --action-fill: #e7dfd1;
@@ -53,9 +58,25 @@
   /* 语义色（T5）：状态点 / 危险态 / 实心按钮与分段控件上的文字色 */
   --success: #34d399;
   --danger: #f87171;
-  --on-action: #090c12;
-  --on-segment: #10141c;
-  --canvas: #05070a;
+  --on-action: #111726;
+  --on-segment: #1a2130;
+  --canvas: #0b101a;
+
+  /* ── 派生色（批次 2 收口）：原先散在组件里的 13 处硬编码色值，本质都是"主色 + alpha"。
+     收成 token 后，换主题只需覆盖上面那一组，组件层零改动。── */
+  --gold-tint: rgba(214, 184, 129, 0.02);
+  --gold-soft: rgba(214, 184, 129, 0.08);
+  --gold-wash: rgba(214, 184, 129, 0.1);
+  --gold-line: rgba(214, 184, 129, 0.4);
+  --gold-shadow: rgba(214, 184, 129, 0.2);
+  --blue-soft: rgba(145, 185, 213, 0.08);
+  --blue-line: rgba(145, 185, 213, 0.3);
+  --danger-tint: rgba(248, 113, 113, 0.06);
+  --danger-soft: rgba(248, 113, 113, 0.08);
+  --danger-line: rgba(248, 113, 113, 0.3);
+  --danger-line-strong: rgba(248, 113, 113, 0.35);
+  --line-strong: rgba(179, 195, 219, 0.2);
+  --canvas-veil: rgba(5, 7, 10, 0.6);
 
   /* 几何与缓动 */
   --radius-control: 8px;
@@ -84,6 +105,55 @@
   --fs-note: 11px;
   --fs-micro: 10px;
   --track-tight: -0.01em;
+}
+
+/**
+ * ── 日间主题：现代简洁 · 蔚蓝（V8.3 批次 2）──
+ *
+ * 只覆盖**颜色**，几何/字号/动效共用同一套 token，因此组件层零改动。
+ * 两条设计约定：
+ * 1. **"金"整体换成"蔚蓝"**：暗色里 `--gold` 是主色（12 处引用），日间把同一批引用映射到蔚蓝，
+ *    eyebrow、描边、主按钮自动跟着换，不需要在组件里写任何分支；
+ * 2. **放映区仍保持深色**（`--canvas` 用 #0f1725）：成片是暗调素材，套白底会显得发灰。
+ *
+ * 对比度由 `scripts/visual-selfcheck.mjs` 第 ⑨ 条按 WCAG 公式逐对核验（正文/次文字/主色 ≥ 4.5，
+ * 低对比水印字标按 AC5 的定位放宽到 ≥ 3.0）。
+ */
+:root[data-theme='day'] {
+  --bg: #f4f7fb;
+  --panel: #ffffff;
+  --panel2: #f7f9fc;
+  --panel-glass: rgba(255, 255, 255, 0.88);
+  --text: #122031;
+  --muted: #5b6b80;
+  --faint: #7c8ba0;
+  --line: rgba(18, 32, 49, 0.14);
+  --line-gold: rgba(47, 111, 224, 0.35);
+  --gold: #2f6fe0;
+  --gold-glow: rgba(47, 111, 224, 0.16);
+  --blue: #1b4fd8;
+  --blue-glow: rgba(27, 79, 216, 0.16);
+  --action-fill: #2f6fe0;
+  --action-hover: #1b4fd8;
+  --success: #12a150;
+  --danger: #d93b3b;
+  --on-action: #ffffff;
+  --on-segment: #122031;
+  --canvas: #0f1725;
+
+  --gold-tint: rgba(47, 111, 224, 0.03);
+  --gold-soft: rgba(47, 111, 224, 0.08);
+  --gold-wash: rgba(47, 111, 224, 0.1);
+  --gold-line: rgba(47, 111, 224, 0.4);
+  --gold-shadow: rgba(47, 111, 224, 0.18);
+  --blue-soft: rgba(47, 111, 224, 0.08);
+  --blue-line: rgba(47, 111, 224, 0.3);
+  --danger-tint: rgba(217, 59, 59, 0.06);
+  --danger-soft: rgba(217, 59, 59, 0.08);
+  --danger-line: rgba(217, 59, 59, 0.3);
+  --danger-line-strong: rgba(217, 59, 59, 0.35);
+  --line-strong: rgba(18, 32, 49, 0.22);
+  --canvas-veil: rgba(15, 23, 37, 0.55);
 }
 
 /* Astrmira 原生 8 个 Keyframes */
