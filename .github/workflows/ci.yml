@@ -129,6 +129,11 @@ jobs:
           # 产生 CR 的常见途径：用 PowerShell 管道写 Secret（会带上 CRLF）。
           KEY_CLEAN=$(printf '%s' "$SSH_KEY" | tr -d ' \t\r')
 
+          # 诊断：只报长度与首字节的十六进制 —— 足够判断"是不是被改写过"，
+          # 又不会把密钥写进公开的 Actions 日志（首 8 字节是 `ssh-ed25` 这类固定前缀）。
+          echo "KEY 长度=${#SSH_KEY}  清洗后长度=${#KEY_CLEAN}"
+          echo "首 8 字节: $(printf '%s' "$KEY_CLEAN" | head -c 8 | od -An -tx1 | tr -s ' ')"
+
           if printf '%s' "$KEY_CLEAN" | head -c 40 | grep -q 'BEGIN'; then
             printf '%s\n' "$KEY_CLEAN" > ~/.ssh/id_ed25519
           else
