@@ -1,3 +1,38 @@
+/**
+ * 字体资源：**自托管**，不从 Google Fonts 外链。
+ *
+ * 为什么：生产 CSP 是 `style-src 'self'` / `font-src 'self'`
+ * （`backend/src/server/securityHeaders.ts`），外链 fonts.googleapis.com 会被浏览器直接拦掉 ——
+ * 2026-09-22 新增的生产形态 UI 冒烟（`scripts/smoke-ui.mjs`）实测到
+ * 「Loading the stylesheet 'https://fonts.googleapis.com/...' violates ... "style-src 'self' ..."」
+ * 并按失败处理；它同时还是本项目**唯一的第三方出网请求**。
+ * 自托管后：CSP 保持严格、无第三方请求、国内网络也不会因为取不到字体而变形；开发与生产看到的字一致。
+ *
+ * 只托管 `--serif-caps`（全大写 eyebrow）真正用到的 Cinzel，价格是两个拉丁子集合计约 23KB；
+ * 许可证 **SIL OFL 1.1**，文本随资源一起分发（`frontend/public/fonts/OFL.txt`），登记见 docs/UPSTREAM.md。
+ * `--serif` 里的 "Noto Serif SC" 只是**本机字体栈**里的候选（用户机器装了就用），不再从网络加载。
+ */
+@font-face {
+  font-family: 'Cinzel';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/cinzel-latin-500.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Cinzel';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/cinzel-latin-ext-500.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
   /* Astrmira 色彩 Tokens */
   --bg: #090c12;

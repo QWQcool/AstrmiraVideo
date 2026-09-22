@@ -5,7 +5,7 @@
 > 2. §6 追加 **D22 ~ D28**；§1 架构图与「双轨调度原则」、§3 防线 1 / 防线 3 补入本地轨 **scope 分裂**（host = Step 2；client = 台账 B1）的落点；§4 Step 2 任务行与 **AC6 / AC9**、Step 5 **AC2** 按新口径改写；
 > 3. §7-1 密钥管理措辞改写（Key 客户端持有、服务端过手不留存；D3 措辞同步修正），§7-3 / §7-4 / §7-5 补白名单与时点口径；
 > 4. **新增 §9 待优化台账（B1 ~ B15）**：本次主动降级项与延后项的**唯一权威位置**，含每项「何时必须做」；
-> 5. 施工入口：Step 2 ~ Step 5 的施工步骤以 `docs/EXEC-STEP2-5.md` 为**全仓唯一施工权威**（一次性手册，Step 5 验收后归档删除）。
+> 5. 施工入口：Step 2 ~ Step 5 的施工步骤以 `docs/EXEC-STEP2-5.md` 为**全仓唯一施工权威**（一次性手册，Step 5 验收后归档删除）。**〔2026-09-22 更新：Step 2-AC2 与 Step 4 仍阻塞于同一把 Key，手册据此**继续保留**（不提前归档）；其中仍然生效的验收口径已补入 §4 各 Step 的 AC〕**
 
 > **修订说明（V8.1，2026-09-22）**
 > 1. 新增 §7-4 ~ §7-6 安全加固（公网最小鉴权 / 限流键定义 / 上传与静态面加固），§6 追加 D18 ~ D21；
@@ -113,7 +113,7 @@
 - **实施顺序（已定）**：`OI-2 夹具 provider` → 公共链路（存储 / 画廊 / 206 / 磁盘 / 幂等键）→ `Seedance`（AC2，真金白银）→ `OI-1 素材`。理由：公共链路是所有 provider 的共同地基；OI-2 是唯一「无 Key、无网、无 GPU、零成本、结果确定」的 provider，而 AC4（重启恢复）与 AC7（不确定不重提）需要**反复制造故障**，只有用夹具 provider 才能不花钱地反复跑。
 - **任务**：`pipeline/smartCrop.ts`（32 倍数居中裁切）；`pipeline/imageSanitize.ts`（防线 4 图像清洗网关）；`providers/VolcanoSeedanceProvider.ts`（提交+轮询+下载）；`providers/LocalH3Provider.ts`（子进程调度+互斥锁，**host scope**）；`providers/registry.ts`（provider 唯一注册点）；`providers/statusProbe.ts`（**本地引擎配置自检**——读 env 做一次轻量校验并写内存缓存，**非硬件扫描**；到达路径 = 配 env + 重启，细则见 §6-D22 / §7-2）；**凭据中间件（`X-Provider-Key` 解析 + 掩码 + pino `redact`，见 CONTRACT §5「凭据传递约定」）**；**三态错误码与幂等键**（CONTRACT §5 / §6）；**开发期故障注入层**（见下方「Step 2 补充」）；**CI 三件套（lint / type / test）** 及 `pnpm test:contract` 契约层脚本；**防线 5 防抖限流（Step 2 按来源 IP 单键，冷却状态落 SQLite；复合键见 §7-5 的 Step 5 时点）**；**`/api/upload` 上传加固（≤20MB × ≤4 个、魔数嗅探、类型白名单、路径不含用户输入）**；**公网最小鉴权中间件骨架（Step 5 前强制启用；回环免鉴权，细则 §7-4）**；`/api/prompt/enhance`（**demo 版以 `501 LLM_NOT_CONFIGURED` 诚实落地**、前端 ✨ 置灰；完整实现见 §9 台账 B3）；路由挂载 `/api/generate`、`/api/tasks/:taskId`、`/api/providers/status`、`/api/upload`、`/api/history`；SQLite 任务存储；`packages/shared` 契约包随契约变更同步。
 - **AC1**：契约层测试全绿（`pnpm test:contract`，覆盖 CONTRACT.md 全部路由与错误码，含三态 `disposition` 穷举）。
-- **AC2**：Seedance 真实冒烟出片 1 次，记录实际耗时与费用，回填 §8 成本表（消除【待验证】标记）。
+- **AC2**：Seedance 真实冒烟出片 1 次，记录实际耗时与费用，回填 §8 成本表（消除【待验证】标记）。**硬要求：冒烟必须走 `X-Provider-Key` 通道**（用 env 兜底 Key 绕开 = 等于没验证 BYOK 通道，见 §6-D23）；并逐项核对 `backend/src/providers/seedanceProtocol.ts` 中标【待验证】的上游字段（请求体结构 / `--` 尾缀参数 / `status` 枚举 / `content.video_url` 位置）。**当前阻塞：待一把可用的火山方舟 Key。**
 - **AC3**：本地并发提交 2 个任务，第 2 个任务状态为 `queued`，无第二个推理进程被拉起。
 - **AC4**：服务重启后，进行中的任务能从 SQLite 恢复状态，前端刷新可重挂载。
 - **AC5**：可选实现项 OI-2（`fixture-local`）产出真实可播 MP4，`ffprobe` 校验通过，全程零外网依赖、零配额消耗；见下方「Step 2 补充」。
@@ -134,10 +134,10 @@
 - **AC7**：任务归 `UNCERTAIN_RESULT` 时，界面展示「可能已产生费用，请到服务商后台核对后手动处理」，且**不提供任何一键重跑入口**。
 
 ### Step 4：端到端验收与体验打磨
-- **AC1**：T2V（含双引号台词人声）与 I2V（含 32 倍数裁切）各跑通 1 次完整链路。
+- **AC1**：T2V（含双引号台词人声）与 I2V（含 32 倍数裁切）各跑通 1 次完整链路，**必须用真实云端轨**（本地轨全量出片 7~10 小时/条，不作为验收手段，见 §8）。**当前阻塞：与 Step 2-AC2 同一把 Key。**
 - **AC2**：HEIC / WebP / 超大图各上传 1 次，清洗网关无报错、输出合规。
 - **AC3**：项目级 DoD 达成——后端契约测试全绿 + 上述两条 e2e 全绿。
-- **AC4**：CI 以 OI-2（`fixture-local`）跑通端到端并产出可播 MP4；OI-1（`stock-local`）手动回归 1 次。
+- **AC4**：CI 以 OI-2（`fixture-local`）跑通端到端并产出可播 MP4（**已完成**：`backend/src/e2e/` 走真实 TCP + `/media` 206 Range + `ffprobe` 校验，见 §5 的 B9 条目）；OI-1（`stock-local`）已按非目标跳过（台账 B7），**不参与验收**——验收记录必须如实写明，不得含糊带过。
 - **产出**：`walkthrough.md` 验收记录【规划】。
 
 ### Step 5：公网部署与交付
@@ -226,7 +226,7 @@
 
 ## 5. 进度日志（唯一进度权威，其他文档只准链接本节）
 
-**截至 2026-09-22 · 当前指针：Step 2 双轨 Provider 与核心调度（进行中，施工入口见 [EXEC-STEP2-5.md](EXEC-STEP2-5.md)）**
+**截至 2026-09-22 · 当前指针：Step 2 仅剩 AC2（真实出片冒烟，待一把可用 Key）＋ Step 4（端到端验收，阻塞于同一把 Key）；Step 1 / 1.5 / 3 已完成、Step 5 已上线且 CI → CD 全自动（施工入口仍见 [EXEC-STEP2-5.md](EXEC-STEP2-5.md)）**
 
 - [x] 架构纠偏：淘汰素材拼贴路线，确立【描述 + 参考图/视频 → 双轨生成】多模态管线（见 §6-D1）；
 - [x] 本地算力验证【已验证】：MiniMax H3 NF4 在 Tier 2 机器（16GB 显存）全量缓存并跑通 T2V / I2V / 双引号立体声台词；
@@ -249,7 +249,7 @@
       - **T5** 前端 token 化 + 字体修正：`--serif` 去 Cinzel 改大小写混排高对比衬线、新增 `--serif-caps` 仅供全大写 eyebrow；eyebrow 标签体系落位（`--fs-eyebrow` / `--track-caps`）；`App.tsx` 内 hex 色值与字体名零残留；
       - **T6** `JobQueue` 接口骨架（只立契约，无实现）：`requeue`（仅限未提交上游）与 `markUncertain`（已提交但结果不明）分列，防线 7 在接口层落地；
       - 依赖事实：`fastify-type-provider-zod@7.0.0` 的 peer 要求 `zod >= 4.1.5`，故 zod 由 3 升至 **4.6.5**——Step 1 期间 zod 为「已装零使用」，major 切换无迁移成本；
-- [ ] **Step 2 双轨 Provider 与核心调度【进行中】**：架构决策定稿（§6-**D22 ~ D28**、CONTRACT **V1.8**、新增 §9 台账），**施工手册：`docs/EXEC-STEP2-5.md`（全仓唯一施工权威，一次性手册，Step 5 验收后归档删除）**；实施顺序与切片以该手册 §6 为准。
+- [ ] **Step 2 双轨 Provider 与核心调度【仅剩 AC2】**：架构决策定稿（§6-**D22 ~ D28**、CONTRACT **V1.8**、新增 §9 台账）；S1 ~ S5b / S7 全部完成（见下），**唯一未完成项是 AC2（真实出片冒烟 + §8 成本表回填），阻塞于一把可用的火山方舟 Key**；施工手册 `docs/EXEC-STEP2-5.md` **继续保留**（一次性手册，Step 5 验收后归档删除），实施顺序与切片以该手册 §6 为准。
       - [x] **S1 · OI-2 夹具 provider【已验证】**（AC5）：`scripts/make-fixture-clips.mjs`（ffmpeg 现场合成 9 条边界片，二进制不入库）、`lib/ffmpeg.ts`（工具缺失中文指引 + `-nostdin`/超时 + 探测失败统一包装）、`pipeline/smartCrop.ts`（32 倍数规整 + 居中裁切纯函数）、`providers/registry.ts`（唯一注册点）、`providers/fixture/FixtureLocalProvider.ts`（四方法 + 时长对齐 + 循环/静音双告警）；**38 项测试全绿**（9 条边界用例逐条断言 + 4 项破坏性验证回归）。
       - [x] **S2 · 公共链路【已验证】**（AC3 / AC4 / AC7 幂等半边）：`store/db.ts`（SQLite + 建表：任务 / 幂等键 / 冷却）、`store/taskStore.ts`（CRUD + 参数快照 + `warnings` + `submitting` + 原子领取，含防线 7 的 SQL 排除条件）、`queue/SqliteJobQueue.ts`（实现既有 `JobQueue` 接口 + `requeue` 守卫）、`queue/dispatcher.ts`（双轨调度，local 并发 1 + 防线 3 收尾清理）、`routes/generate|tasks|history.ts`、`pipeline/cleanup.ts`、`server/staticOutputs.ts`（`/media/*` 的 206 载体）；**54 项测试全绿**（幂等上游计数 = 1、并发第 2 个保持 `queued`、重启恢复、206 Range、画廊删除、防线 7 双护栏、防线 3 目录不存在）；CONTRACT §5 补登各路由响应形状。
       - [x] **S3 · 三态错误码 + 故障注入层【已验证】**（AC7 的 uncertain 半边）：`errors.ts`（12 码 → 三态的**穷举映射表**，`satisfies Record<ErrorCode, ErrorDisposition>` 编译期钉死 + `resolveTaskError` 唯一归类入口）、`providers/withFaultInjection.ts`（7 项注入 + `FAULT_INJECT` 默认关闭 + 生产挂载直接拒绝）、dispatcher 补**上报轮询循环**（进度 heartbeat 落库 + 超时归 `UNCERTAIN_RESULT`）；`packages/shared` 的 `ErrorCodeSchema` 同步到 V1.8 的 12 个码（修掉 R 段的遗漏）；**87 项测试全绿**；AC7 的「上游调用次数 = 1」硬断言经破坏性验证（把 `markUncertain` 临时改成 `requeue` → 断言精确变红）钉住；判据修正为「是否**已进入提交阶段**」（`submitting` 语义），而非「是否拿到 upstreamTaskId」。
@@ -293,7 +293,15 @@
       - **B8 复合限流键（IP + 凭据指纹）**：`rateLimitKey` 的签名早就预留了 `keyFingerprint`，但 `generate.ts` 只传了 IP。后果不是"洁癖"而是**用户可见的误伤**：共享出口（公司 NAT / 校园网 / 移动网络）下所有人同 IP，A 提交后 B 被「冷却中 60s」挡住，而 B **完全无法自查** —— 防线 5 的本意是防单人刷接口，不是防整栋楼。补 `fingerprintKey()`：SHA-256 前 8 位（足以区分、**不可逆**、不构成"存储凭据"），输入先 `trim()`（否则加个空格就能绕过冷却），并接进限流键；未带 Key 的访客退化纯 IP 键（他们本来也提交不了：无凭据 → `KEY_MISSING`）。
       - **B15 CSP + 零 `innerHTML` 断言**：CSP 落于 `backend/src/server/securityHeaders.ts`，**仅生产启用** —— 开发环境必须放开内联与 ws，否则 `pnpm dev` 直接白屏；而"为了安全把开发环境弄坏"的做法，最终结果一定是有人把 CSP 整段删掉。`innerHTML` 现状本已为零，已固化成 `visual-selfcheck.mjs` 的第 ⑦ 条断言，防止日后被写回来。
       - **验证**：后端 **190 项** + 前端 **24 项** + 视觉自检全绿；线上实测 `Content-Security-Policy` 头存在、三项安全头齐全。
-- [ ] **Step 4 端到端验收【阻塞：需一把可用 Key】**：见 §4。AC1 明确要求用**真实云端轨**跑通 T2V（含双引号台词人声）与 I2V（含 32 倍数裁切），因此与 AC2 共用同一把 Key —— 拿到 Key 后 Step 4 与 Step 2-AC2 可一并完成。
+- [x] **测试地基加固（台账 B9）＋ 顺手修掉两个真实缺陷【已验证】**（2026-09-22）：
+      - **① 端到端固化（= Step 4-AC4 的 CI 半边）**：新增 `backend/src/e2e/fixturePipeline.e2e.test.ts` —— **真实 TCP**（`listen` + `fetch`，不用 `app.inject`）：提交 → 轮询至 `succeeded` → `/media` Range **206**（含 `content-range` / `accept-ranges`）→ 全量下载 + `ffprobe` 校验"真的可播"（时长 = 请求、尺寸 = `cropToAspect` 的 32 倍数结果、含音轨）→ 画廊参数快照可见 → 删除后文件**真的**消失且 `/media` 转 404；并断言中间帧目录不存在（防线 3）。基线：后端 18 → **19 文件 / 190 → 199 用例**。
+      - **② 修掉「夹具 provider 忽略 `OUTPUT_DIR`」**（`providers/registry.ts` 改为按 `resolveOutputsDir()` 惰性构造）：旧行为把成片写进 `<repo>/outputs`，而 `/media/*` 服务的是 `OUTPUT_DIR` —— 分叉时的症状是「任务 succeeded 但播放器 404」，本地 `pnpm dev`（cwd = `backend/`）同样会分叉。破坏性验证：还原旧写法 → e2e 精确报「产物不在 OUTPUT_DIR 内」。
+      - **③ 覆盖率（只给防线载体设文件级门限）**：`@vitest/coverage-v8` + `backend/vitest.config.ts` 的 glob 阈值（errors / taskStore / rateLimit / auth / credential / keyVault / smartCrop / cleanup / generate / seedanceProtocol）；CI 的测试步骤由 `pnpm test` 改为 `pnpm test:coverage`（门限与测试**同趟**判定）。实测总覆盖率 **89.04%**（语句）。破坏性验证：把 `errors.ts` 行覆盖阈值临时调到 99 → 精确报 `Coverage for lines (86%) does not meet "src/errors.ts" threshold (99%)`。顺带补齐 `resolveProviderKey` / `maskKey` / `LOG_REDACT_PATHS` 测试，`credential.ts` 覆盖率 75% → **100%**。
+      - **④ 生产形态 UI 冒烟（B9 的视觉固化；用户拍板"不做像素比对"）**：`scripts/smoke-ui.mjs`（`pnpm smoke:ui`）—— 以 `NODE_ENV=production`（**生产 CSP 真的生效**）起单进程，chromium 打开首页并断言：三栏骨架 / 首屏与后端连通（头部徽章进「服务在线」）/ BYOK 抽屉可交互 / `document.fonts.load` 正向确认字体已加载 / **控制台零 error 且无未捕获异常**；截图存 `artifacts/ui-smoke/`（仅 artifact 留档，不参与判定）。CI 内新增构建 → 安装 chromium → 冒烟 → 上传截图四步。
+      - **⑤ 顺手修掉一个「只有浏览器才看得见」的真实缺陷**：`frontend/index.html` 外链 `fonts.googleapis.com`，而生产 CSP 是 `style-src 'self'` / `font-src 'self'` → **线上 Cinzel 标题字其实一直没有生效**（开发环境按设计不开 CSP，所以是"本地正常、线上变形"）。修法：Cinzel 两个拉丁子集（合计 ~23KB，**SIL OFL 1.1**）自托管进 `frontend/public/fonts/`（含 `OFL.txt`，登记见 UPSTREAM）；`visual-selfcheck.mjs` 增加第 **⑧** 条静态断言「index.html 零跨源资源」（破坏性验证：加回外链 → 精确报错）。CSP 因此**保持严格**，也不再有任何第三方出网请求。
+      - **⑥ 性能基准（只提供可复跑的手动脚本，CI 不设门）**：`scripts/bench.mjs`（`pnpm bench`）。本机实测：`/api/health` p50 0.6ms / p95 1.7ms、`/api/providers/status` p50 0.5ms、画廊查询 p50 0.6ms、夹具出片（2s 片，含 ffmpeg 转码）**1.1s**、`/media` Range 首字节 p95 3.9ms、回环下载 117.8MB/s（2026-09-22，node v24.14.0 / win32 / 未插桩）。**引用时必须带上测量条件**。
+      - **余项转台账**：像素基线（B16）、性能门限（B17）、开发机与 CI / 镜像的 Node 版本对齐（**B18**：本机 v24.14.0 vs CI 与镜像 22）、中文衬线自托管策略（**B19**）。
+- [ ] **Step 4 端到端验收【阻塞：需一把可用 Key】**：见 §4。AC1 明确要求用**真实云端轨**跑通 T2V（含双引号台词人声）与 I2V（含 32 倍数裁切），因此与 AC2 共用同一把 Key —— 拿到 Key 后 Step 4 与 Step 2-AC2 可一并完成；**AC4 的 CI 半边已完成**（见上方 B9 条目 ①）。
 
 ---
 
@@ -364,6 +372,7 @@
 ## 9. 待优化台账（backlog · 唯一权威位置）
 
 > 本节的项**不在 Step 2 ~ Step 5 的实施范围内**；它们是本次架构决策中**主动降级 / 延后**的项与已识别但暂不处理的问题，逐项登记「何时必须做」，避免遗忘或临时拍脑袋。施工手册只引用本节（`docs/EXEC-STEP2-5.md` §13），**不复制内容**。
+> **B16 ~ B19** 为 2026-09-22 随 B9 落地（端到端 / 覆盖率 / UI 冒烟 / 基准脚本）与实测发现的追加项。
 
 | # | 项 | 来源 | 何时必须做 |
 |---|---|---|---|
@@ -375,10 +384,14 @@
 | B6 | Tier 推荐文案单一事实源（`packages/shared` 常量 + 文档投影 + 键集合断言） | §6-D22 连带 | 文案第二次修改前（**否则两处副本漂移必然发生**） |
 | B7 | OI-1 `stock-local` 素材 provider（四步确定性选片、循环拉伸 / 音轨静音告警） | §4「Step 2 补充」 | 需要「无 Key 零成本真实视频」时 |
 | B8 | 复合限流键（IP + BYOK Key 指纹 SHA-256 前 8 位） | §6-D25 | **上线前必须做**（NAT 共享出口下 IP 单键会互相误伤）【待验证：实际影响面】 |
-| B9 | CI 三件套之外的视觉 / 端到端固化、覆盖率、性能基准 | §4 Step 4 | Step 4 内部分完成，其余留台账 |
+| B9 | CI 三件套之外的视觉 / 端到端固化、覆盖率、性能基准 | §4 Step 4 | **CI 侧已完成**（真实 TCP 端到端 / 覆盖率文件级门限 / 生产形态 UI 冒烟 / 手动基准脚本，见 §5）；余项转 **B16 / B17** |
 | B10 | SSE 实时推送（替代轮询） | §6-D7 | 轮询体验被投诉时 |
 | B11 | `TaskProgress.executedBy` + 画廊诚实标注任务实际执行位置 | §6-D26 | 与 B1 同步 |
 | B12 | 中间帧清理在 client 轨的审计（worker 回报 `tmpCleaned` 写入 `warnings[]`） | §6-D26 | 与 B1 同步 |
 | B13 | Tier 表数值的实测验证（GUIDE §一 全列【待验证】） | GUIDE §一 | 有对应档位硬件可实测时 |
 | B14 | worker 默认端口 8765 / 目录约定的冲突实测 | §6-D26 | 与 B1 同步 |
 | B15 | CSP（`default-src 'self'`）与「数据路径零 `innerHTML`」的自动化断言 | §6-D23 | Step 5 内落地（公网刚需） |
+| B16 | 浏览器级视觉的**像素基线**比对（当前只做语义冒烟 + 截图留档，**刻意不比像素**：跨平台字体渲染差异是长期 flaky 源） | §9-B9 余项 | UI 大改后想"冻结"视觉时（先定字体 / 亚像素差异的容忍度策略） |
+| B17 | 性能基准的 **CI 门限**（当前只提供 `scripts/bench.mjs` 本地手动测量，CI 不设门） | §9-B9 余项 | 有自托管 runner，或出现性能投诉时 |
+| B18 | 开发机与 CI / 镜像的 **Node 版本对齐**（本机实测 `v24.14.0`，CI 与 `Dockerfile` 均为 22；建议 `.nvmrc` + `engines` 收口） | 本次实测发现 | 下次出现「本地绿、CI 红」时立刻做（环境漂移类问题最难查） |
+| B19 | **中文衬线字的自托管策略**：`--serif` 里的 `"Noto Serif SC"` 现仅是本机字体候选（不再从网络加载），中文衬线会回落系统字体；要统一观感需自托管 CJK 子集（体积大） | 本次实测发现（生产 CSP 拦掉外部字体引发） | 动视觉体系时（与 B16 一起做） |

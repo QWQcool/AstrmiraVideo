@@ -24,7 +24,29 @@ export function isFixtureProviderEnabled(): boolean {
   return process.env.NODE_ENV !== 'production';
 }
 
-const fixtureProvider = new FixtureLocalProvider();
+/**
+ * OI-2 夹具实例：**按当前的 `OUTPUT_DIR` 惰性构造**。
+ *
+ * 为什么不能是模块级 `new FixtureLocalProvider()`：它的 outputDir 默认是 `<repo>/outputs`，
+ * 而 `/media/*` 服务的是 `resolveOutputsDir()`（env `OUTPUT_DIR` 优先）——两者会分叉，
+ * 症状是「任务 succeeded 但播放器 404」（本地 `pnpm dev` 的 cwd 是 `backend/`，
+ * 默认值同样分叉）。云端 provider 一直按每次调用读 `resolveOutputsDir()`，夹具此前漏了这条。
+ *
+ * 惰性而非「import 时读一次」：测试与部署都会在装配前才设 env。
+ */
+const fixtureProvider = (() => {
+  let instance: FixtureLocalProvider | null = null;
+  let outputDirOfInstance: string | null = null;
+
+  return (): FixtureLocalProvider => {
+    const outputDir = resolveOutputsDir();
+    if (instance === null || outputDirOfInstance !== outputDir) {
+      instance = new FixtureLocalProvider({ outputDir });
+      outputDirOfInstance = outputDir;
+    }
+    return instance;
+  };
+})();
 
 /**
  * 取 provider 所需的**每次调用上下文**。
@@ -73,7 +95,7 @@ function createCloudProvider(ctx: ProviderResolutionContext): VideoProvider {
 
 const REGISTRY: Record<ProviderType, ProviderFactory> = {
   // OI-2 夹具（S1 已实现）
-  'fixture-local': () => (isFixtureProviderEnabled() ? fixtureProvider : null),
+  'fixture-local': () => (isFixtureProviderEnabled() ? fixtureProvider() : null),
   // OI-1 素材 provider：未实现，属 PLAN §9 台账 B7
   'stock-local': () => null,
   // 云端轨（S5b 落地）：每任务一份实例，凭据由调度器注入

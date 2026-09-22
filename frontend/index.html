@@ -5,9 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AstrmiraVideo · 幻梦星芒视频生成管线</title>
     <meta name="description" content="自然语言描述 + 参考图/参考视频 → 本地/云端双轨 AI 视频生成工作台" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500&family=Noto+Serif+SC:wght@400;600&display=swap" rel="stylesheet" />
+    <!--
+      字体**自托管**（frontend/public/fonts/），不引任何跨源资源：
+      生产 CSP 是 `style-src 'self'` / `font-src 'self'`，外链 Google Fonts 会被浏览器直接拦掉
+      （2026-09-22 的 UI 冒烟 `scripts/smoke-ui.mjs` 实测到该 CSP 违例），
+      而且那是本项目唯一的第三方出网请求。@font-face 定义见 src/styles/tokens.css。
+    -->
   </head>
   <body>
     <div id="root"></div>

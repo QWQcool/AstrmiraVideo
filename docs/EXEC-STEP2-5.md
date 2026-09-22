@@ -365,7 +365,7 @@ AC 逐条：AC-x → 命令 → 输出摘要（关键行原样粘贴）→ 判�
 3. **分支**：直接在 `main` 上按片推进（单人项目、每片可独立回退）；如需并行验证可开 `feat/step2-s<n>` 然后快进合并；
 4. **进度回检**：每片完工的**同一提交内**更新三处指针（README 徽章 + 「快速开始」段、PLAN §5 进度日志、`NEXT_SESSION_PROMPT.md` 当前指针）；
 5. **版本号**：`PLAN` → V8.2；`CONTRACT` → V1.8；两处都带修订说明块；
-6. **提交前自检**：`pnpm lint && pnpm type && pnpm test:contract && pnpm test` 全绿 + `pnpm build` 成功。
+6. **提交前自检**：`pnpm lint && pnpm type && pnpm test:contract && pnpm test:coverage` 全绿 + `pnpm build` 成功 + `pnpm smoke:ui` 通过（UI 冒烟需要先 `pnpm build`；它跑在 `NODE_ENV=production` 上，因此**生产 CSP 是真的生效的**）。
 
 ---
 
@@ -383,6 +383,7 @@ AC 逐条：AC-x → 命令 → 输出摘要（关键行原样粘贴）→ 判�
 10. **`.tmp/` 是 gitignore 的**：施工过程产物（日志、临时脚本）放 `.tmp/`，不要混进 `docs/`。
 11. **别在 `docs/` 之外新增状态描述**：进度只存在于 PLAN §5（README 规范 6）。
 12. **Windows 下 better-sqlite3 / sharp 可能需要 build tools**，若装不上先记录再决定（不要静默换实现）。
+13. **跨源资源会被生产 CSP 拦掉**（2026-09-22 实测）：`index.html` 曾外链 `fonts.googleapis.com`，而生产 CSP 是 `style-src 'self'` / `font-src 'self'` → 线上字体**从上线起就没生效**，本地开发却"看着正常"（开发环境按设计不开 CSP）。规则：**字体 / 样式 / 脚本一律自托管**（现做法：`frontend/public/fonts/` + `tokens.css` 的 `@font-face`，OFL 许可证文本随资源分发），静态自检 `visual-selfcheck.mjs` 第 ⑧ 条与 UI 冒烟 `scripts/smoke-ui.mjs` 各守一层。
 
 ---
 

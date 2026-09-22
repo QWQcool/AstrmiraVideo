@@ -59,8 +59,36 @@ jobs:
       - name: 契约层测试
         run: pnpm test:contract
 
-      - name: 全部测试（后端产物层 + 前端单测与视觉自检）
-        run: pnpm test
+      # 全部测试 = 后端（含 `src/e2e/` 的真实 TCP 端到端：监听 + 206 Range + ffprobe）
+      # + 前端（单测 + 视觉自检）。
+      # CI 刻意走 `test:coverage` 而不是 `test`：这样**覆盖率门限与测试在同一趟内判定**，
+      # 不必为覆盖率再跑一遍套件（键模块的文件级阈值见 backend/vitest.config.ts）。
+      # 本地开发仍用 `pnpm test`（不插桩，更快）；要门限时用 `pnpm test:coverage`。
+      - name: 全部测试（含覆盖率门限）
+        run: pnpm test:coverage
+
+      # ── 生产形态 UI 冒烟（PLAN §9-B9 的视觉固化项）──────────────────────────
+      # 它测的是**浏览器里真的渲染出来了**：三栏骨架 / 首屏连通 / 字体自托管 /
+      # 控制台零 error。以 NODE_ENV=production 起后端，因此**生产 CSP 是真的生效的**
+      # —— 2026-09-22 正是这条抓到了「index.html 外链 Google Fonts 被 CSP 拦掉」的真实缺陷。
+      # 与"截图基线比对"的取舍（不做像素比对）见 scripts/smoke-ui.mjs 头注释。
+      - name: 构建产物（UI 冒烟需要 backend/dist 与 frontend/dist）
+        run: pnpm build
+
+      - name: 安装 chromium（UI 冒烟用）
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: UI 冒烟（生产形态 + 控制台零 error）
+        run: pnpm smoke:ui
+
+      # 截图只作留档（人看），不参与判定
+      - name: 上传 UI 冒烟截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-smoke-screenshots
+          path: artifacts/ui-smoke/
+          if-no-files-found: ignore
 
   # ── CD：CI 全绿后自动发布到服务器（Step 5）────────────────────────────────
   #

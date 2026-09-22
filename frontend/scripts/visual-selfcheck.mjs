@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -147,6 +147,31 @@ for (const [file, text] of contents) {
   });
 }
 
+// ── ⑧ index.html 不得引用任何跨源资源（生产 CSP 下必被拦）──
+//
+// 这条来自 2026-09-22 实测到的真实缺陷：`index.html` 曾外链 `fonts.googleapis.com`，
+// 而生产 CSP 是 `style-src 'self'` / `font-src 'self'` → **线上字体被拦**，
+// 本地开发却"看着正常"（开发环境按设计不开 CSP），于是形成"只有线上才看得见"的视觉偏差。
+// 浏览器级冒烟（`scripts/smoke-ui.mjs`）能抓到它，这里再用静态检查把同一类问题挡在更早的一层
+// （秒级、不需要浏览器、不需要构建产物）。
+const INDEX_HTML = path.join(ROOT, 'index.html');
+
+if (!existsSync(INDEX_HTML)) {
+  failures.push('找不到 frontend/index.html');
+} else {
+  const html = readFileSync(INDEX_HTML, 'utf8');
+  const crossOrigin = [...html.matchAll(/(?:href|src)\s*=\s*["'](https?:\/\/[^"']+)["']/gi)].map(
+    (match) => match[1],
+  );
+
+  if (crossOrigin.length > 0) {
+    failures.push(
+      `index.html 引用了跨源资源（生产 CSP 的 style-src/font-src/script-src 均为 'self'，` +
+        `线上必被拦）：${crossOrigin.join(', ')}`,
+    );
+  }
+}
+
 // ── 汇总 ──
 if (failures.length > 0) {
   console.error(`✗ 视觉自检失败（${failures.length} 项）：`);
@@ -157,5 +182,5 @@ if (failures.length > 0) {
 console.log(
   `✓ 视觉自检通过：${REQUIRED_KEYFRAMES.length} 个 keyframes 均有功能位、` +
     `无硬编码字号/字距、${PANELS_EXPECTING_EYEBROW.length} 处分区标题走 eyebrow 体系、` +
-    `水印 ${watermarkUsers.length} 处、数据路径零 innerHTML`,
+    `水印 ${watermarkUsers.length} 处、数据路径零 innerHTML、index.html 零跨源资源`,
 );
