@@ -60,6 +60,11 @@ export default defineConfig({
         'src/routes/generate.ts': { statements: 90, branches: 80, functions: 100, lines: 90 },
         // 云端协议适配层（上游字段唯一收口处，AC2 时要逐项核对【待验证】）
         'src/providers/seedanceProtocol.ts': { statements: 90, branches: 85, functions: 100, lines: 90 },
+        // V2.0 文本轨：它同时承担"禁止静默降级"（engine）与"错误消息不得夹带 Key"两条不变量。
+        // 实测 100/80.8/100/100，分支阈值留出余量（分支里含少量防御性判定）
+        'src/providers/llm.ts': { statements: 90, branches: 75, functions: 100, lines: 95 },
+        // 扩写路由：四条错误分支（501/400/401/502）各自必须有产生点
+        'src/routes/enhance.ts': { statements: 90, branches: 80, functions: 100, lines: 95 },
       },
     },
   },
