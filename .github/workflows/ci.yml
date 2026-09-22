@@ -1,8 +1,13 @@
 name: CI
 
 # CI 三件套（PLAN §6-D14 / 施工单 S7）：lint / type / test，外加契约层专项。
-# ffmpeg 走**系统安装**（D10 / 施工单 §2 P0-2）：仓库与镜像都不内置二进制；
-# OI-2 夹具片段由 ffmpeg 现场合成，因此 runner 必须先装好。
+#
+# ⚠️ 关于 ffmpeg 与夹具片段（这两个都**不在仓库里**，必须由 runner 现场准备）：
+# 1. ffmpeg 走系统安装（D10 / 施工单 §2 P0-2）：仓库与镜像都不内置二进制；
+# 2. **夹具片段（tests/fixtures/clips/*.mp4）是 .gitignore 的** —— 二进制不入库，
+#    由 `scripts/make-fixture-clips.mjs` 用 ffmpeg 现场合成。
+#    漏掉第 2 步时，CI 会报 `ENOENT: copyfile .../tests/fixtures/clips/...`，
+#    看起来像"测试自己坏了"，实际只是**输入没生成**（这一步曾经漏过，五个提交全红）。
 
 on:
   push:
@@ -35,6 +40,10 @@ jobs:
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
 
+      # 必须在任何测试之前 —— 夹具片段是测试的**输入**，而它们不在仓库里
+      - name: 合成夹具片段（二进制不入库，CI 现场生成）
+        run: node scripts/make-fixture-clips.mjs
+
       - name: 契约包构建（backend / frontend 消费 dist 而非 src）
         run: pnpm --filter @astrmira/shared build
 
@@ -44,8 +53,9 @@ jobs:
       - name: type
         run: pnpm type
 
+      # 契约层单跑一次：它是最快的整体反馈（几十毫秒），失败时不必等产物层那十几秒
       - name: 契约层测试
         run: pnpm test:contract
 
-      - name: 全部测试（契约层 + 真实产物层）
+      - name: 全部测试（后端产物层 + 前端单测与视觉自检）
         run: pnpm test

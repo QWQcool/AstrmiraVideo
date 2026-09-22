@@ -7,8 +7,11 @@
     "build": "pnpm --filter @astrmira/shared build && pnpm --filter backend build && pnpm --filter frontend build",
     "lint": "oxlint --deny-warnings backend/src frontend/src packages/shared/src",
     "type": "pnpm --filter @astrmira/shared build && pnpm --filter backend exec tsc --noEmit && pnpm --filter frontend exec tsc --noEmit",
-    "test": "pnpm --filter backend test",
-    "test:contract": "pnpm --filter backend exec vitest run src/contract.test.ts"
+    "test": "pnpm --filter backend test && pnpm --filter frontend test",
+    "test:backend": "pnpm --filter backend test",
+    "test:frontend": "pnpm --filter frontend test",
+    "test:contract": "pnpm --filter backend exec vitest run src/contract.test.ts",
+    "test:fixtures": "node scripts/make-fixture-clips.mjs"
   },
   "devDependencies": {
     "oxlint": "^1.85.0"
