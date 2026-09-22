@@ -118,15 +118,21 @@ jobs:
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
 
           # Secret 支持两种形态（自动识别，两种写法都能用）：
-          #   · base64（单行）—— **推荐**。多行私钥经 YAML env 传递时，换行/CR
-          #     很容易在某一环被悄悄改写，而 OpenSSH 对格式零容忍：它报的是
-          #     `Load key ...: error in libcrypto` + `Permission denied`，
-          #     看起来像"密钥不对/没权限"，实际只是多了个 \r。
+          #   · base64（单行）—— **推荐**
           #   · PEM/OpenSSH 原文（以 -----BEGIN 开头）
-          if printf '%s' "$SSH_KEY" | head -c 40 | grep -q 'BEGIN'; then
-            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          #
+          # 但无论哪种形态，**先剥掉空格 / 制表符 / CR，只保留 LF**。
+          # 原因是实测踩到的同一个坑的两种表现：
+          #   · 值末尾被附加 CRLF 时，`base64 -d` 直接报 `base64: invalid input`；
+          #   · 同一个 CR 在私钥里则表现为 `Load key ...: error in libcrypto`
+          #     + `Permission denied`（看起来像"密钥不对"或"没权限"）。
+          # 产生 CR 的常见途径：用 PowerShell 管道写 Secret（会带上 CRLF）。
+          KEY_CLEAN=$(printf '%s' "$SSH_KEY" | tr -d ' \t\r')
+
+          if printf '%s' "$KEY_CLEAN" | head -c 40 | grep -q 'BEGIN'; then
+            printf '%s\n' "$KEY_CLEAN" > ~/.ssh/id_ed25519
           else
-            printf '%s' "$SSH_KEY" | base64 -d > ~/.ssh/id_ed25519
+            printf '%s' "$KEY_CLEAN" | base64 -d > ~/.ssh/id_ed25519
           fi
 
           chmod 600 ~/.ssh/id_ed25519
