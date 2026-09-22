@@ -1,6 +1,7 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V1.3 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V1.4 · 已冻结（变更需先改本文，再改代码）**
+> **V1.4 修订（2026-09-22）**：`TaskProgress` 新增 `warnings?: string[]`——用户可见的**非阻断告警**通道（与进度 `message` 职责分离、可并存多条、随任务记录持久化并在画廊展示）。引入原因：可选实现项 OI-1 的「素材短于请求时长 → 循环拉伸」与「循环后音轨静音」会**同时产生两条告警**，单字段 `message` 无法承载（§4、§7）。
 > 本规范是前后端接口的**唯一权威**，定义核心数据流：【文本描述 + 参考图/参考视频 → 云端API(火山Seedance) / 本地推理(MiniMax H3) → 视频产出】。
 > 任何文档或代码与本文冲突时，以本文为准。
 > **V1.3 修订（2026-09-22）**：① 错误码由 `retryable: boolean` 升级为三态 `ErrorDisposition`，新增 `UNCERTAIN_RESULT` 且**禁止自动重提**（§6）；② 新增幂等键与提交前 `submitting` 标记（§5、§7）；③ `VideoGenerateRequest` 新增 provider 私有参数 `options`（§1）；④ 明确可选实现项（OI）的实现边界（§4）。改动同步落 PLAN §3 防线 7 与 §4「Step 2 补充」。
@@ -112,6 +113,8 @@ export interface TaskProgress {
   totalSteps?: number;
   message?: string;
   outputVideoUrl?: string;        // 成功后的视频访问直链
+  warnings?: string[];            // 用户可见的非阻断告警（如"素材短于请求时长，已循环播放"、"循环素材自带音轨，已静音"）
+                                  // 与 message（进度描述）职责分离：可并存多条、不随进度刷新被覆盖、随任务记录持久化
   requestSnapshot: VideoGenerateRequest; // 完整请求快照，供画廊一键回填
   error?: {
     code: ErrorCode;              // 见 §6 错误码字典
@@ -193,6 +196,7 @@ export type ErrorDisposition =
 | :--- | :--- | :--- |
 | 任务状态 + 参数快照 + 画廊元数据 | SQLite（`data/app.db`，better-sqlite3） | 持久，服务重启可恢复 |
 | 幂等键 → taskId 映射 | SQLite（同上） | 持久；同一键重复提交返回同一任务（§5） |
+| 任务告警 `warnings[]` | SQLite（同上） | 随任务记录持久化，画廊 / 结果卡展示（V1.4 §4）；**仅写服务端日志不算告警** |
 | `submitting` 提交标记 | SQLite（同上） | 提交前写入、成功后写回上游 taskId；重启后据此判定是否已提交（§5，防线 7 前提） |
 | 成片 MP4 | `outputs/`（已入 .gitignore） | 画廊 LRU 淘汰 + 前端一键删除 |
 | 上传的参考资产 | `outputs/assets/<assetId>` | 关联任务删除时一并清理 |

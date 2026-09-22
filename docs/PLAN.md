@@ -92,6 +92,7 @@
 - **验证**：人工开箱 + `curl /api/health`。
 
 ### Step 2：双轨 Provider 与核心调度
+- **实施顺序（已定）**：`OI-2 夹具 provider` → 公共链路（存储 / 画廊 / 206 / 磁盘 / 幂等键）→ `Seedance`（AC2，真金白银）→ `OI-1 素材`。理由：公共链路是所有 provider 的共同地基；OI-2 是唯一「无 Key、无网、无 GPU、零成本、结果确定」的 provider，而 AC4（重启恢复）与 AC7（不确定不重提）需要**反复制造故障**，只有用夹具 provider 才能不花钱地反复跑。
 - **任务**：`pipeline/smartCrop.ts`（32 倍数居中裁切）；`providers/VolcanoSeedanceProvider.ts`（提交+轮询+下载）；`providers/LocalH3Provider.ts`（子进程调度+互斥锁）；`providers/registry.ts`（provider 唯一注册点）；`providers/statusProbe.ts`（**真实算力探测**，替换 Step 1 占位实现）；**三态错误码与幂等键**（CONTRACT V1.3 §5 / §6）；**开发期故障注入层**（见下方「Step 2 补充」）；**CI 三件套（lint / type / test）**；路由挂载 `/api/generate`、`/api/tasks/:taskId`、`/api/providers/status`、`/api/prompt/enhance`、`/api/upload`、`/api/history`；SQLite 任务存储。
 - **AC1**：契约层测试全绿（`pnpm test:contract`，覆盖 CONTRACT.md 全部路由与错误码，含三态 `disposition` 穷举）。
 - **AC2**：Seedance 真实冒烟出片 1 次，记录实际耗时与费用，回填 §8 成本表（消除【待验证】标记）。
@@ -131,14 +132,23 @@
 
 **OI-1 `stock-local`：单镜头素材 provider**
 - 形状与其余 provider 完全同构（`checkHealth` / `submit` / `queryStatus` / `cancel`），**一次调用对应一条输出**，不引入多镜头概念；
-- 流程：`prompt` → 检索候选 → 下载 → 清洗 / 裁切对齐 `durationSec` → 落盘输出；
+- 流程：`prompt` → 检索候选（**在检索期即按 `durationSec` 与 `aspectRatio` 过滤**）→ 选片 → 下载 → 清洗 / 对齐 `durationSec` → 落盘输出；
+- **时长对齐规则（已定）**：候选长于 `durationSec` → 裁切；**短于 `durationSec` → 循环拉伸（loop）并产生一条告警**（说明"素材短于请求时长，已循环播放"）。因检索期已按最短时长过滤，该分支是兜底而非常态；
+- **告警通道（已定）**：走 `TaskProgress.warnings?: string[]`（CONTRACT V1.4）——与进度 `message` 职责分离、可并存多条、随任务记录持久化并在画廊展示；**只打服务端日志不算告警**（用户看不到即等于没有）；
+- **音轨处理（已定）**：循环拉伸时若素材自带音轨 → **静音**（或交叉淡化）并追加一条告警说明，避免环境音重复播放；
+- **选片规则（已定，必须确定性，否则 CI 不可复现）**：
+  1. **硬过滤**：朝向匹配 `aspectRatio`、时长 ≥ `durationSec`、分辨率 ≥ 目标档；
+  2. **稳定排序**：`分辨率降序 → 时长升序 → id 升序`，取第一条（同一 query 结果确定）；
+  3. **硬过滤为空** → 放宽一级（去掉时长限制）→ 此时才可能触发 loop + 告警；
+  4. **全空** → 显式报错 `PROVIDER_UNAVAILABLE`，**不得静默降级**；
+- **适配层注意（禁止透传）**：Pexels `orientation = landscape|portrait|square`；Pixabay 视频端点为横向/纵向类枚举，且另有 `video_type`（Pexels 侧对应 `size`）——两家参数集**不是一一对应**，适配器必须显式映射；
 - 数据源：Pexels 为主（默认配额 200 次/小时、20000 次/月）、Pixabay 备用（官方宣称不限次；其视频库偏空镜与动态背景，人物剧情向素材较少）。两家均要求先下载到自有服务器、不允许永久 hotlink，与本项目「下载归档 + 落盘」路线一致；
 - 价值：在**无 Key、无 GPU、零现金成本**的条件下，实测防线 2 / 3 / 4 / 5 四条公共链路（任务落库与刷新重挂载 / 磁盘 LRU / 图像清洗网关 / 防抖限流），并用**真实视频**替代 mock 产出（防线 7 由下方故障注入层覆盖；防线 1 属本地轨、防线 6 属提示词侧）。
 
 **OI-2 `fixture-local`：CI 专用夹具 provider**
 - 读取 `tests/fixtures/clips/`，实现同一 provider 接口；
 - **CI 用合成片**：由 `scripts/make-fixture-clips.mjs` 用 ffmpeg 现场合成（`testsrc2` / `smptebars` + 正弦音轨），**二进制不入库**，仓库只存脚本。理由是纯工程性的，与素材站无关：**确定性**（帧数 / 时长 / 尺寸 / 音轨全部已知，断言可钉死）、**体积**（脚本约 5KB vs 真实片段 2–5MB/段；二进制在 git 无增量存储，每次替换永久留在历史）、**边界覆盖**（真实素材提供不了下表的边界）；
-- **演示与观感走查用真实素材**：另置少量精选片段（3–5 段），只服务人工演示与 OI-1 离线调试，**不进 CI 流水线**；
+- **演示与观感走查用真实素材**：另置少量精选片段（3–5 段），只服务人工演示与 OI-1 离线调试，**不进 CI 流水线**；⏳ 选片**待 OI-1 跑通后补选**（须先看到真实检索质量，否则是盲挑；**不阻塞 Step 2**）；
 - 用途：CI / E2E 产出真实可播 MP4（`ffprobe` 校验），同时是将来验证 OI-3 的最小素材集。
 
 **CI 必须覆盖的边界用例（合成片不可替代的价值）**
@@ -147,7 +157,8 @@
 | :--- | :--- | :--- |
 | 基线 720p 横屏 5s + 音轨 | 标准参数 | 宽高 / 时长 / 音轨齐全 |
 | 竖屏 9:16 | 尺寸互换 | 画幅分支正确 |
-| **短于请求**（0.5s vs 请求 5s） | `duration=0.5` | 行为必须显式定义（循环拉伸 or 拒绝报错）——**当前为空白待定** |
+| **短于请求**（0.5s vs 请求 5s） | `duration=0.5` | **已定：循环拉伸 + 告警**；断言输出时长 = `durationSec` 且 `warnings` 至少 1 条 |
+| **短于请求且素材带音轨** | `duration=0.5` + 正弦音轨 | 断言循环后音轨被静音（或交叉淡化），且 `warnings` **同时含两条**（循环 + 静音） |
 | **长于请求**（30s vs 请求 5s） | `duration=30` | 必须裁切到 `durationSec`，不许多出 |
 | **无音轨** | `-an` | 拼接音轨链路不崩 |
 | 32 倍数不规整（如 831×479） | 交给 `smartCrop` | 补边 / 居中裁切后必为 32 倍数 |
@@ -203,6 +214,8 @@
 - [x] 可选实现项定稿【规划】：素材能力降级为开发期校验 provider（OI-1 `stock-local` / OI-2 `fixture-local`），多镜头编排列暂缓项（OI-3）——见 §4「Step 2 补充」与 §6-D8 ~ D10；
 - [x] 付费护栏补齐【规划】：错误码升级为三态 `ErrorDisposition`，新增 `UNCERTAIN_RESULT`、幂等键与提交前 `submitting` 标记，配套防线 7（CONTRACT V1.3）；
 - [x] 开发期校验方案定稿【规划】：真实素材（演示走查）与 CI 合成片（8 条边界用例）分工、故障注入层 7 项注入清单；
+- [x] OI-1 规则定稿【规划】：时长对齐（长→裁切 / 短→循环拉伸 + 告警）、循环时音轨静音、四步确定性选片规则、告警走 `warnings[]`（CONTRACT V1.4）；
+- [x] Step 2 实施顺序定稿：OI-2 夹具 → 公共链路 → Seedance → OI-1；
 - [ ] Step 2 ~ Step 5：见 §4。
 
 ---
@@ -225,6 +238,9 @@
 | D12 | `/api/providers/status` 改真实探测，禁止硬编码型号 | 占位实现恒真会让无卡机器误报本地可用，并使能力位开关（含 OI 的默认关闭）失去载体；探测不到必须显式 `available: false` + `reason` | 2026-09-22 |
 | D13 | 开发期故障注入层（`FAULT_INJECT` 默认 off） | 流中断 / 半包 / 磁盘写满只能发生在真实调用链上，mock 无法覆盖；每个注入项配自动化断言 | 2026-09-22 |
 | D14 | CI 三件套（lint / type / test）纳入 Step 2 范围 | Step 2 的全部 AC 依赖自动化验证；Step 1 骨架期不铺流水线，避免为未定型代码建 CI | 2026-09-22 |
+| D15 | 告警走 `TaskProgress.warnings: string[]`，不复用 `message`（CONTRACT V1.4） | `message` 会被后续进度刷新覆盖，且**无法并存多条**；OI-1 的「循环拉伸」与「音轨静音」会同时产生两条；告警只打服务端日志等于没有 | 2026-09-22 |
+| D16 | OI-1 采用四步确定性选片规则；短于请求走「循环拉伸 + 告警 + 音轨静音」 | 随机取首条会导致 CI 断言漂移、观感随机、loop 概率失控；确定性规则让 loop 成为**明确的降级路径**而非随机结果，并为 W2 的 LLM 选材打分留出替换位 | 2026-09-22 |
+| D17 | Step 2 provider 实施顺序：OI-2 → 公共链路 → Seedance → OI-1 | 公共链路是三者共同地基；OI-2 零成本零依赖，适合反复制造故障来验 AC4 / AC7；Seedance 每次调用都是真钱，应放在地基稳定之后 | 2026-09-22 |
 
 ---
 
