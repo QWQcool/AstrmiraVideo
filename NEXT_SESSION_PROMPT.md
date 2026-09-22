@@ -23,7 +23,7 @@
 
 ## 当前指针
 
-**Step 2 双轨 Provider（仅剩 AC2）＋ Step 3 前端工作台（已完成）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ Step 4 端到端验收（阻塞于同一把 Key）**——施工步骤以 **`docs/EXEC-STEP2-5.md` 为唯一权威**（分段施工卡 + 片内改动清单 + 破坏性验证 + 证据格式；**Step 2-AC2 与 Step 4 尚未验收，该手册继续保留、不提前归档**）；决策见 `docs/PLAN.md` §6（D22~D28）与 `docs/CONTRACT.md` **V1.8**；主动降级 / 延后项见 `docs/PLAN.md` **§9 待优化台账（B1~B19）**。以 §5 进度日志的实际状态为准，不要以本文件为准。
+**Step 2 双轨 Provider（cloud 待 AC2；host 本地轨 `LocalH3Provider` 未实现）＋ Step 3 前端工作台（已完成）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ Step 4 端到端验收（阻塞于同一把 Key）＋ V8.3 体验与功能补强（进行中，批次 0~5 见 PLAN §5）**——施工步骤以 **`docs/EXEC-STEP2-5.md` 为唯一权威**（分段施工卡 + 片内改动清单 + 破坏性验证 + 证据格式；**Step 2-AC2 与 Step 4 尚未验收，该手册继续保留、不提前归档**）；决策见 `docs/PLAN.md` §6（D22~D28）与 `docs/CONTRACT.md` **V1.8**；主动降级 / 延后项见 `docs/PLAN.md` **§9 待优化台账（B1~B22）**。以 §5 进度日志的实际状态为准，不要以本文件为准。
 
 **当前卡点与待办**：**Step 5 已上线，且 CI → CD 已实测跑通**（push 到 main → CI 全绿 → `deploy` job 自动 scp 上传 + 服务器本地构建镜像 + 健康检查；实测 `verify` 与 `deploy` 双绿，站点返回 CSP 与三项安全头，`/api/health` 为 200）。Secrets 为 `DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / **`SSH_PASSWORD`**。
 

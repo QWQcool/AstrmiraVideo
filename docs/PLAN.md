@@ -33,9 +33,9 @@
                                        ▼ HTTP（轮询；SSE 为【规划】）
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        【Fastify 后端调度中枢】                         │
-│  ├─ 图像清洗网关 (HEIC/WebP/CMYK 转码，大图下采样)                      │
+│  ├─ 图像清洗网关 (防线 4：EXIF 方向 / CMYK→sRGB / 大图下采样 / 32 倍数规整)  │
 │  ├─ 短窗口防抖限流 (60s 冷却，防连点刷 Token)                           │
-│  ├─ 磁盘 LRU 管理 (中间帧即时删除，画廊容量可控)                        │
+│  ├─ 磁盘防护 (中间帧即时删除；画廊**手动删除**释放磁盘——容量淘汰暂缓，见 §9-B22) │
 │  ├─ 任务存储 (SQLite：任务状态 + 参数快照 + 画廊元数据)                 │
 │  └─ 双轨调度器（cloud 并发 / host-local 互斥 Concurrency=1）；          │
 │     client-local 轨为旁路，服务端不调度（台账 B1）                      │
@@ -84,8 +84,8 @@
 |---|---|---|
 | 1 | 本地单卡排队互斥锁 | **host scope**（本地引擎跑在部署主机上，Step 2）：服务端 `local` 轨 Concurrency = 1，后续任务进入 `queued`；**client scope**（本地引擎跑在访问者自己的机器上，台账 B1）：worker 自身单并发锁，服务端不调度 |
 | 2 | 刷新断线不丢任务 | 任务状态落 SQLite（`data/app.db`），前端 `localStorage` 存任务 ID，刷新自动重挂载进度 |
-| 3 | 磁盘空间防护 | 合成结束立即物理清理中间帧与临时音频（**host scope** → `outputs/.tmp/<taskId>/`；**client scope** → 落在用户机器、由 worker 清理并回报 `tmpCleaned`，写入 `warnings[]`；服务端无法强制验证该事实，UI 文案不得声称"已由服务端清理"）；画廊 LRU 淘汰；前端一键删除 |
-| 4 | 图像格式清洗网关 | HEIC/WebP/CMYK 自动转码，大图下采样，防爆显存 |
+| 3 | 磁盘空间防护 | 合成结束立即物理清理中间帧与临时音频（**host scope** → `outputs/.tmp/<taskId>/`；**client scope** → 落在用户机器、由 worker 清理并回报 `tmpCleaned`，写入 `warnings[]`；服务端无法强制验证该事实，UI 文案不得声称"已由服务端清理"）；画廊**手动删除释放磁盘**（**容量淘汰暂缓**，见 §9-B22）；前端一键删除。⚠️ 现状：清理机制已就位，但**当前生产链路没有中间帧生产者**（`outputs/.tmp` 尚无写入方），属预留兜底 |
+| 4 | 图像格式清洗网关 | **已落地**（`pipeline/imageSanitize.ts`）：EXIF 方向矫正 / CMYK→sRGB / 超大图下采样（长边 ≤ 2048）/ 32 倍数规整 / 剥离元数据；带透明通道保 PNG、其余转 JPEG。`.heic`（HEVC）按实测能力**诚实拒绝**（415 + 转格式指引，见 §9-B21） |
 | 5 | 短窗口防抖限流 | 提交后 60s 冷却，防连点刷光云端 Token |
 | 6 | 台词长度友好引导 | 双引号对白建议 ≤ 20 字，匹配 5 秒镜头节奏 |
 | 7 | **付费不确定性不自动重提** | 已提交但无法确认结果 → `UNCERTAIN_RESULT`，**禁止任何自动重提**，走人工核对路径；配套幂等键 + 提交前 `submitting` 落库（细则见 CONTRACT §5 / §6） |
@@ -111,7 +111,7 @@
 
 ### Step 2：双轨 Provider 与核心调度
 - **实施顺序（已定）**：`OI-2 夹具 provider` → 公共链路（存储 / 画廊 / 206 / 磁盘 / 幂等键）→ `Seedance`（AC2，真金白银）→ `OI-1 素材`。理由：公共链路是所有 provider 的共同地基；OI-2 是唯一「无 Key、无网、无 GPU、零成本、结果确定」的 provider，而 AC4（重启恢复）与 AC7（不确定不重提）需要**反复制造故障**，只有用夹具 provider 才能不花钱地反复跑。
-- **任务**：`pipeline/smartCrop.ts`（32 倍数居中裁切）；`pipeline/imageSanitize.ts`（防线 4 图像清洗网关）；`providers/VolcanoSeedanceProvider.ts`（提交+轮询+下载）；`providers/LocalH3Provider.ts`（子进程调度+互斥锁，**host scope**）；`providers/registry.ts`（provider 唯一注册点）；`providers/statusProbe.ts`（**本地引擎配置自检**——读 env 做一次轻量校验并写内存缓存，**非硬件扫描**；到达路径 = 配 env + 重启，细则见 §6-D22 / §7-2）；**凭据中间件（`X-Provider-Key` 解析 + 掩码 + pino `redact`，见 CONTRACT §5「凭据传递约定」）**；**三态错误码与幂等键**（CONTRACT §5 / §6）；**开发期故障注入层**（见下方「Step 2 补充」）；**CI 三件套（lint / type / test）** 及 `pnpm test:contract` 契约层脚本；**防线 5 防抖限流（Step 2 按来源 IP 单键，冷却状态落 SQLite；复合键见 §7-5 的 Step 5 时点）**；**`/api/upload` 上传加固（≤20MB × ≤4 个、魔数嗅探、类型白名单、路径不含用户输入）**；**公网最小鉴权中间件骨架（Step 5 前强制启用；回环免鉴权，细则 §7-4）**；`/api/prompt/enhance`（**demo 版以 `501 LLM_NOT_CONFIGURED` 诚实落地**、前端 ✨ 置灰；完整实现见 §9 台账 B3）；路由挂载 `/api/generate`、`/api/tasks/:taskId`、`/api/providers/status`、`/api/upload`、`/api/history`；SQLite 任务存储；`packages/shared` 契约包随契约变更同步。
+- **任务**：`pipeline/smartCrop.ts`（32 倍数居中裁切）；`pipeline/imageSanitize.ts`（防线 4 图像清洗网关）；`providers/VolcanoSeedanceProvider.ts`（提交+轮询+下载）；`providers/LocalH3Provider.ts`（子进程调度+互斥锁，**host scope**）；`providers/registry.ts`（provider 唯一注册点）；`providers/statusProbe.ts`（**本地引擎配置自检**——读 env 做一次轻量校验并写内存缓存，**非硬件扫描**；到达路径 = 配 env + 重启，细则见 §6-D22 / §7-2）；**凭据中间件（`X-Provider-Key` 解析 + 掩码 + pino `redact`，见 CONTRACT §5「凭据传递约定」）**；**三态错误码与幂等键**（CONTRACT §5 / §6）；**开发期故障注入层**（见下方「Step 2 补充」）；**CI 三件套（lint / type / test）** 及 `pnpm test:contract` 契约层脚本；**防线 5 防抖限流（60s 冷却落 SQLite，键 = 来源 IP + BYOK Key 指纹的**复合键**；台账 B8 已随 Step 5 前置落地）**；**`/api/upload` 上传加固（≤20MB × ≤4 个、魔数嗅探、类型白名单、路径不含用户输入）**；**公网最小鉴权中间件骨架（Step 5 前强制启用；回环免鉴权，细则 §7-4）**；`/api/prompt/enhance`（**当前以 `501 LLM_NOT_CONFIGURED` 诚实落地**；前端 ✨ **未配置 LLM Key 时不可用、配置后可用**，实现见 §9 台账 B3，**纯 BYOK：服务端不设兜底 Key**）；路由挂载 `/api/generate`、`/api/tasks/:taskId`、`/api/providers/status`、`/api/upload`、`/api/history`；SQLite 任务存储；`packages/shared` 契约包随契约变更同步。
 - **AC1**：契约层测试全绿（`pnpm test:contract`，覆盖 CONTRACT.md 全部路由与错误码，含三态 `disposition` 穷举）。
 - **AC2**：Seedance 真实冒烟出片 1 次，记录实际耗时与费用，回填 §8 成本表（消除【待验证】标记）。**硬要求：冒烟必须走 `X-Provider-Key` 通道**（用 env 兜底 Key 绕开 = 等于没验证 BYOK 通道，见 §6-D23）；并逐项核对 `backend/src/providers/seedanceProtocol.ts` 中标【待验证】的上游字段（请求体结构 / `--` 尾缀参数 / `status` 枚举 / `content.video_url` 位置）。**当前阻塞：待一把可用的火山方舟 Key。**
 - **AC3**：本地并发提交 2 个任务，第 2 个任务状态为 `queued`，无第二个推理进程被拉起。
@@ -120,7 +120,7 @@
 - **AC6**：`/api/providers/status` **不得返回任何未经显式配置的硬件信息**；未显式配置本地引擎时返回 `local.available: false` + `reason`，文案只能是「本服务未配置本地引擎 / 未启用本地轨」一类**对自身的事实陈述**，**不得出现"你的设备 / 你没有显卡"这类对访问者的判断**；`EXPOSE_HOST_LOCAL_TRACK=0`（默认）时 `reason` 为「本服务未向访客开放本地轨」；**任何情况下不得返回硬编码型号**；Step 1 的占位实现同步移除（§6-D22 / D27）。
 - **AC7**：注入 `uncertain` 故障后任务归 `UNCERTAIN_RESULT`，**不发生任何自动重提**（硬断言：上游调用次数 = 1）；同一幂等键重复提交返回同一 `taskId`。
 - **AC8**：CI 三件套就位，`pnpm test` 同时覆盖契约层与真实产物层（AC1 + AC5）。
-- **AC9**：防线 5 落地——60s 冷却按**来源 IP** 计数（复合键 IP + BYOK Key 指纹见 §7-5 的 Step 5 时点）；冷却状态落 SQLite，**服务重启后窗口不丢失**（断言：重启前后同一 IP 提交仍被拒且返回 `RATE_LIMITED`）。
+- **AC9**：防线 5 落地——60s 冷却按 **IP + BYOK Key 指纹的复合键**计数（台账 B8，已随 Step 5 前置落地；未带 Key 的访客退化为纯 IP 键）；冷却状态落 SQLite，**服务重启后窗口不丢失**（断言：重启前后同一 IP 提交仍被拒且返回 `RATE_LIMITED`）。
 - **AC10**：`/api/upload` 上传加固——超限（单文件 > 20MB / 总数 > 4）被拒；伪造 `Content-Type` 的文件被**魔数嗅探**识破并拒；白名单外类型被拒；产物路径不含任何用户输入片段（防路径穿越）。
 
 ### Step 3：前端 Astrmira 工作台
@@ -249,7 +249,7 @@
       - **T5** 前端 token 化 + 字体修正：`--serif` 去 Cinzel 改大小写混排高对比衬线、新增 `--serif-caps` 仅供全大写 eyebrow；eyebrow 标签体系落位（`--fs-eyebrow` / `--track-caps`）；`App.tsx` 内 hex 色值与字体名零残留；
       - **T6** `JobQueue` 接口骨架（只立契约，无实现）：`requeue`（仅限未提交上游）与 `markUncertain`（已提交但结果不明）分列，防线 7 在接口层落地；
       - 依赖事实：`fastify-type-provider-zod@7.0.0` 的 peer 要求 `zod >= 4.1.5`，故 zod 由 3 升至 **4.6.5**——Step 1 期间 zod 为「已装零使用」，major 切换无迁移成本；
-- [ ] **Step 2 双轨 Provider 与核心调度【仅剩 AC2】**：架构决策定稿（§6-**D22 ~ D28**、CONTRACT **V1.8**、新增 §9 台账）；S1 ~ S5b / S7 全部完成（见下），**唯一未完成项是 AC2（真实出片冒烟 + §8 成本表回填），阻塞于一把可用的火山方舟 Key**；施工手册 `docs/EXEC-STEP2-5.md` **继续保留**（一次性手册，Step 5 验收后归档删除），实施顺序与切片以该手册 §6 为准。
+- [ ] **Step 2 双轨 Provider 与核心调度【两条轨未完成：cloud 待 AC2、host-local 未实现】**：架构决策定稿（§6-**D22 ~ D28**、CONTRACT **V1.8**、新增 §9 台账）；S1 ~ S5b / S7 全部完成（见下）。**未完成项有两块**：① **AC2**（真实出片冒烟 + §8 成本表回填）阻塞于一把可用的火山方舟 Key；② **host 本地轨 `LocalH3Provider.ts` 尚未实现**（`registry.ts` 里 `'local-minimax-h3' → null`）——选本地轨会如实返回 `503 PROVIDER_UNAVAILABLE`，`GUIDE §二·轨道 A` 描述的工作目录自检与【测试连接】按钮属台账 B4，**文档已按【规划】标注**（此前"仅剩 AC2"的写法是错的，见 V8.3 批次 0）；施工手册 `docs/EXEC-STEP2-5.md` **继续保留**（一次性手册，Step 5 验收后归档删除），实施顺序与切片以该手册 §6 为准。
       - [x] **S1 · OI-2 夹具 provider【已验证】**（AC5）：`scripts/make-fixture-clips.mjs`（ffmpeg 现场合成 9 条边界片，二进制不入库）、`lib/ffmpeg.ts`（工具缺失中文指引 + `-nostdin`/超时 + 探测失败统一包装）、`pipeline/smartCrop.ts`（32 倍数规整 + 居中裁切纯函数）、`providers/registry.ts`（唯一注册点）、`providers/fixture/FixtureLocalProvider.ts`（四方法 + 时长对齐 + 循环/静音双告警）；**38 项测试全绿**（9 条边界用例逐条断言 + 4 项破坏性验证回归）。
       - [x] **S2 · 公共链路【已验证】**（AC3 / AC4 / AC7 幂等半边）：`store/db.ts`（SQLite + 建表：任务 / 幂等键 / 冷却）、`store/taskStore.ts`（CRUD + 参数快照 + `warnings` + `submitting` + 原子领取，含防线 7 的 SQL 排除条件）、`queue/SqliteJobQueue.ts`（实现既有 `JobQueue` 接口 + `requeue` 守卫）、`queue/dispatcher.ts`（双轨调度，local 并发 1 + 防线 3 收尾清理）、`routes/generate|tasks|history.ts`、`pipeline/cleanup.ts`、`server/staticOutputs.ts`（`/media/*` 的 206 载体）；**54 项测试全绿**（幂等上游计数 = 1、并发第 2 个保持 `queued`、重启恢复、206 Range、画廊删除、防线 7 双护栏、防线 3 目录不存在）；CONTRACT §5 补登各路由响应形状。
       - [x] **S3 · 三态错误码 + 故障注入层【已验证】**（AC7 的 uncertain 半边）：`errors.ts`（12 码 → 三态的**穷举映射表**，`satisfies Record<ErrorCode, ErrorDisposition>` 编译期钉死 + `resolveTaskError` 唯一归类入口）、`providers/withFaultInjection.ts`（7 项注入 + `FAULT_INJECT` 默认关闭 + 生产挂载直接拒绝）、dispatcher 补**上报轮询循环**（进度 heartbeat 落库 + 超时归 `UNCERTAIN_RESULT`）；`packages/shared` 的 `ErrorCodeSchema` 同步到 V1.8 的 12 个码（修掉 R 段的遗漏）；**87 项测试全绿**；AC7 的「上游调用次数 = 1」硬断言经破坏性验证（把 `markUncertain` 临时改成 `requeue` → 断言精确变红）钉住；判据修正为「是否**已进入提交阶段**」（`submitting` 语义），而非「是否拿到 upstreamTaskId」。
@@ -309,6 +309,14 @@
       - **⑥ 性能基准（只提供可复跑的手动脚本，CI 不设门）**：`scripts/bench.mjs`（`pnpm bench`）。本机实测：`/api/health` p50 0.6ms / p95 1.7ms、`/api/providers/status` p50 0.5ms、画廊查询 p50 0.6ms、夹具出片（2s 片，含 ffmpeg 转码）**1.1s**、`/media` Range 首字节 p95 3.9ms、回环下载 117.8MB/s（2026-09-22，node v24.14.0 / win32 / 未插桩）。**引用时必须带上测量条件**。
       - **余项转台账**：像素基线（B16）、性能门限（B17）、开发机与 CI / 镜像的 Node 版本对齐（**B18**：本机 v24.14.0 vs CI 与镜像 22）、中文衬线自托管策略（**B19**）。
 - [ ] **Step 4 端到端验收【阻塞：需一把可用 Key】**：见 §4。AC1 明确要求用**真实云端轨**跑通 T2V（含双引号台词人声）与 I2V（含 32 倍数裁切），因此与 AC2 共用同一把 Key —— 拿到 Key 后 Step 4 与 Step 2-AC2 可一并完成；**AC4 的 CI 半边已完成**（见上方 B9 条目 ①）。
+- [ ] **V8.3 体验与功能补强【进行中】**（2026-09-22 立项）：起因是一次"文档 ↔ 代码"全面核对（11 条防线/功能项 + 10 条路由 + 12 个错误码产生点 + `process.env` 全量 + 存储生命周期，两路独立探查 + 逐条复核）。**以下顺序即批次**：
+      - [x] **批次 0 · 文档对齐（零风险）【已完成】**：把"文档承诺 > 代码事实"的地方逐条改回事实 —— LRU 降级并登记 **B22**（`§1` 架构图 / `§3` 防线 3 / CONTRACT §7 三处）；防线 3 补注「当前生产链路**没有中间帧生产者**，清理属预留兜底」；防线 4 写实（已落地 + `.heic` 诚实拒绝）；**鉴权作用域写实**（钩子是全局 `onRequest`：除回环与 `/api/health` 外，`/media/*` 与前端产物同样要求 Bearer，线上由 Caddy 注入）；**限流复合键时点写实**（已落地，非"Step 5 才做"）；**Step 2 状态修正**（`LocalH3Provider.ts` 未实现 → 不再写"仅剩 AC2"）；CONTRACT 消除"修订说明说新增 `keys/verify`、表格里却没有"的自相矛盾；GUIDE 未实现项标注【规划】；README 删除视觉免责段（**已获 Astrmira 作者许可**，来源改登记在 UPSTREAM）。
+        - **当场钉死的两条"未能确认"**：① `app.hasRoute({method:'GET',url:'/media/*'}) === true` → 契约测试对 `/media/*` 的断言口径**有效**，疑虑排除；② **`cancelled` 会被 dispatcher 覆盖 —— 实测确认是真缺陷**（桩上游场景：取消后 3 秒状态变回 `running 10%`，最终会走到 succeeded）→ 修复排入批次 3 首位（它直接关系到"用户以为取消了、实际仍在计费"）。
+      - [ ] **批次 1 · 生成参数与布局**：新增**时长**（1~10s，受 `DurationSecSchema` 的 ≤10 硬上限约束）与**分辨率档**控件 → 进 `params` / 参数快照 / 一键回填；目标尺寸随档位真正动态化（现状 `TARGET_SIZES` 只是按画幅查表的固定值）；大屏适配（`.wb-main` 当前 `max-width:1800px` 且无大屏档 → 侧栏上限放宽 + 画廊双列）。
+      - [ ] **批次 2 · 白天主题**：先把组件层 **13 处硬编码色值**收成 token，再加"现代简洁·蔚蓝"日间主题（**默认跟随系统**）+ 顶栏切换 + 持久化 + WCAG 对比度校验；暗色仍是星尘内核，但按 `docs/assets/01~03` 三张参考图**略微提亮**（不完全趋同）。
+      - [ ] **批次 3 · 功能缺口**：`/cancel` **真取消**（前端接线 + `provider.cancel()` + dispatcher 感知取消，修上面那条实测缺陷）；**assets 随任务删除清理**；画廊**真缩略图**（服务端抽首帧 poster，替代 50 个 `<video>`）；**FL2V / V2V 前端入口**（云端 provider 已透传 `first_frame/last_frame/reference_image`，但前端无入口且会把上传的视频误当首帧）；`GPU_BUSY` / `PROMPT_REJECTED` 随本地轨与防线 6 落地补上产生点。
+      - [ ] **批次 4 · 扩写（台账 B3）**：**纯 BYOK——服务端不设兜底 Key**，用户自带 `X-LLM-Key`；status 增能力位；OpenAI 兼容实现（`LLM_PRESETS` 放 `packages/shared`）；前端门控「未配置不可用 / 配置后可用」（UI 风格参考 TriviumDB WebUI）。
+      - [ ] **批次 5 · 等 Key**：Step 2-AC2 真实冒烟 + §8 成本表回填；Step 4 端到端；顺带核验 `seedanceProtocol.ts` 里时长/分辨率等【待验证】字段。
 
 ---
 
@@ -352,11 +360,11 @@
 1. **密钥管理**：火山 Key 由**客户端（浏览器）持有**，随请求头 `X-Provider-Key` 传递（唯一载体，见 CONTRACT §5「凭据传递约定」）；服务端**过手不留存**——不落盘、不写日志、不回显明文；日志中 Token 强制掩码（如 `sk-****abcd`）；服务端仅在单次请求的内存上下文内接触该 Key。**如实声明**：Key 转发必经服务端内存，故"服务端绝不可信"的假设不成立——自建 / 信任场景无碍，第三方托管场景由前端文案明示信任边界（§6-D23）。
 2. **本地模型边界**：MiniMax H3 全程本地离线，图像与音频不出本机；ComfyUI 仅限回环或受控局域网——服务端对 `H3_WORKDIR` / `COMFYUI_BASE_URL` 做白名单校验（仅回环地址 / RFC1918 内网 / 本机路径），拒绝任意外部地址，防 SSRF 与任意命令面暴露。
 3. **公网部署形态**：默认路由云端轨，不开放任何本地 Shell 执行面；**不向访客开放 host 本地轨**（`EXPOSE_HOST_LOCAL_TRACK` 默认 `0`，见 §6-D26）；单任务时长上限 5~10s，防任务堆叠。
-4. **公网最小鉴权（V8.1 新增，Step 5 前必须落地）**：公网部署时所有 `/api/*` 要求 `Authorization: Bearer <PUBLIC_API_TOKEN>`（值在 `.env`）。**免鉴权名单（两层，口径唯一）**：① **回环来源**（127.0.0.1 / ::1）的全部请求免鉴权——保证单机开发零摩擦；② **任何来源**的 `/api/health` 免鉴权——存活探针。除这两层外一律要求 Bearer；无鉴权公网裸奔视为验收不通过。
-5. **限流键定义（V8.1 新增）**：防线 5 的 60s 防抖按「来源 IP + BYOK Key 指纹（Key SHA-256 前 8 位；无 Key 时仅用 IP）」复合计数；本地部署无 Key 场景退化为 IP 单键。防抖状态存 SQLite，重启不丢失冷却窗口。**落地时点（V8.2）**：Step 2 按 **IP 单键**落地（限流器签名先预留 `keyFingerprint?` 参数），复合键随 §7-4 的最小鉴权在 **Step 5 前置**落地（§6-D25 / §9 台账 B8）。
+4. **公网最小鉴权（V8.1 新增，Step 5 前必须落地）**：公网部署时**除下面两层白名单外的全部路径**都要求 `Authorization: Bearer <PUBLIC_API_TOKEN>`（值在 `.env`）——鉴权钩子是**全局 `onRequest`**，因此 `/api/*`、`/media/*` 与前端产物 `/` 一并受保护（线上由 Caddy 把站点登录凭据换成 Bearer，见 `deploy/Caddyfile.*`）。**免鉴权名单（两层，口径唯一）**：① **回环来源**（127.0.0.1 / ::1）的全部请求免鉴权——保证单机开发零摩擦；② **任何来源**的 `/api/health` 免鉴权——存活探针。除这两层外一律要求 Bearer；无鉴权公网裸奔视为验收不通过。
+5. **限流键定义（V8.1 新增）**：防线 5 的 60s 防抖按「来源 IP + BYOK Key 指纹（Key SHA-256 前 8 位；无 Key 时仅用 IP）」复合计数；本地部署无 Key 场景退化为 IP 单键。防抖状态存 SQLite，重启不丢失冷却窗口。**落地时点（已修正，2026-09-22）**：复合键**已落地**——限流器早先预留的 `keyFingerprint?` 参数已按 §9 台账 B8 接线（`generate.ts` 传 `fingerprintKey(providerKey)`），即"随 §6-D25 的最小鉴权在 Step 5 前置落地"这条已经兑现，文档此前仍写着"Step 2 先 IP 单键"，属文字陈旧。
 6. **上传与静态面加固（V8.1 新增；V8.2 起含防线 4 清洗）**：`/api/upload` 限制单文件 ≤ 20MB、总数 ≤ 4，MIME 以魔数嗅探为准（不信任 Content-Type 头），白名单：jpg/png/webp/heic/mp4/mov；**图像必须过防线 4 清洗网关**（`pipeline/imageSanitize.ts`：EXIF 方向矫正、CMYK→sRGB、超大图下采样到长边 ≤ 2048、32 倍数规整、剥离元数据；透明通道保 PNG、其余统一 JPEG）——因此响应的 `mime` / `size` 是**清洗后的产物事实**而非客户端声明；`.heic`（HEVC）按实测能力**诚实拒绝**（415 `INVALID_ASSET` + 转格式指引，见台账 B21），视频原样落盘；`outputs/` 直链路径只含服务端生成的随机 ID，禁止任何用户输入拼入文件路径（防路径穿越）；CORS 由 `origin: true` 收紧为 `.env` 白名单（`CORS_ORIGINS`，本地开发默认 `http://localhost:5173`）；安全响应头（`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`）统一挂载。
 7. **文档卫生**：IP / 绝对路径 / 凭证永不入 md（占位符化），真实值只存本地 `.env`；`.env`、`data/`、`outputs/`、媒体文件已入 `.gitignore`。
-8. **视觉版权**：Astrmira 视觉语言仅作参考，本项目与其站点无任何隶属关系（见 README 免责）。
+8. **视觉版权**：UI 视觉语言参考 Astrmira 的公开设计风格，**已获其作者许可**（来源登记见 UPSTREAM 第 10 条）；README 不再单列免责段。
 
 ---
 
@@ -404,3 +412,4 @@
 | B19 | **中文衬线字的自托管策略**：`--serif` 里的 `"Noto Serif SC"` 现仅是本机字体候选（不再从网络加载），中文衬线会回落系统字体；要统一观感需自托管 CJK 子集（体积大） | 本次实测发现（生产 CSP 拦掉外部字体引发） | 动视觉体系时（与 B16 一起做） |
 | B20 | ~~防线 4 图像清洗网关未实现~~ → **已实现**（`backend/src/pipeline/imageSanitize.ts` + 接入 `/api/upload`，见 §5 的 S6 条目）；本行只留一条教训：**编号错位会让"没做"读成"已跳过"**（当时 S6 槽位被 OI-1 占用） | §3 防线 4 / §4 Step 2（S6） | — |
 | B21 | 让 `.heic` **真正可用**（当前按实测能力走"诚实拒绝" 415 + 指引）。两条候选路径：① 镜像内加 Debian 的 `libheif-examples`（`heif-convert` CLI，走子进程，与 ffmpeg 同一套路）；② 换用带 HEVC 解码器的 libvips 构建（sharp 预编译不含 x265/libde265） | 本次实测发现（HEVC 解码器缺失） | 出现"iPhone 用户上传 HEIC"的真实诉求时；**在此之前保持 415 + 可执行指引**，不许静默放行 |
+| B22 | 画廊**容量淘汰**（LRU / 阈值清理，替代"只增不减"）；当前只有 `DELETE /api/history/:taskId` 的手动删除与 `listRecent(50)` 的列表上限 | 文档/代码核对（§1 架构图、§3 防线 3、CONTRACT §7 曾写"LRU"，实际无实现） | 用户拍板**暂缓**：初期存储需求不大。触发条件 = `outputs/` 体积超阈值或出现磁盘告警 |

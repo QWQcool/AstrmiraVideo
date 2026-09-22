@@ -17,6 +17,7 @@
 | 7 | **AI-SVWF** | 任务队列状态机、事件流设计、视频生成参数归一化 | 自有参考项目 |
 | 8 | **Pexels API** | 可选实现项 OI-1 的主素材数据源：检索参数、多档尺寸与时长字段；要求先下载到自有服务器、禁止永久 hotlink。⚠️ `orientation = landscape\|portrait\|square`，与 Pixabay 枚举不通用，适配层必须显式映射 | [Pexels API](https://www.pexels.com/api/) |
 | 9 | **Pixabay API** | 可选实现项 OI-1 的备用素材数据源（官方宣称不限次；视频库偏空镜与动态背景）。⚠️ 视频端点为横向/纵向类枚举，且另有 `video_type`（Pexels 侧对应 `size`），参数集与 Pexels 非一一对应 | [Pixabay API](https://pixabay.com/api/docs/) |
+| 10 | **Astrmira（视觉语言）** | UI 视觉方向参考（深墨蓝 + 微光金的设计语言；`docs/assets/01~03` 三张概念图为其风格参照）。**已获作者许可**参考其设计风格；本项目与其站点无隶属关系，但不作"未授权参考"声明 | [Astrmira](https://www.astrmira.com/) |
 
 ---
 

@@ -46,10 +46,6 @@ pnpm dev               # 并行拉起 backend + frontend
 5. **三级标记**：**【已验证】**实测确认 / **【待验证】**未经实测 / **【规划】**尚不存在——未标注的事实性数字视为【待验证】；
 6. **进度回检**：任何 Step 状态变更（开工 / 完工 / 阻塞）必须在**同一提交**内回检三处指针——README 徽章与「快速开始」段、PLAN §5 进度日志、NEXT_SESSION_PROMPT 指针段。三处只准链接 PLAN §5，禁止出现第二份状态描述。
 
-## 设计致谢与免责
-
-视觉语言参考了 [Astrmira](https://www.astrmira.com/) 的公开设计风格。**本项目与其无任何隶属或授权关系**。上游参考项目清单见 [docs/UPSTREAM.md](docs/UPSTREAM.md)。
-
 ## License
 
 [MIT](LICENSE) — 第三方模型与云端 API 各有其服务条款，使用边界见 docs/PLAN.md §7。
