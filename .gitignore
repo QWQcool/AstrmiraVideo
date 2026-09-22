@@ -42,6 +42,9 @@ media-cache/
 *.wav
 *.srt
 
+# fixture clips（由 scripts/make-fixture-clips.mjs 现场合成，二进制不入库：PLAN §4 决策 D10）
+tests/fixtures/clips/
+
 # editors / OS
 .vscode/*
 !.vscode/extensions.json
