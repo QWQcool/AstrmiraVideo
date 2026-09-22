@@ -9,7 +9,7 @@ import {
 import type { ProviderType, VideoGenerateRequest, VideoProvider } from '@astrmira/shared';
 import { createErrorResponse } from '../errors.js';
 import type { JobQueue } from '../queue/JobQueue.js';
-import { resolveProviderKey } from '../security/credential.js';
+import { fingerprintKey, resolveProviderKey } from '../security/credential.js';
 import type { KeyVault } from '../security/keyVault.js';
 import type { CooldownStore } from '../security/rateLimit.js';
 import { rateLimitKey, resolveClientIp } from '../security/rateLimit.js';
@@ -106,8 +106,19 @@ export const createGenerateRoutes =
           return { taskId: existing };
         }
 
-        // 防线 5：60s 防抖（Step 2 按来源 IP 单键；复合键 IP + Key 指纹见 PLAN §7-5 的 Step 5 时点）
-        const cooldownKey = rateLimitKey({ ip: resolveClientIp(request) });
+        // 凭据（B 方案）：先解析出来 —— 限流键与 vault 必须用**同一份**，
+        // 否则将来有人改了解析顺序，两处就会算出不同的桶
+        const providerKey = resolveProviderKey(request);
+
+        // 防线 5：60s 防抖。**复合键 = IP + 凭据指纹**（PLAN §9 台账 B8，标注「上线前必须做」）：
+        // 只用 IP 的话，共享出口（公司 NAT / 校园网 / 移动网络）下 A 提交会让 B 被冷却挡住，
+        // 而 B 完全无法自查原因 —— 防线 5 的本意是防单人刷接口，不是防整栋楼。
+        // 指纹取 SHA-256 前 8 位：不可逆、不构成"存储凭据"。
+        // 未带 Key 的访客退化为纯 IP 键 —— 他们本来也提交不了（无凭据 → KEY_MISSING）。
+        const cooldownKey = rateLimitKey({
+          ip: resolveClientIp(request),
+          ...(providerKey === null ? {} : { keyFingerprint: fingerprintKey(providerKey) }),
+        });
         const decision = deps.cooldown?.check(cooldownKey);
         if (decision !== undefined && !decision.allowed) {
           return reply.code(429).send(
@@ -123,7 +134,6 @@ export const createGenerateRoutes =
         // B 方案（PLAN §6-D23）：先把凭据转交给进程内 vault，**再**入队。
         // 顺序绝不能反 —— 调度器可能在下一个 tick 就领走这条任务，
         // 那时 vault 里必须已经有 Key，否则会误报 KEY_MISSING（用户明明填了 Key）。
-        const providerKey = resolveProviderKey(request);
         if (providerKey !== null) {
           deps.keyVault?.set(taskId, providerKey);
         }

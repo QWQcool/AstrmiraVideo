@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 
 /**
@@ -54,4 +55,26 @@ export function maskKey(key: string): string {
   const prefixMatch = /^([a-zA-Z]{1,4})[-_]/.exec(trimmed);
   const prefix = prefixMatch ? `${prefixMatch[1]}-` : '';
   return `${prefix}****${trimmed.slice(-4)}`;
+}
+
+/**
+ * 凭据指纹：**限流键的第二个维度**（PLAN §9 台账 **B8**，标注「上线前必须做」）。
+ *
+ * ## 为什么不能只用 IP
+ * 共享出口（公司 NAT / 校园网 / 移动网络）下所有访客同 IP，于是 A 提交后 B 被
+ * 「冷却中 60s」挡住 —— 用户看到的是"别人用过我就不能用了"，完全无法自查。
+ * 防线 5 的本意是**防单人刷接口**，不是防整栋楼。
+ *
+ * ## 三条设计约束
+ * 1. 只取 SHA-256 **前 8 位**（32 bit）：足以区分不同 Key，又不可逆 ——
+ *    它出现在数据库或日志里都不构成"存储凭据"（对比：存原文或可逆编码就破功了）；
+ * 2. 输入先 `trim()`：同一把 Key 带不同空白必须归一到同一个桶，否则限流能被空白绕过；
+ * 3. 返回值是小写十六进制，可直接拼进限流键。
+ *
+ * ⚠️ 副作用（有意为之，且必须记住）：**不填 Key 的访客退化为纯 IP 键**。
+ * 也就是说未配置 BYOK 的自带 Key 用户之间仍会互相影响 —— 这是可接受的：
+ * 他们本来也提交不了（无凭据 → `KEY_MISSING`）。
+ */
+export function fingerprintKey(key: string): string {
+  return createHash('sha256').update(key.trim()).digest('hex').slice(0, 8);
 }

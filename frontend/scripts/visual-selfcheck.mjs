@@ -130,6 +130,23 @@ if (formatEntry === undefined || !/padStart\(3,\s*'0'\)/.test(formatEntry[1])) {
   failures.push('formatIndex 未按 3 位补零（AC6 要求 3 位索引号）');
 }
 
+// ── ⑦ 数据路径零 innerHTML（PLAN §9 台账 B15「公网刚需」的自动化断言）──
+//
+// 这条的价值不在"现在有没有"（现状是没有），而在**防止它以后被写回来**：
+// innerHTML / dangerouslySetInnerHTML 是 XSS 最直接的入口，而"只是拼一个字符串"
+// 看起来永远人畜无害。将来真要渲染富文本，请走显式白名单组件（而不是放开这条）。
+const DANGEROUS_HTML = /\binnerHTML\b|dangerouslySetInnerHTML/;
+
+for (const [file, text] of contents) {
+  text.split('\n').forEach((line, position) => {
+    if (!DANGEROUS_HTML.test(line)) return;
+    if (/^\s*(?:\*|\/\/|\/\*)/.test(line)) return; // 注释里讨论不算
+    failures.push(
+      `${rel(file)}:${position + 1} 出现 innerHTML（B15 禁止数据路径注入 HTML）：${line.trim()}`,
+    );
+  });
+}
+
 // ── 汇总 ──
 if (failures.length > 0) {
   console.error(`✗ 视觉自检失败（${failures.length} 项）：`);
@@ -140,5 +157,5 @@ if (failures.length > 0) {
 console.log(
   `✓ 视觉自检通过：${REQUIRED_KEYFRAMES.length} 个 keyframes 均有功能位、` +
     `无硬编码字号/字距、${PANELS_EXPECTING_EYEBROW.length} 处分区标题走 eyebrow 体系、` +
-    `水印 ${watermarkUsers.length} 处`,
+    `水印 ${watermarkUsers.length} 处、数据路径零 innerHTML`,
 );

@@ -28,6 +28,7 @@ import {
 import { LLM_KEY_HEADER, LOG_REDACT_PATHS, PROVIDER_KEY_HEADER } from './security/credential.js';
 import { createKeyVault } from './security/keyVault.js';
 import { CooldownStore } from './security/rateLimit.js';
+import { registerSecurityHeaders } from './server/securityHeaders.js';
 import { registerSpa } from './server/spa.js';
 import { registerStaticOutputs, resolveOutputsDir } from './server/staticOutputs.js';
 import { createAssetUrlResolver } from './store/assets.js';
@@ -83,12 +84,8 @@ export async function buildApp() {
   // 生产护栏：未配置访问令牌直接启动失败（PLAN §7-4）
   assertAuthConfiguredForProduction();
 
-  // 安全响应头（PLAN §7-4 加固）
-  app.addHook('onSend', async (_request, reply) => {
-    reply.header('X-Content-Type-Options', 'nosniff');
-    reply.header('X-Frame-Options', 'DENY');
-    reply.header('Referrer-Policy', 'no-referrer');
-  });
+  // 安全响应头 + 生产环境 CSP（PLAN §7-4；CSP 属 §9 台账 B15「公网刚需」）
+  registerSecurityHeaders(app);
 
   // 最小鉴权：两层免鉴权（回环来源全部 + 任何来源的 /api/health），其余需 Bearer
   const authToken = resolveAuthToken();
