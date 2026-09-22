@@ -15,6 +15,12 @@
   --blue-glow: rgba(145, 185, 213, 0.2);
   --action-fill: #e7dfd1;
   --action-hover: #f2ece2;
+  /* 语义色（T5）：状态点 / 危险态 / 实心按钮与分段控件上的文字色 */
+  --success: #34d399;
+  --danger: #f87171;
+  --on-action: #090c12;
+  --on-segment: #10141c;
+  --canvas: #05070a;
 
   /* 几何与缓动 */
   --radius-control: 8px;
@@ -22,9 +28,17 @@
   --ease-ui: cubic-bezier(0.22, 0.61, 0.36, 1);
 
   /* 字体栈 */
-  --serif: "Cinzel", Georgia, "Noto Serif SC", "Songti SC", serif;
+  /* 正文衬线：大小写混排的高对比衬线（PLAN §7 原始实测记录）；罗马碑铭体在大写混排
+     正文中不成立，已从 --serif 移除（P1-5） */
+  --serif: Georgia, "Noto Serif SC", "Songti SC", serif;
+  /* 全大写 eyebrow 标签专用（碑体只在这种全大写场景成立） */
+  --serif-caps: "Cinzel", serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* eyebrow 标签体系（P1-6）：全大写 + 极小字 + 大字母间距 */
+  --fs-eyebrow: 11px;
+  --track-caps: 0.18em;
 }
 
 /* Astrmira 原生 8 个 Keyframes */

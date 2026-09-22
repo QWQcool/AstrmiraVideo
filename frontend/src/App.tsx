@@ -1,20 +1,8 @@
 import React, { useEffect, useState } from 'react';
-
-interface BackendHealth {
-  status: string;
-  name: string;
-  version: string;
-  timestamp: string;
-}
-
-interface ProviderStatus {
-  cloud: { available: boolean; provider: string; reason?: string };
-  local: { available: boolean; provider: string; tier: number; gpuName?: string; vramFreeGB?: number; reason?: string };
-  defaultProvider: string;
-}
+import type { HealthResponse, ProviderStatus } from '@astrmira/shared';
 
 export default function App() {
-  const [health, setHealth] = useState<BackendHealth | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [providers, setProviders] = useState<ProviderStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,7 +18,7 @@ export default function App() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then((data: BackendHealth) => {
+      .then((data: HealthResponse) => {
         setHealth(data);
         setError(null);
       })
@@ -45,9 +33,12 @@ export default function App() {
       .then((data: ProviderStatus | null) => {
         if (data) {
           setProviders(data);
-          if (data.defaultProvider === 'local-minimax-h3') {
-            setSelectedEngine('local');
-          }
+          // 连带修复（Step 1.5 / T5-6，见 PLAN §5）：T1 起 local 恒为 available:false，
+          // 该分支成为真实可达路径——
+          // 探针判定本地不可用时必须回退 'cloud'，否则按钮已置灰而引擎状态仍停在 'local'。
+          setSelectedEngine(
+            data.local.available && data.defaultProvider === 'local-minimax-h3' ? 'local' : 'cloud',
+          );
         }
       })
       .catch(() => {});
@@ -232,6 +223,20 @@ export default function App() {
   );
 }
 
+/**
+ * eyebrow 标签体系（P1-6 / T5）：参考稿最具辨识度的元素——全大写 + 极小字 + 大字母间距。
+ * 字号与字距一律取自 tokens.css（--fs-eyebrow / --track-caps），禁止硬编码；
+ * 字体走 --serif-caps（碑体仅在这种全大写场景成立）。
+ */
+const eyebrowStyle: React.CSSProperties = {
+  fontFamily: 'var(--serif-caps)',
+  fontSize: 'var(--fs-eyebrow)',
+  fontWeight: 500,
+  letterSpacing: 'var(--track-caps)',
+  textTransform: 'uppercase',
+  color: 'var(--faint)',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100vh',
@@ -271,7 +276,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text)',
   },
   brandTag: {
-    fontSize: '11px',
+    ...eyebrowStyle,
     padding: '2px 8px',
     borderRadius: '12px',
     border: '1px solid var(--line-gold)',
@@ -284,10 +289,10 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '16px',
   },
   statusBadgeSuccess: {
+    ...eyebrowStyle,
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
-    fontSize: '12px',
     color: 'var(--text)',
     padding: '4px 10px',
     borderRadius: '20px',
@@ -295,35 +300,35 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'rgba(145, 185, 213, 0.08)',
   },
   statusBadgeError: {
+    ...eyebrowStyle,
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
-    fontSize: '12px',
-    color: '#f87171',
+    color: 'var(--danger)',
     padding: '4px 10px',
     borderRadius: '20px',
     border: '1px solid rgba(248, 113, 113, 0.3)',
     backgroundColor: 'rgba(248, 113, 113, 0.08)',
   },
   statusBadgeWaiting: {
-    fontSize: '12px',
+    ...eyebrowStyle,
     color: 'var(--muted)',
   },
   statusDotGreen: {
     width: '8px',
     height: '8px',
     borderRadius: '50%',
-    backgroundColor: '#34d399',
-    boxShadow: '0 0 8px #34d399',
+    backgroundColor: 'var(--success)',
+    boxShadow: '0 0 8px var(--success)',
   },
   statusDotRed: {
     width: '8px',
     height: '8px',
     borderRadius: '50%',
-    backgroundColor: '#f87171',
+    backgroundColor: 'var(--danger)',
   },
   gpuBadge: {
-    fontSize: '12px',
+    ...eyebrowStyle,
     color: 'var(--gold)',
     padding: '4px 10px',
     borderRadius: '20px',
@@ -341,13 +346,11 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
   },
   panelTitle: {
-    fontFamily: 'var(--serif)',
-    fontSize: '15px',
+    ...eyebrowStyle,
     fontWeight: 600,
     color: 'var(--gold)',
     marginBottom: '16px',
     display: 'block',
-    letterSpacing: '0.5px',
   },
   leftColumn: {
     backgroundColor: 'var(--panel)',
@@ -432,7 +435,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   segmentBtnActive: {
     backgroundColor: 'var(--action-fill)',
-    color: '#10141c',
+    color: 'var(--on-segment)',
     fontWeight: 600,
   },
   segmentBtnDisabled: {
@@ -460,7 +463,7 @@ const styles: Record<string, React.CSSProperties> = {
   submitBtn: {
     marginTop: 'auto',
     backgroundColor: 'var(--action-fill)',
-    color: '#090c12',
+    color: 'var(--on-action)',
     fontWeight: 600,
     fontSize: '14px',
     padding: '12px',
@@ -483,14 +486,14 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '16px',
   },
   viewportRatio: {
-    fontSize: '12px',
+    ...eyebrowStyle,
     color: 'var(--muted)',
   },
   playerContainer: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    backgroundColor: '#05070a',
+    backgroundColor: 'var(--canvas)',
     borderRadius: 'var(--radius-control)',
     border: '1px solid var(--line)',
     overflow: 'hidden',

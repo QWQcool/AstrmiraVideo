@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "pnpm --parallel --filter \"*\" dev",
-    "build": "pnpm --filter backend build && pnpm --filter frontend build",
+    "build": "pnpm --filter @astrmira/shared build && pnpm --filter backend build && pnpm --filter frontend build",
     "test": "pnpm --filter backend test"
   }
 }

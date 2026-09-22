@@ -96,10 +96,10 @@
 - **AC2**：前端页面渲染出 Astrmira 暗色基底（`#090c12`）与金色点缀，无默认白页。
 - **验证**：人工开箱 + `curl /api/health`。
 
-### Step 1.5：地基整改（任务与 AC 见 [EXEC.md](EXEC.md)，本处仅作索引）
+### Step 1.5：地基整改（**已完成**，验收记录见 §5 进度日志）
 - **范围**：占位探针去硬编码（T1）· `packages/shared` 契约包（T2）· zod 路由校验（T3）· 真实 inject 测试（T4）· 前端 token 化 + 字体 / eyebrow 修正（T5）· `JobQueue` 接口骨架（T6）；
-- **不变量**：不实现任何 provider、不实现队列 / 幂等 / 防抖、不拆前端组件、不做 keyframes 落位（见 EXEC §3「明确不做」）；
-- **前置**：本 Step 全部 AC 通过并记录于 §5 后，Step 2 方可开工。
+- **不变量**：不实现任何 provider、不实现队列 / 幂等 / 防抖、不拆前端组件、不做 keyframes 落位；
+- **前置**：本 Step 全部 AC 通过并记录于 §5 后，Step 2 方可开工（**已满足**）。
 
 ### Step 2：双轨 Provider 与核心调度
 - **实施顺序（已定）**：`OI-2 夹具 provider` → 公共链路（存储 / 画廊 / 206 / 磁盘 / 幂等键）→ `Seedance`（AC2，真金白银）→ `OI-1 素材`。理由：公共链路是所有 provider 的共同地基；OI-2 是唯一「无 Key、无网、无 GPU、零成本、结果确定」的 provider，而 AC4（重启恢复）与 AC7（不确定不重提）需要**反复制造故障**，只有用夹具 provider 才能不花钱地反复跑。
@@ -218,7 +218,7 @@
 
 ## 5. 进度日志（唯一进度权威，其他文档只准链接本节）
 
-**截至 2026-09-22 · 当前指针：Step 1.5 地基整改中（[EXEC.md](EXEC.md)），完成后 Step 2 开工**
+**截至 2026-09-22 · 当前指针：Step 2 双轨 Provider 与核心调度（待开工）**
 
 - [x] 架构纠偏：淘汰素材拼贴路线，确立【描述 + 参考图/视频 → 双轨生成】多模态管线（见 §6-D1）；
 - [x] 本地算力验证【已验证】：MiniMax H3 NF4 在 Tier 2 机器（16GB 显存）全量缓存并跑通 T2V / I2V / 双引号立体声台词；
@@ -231,9 +231,16 @@
 - [x] 开发期校验方案定稿【规划】：真实素材（演示走查）与 CI 合成片（8 条边界用例）分工、故障注入层 7 项注入清单；
 - [x] OI-1 规则定稿【规划】：时长对齐（长→裁切 / 短→循环拉伸 + 告警）、循环时音轨静音、四步确定性选片规则、告警走 `warnings[]`（CONTRACT V1.4）；
 - [x] Step 2 实施顺序定稿：OI-2 夹具 → 公共链路 → Seedance → OI-1；
-- [x] 文档/代码纪律分叉整改【文档侧已完成】：README 过期标记修正 + 新增协作规范 6（进度回检）、CONTRACT 升 V1.5（`ProviderType` 补 OI id）、§7 安全补鉴权/限流键/上传加固、§6 新增 D18~D21、立项 [EXEC.md](EXEC.md) 整改手册；
+- [x] 文档/代码纪律分叉整改【文档侧已完成】：README 过期标记修正 + 新增协作规范 6（进度回检）、CONTRACT 升 V1.5（`ProviderType` 补 OI id）、§7 安全补鉴权/限流键/上传加固、§6 新增 D18~D21、立项一次性整改手册（Step 1.5 完成后已归档删除）；
 - [x] 文档收口【文档侧已完成】：PLAN 升 V8.1（版本标签与正文统一）、§4 补 Step 1.5 索引、Step 2 补防线 5 / 上传加固 / 鉴权中间件的任务与 AC9~AC10、Step 3 承接 keyframes 与索引号等视觉收口（AC5~AC7）、CONTRACT 升 V1.7（§8 补 `HealthResponse`）、EXEC 修编号与 AC 可执行性并把字体 / eyebrow 并入 T5（P1-5 / P1-6）；
-- [ ] **Step 1.5 地基整改【规划】**：占位探针去硬编码、shared 契约包、zod 路由校验、真实 inject 测试、队列抽象接口、前端 token 化——任务与 AC 见 [EXEC.md](EXEC.md)（决策依据 §6-D18 ~ D21）；
+- [x] **Step 1.5 地基整改【已验证】**（T1~T6 全部 AC 通过；一次性执行手册 `EXEC.md` 已按定位归档删除，历史可从 git 取回）：
+      - **T1** 占位探针去硬编码：`local` 恒 `available:false` + `tier:0`，全文件禁止型号与显存数字；`cloud.available` 按 CONTRACT §2（V1.6）以「env Key 或会话内存 BYOK Key」双入口判定，会话存储未就位时以恒空 stub 占位；
+      - **T2** `packages/shared` 契约包：CONTRACT §1 / §2 / §3 / §4 / §6 / §8 逐节翻译为 zod schema，schema 即单一事实源、类型一律 `z.infer`，tsc 直出 `dist`（禁 bundler）；破坏性验证「改字段名 → 前后端 tsc 同时失败」通过；
+      - **T3** 路由级 schema 校验（`fastify-type-provider-zod`）：`/api/health`、`/api/providers/status` 挂 response schema，路由拆分至 `backend/src/routes/`；CORS 由 `origin:true` 收紧为 `CORS_ORIGINS` 白名单（未配置时默认 `http://localhost:5173`）；破坏性验证「schema 外字段被序列化剥离」通过；
+      - **T4** 真实 `app.inject()` 测试替换假测试：`buildApp()` 装配与 `listen` 分离，tsx / `node dist` 双形态实测可 listen；含「响应体不得出现显卡型号」回归断言；
+      - **T5** 前端 token 化 + 字体修正：`--serif` 去 Cinzel 改大小写混排高对比衬线、新增 `--serif-caps` 仅供全大写 eyebrow；eyebrow 标签体系落位（`--fs-eyebrow` / `--track-caps`）；`App.tsx` 内 hex 色值与字体名零残留；
+      - **T6** `JobQueue` 接口骨架（只立契约，无实现）：`requeue`（仅限未提交上游）与 `markUncertain`（已提交但结果不明）分列，防线 7 在接口层落地；
+      - 依赖事实：`fastify-type-provider-zod@7.0.0` 的 peer 要求 `zod >= 4.1.5`，故 zod 由 3 升至 **4.6.5**——Step 1 期间 zod 为「已装零使用」，major 切换无迁移成本；
 - [ ] Step 2 ~ Step 5：见 §4。
 
 ---
