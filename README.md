@@ -2,14 +2,14 @@
 
 > **自然语言描述 + 参考图/参考视频 → 本地/云端双轨 AI 视频生成工作台**
 
-[![Status](https://img.shields.io/badge/status-Step%202%20待开工-orange)](docs/PLAN.md)
+[![Status](https://img.shields.io/badge/status-Step%202%20进行中-blue)](docs/PLAN.md)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Node%2022%20%2B%20TypeScript%20%2B%20Fastify-3178c6)](docs/PLAN.md)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20Vite%20%2B%20Astrmira%20Theme-61dafb)](docs/PLAN.md)
 
 ## 30 秒电梯陈述
 
-面向创作者的现代化双轨 AI 视频生成工作台：输入自然语言描述、拖入参考图（首尾帧/风格）或参考视频，系统按硬件探测结果自动路由——**云端火山方舟 Seedance（BYOK 自备 Key）** 或 **本地 MiniMax H3（DiffSynth-Studio）**——生成带原生立体声对白的成片。无卡设备零门槛走云端，有卡设备 0 成本走本地。
+面向创作者的现代化双轨 AI 视频生成工作台：输入自然语言描述、拖入参考图（首尾帧/风格）或参考视频，按**推荐配置与你自己的选择**路由——**云端火山方舟 Seedance（BYOK 自备 Key，Key 只存你自己的浏览器）** 或 **本地 MiniMax H3（DiffSynth-Studio，由部署者显式启用）**——生成带原生立体声对白的成片。无卡设备零门槛走云端，有卡设备可 0 成本走本地。
 
 ![AstrmiraVideo 工作台概念设计](docs/assets/01_main_workspace.jpg)
 
@@ -21,9 +21,9 @@ pnpm install
 pnpm dev               # 并行拉起 backend + frontend
 ```
 
-> 当前进度：Step 1 骨架【已验证】、Step 1.5 地基整改【已验证】均已完成，**Step 2 待开工**——进度唯一权威为 PLAN §5。
+> 当前进度：Step 1 骨架【已验证】、Step 1.5 地基整改【已验证】均已完成；**Step 2 进行中**——进度唯一权威为 PLAN §5。
 
-无卡设备启动后自动锁定云端轨，填入火山方舟 Key 即可出片；有卡设备（Tier 1~3）自动激活本地轨。算力分级与引擎接入详见 [docs/GUIDE.md](docs/GUIDE.md)。
+填入自己的火山方舟 Key 即可出片（Key 存在**你的浏览器**，服务端过手不留存）；本地轨由**部署者显式启用**（`EXPOSE_HOST_LOCAL_TRACK`），未启用时选择本地引擎会返回 `PROVIDER_UNAVAILABLE`。推荐档位与引擎接入详见 [docs/GUIDE.md](docs/GUIDE.md)。
 
 ## 文档地图（每个知识点只有唯一所有者，其他地方只准链接）
 
@@ -33,7 +33,8 @@ pnpm dev               # 并行拉起 backend + frontend
 | [docs/PLAN.md](docs/PLAN.md) | 产品与开发规划 | 架构、功能清单、**七道防线**、**Step+AC**、**进度日志**、决策记录、安全合规、成本风险 |
 | [docs/CONTRACT.md](docs/CONTRACT.md) | 接口唯一权威 | TS 类型、**路由表**、错误码字典、存储与资产生命周期 |
 | [docs/GUIDE.md](docs/GUIDE.md) | 上手指南 | **Tier 0~3 算力矩阵**、双轨引擎接入、四种生成工作流、FAQ |
-| [docs/UPSTREAM.md](docs/UPSTREAM.md) | 上游台账 | 参考/复刻项目与版本追溯 |
+| [docs/UPSTREAM.md](docs/UPSTREAM.md) | 上游台账 | 参考/复刻项目与版本追溯（含 ffmpeg 等外部工具的来源 / 版本 / 许可证登记） |
+| [docs/EXEC-STEP2-5.md](docs/EXEC-STEP2-5.md) | 施工手册（一次性） | Step 2 ~ Step 5 的**唯一施工权威**：分段施工卡、片内改动清单、破坏性验证、证据格式；Step 5 验收后归档删除 |
 | [NEXT_SESSION_PROMPT.md](NEXT_SESSION_PROMPT.md) | 跨会话接力 | 纯指针，不含任何独家信息 |
 
 ## 协作与文档规范（所有贡献者与 AI 会话必须遵守）

@@ -18,11 +18,12 @@
 1. `README.md` — 入口、文档地图、**六条协作规范**（必须先读）
 2. `docs/PLAN.md` — 架构、七道防线、Step+AC、**进度日志（唯一进度权威）**、决策记录
 3. `docs/CONTRACT.md` — 接口唯一权威（类型 / 路由 / 错误码 / 存储）
-4. `docs/GUIDE.md` — Tier 0~3 算力矩阵、双轨引擎接入、工作流、FAQ
+4. `docs/GUIDE.md` — 推荐档位（Tier 0~3，配置建议）、双轨引擎接入、工作流、FAQ
+5. `docs/EXEC-STEP2-5.md` — **施工手册**（Step 2 ~ Step 5 的唯一施工权威；一次性手册，Step 5 验收后归档删除）
 
 ## 当前指针
 
-**Step 2 双轨 Provider 与核心调度（待开工）**——按 `docs/PLAN.md` §4 Step 2 的任务与 AC 施工，实施顺序已定：OI-2 夹具 provider → 公共链路（存储 / 画廊 / 206 / 磁盘 / 幂等键）→ Seedance → OI-1。以 §5 进度日志的实际状态为准，不要以本文件为准。
+**Step 2 双轨 Provider 与核心调度（进行中）**——施工步骤以 **`docs/EXEC-STEP2-5.md` 为唯一权威**（分段施工卡 + 片内改动清单 + 破坏性验证 + 证据格式）；决策见 `docs/PLAN.md` §6（D22~D28）与 `docs/CONTRACT.md` **V1.8**；本次主动降级 / 延后项见 `docs/PLAN.md` **§9 待优化台账（B1~B15）**。以 §5 进度日志的实际状态为准，不要以本文件为准。
 
 ## 工作规则（继承自 README 协作规范）
 
