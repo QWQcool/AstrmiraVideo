@@ -13,3 +13,4 @@ export * from './status.js';
 export * from './progress.js';
 export * from './health.js';
 export * from './enhance.js';
+export * from './api.js';

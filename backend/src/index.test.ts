@@ -25,6 +25,8 @@ beforeAll(async () => {
   delete process.env.VOLCANO_API_KEY;
   delete process.env.CORS_ORIGINS;
   delete process.env.EXPOSE_HOST_LOCAL_TRACK;
+  // 存储走内存库，避免测试污染真实 data/app.db
+  process.env.DATA_DIR = ':memory:';
   app = await buildApp();
   await app.ready();
 });

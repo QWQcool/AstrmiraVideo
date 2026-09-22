@@ -1,0 +1,72 @@
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
+import Database from 'better-sqlite3';
+
+/**
+ * SQLite 存储（CONTRACT §7）：任务状态 / 参数快照 / 画廊元数据 / 幂等键 / 防线 5 冷却
+ * 全部落 `data/app.db`，**服务重启后必须能恢复**（防线 2 / AC4）。
+ */
+
+export type Db = Database.Database;
+
+/** 表结构（幂等建表；后续切片如需加列，用 `ALTER TABLE` 追加并在此登记） */
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS tasks (
+  task_id            TEXT PRIMARY KEY,
+  track              TEXT NOT NULL,
+  provider           TEXT NOT NULL,
+  status             TEXT NOT NULL,
+  progress_percent   REAL NOT NULL DEFAULT 0,
+  request_snapshot   TEXT NOT NULL,
+  output_video_url   TEXT,
+  warnings           TEXT,
+  error              TEXT,
+  upstream_task_id   TEXT,
+  submitting         INTEGER NOT NULL DEFAULT 0,
+  message            TEXT,
+  created_at         INTEGER NOT NULL,
+  updated_at         INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_status  ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+  key        TEXT PRIMARY KEY,
+  task_id    TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+-- 防线 5 冷却（S4 使用；此处建表以固定 schema）
+CREATE TABLE IF NOT EXISTS cooldowns (
+  bucket         TEXT NOT NULL,
+  key            TEXT NOT NULL,
+  last_submit_at INTEGER NOT NULL,
+  PRIMARY KEY (bucket, key)
+);
+`;
+
+/** 默认库路径：`<repo>/data/app.db`（可用 `DATA_DIR` 覆盖；`DATA_DIR=:memory:` 走内存库，测试用） */
+export function resolveDatabasePath(): string {
+  const override = process.env.DATA_DIR;
+  if (typeof override === 'string' && override.trim() === ':memory:') {
+    return ':memory:';
+  }
+  const base =
+    typeof override === 'string' && override.trim() !== ''
+      ? override.trim()
+      : path.join(process.cwd(), 'data');
+  return path.join(base, 'app.db');
+}
+
+export function openDatabase(filePath: string = resolveDatabasePath()): Db {
+  if (filePath !== ':memory:') {
+    mkdirSync(path.dirname(filePath), { recursive: true });
+  }
+
+  const db = new Database(filePath);
+  // WAL：读写并发更友好，且崩溃后可恢复
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+  db.exec(SCHEMA);
+  return db;
+}

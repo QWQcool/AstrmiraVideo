@@ -5,6 +5,7 @@
 >   ① **§2**：`cloud.available` 口径收窄为「服务端视角（仅 env）」；`keySource` 收窄为可选字面量 `'env'`；新增 `acceptsClientKey`（服务端是否接受 `X-Provider-Key`，恒 true，托管场景可关）；`local` 段**删除** `gpuName` / `vramFreeGB`，`tier` 改为可选且语义为「**显式配置并自检通过**的引擎档位」——本端点在 V1.8 起为**纯配置事实陈述**，不含任何自动硬件扫描。
 >   ② **§3**：LLM 配置与 `engine` 字段登记为 **V2.0【规划】**；demo 版 `/api/prompt/enhance` 以 `501 LLM_NOT_CONFIGURED` 诚实落地（禁止静默降级 / 规则引擎冒充）。
 >   ③ **§5**：路由表新增 `GET /media/*`（`outputs/` 的 Range 静态媒体服务）与 `POST /api/providers/keys/verify`（【规划·B2】）；新增「**凭据传递约定**」注记段——`X-Provider-Key` / `X-LLM-Key` 仅走请求头，禁 query / URL / body；服务端**零留存**（不落库、不入日志、不回显）。
+>      **补登（S2 落地时）**：`/api/generate`、`/api/tasks/:taskId`、`/cancel`、`/api/history`、`DELETE /api/history/:taskId` 的**响应形状**已随实现补入路由表，类型以 `packages/shared/src/api.ts` 为单一事实源（此前只写语义描述、无形状定义）。
 >   ④ **§6**：新增 `LLM_NOT_CONFIGURED` / `KEY_INVALID` / `KEY_MISSING`（均 `terminal`）；**硬规则 2 适用范围收窄**为「有持久副作用的任务型上游」，无副作用调用（文本生成）不适用（D28）。
 >   ⑤ **§7**：存储表新增「BYOK Key：**服务端零留存**」一行；「中间帧 / 临时音频」行补 client 本地轨落点（【规划】，见 PLAN §6-D26）。
 > **V1.7 修订（2026-09-22）**：新增 §8 `HealthResponse`，补齐 `/api/health` 的响应契约——此前路由表只写「存活探针」而无响应形状定义，`packages/shared` 契约包（PLAN §6-D18）无法为它定义 schema（原为 T2 的施工阻塞点）。
@@ -176,13 +177,13 @@ export interface VideoProvider {
 | `GET` | `/api/health` | 存活探针（响应形状见 §8；**任何来源**均免鉴权，见 PLAN §7-4） |
 | `GET` | `/api/providers/status` | **本服务本地引擎配置状态**（V1.8：纯配置事实陈述，非硬件探测；**旧名 `/api/system/probe` 已废弃**） |
 | `GET` | `/media/*` | **V1.8 新增**：`outputs/` 静态媒体服务（成片直链，播放器与下载的 **206 Range** 载体）；路径只含服务端生成的随机 ID，不含任何用户输入 |
-| `POST` | `/api/generate` | 创建视频生成任务，返回统一 `taskId`（受 60s 防抖限流；凭据经 `X-Provider-Key`，见下方注记段） |
-| `GET` | `/api/tasks/:taskId` | 轮询任务状态与结果 |
-| `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消） |
+| `POST` | `/api/generate` | 创建视频生成任务（凭据经 `X-Provider-Key`，见下方注记段）。**200 → `{ taskId }`**（幂等：同一 `Idempotency-Key` 或缺省指纹重复提交返回同一 `taskId`）；引擎未实现 / 未启用 → **503 `PROVIDER_UNAVAILABLE`**；60s 防抖限流属 S4 |
+| `GET` | `/api/tasks/:taskId` | 轮询任务状态与结果。**200 → `TaskProgress`（§4）**；不存在或已清理 → **404 `TASK_NOT_FOUND`** |
+| `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消）。**200 → `{ ok, taskId }`** |
 | `POST` | `/api/prompt/enhance` | 提示词扩写助手 —— **demo 版返回 `501` + `LLM_NOT_CONFIGURED`**（前端 ✨ 置灰）；完整实现见 §3 的 V2.0【规划】 |
 | `POST` | `/api/upload` | 上传参考图/视频，自动 32 倍数居中裁切，返回资产 ID（加固细则见 PLAN §7-6） |
-| `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填） |
-| `DELETE` | `/api/history/:taskId` | 删除单条历史并释放磁盘 |
+| `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[] }`**（最近 50 条） |
+| `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
 
 **幂等键与「即将提交」标记（V1.3 新增）**：
 - `POST /api/generate` 必须接受幂等键（请求头 `Idempotency-Key`；缺省时服务端按 `provider + 请求指纹` 生成）。同一幂等键重复提交返回**同一 `taskId`**，不得产生第二次上游调用。

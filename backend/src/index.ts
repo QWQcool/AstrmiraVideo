@@ -6,9 +6,19 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
+import { cleanupTaskTemp } from './pipeline/cleanup.js';
+import { getProvider } from './providers/registry.js';
+import { JobDispatcher } from './queue/dispatcher.js';
+import { SqliteJobQueue } from './queue/SqliteJobQueue.js';
+import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
+import { createHistoryRoutes } from './routes/history.js';
 import { providerRoutes } from './routes/providers.js';
+import { createTaskRoutes } from './routes/tasks.js';
 import { LLM_KEY_HEADER, LOG_REDACT_PATHS, PROVIDER_KEY_HEADER } from './security/credential.js';
+import { registerStaticOutputs } from './server/staticOutputs.js';
+import { openDatabase } from './store/db.js';
+import { TaskStore } from './store/taskStore.js';
 
 /**
  * CORS 白名单（PLAN §7-6 第一步）：由 `origin: true` 收紧为 `CORS_ORIGINS` 白名单，
@@ -72,6 +82,34 @@ export async function buildApp() {
   // 路由目录惯例：backend/src/routes/<域>.ts（Step 2 的 6 条新路由沿用同一惯例）
   await app.register(healthRoutes);
   await app.register(providerRoutes);
+
+  // ── 公共链路（S2）：SQLite 存储 + 队列 + 双轨调度器 + 静态媒体（206 载体）─────────
+  const db = openDatabase();
+  const store = new TaskStore(db);
+  const queue = new SqliteJobQueue(store);
+
+  const dispatcher = new JobDispatcher({
+    queue,
+    resolveProvider: getProvider,
+    // 防线 3：合成结束即清中间帧目录（成败都清）
+    cleanup: (taskId) => cleanupTaskTemp(taskId),
+    // 防线 7：上游接受提交后立即写回，此后该任务不可 requeue
+    markUpstreamAccepted: async (taskId, upstreamTaskId) => {
+      queue.setUpstreamTaskId(taskId, upstreamTaskId);
+    },
+    onError: (err) => app.log.warn({ err }, '任务执行异常'),
+  });
+  dispatcher.start();
+
+  app.addHook('onClose', async () => {
+    dispatcher.stop();
+    db.close();
+  });
+
+  await app.register(createGenerateRoutes({ store, queue, resolveProvider: getProvider }));
+  await app.register(createTaskRoutes({ store }));
+  await app.register(createHistoryRoutes({ store }));
+  await registerStaticOutputs(app);
 
   return app;
 }

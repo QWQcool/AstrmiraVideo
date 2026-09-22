@@ -34,9 +34,25 @@ const REGISTRY: Record<ProviderType, ProviderFactory> = {
   'local-minimax-h3': () => null,
 };
 
+/** ⚠️ 测试注入表（生产路径永不写入；见 `__setProviderForTesting`） */
+const testOverrides = new Map<ProviderType, VideoProvider | null>();
+
 /** 取 provider 实例；未实现或被门控关闭时返回 `null`（调用方须显式报 `PROVIDER_UNAVAILABLE`） */
 export function getProvider(id: ProviderType): VideoProvider | null {
+  if (testOverrides.has(id)) {
+    return testOverrides.get(id) ?? null;
+  }
   return REGISTRY[id]();
+}
+
+/** ⚠️ 仅供测试：临时覆盖某个 provider（用于计数桩 / 故障桩） */
+export function __setProviderForTesting(id: ProviderType, provider: VideoProvider | null): void {
+  testOverrides.set(id, provider);
+}
+
+/** ⚠️ 仅供测试：清除所有覆盖 */
+export function __clearProviderTestOverrides(): void {
+  testOverrides.clear();
 }
 
 /** 当前真正可用（已实现且未被门控关闭）的 provider 列表 —— 供能力位下发使用 */

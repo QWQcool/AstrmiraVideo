@@ -4,3 +4,5 @@ packages:
   - 'packages/*'
 allowBuilds:
   esbuild: true
+  # 原生模块：better-sqlite3 需要 postinstall 下载 / 编译二进制，否则 require 直接失败
+  better-sqlite3: true
