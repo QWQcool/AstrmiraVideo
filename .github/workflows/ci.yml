@@ -118,47 +118,53 @@ jobs:
       - name: 安装 sshpass（密码认证的最小依赖）
         run: sudo apt-get update && sudo apt-get install -y sshpass
 
-      - name: 预置主机密钥
+      - name: 准备凭据与主机密钥
         env:
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
         run: |
+          # ⚠️ 先剥掉 CR/LF 再落盘，**只做一次**，后续步骤一律 `sshpass -f` 读这个文件。
+          # 不这样做的话：Secret 值末尾常带 CRLF（用 PowerShell 管道写 `gh secret set` 必带），
+          # 而 sshpass 会把整个值当密码送出去，服务端只回一句
+          # `Permission denied, please try again.` —— 看起来像密码错了，实际是多了两个字节。
+          printf '%s' "$SSH_PASSWORD" | tr -d '\r\n' > /tmp/deploy-pass
+          chmod 600 /tmp/deploy-pass
+          echo "密码文件长度: $(wc -c < /tmp/deploy-pass)"
+
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           # accept-new：首次连接自动接受主机密钥，同时保留后续的变更检测
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: 上传代码包
         env:
-          SSHPASS: ${{ secrets.SSH_PASSWORD }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          # -e：从 SSHPASS 环境变量取密码，因此密码**不会出现在进程命令行**里
-          sshpass -e scp -P "$DEPLOY_PORT" \
+          # -f：从文件读密码，因此密码**不会出现在进程命令行**里
+          sshpass -f /tmp/deploy-pass scp -P "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
             /tmp/deploy.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/root/astrmira/deploy.tar.gz"
 
       - name: 远程解压并部署
         env:
-          SSHPASS: ${{ secrets.SSH_PASSWORD }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          sshpass -e ssh -p "$DEPLOY_PORT" \
+          sshpass -f /tmp/deploy-pass ssh -p "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             'cd /root/astrmira && tar -xzf deploy.tar.gz && rm -f deploy.tar.gz && node scripts/deploy.mjs'
 
       - name: 健康检查（容器状态）
         env:
-          SSHPASS: ${{ secrets.SSH_PASSWORD }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          sshpass -e ssh -p "$DEPLOY_PORT" \
+          sshpass -f /tmp/deploy-pass ssh -p "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             'docker ps --format "{{.Names}} | {{.Status}}"'
