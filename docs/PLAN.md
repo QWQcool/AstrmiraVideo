@@ -1,4 +1,9 @@
-# AstrmiraVideo · 产品与开发规划（PLAN V8.0）
+# AstrmiraVideo · 产品与开发规划（PLAN V8.1）
+
+> **修订说明（V8.1，2026-09-22）**
+> 1. 新增 §7-4 ~ §7-6 安全加固（公网最小鉴权 / 限流键定义 / 上传与静态面加固），§6 追加 D18 ~ D21；
+> 2. §4 补入 **Step 1.5 地基整改**索引；Step 2 补齐防线 5 与上传加固的任务与 AC；Step 3 承接视觉收口（keyframes / 索引号 / 水印）；
+> 3. 正文与版本标签统一为 V8.1（此前 §7 已标注「V8.1 新增」但标题仍为 V8.0，属一致性缺口）。
 
 > **修订说明（V8.0）**
 > 1. 合并原 ROADMAP.md：进度日志、Step 清单、接力信息统一收归本文，全项目仅此一份进度权威；
@@ -82,7 +87,7 @@
 ## 4. 实施步骤（任务 + 验收标准 + 验证方式）
 
 ```
-[Step 1 骨架] ──► [Step 2 双轨中枢] ──► [Step 3 前端工作台] ──► [Step 4 本地验收] ──► [Step 5 公网部署]
+[Step 1 骨架] ──► [Step 1.5 地基整改] ──► [Step 2 双轨中枢] ──► [Step 3 前端工作台] ──► [Step 4 本地验收] ──► [Step 5 公网部署]
 ```
 
 ### Step 1：全栈骨架与设计 Token 落地
@@ -91,9 +96,14 @@
 - **AC2**：前端页面渲染出 Astrmira 暗色基底（`#090c12`）与金色点缀，无默认白页。
 - **验证**：人工开箱 + `curl /api/health`。
 
+### Step 1.5：地基整改（任务与 AC 见 [EXEC.md](EXEC.md)，本处仅作索引）
+- **范围**：占位探针去硬编码（T1）· `packages/shared` 契约包（T2）· zod 路由校验（T3）· 真实 inject 测试（T4）· 前端 token 化 + 字体 / eyebrow 修正（T5）· `JobQueue` 接口骨架（T6）；
+- **不变量**：不实现任何 provider、不实现队列 / 幂等 / 防抖、不拆前端组件、不做 keyframes 落位（见 EXEC §3「明确不做」）；
+- **前置**：本 Step 全部 AC 通过并记录于 §5 后，Step 2 方可开工。
+
 ### Step 2：双轨 Provider 与核心调度
 - **实施顺序（已定）**：`OI-2 夹具 provider` → 公共链路（存储 / 画廊 / 206 / 磁盘 / 幂等键）→ `Seedance`（AC2，真金白银）→ `OI-1 素材`。理由：公共链路是所有 provider 的共同地基；OI-2 是唯一「无 Key、无网、无 GPU、零成本、结果确定」的 provider，而 AC4（重启恢复）与 AC7（不确定不重提）需要**反复制造故障**，只有用夹具 provider 才能不花钱地反复跑。
-- **任务**：`pipeline/smartCrop.ts`（32 倍数居中裁切）；`providers/VolcanoSeedanceProvider.ts`（提交+轮询+下载）；`providers/LocalH3Provider.ts`（子进程调度+互斥锁）；`providers/registry.ts`（provider 唯一注册点）；`providers/statusProbe.ts`（**真实算力探测**，替换 Step 1 占位实现）；**三态错误码与幂等键**（CONTRACT V1.3 §5 / §6）；**开发期故障注入层**（见下方「Step 2 补充」）；**CI 三件套（lint / type / test）**；路由挂载 `/api/generate`、`/api/tasks/:taskId`、`/api/providers/status`、`/api/prompt/enhance`、`/api/upload`、`/api/history`；SQLite 任务存储。
+- **任务**：`pipeline/smartCrop.ts`（32 倍数居中裁切）；`providers/VolcanoSeedanceProvider.ts`（提交+轮询+下载）；`providers/LocalH3Provider.ts`（子进程调度+互斥锁）；`providers/registry.ts`（provider 唯一注册点）；`providers/statusProbe.ts`（**真实算力探测**，替换 Step 1 占位实现）；**三态错误码与幂等键**（CONTRACT V1.3 §5 / §6）；**开发期故障注入层**（见下方「Step 2 补充」）；**CI 三件套（lint / type / test）**；**防线 5 防抖限流（`IP + Key 指纹` 复合键，冷却状态落 SQLite）**；**`/api/upload` 上传加固（≤20MB × ≤4 个、魔数嗅探、类型白名单、路径不含用户输入）**；**公网最小鉴权中间件骨架（回环免鉴权，细则 §7-4）**；路由挂载 `/api/generate`、`/api/tasks/:taskId`、`/api/providers/status`、`/api/prompt/enhance`、`/api/upload`、`/api/history`；SQLite 任务存储。
 - **AC1**：契约层测试全绿（`pnpm test:contract`，覆盖 CONTRACT.md 全部路由与错误码，含三态 `disposition` 穷举）。
 - **AC2**：Seedance 真实冒烟出片 1 次，记录实际耗时与费用，回填 §8 成本表（消除【待验证】标记）。
 - **AC3**：本地并发提交 2 个任务，第 2 个任务状态为 `queued`，无第二个推理进程被拉起。
@@ -102,13 +112,18 @@
 - **AC6**：`/api/providers/status` 由真实探测驱动——无 GPU / 引擎未实现时必须返回 `available: false` + `reason`，**任何情况下不得返回硬编码型号**；Step 1 的占位实现同步移除。
 - **AC7**：注入 `uncertain` 故障后任务归 `UNCERTAIN_RESULT`，**不发生任何自动重提**（硬断言：上游调用次数 = 1）；同一幂等键重复提交返回同一 `taskId`。
 - **AC8**：CI 三件套就位，`pnpm test` 同时覆盖契约层与真实产物层（AC1 + AC5）。
+- **AC9**：防线 5 落地——60s 冷却按「来源 IP + BYOK Key 指纹」复合计数；冷却状态落 SQLite，**服务重启后窗口不丢失**（断言：重启前后同一键提交仍被拒且返回 `RATE_LIMITED`）。
+- **AC10**：`/api/upload` 上传加固——超限（单文件 > 20MB / 总数 > 4）被拒；伪造 `Content-Type` 的文件被**魔数嗅探**识破并拒；白名单外类型被拒；产物路径不含任何用户输入片段（防路径穿越）。
 
 ### Step 3：前端 Astrmira 工作台
-- **任务**：左栏（Prompt + ✨扩写 + 拖拽槽 + 画幅 + BYOK 抽屉）；中栏（播放视窗 + 进度环 + 下载）；右栏（任务队列 + 画廊回填/删除）。
+- **任务**：左栏（Prompt + ✨扩写 + 拖拽槽 + 画幅 + BYOK 抽屉）；中栏（播放视窗 + 进度环 + 下载）；右栏（任务队列 + 画廊回填/删除）；**视觉收口**——8 个 keyframes 全部落到功能位（生成中 `mira-breathe` 替代 spinner / 完成 `star-gather` 可重播 / logo `mira-orbit-turn`）、卡片补 3 位索引号、空态与页脚补低对比字标水印（字体与 eyebrow 体系已在 Step 1.5 T5 完成，此处不重复）；`UNCERTAIN_RESULT` 的人工核对提示与「标记已核对 / 放弃」动作。
 - **AC1**：T2V 全流程可在界面完成，无需任何手工 API 调用。
 - **AC2**：生成中刷新页面，进度条自动恢复（localStorage 重挂载）。
 - **AC3**：画廊【复用参数】点击后，prompt / mode / 参考图 / seed 完整还原至控制台。
 - **AC4**：提交后 60s 内生成按钮置灰。
+- **AC5**：**8 个 keyframes 全部存在实际使用位（无孤置）**，且在 `prefers-reduced-motion: reduce` 下全部降级为无动效。
+- **AC6**：分区标题、面板标题与卡片统一使用 eyebrow 标签体系（极小字 + 大字母间距 + 3 位索引号），无新引入的硬编码字号 / 字距。
+- **AC7**：任务归 `UNCERTAIN_RESULT` 时，界面展示「可能已产生费用，请到服务商后台核对后手动处理」，且**不提供任何一键重跑入口**。
 
 ### Step 4：端到端验收与体验打磨
 - **AC1**：T2V（含双引号台词人声）与 I2V（含 32 倍数裁切）各跑通 1 次完整链路。
@@ -203,7 +218,7 @@
 
 ## 5. 进度日志（唯一进度权威，其他文档只准链接本节）
 
-**截至 2026-09-22 · 当前指针：Step 2 待开工**
+**截至 2026-09-22 · 当前指针：Step 1.5 地基整改中（[EXEC.md](EXEC.md)），完成后 Step 2 开工**
 
 - [x] 架构纠偏：淘汰素材拼贴路线，确立【描述 + 参考图/视频 → 双轨生成】多模态管线（见 §6-D1）；
 - [x] 本地算力验证【已验证】：MiniMax H3 NF4 在 Tier 2 机器（16GB 显存）全量缓存并跑通 T2V / I2V / 双引号立体声台词；
@@ -216,6 +231,9 @@
 - [x] 开发期校验方案定稿【规划】：真实素材（演示走查）与 CI 合成片（8 条边界用例）分工、故障注入层 7 项注入清单；
 - [x] OI-1 规则定稿【规划】：时长对齐（长→裁切 / 短→循环拉伸 + 告警）、循环时音轨静音、四步确定性选片规则、告警走 `warnings[]`（CONTRACT V1.4）；
 - [x] Step 2 实施顺序定稿：OI-2 夹具 → 公共链路 → Seedance → OI-1；
+- [x] 文档/代码纪律分叉整改【文档侧已完成】：README 过期标记修正 + 新增协作规范 6（进度回检）、CONTRACT 升 V1.5（`ProviderType` 补 OI id）、§7 安全补鉴权/限流键/上传加固、§6 新增 D18~D21、立项 [EXEC.md](EXEC.md) 整改手册；
+- [x] 文档收口【文档侧已完成】：PLAN 升 V8.1（版本标签与正文统一）、§4 补 Step 1.5 索引、Step 2 补防线 5 / 上传加固 / 鉴权中间件的任务与 AC9~AC10、Step 3 承接 keyframes 与索引号等视觉收口（AC5~AC7）、CONTRACT 升 V1.7（§8 补 `HealthResponse`）、EXEC 修编号与 AC 可执行性并把字体 / eyebrow 并入 T5（P1-5 / P1-6）；
+- [ ] **Step 1.5 地基整改【规划】**：占位探针去硬编码、shared 契约包、zod 路由校验、真实 inject 测试、队列抽象接口、前端 token 化——任务与 AC 见 [EXEC.md](EXEC.md)（决策依据 §6-D18 ~ D21）；
 - [ ] Step 2 ~ Step 5：见 §4。
 
 ---
@@ -241,16 +259,23 @@
 | D15 | 告警走 `TaskProgress.warnings: string[]`，不复用 `message`（CONTRACT V1.4） | `message` 会被后续进度刷新覆盖，且**无法并存多条**；OI-1 的「循环拉伸」与「音轨静音」会同时产生两条；告警只打服务端日志等于没有 | 2026-09-22 |
 | D16 | OI-1 采用四步确定性选片规则；短于请求走「循环拉伸 + 告警 + 音轨静音」 | 随机取首条会导致 CI 断言漂移、观感随机、loop 概率失控；确定性规则让 loop 成为**明确的降级路径**而非随机结果，并为 W2 的 LLM 选材打分留出替换位 | 2026-09-22 |
 | D17 | Step 2 provider 实施顺序：OI-2 → 公共链路 → Seedance → OI-1 | 公共链路是三者共同地基；OI-2 零成本零依赖，适合反复制造故障来验 AC4 / AC7；Seedance 每次调用都是真钱，应放在地基稳定之后 | 2026-09-22 |
+| D18 | 前后端类型单一事实源：`packages/shared` 契约包（zod schema 定义 + `z.infer` 导出类型），前后端经 workspace 依赖消费；CONTRACT.md 中的 TS 代码块降为「文档投影」 | 现状前后端三处手写接口类型（App.tsx / index.ts / CONTRACT.md），无共享必漂移；zod schema 同时充当运行时校验与类型来源，一份定义两处受益 | 2026-09-22 |
+| D19 | 路由级 schema 校验采用 `fastify-type-provider-zod`，所有路由（含响应）挂 shared 包中的 zod schema | D4 选型理由「schema 校验一等公民」在 Step 1 未兑现（zod 已装零使用）；响应挂 schema 可让占位实现这类「文档外形状」在序列化期直接报错 | 2026-09-22 |
+| D20 | 任务队列保留 SQLite 承载，但调度器面向 `JobQueue` 抽象接口编程（submit/claim/complete/fail/requeue）；BullMQ 仅作为「多实例公网部署」场景的替换实现预留，当前不引入 Redis | 本地轨 Concurrency=1 与单用户场景下 Redis 是纯运维负担（Windows 开发需 Docker/Memurai，违背 D5 零运维）；真正的生产级风险在幂等与 GPU 互斥而非队列中间件，SQLite 事务已可保证原子 claim | 2026-09-22 |
+| D21 | 公网部署启用最小鉴权（单 Bearer Token + 回环免鉴权）；防抖限流键定义为「IP + Key 指纹」复合 | Step 5 公网无鉴权 + 限流键未定义 = 匿名刷接口口子；个人项目单 Token 足够，不引入用户体系（细则见 §7-4 / §7-5） | 2026-09-22 |
 
 ---
 
 ## 7. 安全与合规（吸收原 COMPLIANCE.md，唯一详写处）
 
-1. **密钥管理**：火山 Key 由服务端环境变量或会话内存持有，绝不回传前端明文、绝不入日志；日志中 Token 强制掩码（如 `sk-****abcd`）；前端保存后只回显掩码。
-2. **本地模型边界**：MiniMax H3 全程本地离线，图像与音频不出本机；ComfyUI 仅限回环或受控局域网。
+1. **密钥管理**：火山 Key 由服务端环境变量或会话内存持有，绝不回传前端明文、绝不入日志；日志中 Token 强制掩码（如 `sk-****abcd`）；前端保存后只回显掩码；服务端内存中的 Key 在进程退出 / 会话过期时主动置空。
+2. **本地模型边界**：MiniMax H3 全程本地离线，图像与音频不出本机；ComfyUI 仅限回环或受控局域网——服务端对 `H3_WORKDIR` / `COMFYUI_BASE_URL` 做白名单校验（仅回环地址 / RFC1918 内网 / 本机路径），拒绝任意外部地址，防 SSRF 与任意命令面暴露。
 3. **公网部署形态**：默认路由云端轨，不开放任何本地 Shell 执行面；单任务时长上限 5~10s，防任务堆叠。
-4. **文档卫生**：IP / 绝对路径 / 凭证永不入 md（占位符化），真实值只存本地 `.env`；`.env`、`data/`、`outputs/`、媒体文件已入 `.gitignore`。
-5. **视觉版权**：Astrmira 视觉语言仅作参考，本项目与其站点无任何隶属关系（见 README 免责）。
+4. **公网最小鉴权（V8.1 新增，Step 5 前必须落地）**：公网部署时所有 `/api/*`（除 `/api/health`）要求 `Authorization: Bearer <PUBLIC_API_TOKEN>`（值在 `.env`）；本地回环（127.0.0.1 / ::1）请求免鉴权，保证单机开发零摩擦。无鉴权公网裸奔视为验收不通过。
+5. **限流键定义（V8.1 新增）**：防线 5 的 60s 防抖按「来源 IP + BYOK Key 指纹（Key SHA-256 前 8 位；无 Key 时仅用 IP）」复合计数；本地部署无 Key 场景退化为 IP 单键。防抖状态存 SQLite，重启不丢失冷却窗口。
+6. **上传与静态面加固（V8.1 新增）**：`/api/upload` 限制单文件 ≤ 20MB、总数 ≤ 4，MIME 以魔数嗅探为准（不信任 Content-Type 头），白名单：jpg/png/webp/heic/mp4/mov；`outputs/` 直链路径只含服务端生成的随机 ID，禁止任何用户输入拼入文件路径（防路径穿越）；CORS 由 `origin: true` 收紧为 `.env` 白名单（`CORS_ORIGINS`，本地开发默认 `http://localhost:5173`）；安全响应头（`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`）统一挂载。
+7. **文档卫生**：IP / 绝对路径 / 凭证永不入 md（占位符化），真实值只存本地 `.env`；`.env`、`data/`、`outputs/`、媒体文件已入 `.gitignore`。
+8. **视觉版权**：Astrmira 视觉语言仅作参考，本项目与其站点无任何隶属关系（见 README 免责）。
 
 ---
 

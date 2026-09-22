@@ -1,6 +1,9 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V1.4 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V1.7 · 已冻结（变更需先改本文，再改代码）**
+> **V1.7 修订（2026-09-22）**：新增 §8 `HealthResponse`，补齐 `/api/health` 的响应契约——此前路由表只写「存活探针」而无响应形状定义，`packages/shared` 契约包（PLAN §6-D18）无法为它定义 schema（原为 T2 的施工阻塞点）。
+> **V1.6 修订（2026-09-22）**：`ProviderStatus.cloud` 新增 `keySource?: 'env' | 'session'`，并明确 `cloud.available` 的判定语义为「env `VOLCANO_API_KEY` **或** 会话内存中的 BYOK Key 任一存在」——修复「available 仅由 env 驱动 → 前端设置抽屉填入的 Key 无法激活云端轨」的语义漏洞（BYOK 双入口见 GUIDE §二轨道 B）；`available: true` 时 `keySource` 必填，`reason` 需能区分两种缺失/来源情形。
+> **V1.5 修订（2026-09-22）**：`ProviderType` 联合类型补入 OI provider（`'stock-local' | 'fixture-local'`），修复「§4 要求 OI 实现同一 `VideoProvider` 接口、但 `id: ProviderType` 闭联合集在类型层面无法承载 OI id」的自相矛盾；OI id 为开发期校验专用，默认关闭，不得出现在产品线能力位。配套 PLAN §6-D18。
 > **V1.4 修订（2026-09-22）**：`TaskProgress` 新增 `warnings?: string[]`——用户可见的**非阻断告警**通道（与进度 `message` 职责分离、可并存多条、随任务记录持久化并在画廊展示）。引入原因：可选实现项 OI-1 的「素材短于请求时长 → 循环拉伸」与「循环后音轨静音」会**同时产生两条告警**，单字段 `message` 无法承载（§4、§7）。
 > 本规范是前后端接口的**唯一权威**，定义核心数据流：【文本描述 + 参考图/参考视频 → 云端API(火山Seedance) / 本地推理(MiniMax H3) → 视频产出】。
 > 任何文档或代码与本文冲突时，以本文为准。
@@ -13,7 +16,13 @@
 ```ts
 export type GenerationMode = 't2v' | 'i2v' | 'fl2v' | 'v2v';
 export type AspectRatio = '16:9' | '9:16' | '1:1'; // 1:1 仅云端可选，本地 H3 支持度【待验证】
-export type ProviderType = 'cloud-volcano-seedance' | 'local-minimax-h3';
+// V1.5：补入 OI provider id。'stock-local' / 'fixture-local' 为开发期校验专用（PLAN §4「Step 2 补充」），
+// 默认关闭、不出现在产品线能力位；前端不得为它们硬编码任何分支。
+export type ProviderType =
+  | 'cloud-volcano-seedance'
+  | 'local-minimax-h3'
+  | 'stock-local'
+  | 'fixture-local';
 
 export interface VideoGenerateRequest {
   // 核心文本描述（可配合 LLM 扩写）
@@ -66,9 +75,10 @@ export type HardwareTier = 0 | 1 | 2 | 3; // 分级定义见 GUIDE.md §一
 
 export interface ProviderStatus {
   cloud: {
-    available: boolean;
+    available: boolean;           // V1.6：env VOLCANO_API_KEY 或会话内存 BYOK Key 任一存在即为 true
     provider: 'volcano-seedance';
-    reason?: string;
+    keySource?: 'env' | 'session'; // V1.6：Key 来源；available=true 时必填。session = 前端设置抽屉填入、服务端会话内存持有
+    reason?: string;              // 需能区分「完全未配置」与具体来源情形
   };
   local: {
     available: boolean;
@@ -141,7 +151,7 @@ export interface VideoProvider {
 
 | 方法 | 路径 | 说明 |
 | :--- | :--- | :--- |
-| `GET` | `/api/health` | 存活探针 |
+| `GET` | `/api/health` | 存活探针（响应形状见 §8；公网部署免鉴权，见 PLAN §7-4） |
 | `GET` | `/api/providers/status` | 算力探测状态（Tier 0 默认锁定云端；**旧名 `/api/system/probe` 已废弃**） |
 | `POST` | `/api/generate` | 创建视频生成任务，返回统一 `taskId`（受 60s 防抖限流） |
 | `GET` | `/api/tasks/:taskId` | 轮询任务状态与结果 |
@@ -202,3 +212,20 @@ export type ErrorDisposition =
 | 上传的参考资产 | `outputs/assets/<assetId>` | 关联任务删除时一并清理 |
 | 中间帧 / 临时音频 | `outputs/.tmp/<taskId>/` | 合成结束立即物理删除（防线 3） |
 | 前端任务 ID 锚点 | 浏览器 `localStorage` | 刷新后凭 ID 向服务端重挂载进度 |
+
+---
+
+## 8. 辅助响应类型 `HealthResponse`
+
+```ts
+// V1.7：/api/health 的响应形状。此前路由表仅写「存活探针」而无响应契约，
+// shared 契约包（PLAN §6-D18）无法为它定义 schema——本节补齐该缺口。
+export interface HealthResponse {
+  status: 'ok';
+  name: string;        // 服务标识，如 'AstrmiraVideo Backend'
+  version: string;     // 服务版本号
+  timestamp: string;   // ISO 8601
+}
+```
+
+> 该类型同样以 `packages/shared` 的 zod schema 为唯一事实源（`HealthResponseSchema`），本节代码块为文档投影。
