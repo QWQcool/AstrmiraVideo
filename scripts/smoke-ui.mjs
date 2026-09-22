@@ -208,8 +208,17 @@ try {
     note(`（提示）console.warning ${consoleWarnings.length} 条，不参与判定：${consoleWarnings[0]?.slice(0, 160)}`);
   }
 } catch (error) {
-  failures.push(`冒烟执行异常：${error.message}`);
-  console.error(`\n✗ ${error.message}`);
+  const message = error instanceof Error ? error.message : String(error);
+  // 缺浏览器时的中文指引（P0-3 的同一口径：缺外部依赖要讲清楚怎么装，而不是抛一段英文栈）
+  if (/Executable doesn't exist|playwright install/i.test(message)) {
+    console.error(
+      '\n✗ 缺 Chromium（Playwright 浏览器未安装）。先执行：\n' +
+        '    pnpm exec playwright install chromium\n' +
+        '  （CI 中由 .github/workflows/ci.yml 的「安装 chromium」步骤负责）',
+    );
+  }
+  failures.push(`冒烟执行异常：${message}`);
+  console.error(`\n✗ ${message}`);
 } finally {
   await browser?.close().catch(() => {});
   child.kill();
