@@ -24,8 +24,7 @@ jobs:
 
       # 刻意**不写** `version`：pnpm 版本由根 package.json 的 `packageManager` 提供。
       # 两处都写会直接失败（"Multiple versions of pnpm specified"）——
-      # 而这正是单一事实源的意义：本地 / CI / 镜像三处都必须解析到同一个 pnpm，
-      # Docker 里的 corepack 读的也是同一个字段。
+      # 而这正是单一事实源的意义：本地 / CI / 镜像三处都必须解析到同一个 pnpm。
       - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
@@ -70,12 +69,19 @@ jobs:
   # 2. 只在 `push` 到 main 时部署 —— PR 不部署（否则每个 PR 都会重发布一次）；
   # 3. `concurrency` 且 `cancel-in-progress: false` —— 串行，且**不取消进行中的部署**
   #    （半途取消会留下解压完但没重启的中间态，比排队更糟）；
-  # 4. 代码靠 **scp 上传**而不是让服务器 `git pull` —— 实测目标服务器**访问不了 github.com**
-  #    （15 秒超时），但 runner → 服务器的入站 SSH 是通的，方向反过来就行；
+  # 4. 代码靠 **scp/ssh 主动推送**而不是让服务器 `git pull` —— 实测目标服务器
+  #    **访问不了 github.com**（15 秒超时），但 runner → 服务器的入站连接是通的，
+  #    方向反过来就行；
   # 5. 服务器上**本地构建镜像**（而不是推 registry）—— 服务器能访问 docker.io / npm /
   #    Debian 镜像，8G 内存足够，避免每次往 registry 推 ~1.5GB；
   # 6. 健康检查查**容器状态**而不是 HTTP —— 容器内的 HEALTHCHECK 走 127.0.0.1:3000
   #    不经反代，不受站点登录影响，是最干净的判据。
+  #
+  # ⚠️ 认证方式：**密码**（`sshpass -e`，密码经环境变量传入，不进命令行）。
+  # 曾经尝试过 ed25519 密钥（`SSH_PRIVATE_KEY`），但 runner 上 `ssh-keygen -y` 能解析
+  # 同一份文件、`ssh` 却报 `Load key ...: error in libcrypto`，且换 base64 传输、剥 CR、
+  # 加 `IdentitiesOnly` 都无效。与其继续在这条路上试，不如用未知最少的方案。
+  # 想改回密钥时，只需替换下面两步的连接方式，其余逻辑不用动。
   deploy:
     needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -109,94 +115,50 @@ jobs:
             --exclude=./tests/fixtures/clips .
           ls -lh /tmp/deploy.tar.gz
 
-      - name: 配置 SSH
+      - name: 安装 sshpass（密码认证的最小依赖）
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: 预置主机密钥
         env:
-          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-
-          # Secret 支持两种形态（自动识别，两种写法都能用）：
-          #   · base64（单行）—— **推荐**
-          #   · PEM/OpenSSH 原文（以 -----BEGIN 开头）
-          #
-          # 但无论哪种形态，**先剥掉空格 / 制表符 / CR，只保留 LF**。
-          # 原因是实测踩到的同一个坑的两种表现：
-          #   · 值末尾被附加 CRLF 时，`base64 -d` 直接报 `base64: invalid input`；
-          #   · 同一个 CR 在私钥里则表现为 `Load key ...: error in libcrypto`
-          #     + `Permission denied`（看起来像"密钥不对"或"没权限"）。
-          # 产生 CR 的常见途径：用 PowerShell 管道写 Secret（会带上 CRLF）。
-          KEY_CLEAN=$(printf '%s' "$SSH_KEY" | tr -d ' \t\r')
-
-          # 诊断：只报长度与首字节的十六进制 —— 足够判断"是不是被改写过"，
-          # 又不会把密钥写进公开的 Actions 日志（首 8 字节是 `ssh-ed25` 这类固定前缀）。
-          echo "KEY 长度=${#SSH_KEY}  清洗后长度=${#KEY_CLEAN}"
-          echo "首 8 字节: $(printf '%s' "$KEY_CLEAN" | head -c 8 | od -An -tx1 | tr -s ' ')"
-
-          if printf '%s' "$KEY_CLEAN" | head -c 40 | grep -q 'BEGIN'; then
-            printf '%s\n' "$KEY_CLEAN" > ~/.ssh/id_ed25519
-          else
-            printf '%s' "$KEY_CLEAN" | base64 -d > ~/.ssh/id_ed25519
-          fi
-
-          chmod 600 ~/.ssh/id_ed25519
-
-          # 立刻自检：格式不对就在这里失败，而不是留到 scp 那里报"权限拒绝"
-          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null && echo "私钥解析正常"
-
           # accept-new：首次连接自动接受主机密钥，同时保留后续的变更检测
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      # 用实测代替猜测：配置步里私钥能过 `ssh-keygen -y`，scp 却报
-      # `Load key ...: error in libcrypto` —— 那说明两者之间有东西变了或被干扰。
-      # 这里把关键事实（文件大小、可解析性、ssh -v 的握手细节）一次性打出来。
-      - name: 连通性诊断
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-        run: |
-          echo "私钥字节数: $(wc -c < ~/.ssh/id_ed25519)"
-          echo "私钥首行: $(head -1 ~/.ssh/id_ed25519)"
-          echo "私钥末行: $(tail -1 ~/.ssh/id_ed25519)"
-          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null && echo "此刻仍可解析"
-          echo "--- ssh 详细握手（末 18 行）---"
-          ssh -v -p "$DEPLOY_PORT" -i ~/.ssh/id_ed25519 \
-            -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-            "$DEPLOY_USER@$DEPLOY_HOST" 'echo SSH_OK' 2>&1 | tail -18
-
       - name: 上传代码包
         env:
+          SSHPASS: ${{ secrets.SSH_PASSWORD }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          # IdentitiesOnly=yes：只试这一把钥匙。runner 上通常跑着 ssh-agent，
-          # 不限定的话它会先试 agent 里的其它钥匙，失败信息会混在一起。
-          scp -P "$DEPLOY_PORT" -i ~/.ssh/id_ed25519 \
-            -o IdentitiesOnly=yes \
+          # -e：从 SSHPASS 环境变量取密码，因此密码**不会出现在进程命令行**里
+          sshpass -e scp -P "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
             /tmp/deploy.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/root/astrmira/deploy.tar.gz"
 
       - name: 远程解压并部署
         env:
+          SSHPASS: ${{ secrets.SSH_PASSWORD }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          ssh -p "$DEPLOY_PORT" -i ~/.ssh/id_ed25519 \
+          sshpass -e ssh -p "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             'cd /root/astrmira && tar -xzf deploy.tar.gz && rm -f deploy.tar.gz && node scripts/deploy.mjs'
 
       - name: 健康检查（容器状态）
         env:
+          SSHPASS: ${{ secrets.SSH_PASSWORD }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          ssh -p "$DEPLOY_PORT" -i ~/.ssh/id_ed25519 \
+          sshpass -e ssh -p "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             'docker ps --format "{{.Names}} | {{.Status}}"'
