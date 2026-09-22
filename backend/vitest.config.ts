@@ -54,6 +54,8 @@ export default defineConfig({
         'src/pipeline/imageSanitize.ts': { statements: 90, branches: 85, functions: 100, lines: 90 },
         // 防线 3：中间帧目录清理
         'src/pipeline/cleanup.ts': { statements: 90, branches: 70, functions: 100, lines: 90 },
+        // V1.9：画廊封面抽帧（含"/media/ 路径守卫"——它是唯一接受 provider 返回值当本地路径的地方）
+        'src/pipeline/thumbnail.ts': { statements: 90, branches: 80, functions: 100, lines: 90 },
         // 提交入口：幂等键解析 + 冷却判定 + 凭据交接的顺序
         'src/routes/generate.ts': { statements: 90, branches: 80, functions: 100, lines: 90 },
         // 云端协议适配层（上游字段唯一收口处，AC2 时要逐项核对【待验证】）

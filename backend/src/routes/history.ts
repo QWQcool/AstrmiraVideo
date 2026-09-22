@@ -3,6 +3,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { ErrorResponseSchema, HistoryResponseSchema, OperationResultSchema } from '@astrmira/shared';
+import { THUMBNAIL_DIR_NAME } from '../pipeline/thumbnail.js';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
 import { toTaskProgress, type TaskStore } from '../store/taskStore.js';
 
@@ -92,6 +93,11 @@ export const createHistoryRoutes =
           const file = path.join(outputsDir, path.basename(record.outputVideoUrl));
           await rm(file, { force: true }).catch(() => undefined);
         }
+
+        // 缩略图（V1.9）一并删：它不认识任何用户输入，文件名就是 taskId
+        await rm(path.join(outputsDir, THUMBNAIL_DIR_NAME, `${record.taskId}.jpg`), {
+          force: true,
+        }).catch(() => undefined);
 
         // 参考资产一并清理（CONTRACT §7）——但**只清理没有被其它任务引用的**：
         // 「参数一键回填」会让同一条资产被多条任务复用，无脑删除会毁掉别的任务的参考图。

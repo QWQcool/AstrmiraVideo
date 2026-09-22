@@ -32,6 +32,13 @@ export interface JobDispatcherOptions {
   resolveAssetUrl?: (assetId: string) => Promise<string | null>;
   cleanup?: (taskId: string) => Promise<void>;
   /**
+   * 抽首帧缩略图（V1.9）：`(taskId, 成片同源直链) → 缩略图直链`。
+   *
+   * 由注入方实现（`index.ts` 接 `pipeline/thumbnail.ts`），因此本调度器仍不碰 ffmpeg 与文件系统。
+   * **抛错不改变任务终态**（见 `tryCreateThumbnail`）。
+   */
+  createThumbnail?: (taskId: string, videoUrl: string) => Promise<string>;
+  /**
    * 上游接受了提交（拿到了上游 taskId）时的写回钩子。
    * 它是防线 7 的落账点：写回之后该任务**不可**再走 `requeue`，只能 `markUncertain`。
    */
@@ -171,8 +178,16 @@ export class JobDispatcher {
             warnings: progress.warnings,
           });
         }
+        // 缩略图（V1.9）必须在 complete **之前**抽出：complete 之后任务已是终态，
+        // 再补写会多一次库写，且刷新页面可能先看到没有封面的卡片。
+        const thumbnailUrl = await this.tryCreateThumbnail(
+          job.taskId,
+          progress.outputVideoUrl ?? '',
+        );
+
         await this.options.queue.complete(job.taskId, {
           videoUrl: progress.outputVideoUrl ?? '',
+          ...(thumbnailUrl === null ? {} : { thumbnailUrl }),
           // 带上 provider 的终态文案，覆盖轮询阶段残留的"生成中"
           ...(progress.message === undefined ? {} : { message: progress.message }),
         });
@@ -216,6 +231,25 @@ export class JobDispatcher {
         /* 清理失败不改变任务终态，但会留痕在调用方日志 */
       }
       this.inFlight.delete(job.taskId);
+    }
+  }
+
+  /**
+   * 抽首帧缩略图，**失败一律吞掉并转成日志**。
+   *
+   * 为什么不能让它抛出：它跑在 `queue.complete` 之前，一旦异常冒泡到 `run()` 的 catch，
+   * 一条**已经出片成功**的任务会被写成 failed（甚至 `UNCERTAIN_RESULT`）——
+   * 那是拿"画廊封面"换"任务结果"，方向反了。缩略图是可选的体验优化（`thumbnailUrl?`）。
+   */
+  private async tryCreateThumbnail(taskId: string, videoUrl: string): Promise<string | null> {
+    if (this.options.createThumbnail === undefined || videoUrl === '') return null;
+    try {
+      return await this.options.createThumbnail(taskId, videoUrl);
+    } catch (err) {
+      this.options.onError?.(
+        new Error(`缩略图抽帧失败（不影响任务成功）：${err instanceof Error ? err.message : String(err)}`),
+      );
+      return null;
     }
   }
 

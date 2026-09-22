@@ -168,10 +168,28 @@ describe('端到端：真实 HTTP → 调度器 → 夹具 provider → 落盘 �
     expect(isAlignedTo32(probe.width as number)).toBe(true);
     expect(isAlignedTo32(probe.height as number)).toBe(true);
 
-    // ── ⑥ 防线 3：合成结束即清中间帧目录（断言"目录不存在"，不看日志）──
+    // ── ⑥ 画廊封面（V1.9）：调度器抽首帧 → 落 outputs/thumbs/ → 由 /media 直接可读 ──
+    // 这一段刻意走**真实 HTTP** 而不是直接读目录：`/media/*` 是 prefix 挂载在 outputs 根上的，
+    // "子目录能不能被服务到"只能在真实服务里验（写错前缀就会 404，而单测看不出来）。
+    const thumbnailUrl = progress.thumbnailUrl as string;
+    expect(thumbnailUrl).toMatch(/^\/media\/thumbs\/[0-9a-f-]{36}\.jpg$/);
+    expect(thumbnailUrl).toContain(taskId);
+
+    const thumbnailPath = path.join(TMP_OUTPUTS_DIR, 'thumbs', `${taskId}.jpg`);
+    expect(existsSync(thumbnailPath), `缩略图不在 OUTPUT_DIR 内：${thumbnailPath}`).toBe(true);
+    expect(statSync(thumbnailPath).size).toBeGreaterThan(1_000);
+
+    const thumbnailResponse = await fetch(`${baseUrl}${thumbnailUrl}`);
+    expect(thumbnailResponse.status).toBe(200);
+    expect(thumbnailResponse.headers.get('content-type')).toContain('image/jpeg');
+
+    const thumbnailBytes = Buffer.from(await thumbnailResponse.arrayBuffer());
+    expect(thumbnailBytes.subarray(0, 3).toString('hex')).toBe('ffd8ff');
+
+    // ── ⑦ 防线 3：合成结束即清中间帧目录（断言"目录不存在"，不看日志）──
     expect(existsSync(path.join(TMP_OUTPUTS_DIR, '.tmp', taskId))).toBe(false);
 
-    // ── ⑦ 画廊可见且带参数快照（一键回填的数据源）──
+    // ── ⑧ 画廊可见且带参数快照（一键回填的数据源）──
     const history = await fetch(`${baseUrl}/api/history`);
     expect(history.status).toBe(200);
     const items = ((await history.json()) as { items: TaskProgress[] }).items;
@@ -179,12 +197,13 @@ describe('端到端：真实 HTTP → 调度器 → 夹具 provider → 落盘 �
     expect(found?.requestSnapshot.prompt).toBe(REQUEST.prompt);
     expect(found?.requestSnapshot.provider).toBe('fixture-local');
 
-    // ── ⑧ 删除：接口成功 + 成片文件**真的**消失（磁盘释放，防线 3 的另一半）──
+    // ── ⑨ 删除：接口成功 + 成片与封面**真的**消失（磁盘释放，防线 3 的另一半）──
     const removed = await fetch(`${baseUrl}/api/history/${taskId}`, { method: 'DELETE' });
     expect(removed.status).toBe(200);
     expect(existsSync(producedPath)).toBe(false);
+    expect(existsSync(thumbnailPath)).toBe(false);
 
-    const afterDelete = await fetch(`${baseUrl}${mediaUrl}`);
-    expect(afterDelete.status).toBe(404);
+    expect((await fetch(`${baseUrl}${mediaUrl}`)).status).toBe(404);
+    expect((await fetch(`${baseUrl}${thumbnailUrl}`)).status).toBe(404);
   }, 120_000);
 });

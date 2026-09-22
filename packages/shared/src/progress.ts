@@ -45,6 +45,11 @@ export const TaskProgressSchema = z.object({
   totalSteps: z.number().int().optional(),
   message: z.string().optional(),
   outputVideoUrl: z.string().optional(),
+  // V1.9：成片首帧缩略图（同源 `/media/thumbs/<taskId>.jpg`）。
+  // 画廊此前用 50 个 `<video preload="metadata">` 当缩略图 —— 每个元素都要发起一次请求，
+  // 50 条历史就是 50 个媒体元素同时抢带宽。抽帧成 JPEG 后画廊只加载图片。
+  // 可选：抽帧失败（工具缺失 / 成片不可解码）不影响任务成功，界面回落到旧行为。
+  thumbnailUrl: z.string().optional(),
   // V1.4：用户可见的非阻断告警（如「素材短于请求时长，已循环播放」「循环素材自带音轨，已静音」）。
   // 与 message 职责分离：可并存多条、不随进度刷新被覆盖、随任务记录持久化（PLAN §6-D15）。
   warnings: z.array(z.string()).optional(),

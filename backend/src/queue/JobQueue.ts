@@ -54,8 +54,14 @@ export interface JobQueue {
    * `message` 是可选的**终态文案**：必须允许覆盖上一阶段的进行中说明，
    * 否则会留下「succeeded 却写着『上游生成中』」这种自相矛盾的展示
    * （实测踩到：轮询阶段的 heartbeat 写入 message，成功后不动它就残留在终态上）。
+   *
+   * `thumbnailUrl`（V1.9）同理可选：抽帧失败**不得**影响任务成功 ——
+   * 缩略图是画廊体验优化，不是任务结果的一部分。
    */
-  complete(taskId: string, output: { videoUrl: string; message?: string }): Promise<void>;
+  complete(
+    taskId: string,
+    output: { videoUrl: string; thumbnailUrl?: string; message?: string },
+  ): Promise<void>;
 
   fail(taskId: string, error: TaskProgress['error']): Promise<void>;
 

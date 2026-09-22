@@ -6,7 +6,7 @@ import type {
 } from '@astrmira/shared';
 import { AssetDropZone } from './AssetDropZone';
 import { Eyebrow } from './Eyebrow';
-import type { AssetState } from '../lib/assets';
+import type { AssetSlotKey, AssetSlots } from '../lib/assets';
 import {
   DURATION_OPTIONS,
   RESOLUTION_TIERS,
@@ -47,11 +47,15 @@ export interface LeftPanelProps {
   onProviderChange: (provider: ProviderType) => void;
   providerStatus: ProviderStatus | null;
 
-  asset: AssetState | null;
-  uploading: boolean;
+  /** 三槽参考资产（首帧 / 尾帧 / 参考视频，与 CONTRACT §1 的 `assets` 字段一一对应） */
+  assets: AssetSlots;
+  /** 正在上传的槽（`null` = 无上传进行中）；单槽 spinner，避免三个槽一起转 */
+  uploadingSlot: AssetSlotKey | null;
   uploadError: string | null;
-  onAssetSelect: (file: File) => void;
-  onAssetClear: () => void;
+  onAssetSelect: (slot: AssetSlotKey, file: File) => void;
+  onAssetClear: (slot: AssetSlotKey) => void;
+  /** 当前模式缺少必需素材时的说明（非 null = 提交会被挡住，必须讲清缺哪一格） */
+  assetRequirementHint: string | null;
 
   seed: string;
   onSeedChange: (value: string) => void;
@@ -68,6 +72,40 @@ export interface LeftPanelProps {
 
 const PROVIDER_CLOUD: ProviderType = 'cloud-volcano-seedance';
 const PROVIDER_LOCAL: ProviderType = 'local-minimax-h3';
+
+/**
+ * 四种生成模式（CONTRACT §1 `GenerationMode`）。
+ *
+ * `requirement` 只说"需要哪格素材"，**不用它禁用按钮** —— 素材还没上传就点不了模式，
+ * 用户会被卡在"想选首尾帧 → 按钮灰着 → 不知道该先传图"的循环里。
+ * 因此按钮恒可点，缺素材时由下方的提示与提交按钮的禁用态收口。
+ */
+const MODE_OPTIONS: ReadonlyArray<{
+  value: GenerationMode;
+  label: string;
+  title: string;
+  requirement: string;
+}> = [
+  { value: 't2v', label: '文生视频', title: '仅凭文字描述生成', requirement: '不需要参考素材' },
+  {
+    value: 'i2v',
+    label: '图生视频',
+    title: '以参考首帧为起点生成',
+    requirement: '需要「参考首帧」',
+  },
+  {
+    value: 'fl2v',
+    label: '首尾帧',
+    title: '给定首帧与尾帧，由模型补出中间运动',
+    requirement: '需要「参考首帧 + 参考尾帧」',
+  },
+  {
+    value: 'v2v',
+    label: '视频参考',
+    title: '以参考视频做风格 / 动作迁移',
+    requirement: '需要「参考视频」',
+  },
+];
 
 export function LeftPanel(props: LeftPanelProps) {
   const {
@@ -87,11 +125,12 @@ export function LeftPanel(props: LeftPanelProps) {
     provider,
     onProviderChange,
     providerStatus,
-    asset,
-    uploading,
+    assets,
+    uploadingSlot,
     uploadError,
     onAssetSelect,
     onAssetClear,
+    assetRequirementHint,
     seed,
     onSeedChange,
     seedLocked,
@@ -145,37 +184,75 @@ export function LeftPanel(props: LeftPanelProps) {
         {enhanceNotice === null ? null : <span className="wb-note">{enhanceNotice}</span>}
       </div>
 
-      <AssetDropZone
-        aspectRatio={aspectRatio}
-        asset={asset}
-        uploading={uploading}
-        error={uploadError}
-        onSelect={onAssetSelect}
-        onClear={onAssetClear}
-      />
+      {/* 参考素材：**按模式渲染槽位**，不做"三个槽永远都摆着"——
+          v2v 用户看到两个跟自己无关的图片槽只会困惑该往哪儿放。
+          注意 t2v 仍显示首帧槽：它是进入图生视频的入口（上传后自动切换模式）。 */}
+      {mode === 'v2v' ? null : (
+        <AssetDropZone
+          label="参考首帧"
+          hint={
+            mode === 't2v'
+              ? '可选：上传后会切到「图生视频」；仅文生视频可直接忽略此槽'
+              : '必需：作为首帧（起点画面）'
+          }
+          kind="image"
+          aspectRatio={aspectRatio}
+          asset={assets.firstFrame}
+          uploading={uploadingSlot === 'firstFrame'}
+          error={uploadingSlot === null ? uploadError : null}
+          onSelect={(file) => onAssetSelect('firstFrame', file)}
+          onClear={() => onAssetClear('firstFrame')}
+        />
+      )}
+
+      {mode === 'fl2v' ? (
+        <AssetDropZone
+          label="参考尾帧"
+          hint="必需：作为尾帧（终点画面）；与首帧一起交给上游补中间运动"
+          kind="image"
+          aspectRatio={aspectRatio}
+          asset={assets.lastFrame}
+          uploading={uploadingSlot === 'lastFrame'}
+          error={uploadingSlot === null ? uploadError : null}
+          onSelect={(file) => onAssetSelect('lastFrame', file)}
+          onClear={() => onAssetClear('lastFrame')}
+        />
+      ) : null}
+
+      {mode === 'v2v' ? (
+        <AssetDropZone
+          label="参考视频"
+          hint="必需：作为风格 / 动作迁移的参考（mp4 / mov）"
+          kind="video"
+          aspectRatio={aspectRatio}
+          asset={assets.referenceVideo}
+          uploading={uploadingSlot === 'referenceVideo'}
+          error={uploadingSlot === null ? uploadError : null}
+          onSelect={(file) => onAssetSelect('referenceVideo', file)}
+          onClear={() => onAssetClear('referenceVideo')}
+        />
+      ) : null}
 
       <div className="wb-field">
         <span className="wb-label">生成模式</span>
         <div className="wb-segmented">
-          <button
-            type="button"
-            className="wb-segment"
-            aria-pressed={mode === 't2v'}
-            onClick={() => onModeChange('t2v')}
-          >
-            文生视频
-          </button>
-          <button
-            type="button"
-            className="wb-segment"
-            aria-pressed={mode === 'i2v'}
-            onClick={() => onModeChange('i2v')}
-            disabled={asset === null}
-            title={asset === null ? '先上传参考首帧' : '以首帧为起点生成'}
-          >
-            图生视频
-          </button>
+          {MODE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className="wb-segment"
+              aria-pressed={mode === option.value}
+              onClick={() => onModeChange(option.value)}
+              title={`${option.title}（${option.requirement}）`}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
+        <span className="wb-note">
+          {MODE_OPTIONS.find((option) => option.value === mode)?.requirement}
+          {mode === 'fl2v' || mode === 'v2v' ? '；该模式的上游字段接受度待真实冒烟核对' : ''}
+        </span>
       </div>
 
       <div className="wb-field">
@@ -329,6 +406,11 @@ export function LeftPanel(props: LeftPanelProps) {
           锁定后同种子同参数可复现；云端不锁定时由服务商侧随机。
         </span>
       </div>
+
+      {/* 缺素材时按钮是灰的 —— 原因必须同时写在按钮上方，否则用户只能靠猜 */}
+      {assetRequirementHint === null ? null : (
+        <span className="wb-warn">{assetRequirementHint}</span>
+      )}
 
       <button
         type="button"

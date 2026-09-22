@@ -8,6 +8,12 @@ import { formatIndex, statusLabel } from '../lib/format';
  *
  * `outputVideoUrl` 经 `resolveMediaUrl` 收口：只认同源 `/media/...`，
  * 拒绝绝对地址与 `..` —— 卡片缩略图同样是 `<video src>`，这也是注入面。
+ *
+ * V1.9：优先用服务端抽好的 **JPEG 首帧**（`thumbnailUrl`）。
+ * 50 条历史若各挂一个 `<video preload="metadata">`，就是 50 个媒体元素同时抢带宽；
+ * 换成图片后可懒加载、可缓存。
+ * 两个回落分支都是**有意保留**的：旧记录（缩略图字段上线前产生的）没有该字段，
+ * 抽帧失败的任务也不会有 —— 那时回到 `<video>`，画廊不会因此空一块。
  */
 export interface GalleryCardProps {
   task: TaskProgress;
@@ -20,6 +26,10 @@ export interface GalleryCardProps {
 
 export function GalleryCard({ task, index, deleting, onReuse, onDelete }: GalleryCardProps) {
   const videoUrl = resolveMediaUrl(task.outputVideoUrl);
+  const thumbnailUrl = resolveMediaUrl(task.thumbnailUrl);
+  // `?? ''` 只为满足 <img src> 的类型；真正的分支判据是 `showThumbnail`
+  const thumbnailSrc = thumbnailUrl ?? '';
+  const showThumbnail = thumbnailUrl !== null;
   const snapshot = task.requestSnapshot;
   const prompt = snapshot.prompt.trim();
 
@@ -28,6 +38,13 @@ export function GalleryCard({ task, index, deleting, onReuse, onDelete }: Galler
       <div className="wb-card-thumb">
         {videoUrl === null ? (
           <span>{statusLabel(task.status)}</span>
+        ) : showThumbnail ? (
+          <>
+            <img src={thumbnailSrc} alt="" loading="lazy" decoding="async" />
+            <span className="wb-card-play" aria-hidden="true">
+              ▶
+            </span>
+          </>
         ) : (
           <video src={videoUrl} muted preload="metadata" playsInline />
         )}

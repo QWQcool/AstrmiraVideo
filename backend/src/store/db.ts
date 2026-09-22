@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   progress_percent   REAL NOT NULL DEFAULT 0,
   request_snapshot   TEXT NOT NULL,
   output_video_url   TEXT,
+  thumbnail_url      TEXT,
   warnings           TEXT,
   error              TEXT,
   upstream_task_id   TEXT,
@@ -58,6 +59,28 @@ export function resolveDatabasePath(): string {
   return path.join(base, 'app.db');
 }
 
+/**
+ * 增量列迁移（V1.9）。
+ *
+ * 为什么需要它：`CREATE TABLE IF NOT EXISTS` 对**已存在**的库**不会**补列 ——
+ * 线上 `data/app.db` 是 V1.8 建的，直接升级代码会得到「no such column: thumbnail_url」。
+ * 因此新列必须走 `ALTER TABLE`，且以 `pragma table_info` 判存在（幂等，可反复跑）。
+ *
+ * 约定：**只加列、不删改**；每条迁移写成一行的原因，方便日后回看"这列为什么存在"。
+ */
+const COLUMN_MIGRATIONS: ReadonlyArray<{ table: string; column: string; ddl: string }> = [
+  // V1.9：成片首帧缩略图（画廊不再挂 50 个 <video>）
+  { table: 'tasks', column: 'thumbnail_url', ddl: 'TEXT' },
+];
+
+function applyColumnMigrations(db: Db): void {
+  for (const migration of COLUMN_MIGRATIONS) {
+    const columns = db.pragma(`table_info(${migration.table})`) as Array<{ name: string }>;
+    if (columns.some((column) => column.name === migration.column)) continue;
+    db.exec(`ALTER TABLE ${migration.table} ADD COLUMN ${migration.column} ${migration.ddl}`);
+  }
+}
+
 export function openDatabase(filePath: string = resolveDatabasePath()): Db {
   if (filePath !== ':memory:') {
     mkdirSync(path.dirname(filePath), { recursive: true });
@@ -68,5 +91,6 @@ export function openDatabase(filePath: string = resolveDatabasePath()): Db {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
+  applyColumnMigrations(db);
   return db;
 }

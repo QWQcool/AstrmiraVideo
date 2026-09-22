@@ -22,7 +22,14 @@ import {
   submitGenerate,
   uploadAssets,
 } from './lib/api';
-import type { AssetState } from './lib/assets';
+import type { AssetSlotKey, AssetSlots } from './lib/assets';
+import {
+  assetsForMode,
+  emptyAssetSlots,
+  missingAssetHint,
+  modeAfterSlotClear,
+  modeAfterSlotUpload,
+} from './lib/assets';
 import type { ByokConfig } from './lib/byok';
 import {
   clearByok,
@@ -67,9 +74,16 @@ const COOLDOWN_MS = 60_000;
 /** demo 版：扩写未实现（服务端 501）。按钮保持可点并把原因讲清楚，不做静默置灰。 */
 const ENHANCE_NOTICE = '未配置扩写模型：本版本未实现 LLM 扩写（见 PLAN §9 台账 B3）';
 
+/** 三槽的固定顺序（清理预览 URL、回填快照都要按同一顺序遍历） */
+const SLOT_KEYS = ['firstFrame', 'lastFrame', 'referenceVideo'] as const satisfies readonly AssetSlotKey[];
+
 export default function App() {
   const storage = useMemo(() => browserStorage(), []);
-  const previewRef = useRef<string | null>(null);
+  /**
+   * 每个槽一份 object URL。换图 / 清空时必须 revoke，否则一张张泄漏到会话结束
+   * （此前只有一个槽，所以是一个 `useRef<string|null>`；三槽后改成一个定长映射）。
+   */
+  const previewUrls = useRef<Partial<Record<AssetSlotKey, string>>>({});
 
   // ── 主题（默认跟随系统；`applyTheme` 只往 <html> 上打 data-theme，颜色全在 tokens.css） ──
   const [themePref, setThemePref] = useState<ThemePref>(() => readThemePref(storage));
@@ -91,9 +105,9 @@ export default function App() {
   const [seed, setSeed] = useState(() => readLocal(storage, STORAGE_KEYS.lastSeed) ?? '');
   const [seedLocked, setSeedLocked] = useState(() => readBool(storage, STORAGE_KEYS.seedLocked));
 
-  // ── 参考资产 ──
-  const [asset, setAsset] = useState<AssetState | null>(null);
-  const [uploading, setUploading] = useState(false);
+  // ── 参考资产（三槽：首帧 / 尾帧 / 参考视频，见 CONTRACT §1 `assets`）──
+  const [assets, setAssets] = useState<AssetSlots>(() => emptyAssetSlots());
+  const [uploadingSlot, setUploadingSlot] = useState<AssetSlotKey | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   // ── 任务（taskId 持久化：刷新后向服务端重挂载，AC2） ──
@@ -222,41 +236,68 @@ export default function App() {
     writeLocal(storage, STORAGE_KEYS.cooldownUntil, String(until));
   }
 
-  function handleAssetSelect(file: File): void {
-    setUploadError(null);
-    setUploading(true);
+  /** 换掉某个槽的预览 URL（顺手 revoke 旧的），`null` 表示清空 */
+  function replacePreview(slot: AssetSlotKey, url: string | null): void {
+    const previous = previewUrls.current[slot];
+    if (previous !== undefined) {
+      URL.revokeObjectURL(previous);
+      delete previewUrls.current[slot];
+    }
+    if (url !== null) previewUrls.current[slot] = url;
+  }
 
+  function setSlot(slot: AssetSlotKey, next: AssetSlots[AssetSlotKey]): void {
+    setAssets((prev) => ({ ...prev, [slot]: next }));
+  }
+
+  function handleAssetSelect(slot: AssetSlotKey, file: File): void {
+    setUploadError(null);
+    setUploadingSlot(slot);
+
+    // 先本地预览（上传中就能看到"服务端即将裁出的那一块"），拿到 assetId 后再补进状态
     const objectUrl = URL.createObjectURL(file);
-    if (previewRef.current !== null) URL.revokeObjectURL(previewRef.current);
-    previewRef.current = objectUrl;
-    setAsset({ assetId: '', meta: null, previewUrl: objectUrl });
+    replacePreview(slot, objectUrl);
+    setSlot(slot, { assetId: '', meta: null, previewUrl: objectUrl });
 
     void uploadAssets([file])
       .then((result) => {
         const first = result.assets[0];
         if (first === undefined) {
           setUploadError('上传未返回任何资产');
-          setAsset(null);
+          replacePreview(slot, null);
+          setSlot(slot, null);
           return;
         }
-        setAsset({ assetId: first.assetId, meta: first, previewUrl: objectUrl });
-        setMode('i2v');
+        setSlot(slot, { assetId: first.assetId, meta: first, previewUrl: objectUrl });
+        // 上传即切模式（规则与边界集中在 lib/assets 的纯函数里，见其注释）
+        setMode((prev) => modeAfterSlotUpload(prev, slot));
       })
       .catch((caught: unknown) => {
         setUploadError(describeError(caught));
-        setAsset(null);
+        replacePreview(slot, null);
+        setSlot(slot, null);
       })
-      .finally(() => setUploading(false));
+      .finally(() => setUploadingSlot(null));
   }
 
-  function handleAssetClear(): void {
-    if (previewRef.current !== null) {
-      URL.revokeObjectURL(previewRef.current);
-      previewRef.current = null;
-    }
-    setAsset(null);
+  /**
+   * 清空某个槽。**模式必须跟着回落** —— 否则会留下"首尾帧模式但没有尾帧"这种悬空状态，
+   * 用户看到的是一排没有素材的槽和一个灰着的提交按钮。
+   */
+  function handleAssetClear(slot: AssetSlotKey): void {
+    replacePreview(slot, null);
+    setSlot(slot, null);
     setUploadError(null);
-    setMode('t2v');
+    setMode((prev) => modeAfterSlotClear(prev, slot));
+  }
+
+  /** 复用参数前清空全部槽（三份预览 URL 一并 revoke） */
+  function clearAllSlots(): void {
+    for (const slot of SLOT_KEYS) {
+      replacePreview(slot, null);
+    }
+    setAssets(emptyAssetSlots());
+    setUploadError(null);
   }
 
   async function handleSubmit(): Promise<void> {
@@ -279,7 +320,7 @@ export default function App() {
       provider,
       // provider 私有参数：BYOK 的服务端地址与模型名（未识别键由服务端忽略）
       options: { baseUrl: byok.baseUrl, model: byok.model },
-      ...(asset === null ? {} : { assets: { firstFrameImage: asset.assetId } }),
+      ...(referenceAssets === undefined ? {} : { assets: referenceAssets }),
       params: {
         durationSec,
         ...(seedLocked && seed.trim() !== ''
@@ -348,18 +389,26 @@ export default function App() {
       setSeedLocked(true);
     }
 
-    if (snapshot.assets?.firstFrameImage === undefined) {
-      handleAssetClear();
-      setNotice('已复用该任务的参数（提示词 / 模式 / 画幅 / seed）。');
-      return;
+    // 三槽一起回填（旧任务快照里可能只有一个首帧字段，其余自然为空）
+    clearAllSlots();
+    const restored: Array<[AssetSlotKey, string | undefined]> = [
+      ['firstFrame', snapshot.assets?.firstFrameImage],
+      ['lastFrame', snapshot.assets?.lastFrameImage],
+      ['referenceVideo', snapshot.assets?.referenceVideo],
+    ];
+    const broughtBack = new Set<AssetSlotKey>();
+    for (const [slot, assetId] of restored) {
+      if (assetId === undefined) continue;
+      // 只带回资产编号、元数据留空：快照里没有 mime/size，硬造就是伪造数据（见 lib/assets）
+      setSlot(slot, { assetId, meta: null, previewUrl: null });
+      broughtBack.add(slot);
     }
 
-    if (previewRef.current !== null) {
-      URL.revokeObjectURL(previewRef.current);
-      previewRef.current = null;
-    }
-    setAsset({ assetId: snapshot.assets.firstFrameImage, meta: null, previewUrl: null });
-    setNotice('已复用参数，并带回参考资产编号；该图本地没有备份，因此不显示预览。');
+    setNotice(
+      broughtBack.size === 0
+        ? '已复用该任务的参数（提示词 / 模式 / 画幅 / seed）。'
+        : `已复用参数，并带回 ${broughtBack.size} 份参考资产编号；本地没有备份，因此不显示预览。`,
+    );
   }
 
   async function handleDelete(targetId: string): Promise<void> {
@@ -402,6 +451,14 @@ export default function App() {
     setSeed(value);
     writeLocal(storage, STORAGE_KEYS.lastSeed, value);
   }
+
+  /**
+   * 按模式组装 `assets`（V8.3 批次 3-⑤）。
+   * 规则与边界（含"只发该模式用得到的槽"）集中在 `lib/assets.ts` 的纯函数里，那处有单测。
+   */
+  const referenceAssets = assetsForMode(mode, assets);
+
+  const assetRequirementHint = missingAssetHint(mode, assets);
 
   const submitLabel = submitting
     ? '提交中…'
@@ -478,11 +535,12 @@ export default function App() {
           provider={provider}
           onProviderChange={setProvider}
           providerStatus={providerStatus}
-          asset={asset}
-          uploading={uploading}
+          assets={assets}
+          uploadingSlot={uploadingSlot}
           uploadError={uploadError}
           onAssetSelect={handleAssetSelect}
           onAssetClear={handleAssetClear}
+          assetRequirementHint={assetRequirementHint}
           seed={seed}
           onSeedChange={handleSeedChange}
           seedLocked={seedLocked}
@@ -490,7 +548,14 @@ export default function App() {
           byokSummary={byokSummary}
           onOpenByok={() => setByokOpen(true)}
           onSubmit={() => void handleSubmit()}
-          submitDisabled={submitting || cooling || prompt.trim() === ''}
+          submitDisabled={
+            submitting ||
+            cooling ||
+            prompt.trim() === '' ||
+            // 上传中禁止提交：那一刻 assetId 还是空串（乐观预览态），提交上去等于没带素材
+            uploadingSlot !== null ||
+            assetRequirementHint !== null
+          }
           submitLabel={submitLabel}
         />
 

@@ -1,6 +1,12 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V1.8 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V1.9 · 已冻结（变更需先改本文，再改代码）**
+> **V1.9 修订（2026-09-22）**：**§4 新增 `TaskProgress.thumbnailUrl?`**（成片首帧缩略图，画廊封面）。
+>   动机是可观测的性能事实：画廊此前对每条历史挂一个 `<video preload="metadata">`，
+>   50 条历史 = 50 个媒体元素各发一次请求并解析 moov；被抽成 JPEG 后可懒加载、可缓存。
+>   实现口径：**成功出片后**由调度器抽帧落 `outputs/thumbs/<taskId>.jpg`（宽度 480），
+>   经既有 `GET /media/*` 服务（**不新增路由**）；**抽帧失败不影响任务成功**（该字段可选），
+>   `DELETE /api/history/:taskId` 同时删除成片与缩略图（§7 的磁盘释放口径不变）。
 > **V1.8 修订（2026-09-22）**：探针降级与 BYOK 通道定稿（D22 / D23 / D27），文本侧 LLM 配置缺口登记为 V2.0【规划】（D24），三态适用范围收窄（D28）。
 >   ① **§2**：`cloud.available` 口径收窄为「服务端视角（仅 env）」；`keySource` 收窄为可选字面量 `'env'`；新增 `acceptsClientKey`（服务端是否接受 `X-Provider-Key`，恒 true，托管场景可关）；`local` 段**删除** `gpuName` / `vramFreeGB`，`tier` 改为可选且语义为「**显式配置并自检通过**的引擎档位」——本端点在 V1.8 起为**纯配置事实陈述**，不含任何自动硬件扫描。
 >   ② **§3**：LLM 配置与 `engine` 字段登记为 **V2.0【规划】**；demo 版 `/api/prompt/enhance` 以 `501 LLM_NOT_CONFIGURED` 诚实落地（禁止静默降级 / 规则引擎冒充）。
@@ -147,6 +153,8 @@ export interface TaskProgress {
   totalSteps?: number;
   message?: string;
   outputVideoUrl?: string;        // 成功后的视频访问直链
+  thumbnailUrl?: string;          // V1.9：成片首帧缩略图（同源 `/media/thumbs/<taskId>.jpg`），画廊封面用
+                                  // 可选：抽帧失败 / 旧记录缺该字段时界面回落为 `<video preload="metadata">`
   warnings?: string[];            // 用户可见的非阻断告警（如"素材短于请求时长，已循环播放"、"循环素材自带音轨，已静音"）
                                   // 与 message（进度描述）职责分离：可并存多条、不随进度刷新被覆盖、随任务记录持久化
   requestSnapshot: VideoGenerateRequest; // 完整请求快照，供画廊一键回填
@@ -246,6 +254,7 @@ export type ErrorDisposition =
 | 任务告警 `warnings[]` | SQLite（同上） | 随任务记录持久化，画廊 / 结果卡展示（V1.4 §4）；**仅写服务端日志不算告警** |
 | `submitting` 提交标记 | SQLite（同上） | 提交前写入、成功后写回上游 taskId；重启后据此判定是否已提交（§5，防线 7 前提） |
 | 成片 MP4 | `outputs/`（已入 .gitignore） | **前端一键删除释放磁盘**（`DELETE /api/history/:taskId`）；容量淘汰（LRU）**暂缓**，见 PLAN §9-B22 |
+| 成片缩略图（V1.9） | `outputs/thumbs/<taskId>.jpg` | 成功出片后由调度器抽首帧生成（宽度 480，`/media/thumbs/...` 直链）；**尽力而为**：抽帧失败只记日志，任务仍为 `succeeded`；随任务删除一并物理删除 |
 | 上传的参考资产 | `outputs/assets/<assetId>.<jpg\|png>` | 关联任务删除时一并清理（`DELETE /api/history/:taskId`）；**保护规则**：若该 `assetId` 仍被其它任务引用（「参数一键回填」会复用资产），则只删任务、保留资产 —— 否则会毁掉另一条任务的参考图。扩展名由防线 4 的清洗结果决定，因此按 `<assetId>.` 前缀匹配删除 |
 | 中间帧 / 临时音频 | host 轨：`outputs/.tmp/<taskId>/`；client 轨（【规划】，PLAN §6-D26）：落在用户机器、由 worker 清理 | 合成结束立即物理删除（防线 3）；client 轨须回报 `tmpCleaned` 并写入 `warnings[]`，服务端无法强制验证该事实 |
 | **BYOK Key（`X-Provider-Key` / `X-LLM-Key`）** | **服务端零留存（无此数据）** | V1.8：仅存在于单次请求的内存上下文；不落库、不入日志、不回显（见 §5「凭据传递约定」）；env 兜底值由部署者自管 |

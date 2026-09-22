@@ -64,11 +64,15 @@ export class SqliteJobQueue implements JobQueue {
     });
   }
 
-  async complete(taskId: string, output: { videoUrl: string; message?: string }): Promise<void> {
+  async complete(
+    taskId: string,
+    output: { videoUrl: string; thumbnailUrl?: string; message?: string },
+  ): Promise<void> {
     this.store.update(taskId, {
       status: 'succeeded',
       progressPercent: 100,
       outputVideoUrl: output.videoUrl,
+      ...(output.thumbnailUrl === undefined ? {} : { thumbnailUrl: output.thumbnailUrl }),
       submitting: false,
       // 终态文案：不传则回落到中性文案。
       // 关键是不能沿用上一阶段（轮询 heartbeat 写下的"上游生成中"）——

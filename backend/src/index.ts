@@ -9,6 +9,7 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import { cleanupTaskTemp } from './pipeline/cleanup.js';
+import { createTaskThumbnail } from './pipeline/thumbnail.js';
 import { getProvider } from './providers/registry.js';
 import { runLocalEngineSelfCheck } from './providers/statusProbe.js';
 import { JobDispatcher } from './queue/dispatcher.js';
@@ -162,6 +163,9 @@ export async function buildApp() {
     resolveAssetUrl,
     // 防线 3：合成结束即清中间帧目录（成败都清）
     cleanup: (taskId) => cleanupTaskTemp(taskId),
+    // 画廊封面（V1.9）：成功出片后抽首帧为 JPEG；失败只记日志，不改任务终态
+    createThumbnail: (taskId, videoUrl) =>
+      createTaskThumbnail({ outputsDir: resolveOutputsDir(), taskId, videoUrl }),
     // 防线 7：上游接受提交后立即写回，此后该任务不可 requeue
     markUpstreamAccepted: async (taskId, upstreamTaskId) => {
       queue.setUpstreamTaskId(taskId, upstreamTaskId);

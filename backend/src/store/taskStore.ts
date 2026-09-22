@@ -16,6 +16,8 @@ export interface TaskRecord {
   progressPercent: number;
   requestSnapshot: VideoGenerateRequest;
   outputVideoUrl?: string;
+  /** V1.9：成片首帧缩略图（同源 `/media/thumbs/<taskId>.jpg`）；抽帧失败时缺省 */
+  thumbnailUrl?: string;
   warnings: string[];
   error?: TaskError;
   upstreamTaskId?: string;
@@ -34,6 +36,7 @@ interface TaskRow {
   progress_percent: number;
   request_snapshot: string;
   output_video_url: string | null;
+  thumbnail_url: string | null;
   warnings: string | null;
   error: string | null;
   upstream_task_id: string | null;
@@ -52,6 +55,7 @@ function rowToRecord(row: TaskRow): TaskRecord {
     progressPercent: row.progress_percent,
     requestSnapshot: JSON.parse(row.request_snapshot) as VideoGenerateRequest,
     outputVideoUrl: row.output_video_url ?? undefined,
+    thumbnailUrl: row.thumbnail_url ?? undefined,
     warnings: row.warnings === null ? [] : (JSON.parse(row.warnings) as string[]),
     error: row.error === null ? undefined : (JSON.parse(row.error) as TaskError),
     upstreamTaskId: row.upstream_task_id ?? undefined,
@@ -70,6 +74,7 @@ export function toTaskProgress(record: TaskRecord): TaskProgress {
     progressPercent: record.progressPercent,
     requestSnapshot: record.requestSnapshot,
     ...(record.outputVideoUrl === undefined ? {} : { outputVideoUrl: record.outputVideoUrl }),
+    ...(record.thumbnailUrl === undefined ? {} : { thumbnailUrl: record.thumbnailUrl }),
     ...(record.warnings.length === 0 ? {} : { warnings: record.warnings }),
     ...(record.error === undefined ? {} : { error: record.error }),
     ...(record.message === undefined ? {} : { message: record.message }),
@@ -84,11 +89,11 @@ export class TaskStore {
     this.db
       .prepare(
         `INSERT INTO tasks (task_id, track, provider, status, progress_percent, request_snapshot,
-                            output_video_url, warnings, error, upstream_task_id, submitting, message,
-                            created_at, updated_at)
+                            output_video_url, thumbnail_url, warnings, error, upstream_task_id,
+                            submitting, message, created_at, updated_at)
          VALUES (@taskId, @track, @provider, @status, @progressPercent, @requestSnapshot,
-                 @outputVideoUrl, @warnings, @error, @upstreamTaskId, @submitting, @message,
-                 @createdAt, @updatedAt)`,
+                 @outputVideoUrl, @thumbnailUrl, @warnings, @error, @upstreamTaskId, @submitting,
+                 @message, @createdAt, @updatedAt)`,
       )
       .run({
         taskId: record.taskId,
@@ -98,6 +103,7 @@ export class TaskStore {
         progressPercent: record.progressPercent,
         requestSnapshot: JSON.stringify(record.requestSnapshot),
         outputVideoUrl: record.outputVideoUrl ?? null,
+        thumbnailUrl: record.thumbnailUrl ?? null,
         warnings: JSON.stringify(record.warnings),
         error: record.error === undefined ? null : JSON.stringify(record.error),
         upstreamTaskId: record.upstreamTaskId ?? null,
@@ -125,10 +131,11 @@ export class TaskStore {
     this.db
       .prepare(
         `UPDATE tasks SET track = @track, provider = @provider, status = @status,
-                          progress_percent = @progressPercent, request_snapshot = @requestSnapshot,
-                          output_video_url = @outputVideoUrl, warnings = @warnings, error = @error,
-                          upstream_task_id = @upstreamTaskId, submitting = @submitting,
-                          message = @message, updated_at = @updatedAt
+                         progress_percent = @progressPercent, request_snapshot = @requestSnapshot,
+                         output_video_url = @outputVideoUrl, thumbnail_url = @thumbnailUrl,
+                         warnings = @warnings, error = @error,
+                         upstream_task_id = @upstreamTaskId, submitting = @submitting,
+                         message = @message, updated_at = @updatedAt
          WHERE task_id = @taskId`,
       )
       .run({
@@ -139,6 +146,7 @@ export class TaskStore {
         progressPercent: next.progressPercent,
         requestSnapshot: JSON.stringify(next.requestSnapshot),
         outputVideoUrl: next.outputVideoUrl ?? null,
+        thumbnailUrl: next.thumbnailUrl ?? null,
         warnings: JSON.stringify(next.warnings),
         error: next.error === undefined ? null : JSON.stringify(next.error),
         upstreamTaskId: next.upstreamTaskId ?? null,
