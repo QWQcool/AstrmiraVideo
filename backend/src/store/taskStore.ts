@@ -221,4 +221,21 @@ export class TaskStore {
       .get(track) as { c: number };
     return row.c;
   }
+
+  /**
+   * 除 `exceptTaskId` 之外，还有多少任务引用了这个参考资产？（V8.3 批次 3）
+   *
+   * 为什么需要它：参数一键回填会让**同一个 assetId 被多条任务复用**，
+   * 删一条任务就把资产删掉会顺手毁掉另一条任务的参考图。
+   * 判据用 `request_snapshot` 的全文 LIKE（快照是 JSON，assetId 一定以字符串出现），
+   * 足够精确，且不用为此加索引/关联表。
+   */
+  countTasksReferencingAsset(assetId: string, exceptTaskId: string): number {
+    const row = this.db
+      .prepare(
+        "SELECT COUNT(*) AS c FROM tasks WHERE task_id != ? AND request_snapshot LIKE ?",
+      )
+      .get(exceptTaskId, `%${assetId}%`) as { c: number };
+    return row.c;
+  }
 }

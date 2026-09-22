@@ -178,9 +178,9 @@ export interface VideoProvider {
 | `GET` | `/api/health` | 存活探针（响应形状见 §8；**任何来源**均免鉴权，见 PLAN §7-4） |
 | `GET` | `/api/providers/status` | **本服务本地引擎配置状态**（V1.8：纯配置事实陈述，非硬件探测；**旧名 `/api/system/probe` 已废弃**） |
 | `GET` | `/media/*` | **V1.8 新增**：`outputs/` 静态媒体服务（成片直链，播放器与下载的 **206 Range** 载体）；路径只含服务端生成的随机 ID，不含任何用户输入 |
-| `POST` | `/api/generate` | 创建视频生成任务（凭据经 `X-Provider-Key`，见下方注记段）。**200 → `{ taskId }`**（幂等：同一 `Idempotency-Key` 或缺省指纹重复提交返回同一 `taskId`）；引擎未实现 / 未启用 → **503 `PROVIDER_UNAVAILABLE`**；60s 防抖限流属 S4 |
+| `POST` | `/api/generate` | 创建视频生成任务（凭据经 `X-Provider-Key`，见下方注记段）。**200 → `{ taskId }`**（幂等：同一 `Idempotency-Key` 或缺省指纹重复提交返回同一 `taskId`）；提示词为空或超过 2000 字符 → **400 `PROMPT_REJECTED`**（terminal）；引擎未实现 / 未启用 → **503 `PROVIDER_UNAVAILABLE`**；60s 防抖限流 → 429 |
 | `GET` | `/api/tasks/:taskId` | 轮询任务状态与结果。**200 → `TaskProgress`（§4）**；不存在或已清理 → **404 `TASK_NOT_FOUND`** |
-| `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消）。**200 → `{ ok, taskId }`** |
+| `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消；已在终态 → `{ ok: false }`）。**200 → `{ ok, taskId }`**。语义是**尽力而为**：服务端把任务置 `cancelled`（此后调度器**不再推进**、也不会被 heartbeat 覆盖），并**通知上游停止**；上游是否真的停止、是否已产生费用，本服务无法代上游保证 —— 前端文案必须如实说明并指向服务商后台核对 |
 | `POST` | `/api/prompt/enhance` | 提示词扩写助手 —— **demo 版返回 `501` + `LLM_NOT_CONFIGURED`**（前端 ✨ 置灰）；完整实现见 §3 的 V2.0【规划】 |
 | `POST` | `/api/upload` | 上传参考图/视频（multipart，≤20MB × ≤4，**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目） |
 | `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[] }`**（最近 50 条） |
@@ -246,7 +246,7 @@ export type ErrorDisposition =
 | 任务告警 `warnings[]` | SQLite（同上） | 随任务记录持久化，画廊 / 结果卡展示（V1.4 §4）；**仅写服务端日志不算告警** |
 | `submitting` 提交标记 | SQLite（同上） | 提交前写入、成功后写回上游 taskId；重启后据此判定是否已提交（§5，防线 7 前提） |
 | 成片 MP4 | `outputs/`（已入 .gitignore） | **前端一键删除释放磁盘**（`DELETE /api/history/:taskId`）；容量淘汰（LRU）**暂缓**，见 PLAN §9-B22 |
-| 上传的参考资产 | `outputs/assets/<assetId>` | **目标**：关联任务删除时一并清理；**当前实现只删成片、不删 assets**（清理逻辑见 PLAN §5 的 V8.3 批次 3，未完成前资产会留存） |
+| 上传的参考资产 | `outputs/assets/<assetId>.<jpg\|png>` | 关联任务删除时一并清理（`DELETE /api/history/:taskId`）；**保护规则**：若该 `assetId` 仍被其它任务引用（「参数一键回填」会复用资产），则只删任务、保留资产 —— 否则会毁掉另一条任务的参考图。扩展名由防线 4 的清洗结果决定，因此按 `<assetId>.` 前缀匹配删除 |
 | 中间帧 / 临时音频 | host 轨：`outputs/.tmp/<taskId>/`；client 轨（【规划】，PLAN §6-D26）：落在用户机器、由 worker 清理 | 合成结束立即物理删除（防线 3）；client 轨须回报 `tmpCleaned` 并写入 `warnings[]`，服务端无法强制验证该事实 |
 | **BYOK Key（`X-Provider-Key` / `X-LLM-Key`）** | **服务端零留存（无此数据）** | V1.8：仅存在于单次请求的内存上下文；不落库、不入日志、不回显（见 §5「凭据传递约定」）；env 兜底值由部署者自管 |
 | 前端任务 ID 锚点 | 浏览器 `localStorage` | 刷新后凭 ID 向服务端重挂载进度 |

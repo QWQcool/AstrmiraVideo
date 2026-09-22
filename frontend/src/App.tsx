@@ -15,6 +15,7 @@ import { RightPanel } from './components/RightPanel';
 import { useTaskPolling } from './hooks/useTaskPolling';
 import {
   ApiError,
+  cancelTask,
   deleteHistory,
   fetchHistory,
   fetchProviderStatus,
@@ -305,6 +306,24 @@ export default function App() {
     }
   }
 
+  /**
+   * 取消任务（V8.3 批次 3）：**真的调接口**，不再是只弹一句提示。
+   *
+   * 文案必须诚实：取消只保证"本地不再推进 + 通知上游停止"，
+   * 上游是否真的停止、是否已计费，服务端无法代上游保证 —— 所以照实说，并指向后台核对。
+   */
+  async function handleCancel(): Promise<void> {
+    if (taskId === null) return;
+
+    setNotice(null);
+    try {
+      await cancelTask(taskId);
+      setNotice('已请求取消，并会通知上游停止；若上游已受理，仍可能产生费用，请到服务商后台核对。');
+    } catch (caught) {
+      setNotice(`取消失败：${describeError(caught)}`);
+    }
+  }
+
   function handleReuse(target: TaskProgress): void {
     const snapshot = target.requestSnapshot;
 
@@ -503,7 +522,7 @@ export default function App() {
               setTaskId(null);
               setNotice('已放弃该任务：本服务不会自动重试，也不会再次向上游提交。');
             }}
-            onCancel={() => setNotice('取消请求已记录；若上游已受理，仍可能产生费用，请留意核对。')}
+            onCancel={() => void handleCancel()}
             onRequestReuse={() => {
               if (task !== null) handleReuse(task);
             }}

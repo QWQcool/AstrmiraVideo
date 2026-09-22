@@ -166,6 +166,8 @@ export async function buildApp() {
     markUpstreamAccepted: async (taskId, upstreamTaskId) => {
       queue.setUpstreamTaskId(taskId, upstreamTaskId);
     },
+    // 取消：调度器每轮回读一次状态（否则 heartbeat 会把 cancelled 覆盖回 running，见 V8.3 批次 3）
+    isCancellationRequested: (taskId) => store.get(taskId)?.status === 'cancelled',
     onError: (err) => app.log.warn({ err }, '任务执行异常'),
   });
   dispatcher.start();

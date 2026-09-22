@@ -40,6 +40,15 @@ export interface GenerateRoutesDeps {
   keyVault?: KeyVault;
 }
 
+/**
+ * 提示词长度上限（V8.3 批次 3）：给 `PROMPT_REJECTED` 一个**真实的产生点**。
+ *
+ * 为什么要有服务端这一道：前端已经在空提示词时禁用按钮，但接口是公开的，
+ * 而"契约里登记的字段没人校验"正是我们这轮核对出来的问题（`PROMPT_REJECTED` 此前只存在于字典里）。
+ * 2000 字符对镜头描述足够宽裕（本地 H3 的提示词规范也在千字级），同时挡住把整篇文章塞进来的用法。
+ */
+export const MAX_PROMPT_CHARS = 2000;
+
 /** 请求指纹（provider + 规范化请求体） */
 export function fingerprintRequest(request: VideoGenerateRequest): string {
   const normalized = JSON.stringify({
@@ -80,6 +89,7 @@ export const createGenerateRoutes =
           body: VideoGenerateRequestSchema,
           response: {
             200: GenerateResponseSchema,
+            400: ErrorResponseSchema,
             429: ErrorResponseSchema,
             503: ErrorResponseSchema,
           },
@@ -87,6 +97,24 @@ export const createGenerateRoutes =
       },
       async (request, reply) => {
         const body = request.body;
+
+        // 提示词校验（防线 6 的服务端半边）：空 / 超长 → `PROMPT_REJECTED`（terminal，前端应提示用户改参数）
+        const prompt = body.prompt.trim();
+        if (prompt === '') {
+          return reply
+            .code(400)
+            .send(createErrorResponse('PROMPT_REJECTED', '提示词不能为空'));
+        }
+        if (prompt.length > MAX_PROMPT_CHARS) {
+          return reply
+            .code(400)
+            .send(
+              createErrorResponse(
+                'PROMPT_REJECTED',
+                `提示词过长：上限 ${MAX_PROMPT_CHARS} 字符，当前 ${prompt.length} 字符`,
+              ),
+            );
+        }
 
         const provider = deps.resolveProvider(body.provider);
         if (provider === null) {

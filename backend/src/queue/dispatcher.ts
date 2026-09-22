@@ -36,6 +36,15 @@ export interface JobDispatcherOptions {
    * 它是防线 7 的落账点：写回之后该任务**不可**再走 `requeue`，只能 `markUncertain`。
    */
   markUpstreamAccepted?: (taskId: string, upstreamTaskId: string) => Promise<void>;
+  /**
+   * 「这条任务是不是已经被用户取消了？」（V8.3 批次 3）。
+   *
+   * 为什么必须有它：`/api/tasks/:id/cancel` 只改了库里的状态，而本调度器**此前从不回读状态**，
+   * 于是它每 2s 的 heartbeat 会把 `cancelled` 覆盖回 `running`，最终还会写 `succeeded` ——
+   * 用户看到"已取消"，上游却仍在跑、仍在计费（实测复现，见 PLAN §5 的 V8.3 批次 3）。
+   * 接线在 `index.ts`：`(taskId) => store.get(taskId)?.status === 'cancelled'`。
+   */
+  isCancellationRequested?: (taskId: string) => boolean;
   intervalMs?: number;
   /** 上游轮询间隔（默认 2000ms；测试注入极小值） */
   pollIntervalMs?: number;
@@ -141,6 +150,13 @@ export class JobDispatcher {
       // 写回上游 taskId：此后该任务不可 requeue（防线 7）
       await this.options.markUpstreamAccepted?.(job.taskId, upstreamTaskId);
 
+      // 用户在"提交窗口期"点了取消（那时还没有 upstreamTaskId 可通知）：提交完成后立刻收口
+      if (this.options.isCancellationRequested?.(job.taskId) === true) {
+        const cancelled = await this.stopUpstream(job, provider, upstreamTaskId, 0);
+        await this.options.queue.heartbeat(job.taskId, cancelled);
+        return;
+      }
+
       const progress = await this.pollUntilTerminal(job, provider, upstreamTaskId);
 
       if (progress.status === 'succeeded') {
@@ -230,6 +246,13 @@ export class JobDispatcher {
       }
 
       await sleep(intervalMs);
+
+      // ⚠️ 必须在 heartbeat **之前**查取消：否则这一轮的 heartbeat 会把 `cancelled` 覆盖回 `running`
+      // （这正是本批次修掉的那条实测缺陷）。
+      if (this.options.isCancellationRequested?.(job.taskId) === true) {
+        return this.stopUpstream(job, provider, upstreamTaskId, progress.progressPercent);
+      }
+
       await this.options.queue.heartbeat(job.taskId, {
         taskId: job.taskId,
         status: 'running',
@@ -243,5 +266,39 @@ export class JobDispatcher {
     }
 
     return progress;
+  }
+
+  /**
+   * 收口"用户已取消"：**先通知上游，再落一个诚实的终态文案**。
+   *
+   * 三条口径：
+   * 1. `provider.cancel()` 的返回值只代表"上游接受了取消请求"，不代表"不会计费"——
+   *    所以两条文案不同，且都提醒去后台核对；
+   * 2. 取消失败（抛错 / 返回 false）**不改变"用户已取消"这件事**，但要如实说出来；
+   * 3. 这里只落 `cancelled` 终态，不写 `failed`：用户要的是"停"，不是"报错"。
+   */
+  private async stopUpstream(
+    job: QueueJob,
+    provider: VideoProvider,
+    upstreamTaskId: string,
+    progressPercent: number,
+  ): Promise<TaskProgress> {
+    let acknowledged = false;
+
+    try {
+      acknowledged = await provider.cancel(upstreamTaskId);
+    } catch {
+      /* 上游取消失败：不影响"已取消"的本地事实，只是文案要诚实 */
+    }
+
+    return {
+      taskId: job.taskId,
+      status: 'cancelled',
+      progressPercent,
+      requestSnapshot: job.request,
+      message: acknowledged
+        ? '已按用户请求取消，并已通知上游停止'
+        : '已按用户请求取消；上游未确认停止，若已受理仍可能产生费用（请到服务商后台核对）',
+    };
   }
 }
