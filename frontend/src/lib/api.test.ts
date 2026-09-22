@@ -69,7 +69,7 @@ describe('响应契约校验（宁可报错，也不渲染 undefined）', () => 
     expect(err.failure.status).toBe(404);
   });
 
-  it('501 LLM_NOT_CONFIGURED（扩写未实现）→ terminal，且文案透传', async () => {
+  it('501 LLM_NOT_CONFIGURED（没填文本轨 Key）→ terminal，且文案透传', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -81,10 +81,56 @@ describe('响应契约校验（宁可报错，也不渲染 undefined）', () => 
       ),
     );
 
-    const err = (await enhancePrompt('雨夜街头').catch((e: unknown) => e)) as ApiError;
+    const err = (await enhancePrompt({ originalPrompt: '雨夜街头' }).catch((e: unknown) => e)) as ApiError;
 
     expect(err.failure.code).toBe('LLM_NOT_CONFIGURED');
     expect(err.failure.message).toContain('未配置扩写模型');
+  });
+
+  it('扩写：文本 Key 只走 X-LLM-Key（与视频轨的 X-Provider-Key 分开）', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, { enhancedPrompt: '扩写后', engine: 'llm' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await enhancePrompt(
+      { originalPrompt: '雨夜街头', style: 'cinematic', llm: { preset: 'deepseek' } },
+      { llmKey: 'sk-llm-abcdef123456' },
+    );
+
+    expect(result.engine).toBe('llm');
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers['x-llm-key']).toBe('sk-llm-abcdef123456');
+    // 文本 Key 不得混进视频轨的头，也不得出现在 URL 或 body 里（CONTRACT §5）
+    expect(headers['x-provider-key']).toBeUndefined();
+    expect(url).not.toContain('sk-llm');
+    expect(String(init.body)).not.toContain('sk-llm');
+  });
+
+  it('扩写：没带 Key 时不发送该请求头（由服务端如实回 501）', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(501, { code: 'LLM_NOT_CONFIGURED', message: 'x', disposition: 'terminal' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await enhancePrompt({ originalPrompt: '雨夜街头' }).catch(() => undefined);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>)['x-llm-key']).toBeUndefined();
+  });
+
+  it('扩写：响应缺 engine → 契约错误（engine 是"是否静默降级"的可证伪标记，不得可选）', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { enhancedPrompt: '扩写后' })));
+
+    const err = (await enhancePrompt(
+      { originalPrompt: '雨夜街头' },
+      { llmKey: 'sk-llm-abcdef123456' },
+    ).catch((e: unknown) => e)) as ApiError;
+
+    expect(err.failure.kind).toBe('contract');
+    expect(err.failure.message).toContain('engine');
   });
 
   it('UNCERTAIN_RESULT → isUncertain 为真（界面走人工核对分支，AC7）', async () => {

@@ -90,7 +90,9 @@ describe('AC1 · CONTRACT §5 路由覆盖', () => {
     }
   });
 
-  it('demo 版未实现的扩写路由以 501 + LLM_NOT_CONFIGURED 诚实兜底（不得静默降级）', async () => {
+  it('未携带 X-LLM-Key 的扩写请求 → 501 + LLM_NOT_CONFIGURED（纯 BYOK，不静默降级）', async () => {
+    // V2.0：扩写已实现，但服务端**不设文本侧兜底 Key** —— 没有凭据就是"没配"，
+    // 而不是"用服务端的 Key 偷偷替你跑一次"（PLAN §6-D24 / 铁律 4）。
     const res = await app.inject({
       method: 'POST',
       url: '/api/prompt/enhance',

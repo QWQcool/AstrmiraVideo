@@ -18,17 +18,23 @@ import {
 /**
  * 左栏控制台（施工单 §7）。
  *
- * 两条容易被做错的细节：
- * 1. **✨ 扩写不得静默不可点**：demo 版服务端恒返回 501，所以按钮保持可点，
- *    点击时把"为什么不能用 + 去哪看"讲清楚（`enhanceNotice` 由上层注入）；
- * 2. **本地引擎按钮不置灰**：状态端点只陈述"本服务有没有配"，
+ * 三条容易被做错的细节：
+ * 1. **✨ 扩写不可用时必须写明原因**（V2.0）：扩写真的实现了，唯一的"不可用"是
+ *    没填文本轨 Key（纯 BYOK）。此时按钮置灰，但**同一屏内**给出 `enhanceNotice` ——
+ *    "只置灰不解释"和"点了才说不能用"是一样的糟糕；
+ * 2. **四种模式按钮恒可点**：素材没传就点不了模式，用户会被卡在
+ *    "想选首尾帧 → 按钮灰着 → 不知道该先传图"的循环里；缺什么由提交按钮的禁用态 + 提示收口（批次 3-⑤）；
+ * 3. **本地引擎按钮不置灰**：状态端点只陈述"本服务有没有配"，
  *    不替访客判断能不能用（CONTRACT §2 V1.8）；选了未配置的本地轨，提交时如实报 `PROVIDER_UNAVAILABLE`。
  */
 export interface LeftPanelProps {
   prompt: string;
   onPromptChange: (value: string) => void;
   onEnhance: () => void;
-  /** 非 null 表示当前不可用，文案即原因（不得省略） */
+  /**
+   * 非 null 表示当前**不可用**，文案即原因（不得省略）。
+   * V2.0 起扩写真的实现了，所以"不可用"只有一种原因：没填文字轨 Key（纯 BYOK）。
+   */
   enhanceNotice: string | null;
   enhancing: boolean;
 
@@ -159,7 +165,7 @@ export function LeftPanel(props: LeftPanelProps) {
             type="button"
             className="wb-btn wb-btn-gold"
             onClick={onEnhance}
-            disabled={enhancing}
+            disabled={enhancing || enhanceNotice !== null}
             title={enhanceNotice ?? '用模型把提示词写得更完整'}
           >
             {enhancing ? '扩写中…' : '✨ 扩写'}
@@ -375,11 +381,11 @@ export function LeftPanel(props: LeftPanelProps) {
           </span>
         )}
 
-        {isCloud ? (
-          <button type="button" className="wb-btn" onClick={onOpenByok}>
-            配置云端凭据（BYOK）
-          </button>
-        ) : null}
+        {/* V2.0：抽屉里现在有**两条轨**的凭据（视频 + 文本扩写），
+            所以入口不再挂在"云端 Seedance"分支下 —— 选本地轨的访客同样需要填扩写 Key */}
+        <button type="button" className="wb-btn" onClick={onOpenByok}>
+          凭据设置（BYOK）
+        </button>
       </div>
 
       <div className="wb-field">

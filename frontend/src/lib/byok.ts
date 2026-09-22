@@ -1,3 +1,4 @@
+import { LLM_PRESETS } from '@astrmira/shared';
 import type { StorageAccess } from './storage';
 import {
   STORAGE_KEYS,
@@ -28,6 +29,18 @@ export interface ByokConfig {
   key: string;
   /** 模型名（endpoint id 或模型 id） */
   model: string;
+
+  // ── 文本轨（V2.0 扩写，PLAN §6-D24）─────────────────────────────
+  // 与视频轨**相互独立**：视频是方舟，文本可以是任意 OpenAI 兼容端点；
+  // 共用一把 Key 会让人以为"填了视频 Key 就能扩写"（前端提供一键复用，字段仍是分开的）。
+  /** 预设 id（`LLM_PRESETS` 里的 id 或 'custom'） */
+  llmPreset: string;
+  /** 文本端点地址（随预设自动填，可覆盖） */
+  llmBaseUrl: string;
+  /** 文本模型名（随预设自动填，可覆盖） */
+  llmModel: string;
+  /** 文本 API Key：同视频 Key 一样只用不存 */
+  llmKey: string;
 }
 
 /** 火山方舟（方舟 v3）：默认值仅作**占位**，用户可改 */
@@ -35,6 +48,10 @@ export const DEFAULT_BYOK: ByokConfig = {
   baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
   key: '',
   model: 'doubao-seedance-1-0-pro-250528',
+  llmPreset: LLM_PRESETS[0]?.id ?? 'openai',
+  llmBaseUrl: LLM_PRESETS[0]?.baseUrl ?? '',
+  llmModel: LLM_PRESETS[0]?.model ?? '',
+  llmKey: '',
 };
 
 /** 回环主机：明文 HTTP 下**唯一**允许填写 Key 的情形（本地开发） */
@@ -70,10 +87,20 @@ function parse(raw: string | null): ByokConfig | null {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return null;
     const candidate = parsed as Partial<Record<keyof ByokConfig, unknown>>;
+    // 逐字段回落：旧版本存下的配置里没有文本轨字段（V2.0 才加），
+    // 因此**必须**按字段判类型而不是"整体解析成功就用"——否则升级后 LLM 字段全是 undefined。
     return {
       baseUrl: typeof candidate.baseUrl === 'string' ? candidate.baseUrl : DEFAULT_BYOK.baseUrl,
       key: typeof candidate.key === 'string' ? candidate.key : '',
       model: typeof candidate.model === 'string' ? candidate.model : DEFAULT_BYOK.model,
+      llmPreset:
+        typeof candidate.llmPreset === 'string' && candidate.llmPreset !== ''
+          ? candidate.llmPreset
+          : DEFAULT_BYOK.llmPreset,
+      llmBaseUrl:
+        typeof candidate.llmBaseUrl === 'string' ? candidate.llmBaseUrl : DEFAULT_BYOK.llmBaseUrl,
+      llmModel: typeof candidate.llmModel === 'string' ? candidate.llmModel : DEFAULT_BYOK.llmModel,
+      llmKey: typeof candidate.llmKey === 'string' ? candidate.llmKey : '',
     };
   } catch {
     return null;
@@ -121,4 +148,40 @@ export function clearByok(access: StorageAccess): void {
 export function resolveProviderKey(config: ByokConfig): string | undefined {
   const trimmed = config.key.trim();
   return trimmed === '' ? undefined : trimmed;
+}
+
+/**
+ * 文本轨 Key（V2.0）。空串视为"没填" —— 扩写端点是**纯 BYOK**，
+ * 服务端没有兜底 Key，没填就是 `501 LLM_NOT_CONFIGURED`（前端据此把 ✨ 置灰）。
+ */
+export function resolveLlmKey(config: ByokConfig): string | undefined {
+  const trimmed = config.llmKey.trim();
+  return trimmed === '' ? undefined : trimmed;
+}
+
+/**
+ * 扩写请求里的端点配置。两个字段都留空时**不发送** `llm` 字段
+ * （服务端会回落到 `LLM_PRESETS` 的第一项，与这里显示的值一致）。
+ */
+export function resolveLlmConfig(config: ByokConfig): { preset: string; baseUrl?: string; model?: string } {
+  const baseUrl = config.llmBaseUrl.trim();
+  const model = config.llmModel.trim();
+  return {
+    preset: config.llmPreset,
+    ...(baseUrl === '' ? {} : { baseUrl }),
+    ...(model === '' ? {} : { model }),
+  };
+}
+
+/**
+ * 切换预设时把该预设的地址与模型**填进输入框**。
+ *
+ * 为什么不是"留空即用预设默认值"：那样用户看到的输入框是空的，
+ * 却不知道实际会请求哪里 —— 凭据配置界面最不该有的就是"看不见的默认值"。
+ * `custom` 刻意**不动**输入框：那是用户自己的地址，切来切去会把它抹掉。
+ */
+export function applyLlmPreset(config: ByokConfig, presetId: string): ByokConfig {
+  const preset = LLM_PRESETS.find((item) => item.id === presetId);
+  if (preset === undefined) return { ...config, llmPreset: presetId };
+  return { ...config, llmPreset: preset.id, llmBaseUrl: preset.baseUrl, llmModel: preset.model };
 }

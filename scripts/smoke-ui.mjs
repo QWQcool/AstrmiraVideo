@@ -230,12 +230,29 @@ try {
     '中栏空态文案可见（未误报错误态）',
   );
 
-  console.log('\n[3] 交互：打开 BYOK 抽屉');
-  await page.getByRole('button', { name: /配置云端凭据/ }).click();
+  console.log('\n[3] 交互：BYOK 抽屉（V2.0 起含文本轨）与 ✨ 扩写门控');
+  // 扩写是纯 BYOK：没填文本 Key 时按钮置灰，**并且同一屏内写明原因与去何处配置**
+  // （"只置灰不解释"和"点了才说不能用"是一样的糟糕）
+  const enhanceButton = page.getByRole('button', { name: /扩写/ });
+  assert(await enhanceButton.isDisabled(), '未填文本 Key 时 ✨ 扩写按钮置灰');
+  assert(
+    (await page.getByText('未配置扩写模型').count()) > 0,
+    '置灰的同时给出原因与配置入口（不是死胡同）',
+  );
+
+  await page.getByRole('button', { name: /凭据设置（BYOK）/ }).click();
   await page.locator('.wb-drawer-backdrop').waitFor({ timeout: 5_000 });
   assert(true, 'BYOK 抽屉打开（背板出现）');
   const keyInputVisible = await page.locator('input[type="password"]').first().isVisible();
   assert(keyInputVisible, '抽屉内存在凭据输入框');
+  assert(
+    (await page.locator('.wb-drawer input[type="password"]').count()) === 2,
+    '抽屉里有**两段**凭据输入（视频轨 + 文本轨，两把 Key 相互独立）',
+  );
+  assert(
+    (await page.locator('.wb-drawer select.wb-input').count()) === 1,
+    '文本轨提供预设下拉（清单来自 packages/shared 的 LLM_PRESETS，前端不写第二份）',
+  );
 
   mkdirSync(SHOT_DIR, { recursive: true });
   const homeShot = path.join(SHOT_DIR, 'home.png');

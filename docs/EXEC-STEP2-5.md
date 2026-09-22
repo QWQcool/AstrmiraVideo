@@ -77,7 +77,7 @@ NEXT_SESSION_PROMPT.md 当前指针）。版本号：PLAN → V8.2、CONTRACT �
 ### 1-2 非目标（明确不做，已转台账：决策书 §11-5）
 - 用户本机 worker / 浏览器直连本地引擎（B1）；
 - `keys/verify`、`local/verify` 两条路由（B2 / B4）；
-- LLM 扩写真实实现 —— **`/api/prompt/enhance` 以诚实 `501 LLM_NOT_CONFIGURED` 落地，前端 ✨ 置灰**（B3）；
+- ~~LLM 扩写真实实现 —— **`/api/prompt/enhance` 以诚实 `501 LLM_NOT_CONFIGURED` 落地，前端 ✨ 置灰**（B3）~~ → **已实现（2026-09-22，V8.3 批次 4 / CONTRACT V2.0）**：纯 BYOK，`X-LLM-Key` 由用户自带；未带 Key 时仍以 `501 LLM_NOT_CONFIGURED` 回答；
 - OI-1 `stock-local` 素材 provider（B7）；
 - SSE 实时推送（B10）、复合限流键（B8，**上线前**必做）。
 
@@ -134,7 +134,7 @@ NEXT_SESSION_PROMPT.md 当前指针）。版本号：PLAN → V8.2、CONTRACT �
 | D-2 | `docs/CONTRACT.md` | 升 **V1.8**，只动四条：① **§2**：`cloud.keySource` 收窄为可选字面量 `'env'`；`cloud.available` 口径改为「env `VOLCANO_API_KEY` 存在」；新增 `cloud.acceptsClientKey: boolean`（恒 true）；`local` **删除 `gpuName`/`vramFreeGB`**；`local.tier` 改可选（语义=引擎自检结果）；`local.reason` 区分「本服务未配置/未启用本地引擎」两类；补 `EXPOSE_HOST_LOCAL_TRACK` 说明。② **§5**：新增「凭据传递约定」注记段（`X-Provider-Key` 仅走请求头，禁 query/URL/body；服务端零留存；`Idempotency-Key` 同步登记）；`/api/prompt/enhance` 行补「demo 版返回 501 `LLM_NOT_CONFIGURED`；LLM 配置契约见 V2.0【规划】」。③ **§6**：新增 `LLM_NOT_CONFIGURED`、`KEY_INVALID`、`KEY_MISSING`（均 `terminal`）；**硬规则 2 适用范围收窄**为「有持久副作用的任务型上游」（无副作用调用不适用）。④ **§7**：新增一行「BYOK Key｜服务端零留存（无此数据）｜仅存在于单次请求的内存上下文」；「中间帧」行补 client 轨落点【规划】。⑤ 顶部补 V1.8 修订说明块（照决策书 §6 抄）。 |
 | D-3 | `docs/GUIDE.md` | ① §一 表头「算力分级」→「推荐档位（配置建议，**非探测结论**）」，末列「推荐姿态」→「建议」，删除"自动锁定 / 置灰"表述；表头加一行「本文为唯一详写处，前端展示文案为其投影，改则同步」。② §二 轨道 B 第 3 条改写为「Key 存于**你的浏览器**，随请求头发送；服务端只在转发瞬间过手，不落盘、不写日志、不回显。默认 `sessionStorage`；选 `localStorage` 表示接受明文存储风险」。③ §六 Q3 改写为「探针只报告本服务的本地引擎配置状态，**不会替你判断设备能力**；是否使用本地模型由你决定（推荐配置见 §一）」。④ §六新增一问「Key 会不会被服务端记录？——不会留存，但转发必经服务端内存，第三方托管请自行评估信任边界」。⑤ §六新增一问「公网部署为什么看不到本地轨？——本服务默认不向访客开放本地轨」。 |
 | D-4 | `README.md` | ① :12 电梯陈述「系统按硬件探测结果自动路由」→「按推荐配置与你的选择路由」；② :26 快速开始段去掉"自动锁定云端 / 自动激活本地轨"，改为"填入自己的火山 Key 即可出片；本地轨由部署者显式启用"；③ 徽章 status 改「Step 2 进行中」；④ 进度指针仍只链接 PLAN §5。 |
-| D-5 | `.env.example` | 新增：`EXPOSE_HOST_LOCAL_TRACK=0`、`TRUST_PROXY=0`、`OUTPUT_DIR=`（默认 `outputs`）、`DATA_DIR=`（默认 `data`）；注释标注 `VOLCANO_API_KEY` 可为空（BYOK 走浏览器）；新增 `LLM_*` 四项**但标注【规划·B3 未实现】**（避免误以为可用）。 |
+| D-5 | `.env.example` | 新增：`EXPOSE_HOST_LOCAL_TRACK=0`、`TRUST_PROXY=0`、`OUTPUT_DIR=`（默认 `outputs`）、`DATA_DIR=`（默认 `data`）；注释标注 `VOLCANO_API_KEY` 可为空（BYOK 走浏览器）；新增 `LLM_*` 四项**但标注【规划·B3 未实现】**（避免误以为可用）。**〔2026-09-22 更新：B3 已落地并采用纯 BYOK，那四项服务端变量**已从 `.env.example` 删除**（服务端不读任何 LLM 兜底配置）——扩写端点与 Key 由浏览器在 BYOK 抽屉里填写，见 CONTRACT V2.0〕** |
 
 **破坏性验证（D 段必做）**：改完 CONTRACT 后，`packages/shared` 尚未同步 → `pnpm --filter backend test` 应当**失败**（证明契约确实在约束代码）。把这条失败记录进证据，随后在 R1 修好。
 
@@ -268,7 +268,7 @@ NEXT_SESSION_PROMPT.md 当前指针）。版本号：PLAN → V8.2、CONTRACT �
 
 | 区域 | 要求 | 对应 AC |
 |---|---|---|
-| 左栏 | Prompt（字数安全指示）+ ✨ 扩写（**未配置 LLM Key 时不可用、配置后可用**；纯 BYOK、服务端不设兜底 Key，见台账 B3）+ 参考图拖拽槽（带目标画幅裁切预览）+ 画幅 16:9 / 9:16 / 1:1 + Seed 锁 + 引擎切换 + BYOK 抽屉 | AC1 |
+| 左栏 | Prompt（字数安全指示）+ ✨ 扩写（**未配置文本 Key 时置灰并写明原因、配置后可用**；纯 BYOK、服务端不设兜底 Key —— 已实现，见 CONTRACT V2.0）+ **参考素材槽（按模式出现：首帧 / 尾帧 / 参考视频，带目标画幅裁切预览）** + **生成模式（文生 / 图生 / 首尾帧 / 视频参考）** + 画幅 16:9 / 9:16 / 1:1 + **时长与清晰度档** + Seed 锁 + 引擎切换 + **凭据设置（BYOK：视频轨 + 文本轨两套）** | AC1 |
 | 中栏 | 播放器（`<video>` 直连 `outputs` 直链，浏览器原生 Range）+ 进度环 + 百分比 + MP4 下载 + **生成按钮 60s 冷却置灰** | AC1 / AC4 |
 | 右栏 | 任务队列（实时状态）+ 画廊（缩略图）+ 【复用参数】+ 单片删除 | AC3 |
 | 进度 | 轮询 `GET /api/tasks/:taskId`，**2s 间隔**；`localStorage` 存 taskId，刷新后向服务端**重挂载** | AC2 |
@@ -389,7 +389,7 @@ AC 逐条：AC-x → 命令 → 输出摘要（关键行原样粘贴）→ 判�
 
 ## §13 台账指针（不在本次范围，别顺手做）
 
-`B1` 用户本机 worker（S7）｜`B2` keys/verify 路由｜`B3` LLM 扩写（**纯 BYOK：服务端不设兜底 Key；做之前 ✨ 保持"未配置不可用"**）｜`B4` local/verify 运行时自检 + 设置抽屉「测试连接」｜`B6` Tier 文案单一事实源（**文案第二次修改前必须收口**）｜`B7` OI-1 素材 provider｜**`B8` 复合限流键（上线前必须做：NAT 共享出口下 IP 单键会互相误伤）——已落地**｜`B10` SSE｜`B11/B12/B14` 与 B1 同步｜`B13` Tier 数值实测｜`B15` CSP + 零 innerHTML 断言（Step 5 内落地）｜`B21` 让 `.heic` 真正可用｜`B22` 画廊容量淘汰（**暂缓**：初期存储需求不大）。
+`B1` 用户本机 worker（S7）｜`B2` keys/verify 路由｜**`B3` LLM 扩写（纯 BYOK）——已落地（V8.3 批次 4：`providers/llm.ts` + `LLM_PRESETS` + `X-LLM-Key` + 前端门控）**｜`B4` local/verify 运行时自检 + 设置抽屉「测试连接」｜`B6` Tier 文案单一事实源（**文案第二次修改前必须收口**）｜`B7` OI-1 素材 provider｜**`B8` 复合限流键（上线前必须做：NAT 共享出口下 IP 单键会互相误伤）——已落地**｜`B10` SSE｜`B11/B12/B14` 与 B1 同步｜`B13` Tier 数值实测｜`B15` CSP + 零 innerHTML 断言（Step 5 内落地）｜`B21` 让 `.heic` 真正可用｜`B22` 画廊容量淘汰（**暂缓**：初期存储需求不大）。
 
 > 完整台账（含每项「何时必须做」）的**权威位置 = `PLAN.md` §9**（由 D 段迁入）。D 段合入前暂存于本机 `.tmp/ARCH-DECISIONS.md` §11-5（`.tmp/` 已 gitignore，不进仓库）。
 

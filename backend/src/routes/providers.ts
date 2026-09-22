@@ -80,14 +80,32 @@ function resolveLocalStatus(): ProviderStatus['local'] {
 }
 
 /**
+ * 文本轨能力位（CONTRACT §2 V2.0，PLAN §6-D24）：**纯 BYOK** —— 服务端不设兜底 Key。
+ *
+ * 所以这里 `available` **恒为 false**，而且这一点必须写清楚：
+ * 前端合成实际能力 = `acceptsClientKey && 本地有 LLM Key`。
+ * 若把 `available` 当成"能不能用扩写"，就会复刻 V1.6 那个
+ * 「用户填了 Key 也用不了」的漏洞（状态端点没有凭据上下文，它不知道访客手里有什么）。
+ */
+function resolveLlmStatus(): ProviderStatus['llm'] {
+  return {
+    available: false,
+    provider: 'openai-compatible',
+    acceptsClientKey: true,
+    reason: '本服务不提供文本侧兜底 Key（纯 BYOK）：请在设置里填入 LLM Key',
+  };
+}
+
+/**
  * 本地引擎配置状态（S5 接入启动自检前为固定未配置态）。
- * 契约：CONTRACT §2（V1.8）。
+ * 契约：CONTRACT §2（V1.8 / V2.0）。
  * 本文件**不得**出现任何具体显卡型号或显存数字（PLAN §6-D27）。
  */
 export function buildProviderStatus(): ProviderStatus {
   return {
     cloud: resolveCloudStatus(),
     local: resolveLocalStatus(),
+    llm: resolveLlmStatus(),
     defaultProvider: 'cloud-volcano-seedance',
   };
 }

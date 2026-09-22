@@ -26,7 +26,7 @@ export const ErrorCodeSchema = z.enum([
   'TASK_NOT_FOUND', // taskId 不存在或已清理
   'DISK_FULL', // 输出目录磁盘不足
   // ── V1.8 新增（决策 PLAN §6-D23 / D24）──
-  'LLM_NOT_CONFIGURED', // 扩写未配置 LLM（demo 版恒返回，/api/prompt/enhance → 501）
+  'LLM_NOT_CONFIGURED', // 扩写未配置 LLM（V2.0：请求未携带 X-LLM-Key 时 → 501；服务端不设兜底 Key）
   'KEY_INVALID', // 凭据被上游拒绝（校验路由见 PLAN §9 台账 B2）
   'KEY_MISSING', // 需要凭据的端点既未收到 X-Provider-Key，服务端也无 env 兜底 Key
 ]);

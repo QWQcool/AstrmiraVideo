@@ -134,7 +134,7 @@ function defaultMessageOf(code: ErrorCode): string {
     case 'DISK_FULL':
       return '输出目录磁盘空间不足';
     case 'LLM_NOT_CONFIGURED':
-      return '未配置扩写模型（见 PLAN §9 台账 B3）';
+      return '未配置扩写模型（纯 BYOK：请在设置里填入 LLM Key）';
     case 'KEY_INVALID':
       return '凭据被上游拒绝';
     case 'KEY_MISSING':

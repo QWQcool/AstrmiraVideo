@@ -38,9 +38,29 @@ export const LocalProviderStatusSchema = z.object({
   reason: z.string().optional(),
 });
 
+/**
+ * 文本轨能力位（V2.0，PLAN §6-D24）。
+ *
+ * 与 `cloud` 同一套口径（这是 V1.6/§2 用一次真实缺陷换来的教训）：
+ * `available` 只说**服务端视角**（env 兜底 Key 是否存在），
+ * 前端合成实际能力 = `acceptsClientKey && hasLocalLlmKey()`。
+ *
+ * **纯 BYOK 下 `available` 恒为 `false`**：服务端刻意不设文本侧兜底 Key，
+ * 所以"服务端有没有配"这个问题的答案永远是"没有" —— 若前端据此把 ✨ 置灰，
+ * 就正好复刻了 V1.6 那个"用户填了 Key 也用不了"的漏洞。
+ */
+export const LlmProviderStatusSchema = z.object({
+  available: z.boolean(),
+  provider: z.literal('openai-compatible'),
+  /** 服务端是否接受客户端携带的文本 Key（恒 true；托管场景可置 false） */
+  acceptsClientKey: z.boolean(),
+  reason: z.string().optional(),
+});
+
 export const ProviderStatusSchema = z.object({
   cloud: CloudProviderStatusSchema,
   local: LocalProviderStatusSchema,
+  llm: LlmProviderStatusSchema,
   // 初始建议值（V1.8：不再由 Tier 判定推导）
   defaultProvider: ProviderTypeSchema,
 });
@@ -48,4 +68,5 @@ export const ProviderStatusSchema = z.object({
 export type HardwareTier = z.infer<typeof HardwareTierSchema>;
 export type CloudProviderStatus = z.infer<typeof CloudProviderStatusSchema>;
 export type LocalProviderStatus = z.infer<typeof LocalProviderStatusSchema>;
+export type LlmProviderStatus = z.infer<typeof LlmProviderStatusSchema>;
 export type ProviderStatus = z.infer<typeof ProviderStatusSchema>;

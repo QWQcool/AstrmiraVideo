@@ -17,6 +17,7 @@ import {
   ApiError,
   cancelTask,
   deleteHistory,
+  enhancePrompt,
   fetchHistory,
   fetchProviderStatus,
   submitGenerate,
@@ -35,6 +36,8 @@ import {
   clearByok,
   isPersistEnabled,
   readByok,
+  resolveLlmConfig,
+  resolveLlmKey,
   resolveProviderKey,
   writeByok,
 } from './lib/byok';
@@ -71,8 +74,12 @@ import {
 /** AC4：提交后 60s 内生成按钮置灰（与后端防线 5 的冷却窗口对齐） */
 const COOLDOWN_MS = 60_000;
 
-/** demo 版：扩写未实现（服务端 501）。按钮保持可点并把原因讲清楚，不做静默置灰。 */
-const ENHANCE_NOTICE = '未配置扩写模型：本版本未实现 LLM 扩写（见 PLAN §9 台账 B3）';
+/**
+ * 扩写不可用时的提示（V2.0）。**只有一种原因**：没填文本轨 Key。
+ * 文案必须同时说"为什么"与"去哪配"，否则置灰的按钮就是一个死胡同。
+ */
+const ENHANCE_NOTICE =
+  '未配置扩写模型：请在「凭据设置（BYOK）」里填入文本轨 Key（本服务不提供文本侧兜底 Key）';
 
 /** 三槽的固定顺序（清理预览 URL、回填快照都要按同一顺序遍历） */
 const SLOT_KEYS = ['firstFrame', 'lastFrame', 'referenceVideo'] as const satisfies readonly AssetSlotKey[];
@@ -124,10 +131,11 @@ export default function App() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // ── BYOK ──
+  // ── BYOK（视频轨 + 文本轨两套凭据，见 lib/byok）──
   const [byok, setByok] = useState<ByokConfig>(() => readByok(storage));
   const [byokPersist, setByokPersist] = useState(() => isPersistEnabled(storage));
   const [byokOpen, setByokOpen] = useState(false);
+  const [enhancing, setEnhancing] = useState(false);
 
   // ── 冷却与计时（冷却时间戳持久化，刷新后仍置灰） ──
   const [cooldownUntil, setCooldownUntil] = useState(() =>
@@ -348,6 +356,54 @@ export default function App() {
   }
 
   /**
+   * 扩写（V2.0，纯 BYOK）。
+   *
+   * 三条口径：
+   * 1. **Key 只走请求头** `X-LLM-Key`；没填就不发请求（按钮此时是灰的，这里再兜一层）；
+   * 2. **区分三种失败**：没配（`LLM_NOT_CONFIGURED`）/ Key 被拒（`KEY_INVALID`）/
+   *    上游故障（`UPSTREAM_ERROR`）—— 三句话不一样，不能让用户自己猜；
+   * 3. **不覆盖用户的原文**：只在成功时替换提示词（用户随时可以 Ctrl+Z 改回来，
+   *    但绝不把"扩写失败"变成"提示词被清空"）。
+   */
+  async function handleEnhance(): Promise<void> {
+    const llmKey = resolveLlmKey(byok);
+    if (llmKey === undefined) {
+      setNotice(ENHANCE_NOTICE);
+      return;
+    }
+
+    setSubmitError(null);
+    setNotice(null);
+    setEnhancing(true);
+
+    try {
+      const result = await enhancePrompt(
+        {
+          originalPrompt: prompt,
+          style: 'cinematic',
+          mode,
+          llm: resolveLlmConfig(byok),
+        },
+        { llmKey },
+      );
+
+      setPrompt(result.enhancedPrompt);
+      // `engine` 是必填字段：这里显式读一次，让"到底用的什么引擎"在界面上有据可查
+      setNotice(
+        `已用模型扩写（engine=${result.engine}）${
+          result.cameraMovementSuggested === undefined ? '' : ` · 镜头建议：${result.cameraMovementSuggested}`
+        }${result.lightingSuggested === undefined ? '' : ` · 光线建议：${result.lightingSuggested}`}${
+          result.notice === undefined ? '' : `（${result.notice}）`
+        }`,
+      );
+    } catch (caught) {
+      setNotice(`扩写失败：${describeError(caught)}`);
+    } finally {
+      setEnhancing(false);
+    }
+  }
+
+  /**
    * 取消任务（V8.3 批次 3）：**真的调接口**，不再是只弹一句提示。
    *
    * 文案必须诚实：取消只保证"本地不再推进 + 通知上游停止"，
@@ -432,7 +488,14 @@ export default function App() {
     setByok(next);
     setByokPersist(persist);
     setByokOpen(false);
-    setNotice(persist ? '凭据已明文保存在本机（仅限信任设备）。' : '凭据仅保存在本次会话。');
+
+    // 保存后把"现在能做什么"讲清楚：两条轨各自是否可用，避免"填了文本 Key 却以为视频轨也通了"
+    const videoReady = resolveProviderKey(next) !== undefined;
+    const textReady = resolveLlmKey(next) !== undefined;
+    const storageText = persist ? '明文保存在本机（仅限信任设备）' : '仅本次会话有效';
+    setNotice(
+      `凭据已${storageText}：视频轨${videoReady ? '已填' : '未填'} · 文本扩写${textReady ? '已填' : '未填'}。`,
+    );
   }
 
   function handleClearByok(): void {
@@ -521,9 +584,10 @@ export default function App() {
         <LeftPanel
           prompt={prompt}
           onPromptChange={setPrompt}
-          onEnhance={() => setNotice(ENHANCE_NOTICE)}
-          enhanceNotice={ENHANCE_NOTICE}
-          enhancing={false}
+          onEnhance={() => void handleEnhance()}
+          // 非 null = 不可用；这里是**唯一**的不可用原因（没填文本轨 Key）
+          enhanceNotice={resolveLlmKey(byok) === undefined ? ENHANCE_NOTICE : null}
+          enhancing={enhancing}
           aspectRatio={aspectRatio}
           onAspectRatioChange={setAspectRatio}
           durationSec={durationSec}

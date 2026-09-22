@@ -16,6 +16,7 @@ import type {
   HealthResponse,
   HistoryResponse,
   OperationResult,
+  PromptEnhanceRequest,
   PromptEnhanceResponse,
   ProviderStatus,
   TaskProgress,
@@ -36,6 +37,8 @@ import type { z } from 'zod';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const POLL_TIMEOUT_MS = 10_000;
 const PROVIDER_KEY_HEADER = 'x-provider-key';
+/** 文本轨凭据头（V2.0 扩写）：与视频轨分开，见 CONTRACT §5「凭据传递约定」 */
+const LLM_KEY_HEADER = 'x-llm-key';
 
 export interface ApiFailure {
   /** `contract` = 服务端按 CONTRACT §6 返回了错误码；`network` = 连契约响应都没拿到 */
@@ -66,6 +69,8 @@ interface RequestOptions {
   body?: unknown;
   /** 仅用于请求头；`undefined` 表示不带（服务端回落到 env 兜底 Key） */
   providerKey?: string;
+  /** 文本轨 Key（仅扩写用）；`undefined` → 服务端返回 501 `LLM_NOT_CONFIGURED` */
+  llmKey?: string;
   idempotencyKey?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -75,6 +80,7 @@ function buildHeaders(options: RequestOptions): Record<string, string> {
   const headers: Record<string, string> = {};
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   if (options.providerKey !== undefined) headers[PROVIDER_KEY_HEADER] = options.providerKey;
+  if (options.llmKey !== undefined) headers[LLM_KEY_HEADER] = options.llmKey;
   if (options.idempotencyKey !== undefined) headers['idempotency-key'] = options.idempotencyKey;
   return headers;
 }
@@ -194,14 +200,19 @@ export function cancelTask(taskId: string): Promise<OperationResult> {
 }
 
 /**
- * 扩写：demo 版服务端恒返回 `501 LLM_NOT_CONFIGURED`（诚实未实现）。
- * 这里**不吞错、不兜底**——调用方据 `ApiError.failure.code` 把 ✨ 置灰并写明原因；
- * 若日后台账 B3 落地，本函数无需改动即可直接用。
+ * 扩写（CONTRACT §3 V2.0，纯 BYOK）：Key 只走 `X-LLM-Key`。
+ *
+ * 这里**不吞错、不兜底**——调用方据 `ApiError.failure.code` 决定文案：
+ * `LLM_NOT_CONFIGURED`（没填 Key）与 `KEY_INVALID`（Key 被拒）是两件不同的事，必须分开讲。
  */
-export function enhancePrompt(originalPrompt: string): Promise<PromptEnhanceResponse> {
+export function enhancePrompt(
+  body: PromptEnhanceRequest,
+  options: { llmKey?: string } = {},
+): Promise<PromptEnhanceResponse> {
   return request('/api/prompt/enhance', PromptEnhanceResponseSchema, {
     method: 'POST',
-    body: { originalPrompt },
+    body,
+    ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),
   });
 }
 

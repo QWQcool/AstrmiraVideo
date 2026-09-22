@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
+import { LLM_CUSTOM_PRESET_ID, LLM_PRESETS } from '@astrmira/shared';
 import { Eyebrow } from './Eyebrow';
 import type { ByokConfig } from '../lib/byok';
-import { keyInputNotice } from '../lib/byok';
+import { applyLlmPreset, keyInputNotice } from '../lib/byok';
 
 /**
  * BYOK 抽屉（CONTRACT §5 / 施工单 §7）。
  *
- * 三条要贴在用户脸上的事实：
+ * 要贴在用户脸上的事实：
  * 1. Key **只**经请求头传给本服务，服务端**只用不存**（不落库、不写日志、不回显）；
  * 2. 浏览器侧默认只存**本次会话**（关标签页即失效），要落本机必须显式勾选并看到明文警示；
- * 3. 公网明文（http 且非回环）下**禁止填写** —— 明文传输等于公开（PLAN §9-2 红线）。
- *
- * 该组件**只在打开时挂载**（父组件控制），因此内部 state 以 props 初始化即可，无需同步 effect。
+ * 3. 公网明文（http 且非回环）下**禁止填写** —— 明文传输等于公开（PLAN §9-2 红线）；
+ * 4. V2.0：**文本轨与视频轨是两套凭据**（视频 = 方舟，文本 = 任意 OpenAI 兼容端点），
+ *    因此分两段填写；文本段提供「复用视频 Key」一键按钮，但字段本身独立。
  */
 export interface ByokDrawerProps {
   config: ByokConfig;
@@ -34,6 +35,7 @@ export function ByokDrawer({
   const [draft, setDraft] = useState<ByokConfig>(config);
   const [persistDraft, setPersistDraft] = useState<boolean>(persist);
   const [reveal, setReveal] = useState(false);
+  const [revealLlm, setRevealLlm] = useState(false);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent): void {
@@ -110,6 +112,81 @@ export function ByokDrawer({
             />
           </div>
 
+          {/* ── 文本轨（V2.0 扩写）────────────────────────────────────
+              独立成段是刻意的：视频 Key 与文本 Key 往往不是同一家（方舟 vs OpenAI/DeepSeek），
+              混在一起填会让人以为"填了视频 Key 就能扩写"。 */}
+          <div className="wb-field">
+            <div className="wb-field-head">
+              <span className="wb-label">扩写模型（文本轨）</span>
+              <button
+                type="button"
+                className="wb-btn"
+                title="把上面视频轨的 Key 复制到文本轨（仅当两者是同一把 Key 时使用）"
+                onClick={() => setDraft({ ...draft, llmKey: draft.key })}
+                disabled={keyInputDisabled || draft.key.trim() === ''}
+              >
+                复用视频 Key
+              </button>
+            </div>
+            <select
+              className="wb-input"
+              value={draft.llmPreset}
+              onChange={(event) => setDraft(applyLlmPreset(draft, event.target.value))}
+            >
+              {LLM_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
+              ))}
+              <option value={LLM_CUSTOM_PRESET_ID}>自定义（自填地址与模型）</option>
+            </select>
+            <span className="wb-note">
+              {LLM_PRESETS.find((preset) => preset.id === draft.llmPreset)?.note ??
+                '自定义：需填完整的 baseUrl 与模型名；留空时服务端会明确报「未配置」，不会替你挑一个地址'}
+            </span>
+
+            <input
+              className="wb-input wb-input-mono"
+              value={draft.llmBaseUrl}
+              onChange={(event) => setDraft({ ...draft, llmBaseUrl: event.target.value })}
+              spellCheck={false}
+              placeholder="https://api.example.com/v1"
+            />
+            <input
+              className="wb-input wb-input-mono"
+              value={draft.llmModel}
+              onChange={(event) => setDraft({ ...draft, llmModel: event.target.value })}
+              spellCheck={false}
+              placeholder="模型名 / endpoint id"
+            />
+
+            <div className="wb-field-head">
+              <span className="wb-label">扩写 API Key</span>
+              <button
+                type="button"
+                className="wb-btn"
+                onClick={() => setRevealLlm(!revealLlm)}
+                disabled={keyInputDisabled}
+              >
+                {revealLlm ? '隐藏' : '显示'}
+              </button>
+            </div>
+            <input
+              className="wb-input wb-input-mono"
+              type={revealLlm ? 'text' : 'password'}
+              value={draft.llmKey}
+              onChange={(event) => setDraft({ ...draft, llmKey: event.target.value })}
+              disabled={keyInputDisabled}
+              spellCheck={false}
+              autoComplete="off"
+              placeholder={keyInputDisabled ? '当前环境禁止填写' : '粘贴你的 Key（可不填，那时 ✨ 会置灰）'}
+            />
+            <span className="wb-note">
+              仅经请求头 <code>X-LLM-Key</code> 传输。本服务**不提供文本侧兜底 Key**（纯 BYOK）：
+              没填就是"没配"，不会静默降级成规则改写。
+            </span>
+          </div>
+
           <label className="wb-checkbox">
             <input
               type="checkbox"
@@ -137,7 +214,8 @@ export function ByokDrawer({
             className="wb-btn"
             onClick={() => {
               onClear();
-              setDraft({ ...draft, key: '' });
+              // 两把 Key 一起清：只清视频轨会留下"看着已清除、其实文本 Key 还在"的假象
+              setDraft({ ...draft, key: '', llmKey: '' });
               setPersistDraft(false);
             }}
           >

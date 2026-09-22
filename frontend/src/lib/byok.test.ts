@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { LLM_PRESETS } from '@astrmira/shared';
 import {
   DEFAULT_BYOK,
+  applyLlmPreset,
   clearByok,
   isKeyInputAllowed,
   isLoopbackHost,
   isPersistEnabled,
   keyInputNotice,
   readByok,
+  resolveLlmConfig,
+  resolveLlmKey,
   resolveProviderKey,
   writeByok,
 } from './byok';
@@ -145,5 +149,72 @@ describe('凭据取值：空白视为未填', () => {
     expect(resolveProviderKey({ ...DEFAULT_BYOK, key: '' })).toBeUndefined();
     expect(resolveProviderKey({ ...DEFAULT_BYOK, key: '   ' })).toBeUndefined();
     expect(resolveProviderKey({ ...DEFAULT_BYOK, key: '  abc  ' })).toBe('abc');
+  });
+});
+
+/**
+ * 文本轨（V2.0 扩写，PLAN §6-D24）：与视频轨**相互独立**。
+ * 出错代价不是"界面难看"，而是把视频 Key 当文本 Key 发出去（用户会以为扩写坏了）——
+ * 所以两条轨的取值必须能被分别断言。
+ */
+describe('文本轨凭据（V2.0）', () => {
+  it('两条轨的 Key 各自独立：填了视频 Key 不等于配好了扩写', () => {
+    const config = { ...DEFAULT_BYOK, key: 'sk-video-123456', llmKey: '' };
+
+    expect(resolveProviderKey(config)).toBe('sk-video-123456');
+    expect(resolveLlmKey(config)).toBeUndefined();
+  });
+
+  it('文本 Key 空白视为未填（前端据此把 ✨ 置灰）', () => {
+    expect(resolveLlmKey({ ...DEFAULT_BYOK, llmKey: '   ' })).toBeUndefined();
+    expect(resolveLlmKey({ ...DEFAULT_BYOK, llmKey: ' sk-llm-1 ' })).toBe('sk-llm-1');
+  });
+
+  it('默认配置指向预设表第一项（两处不会各写一个默认地址）', () => {
+    expect(DEFAULT_BYOK.llmPreset).toBe(LLM_PRESETS[0]?.id);
+    expect(DEFAULT_BYOK.llmBaseUrl).toBe(LLM_PRESETS[0]?.baseUrl);
+    expect(DEFAULT_BYOK.llmModel).toBe(LLM_PRESETS[0]?.model);
+  });
+
+  it('切换预设会把该预设的地址与模型**填进配置**（界面上看得见，而不是隐形默认值）', () => {
+    const deepseek = LLM_PRESETS.find((preset) => preset.id === 'deepseek');
+    const next = applyLlmPreset(DEFAULT_BYOK, 'deepseek');
+
+    expect(next.llmPreset).toBe('deepseek');
+    expect(next.llmBaseUrl).toBe(deepseek?.baseUrl);
+    expect(next.llmModel).toBe(deepseek?.model);
+  });
+
+  it('切到「自定义」**不动**地址与模型（那是用户自己的值，抹掉等于让他重填）', () => {
+    const custom = applyLlmPreset({ ...DEFAULT_BYOK, llmBaseUrl: 'https://mine/v1' }, 'custom');
+
+    expect(custom.llmPreset).toBe('custom');
+    expect(custom.llmBaseUrl).toBe('https://mine/v1');
+  });
+
+  it('请求体里的 llm 配置：空字段不发（由服务端回落预设），填了就带上', () => {
+    expect(resolveLlmConfig({ ...DEFAULT_BYOK, llmBaseUrl: '', llmModel: '' })).toEqual({
+      preset: DEFAULT_BYOK.llmPreset,
+    });
+
+    expect(
+      resolveLlmConfig({ ...DEFAULT_BYOK, llmPreset: 'custom', llmBaseUrl: ' https://mine/v1 ', llmModel: ' m ' }),
+    ).toEqual({ preset: 'custom', baseUrl: 'https://mine/v1', model: 'm' });
+  });
+
+  it('旧版本存下的配置（没有文本轨字段）读取后补全为默认值，不出现 undefined', () => {
+    const legacy = JSON.stringify({ baseUrl: 'https://ark.example/api/v3', key: 'sk-old', model: 'm-old' });
+    // 默认不勾选持久化，因此旧值在 **sessionStorage** 里（与 byok 的读取顺序一致）
+    const access = {
+      local: memoryStorage(),
+      session: memoryStorage({ [STORAGE_KEYS.byok]: legacy }),
+    };
+
+    const config = readByok(access);
+    expect(config.key).toBe('sk-old');
+    expect(config.llmPreset).toBe(DEFAULT_BYOK.llmPreset);
+    expect(config.llmKey).toBe('');
+    // 严格判据：任何字段都不允许是 undefined（否则 zod 请求体校验会红）
+    expect(Object.values(config).every((value) => typeof value === 'string')).toBe(true);
   });
 });

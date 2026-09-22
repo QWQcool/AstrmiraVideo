@@ -1,6 +1,17 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V1.9 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.0 · 已冻结（变更需先改本文，再改代码）**
+> **V2.0 修订（2026-09-22）**：**§3 提示词扩写由【规划】转为已实现**（PLAN §6-D24 / 台账 B3，落地见 §5 的 V8.3 批次 4），并据此新增 **§2 的 `llm` 能力位**。
+>   ① **§2**：`ProviderStatus` 新增 `llm` 段（`available` / `acceptsClientKey` / `reason`）。
+>      口径与 `cloud` 一致：`available` 只说**服务端视角**（env 兜底 Key 是否存在），
+>      前端合成实际能力 = `acceptsClientKey && 本地有 LLM Key`。
+>      **纯 BYOK 下 `available` 恒为 `false`** —— 服务端刻意不设文本侧兜底 Key；
+>      若前端据此把 ✨ 置灰，就会复刻 V1.6 那个「用户填了 Key 也用不了」的漏洞（§2 V1.8 的教训）。
+>   ② **§3**：`LlmConfig` / `PromptEnhanceRequest.llm?` / `PromptEnhanceResponse.engine`（**必填**）与 `notice?`；
+>      凭据走请求头 `X-LLM-Key`（§5「凭据传递约定」），**服务端不设兜底 Key**；
+>      错误状态映射：未带 Key → **501 `LLM_NOT_CONFIGURED`**、空/超长提示词 → **400 `PROMPT_REJECTED`**、
+>      上游拒绝凭据 → **401 `KEY_INVALID`**、其余上游故障（含超时）→ **502 `UPSTREAM_ERROR`**（`retryable`，见 §6 硬规则 2 的 V1.8 收窄）。
+>   ③ **§5**：`POST /api/prompt/enhance` 行由"demo 版返回 501"改写为已实现的状态映射。**未新增路由**。
 > **V1.9 修订（2026-09-22）**：**§4 新增 `TaskProgress.thumbnailUrl?`**（成片首帧缩略图，画廊封面）。
 >   动机是可观测的性能事实：画廊此前对每条历史挂一个 `<video preload="metadata">`，
 >   50 条历史 = 50 个媒体元素各发一次请求并解析 moov；被抽成 JPEG 后可懒加载、可缓存。
@@ -113,6 +124,16 @@ export interface ProviderStatus {
     //  - 「本服务未向访客开放本地轨」（EXPOSE_HOST_LOCAL_TRACK=0，默认）
     reason?: string;
   };
+  llm: {
+    // V2.0：文本轨（提示词扩写）能力位。口径与 cloud 相同：本字段只表示**服务端视角**。
+    // 前端合成实际能力：llmEffective = acceptsClientKey && hasLocalLlmKey()
+    // ⚠️ 纯 BYOK 下 available 恒为 false（服务端不设文本侧兜底 Key）——
+    //    **不得**用它判断"能不能扩写"，否则会复刻 V1.6「填了 Key 也用不了」的漏洞。
+    available: boolean;
+    provider: 'openai-compatible';
+    acceptsClientKey: boolean; // 恒 true；托管场景可置 false 禁用 BYOK
+    reason?: string;           // 例：「本服务不提供文本侧兜底 Key（纯 BYOK）」
+  };
   defaultProvider: ProviderType; // 初始建议值（V1.8：不再由 Tier 判定推导）
 }
 ```
@@ -123,22 +144,49 @@ export interface ProviderStatus {
 
 ## 3. 提示词扩写接口契约 `PromptEnhance`
 
-> **V1.8 状态：demo 版未实现（PLAN §9 台账 B3）**。本路由当前以 **`501` + `LLM_NOT_CONFIGURED`** 诚实落地（前端 ✨ 置灰），**不得**用任何"规则引擎"冒充 AI（静默降级红线，PLAN §3 铁律 4）。
-> **V2.0【规划】**：新增 `LlmConfig`、`PromptEnhanceRequest.llm?`、`PromptEnhanceResponse.engine: 'llm' | 'rules'`（必填）与 `notice?`；凭据走请求头 `X-LLM-Key`（见 §5「凭据传递约定」）。决策依据见 PLAN §6-D24。
+> **V2.0 状态：已实现**（PLAN §6-D24 / 台账 B3，落地见 PLAN §5「V8.3 批次 4」）。
+> **纯 BYOK**：凭据走请求头 `X-LLM-Key`，**服务端不设文本侧兜底 Key** ——
+> 没带 Key 就是 **`501` + `LLM_NOT_CONFIGURED`**（"没配"的诚实回答），**不得**用任何"规则引擎"冒充 AI（静默降级红线，PLAN §3 铁律 4）。
+> **`engine` 是必填字段**：它是"是否静默降级"在测试层面**唯一可证伪**的标记；本实现只可能返回 `'llm'`。
 
 ```ts
+/** 文本端点配置（请求体可选；缺省回落到 LLM_PRESETS 的第一项） */
+export interface LlmConfig {
+  preset?: string;   // LLM_PRESETS 的 id，或 'custom'（自定义，无默认值，必须填 baseUrl + model）
+  baseUrl?: string;  // 覆盖预设地址（自建代理 / 兼容端点）
+  model?: string;    // 覆盖预设模型名
+}
+
 export interface PromptEnhanceRequest {
   originalPrompt: string;
   style?: 'cinematic' | 'anime' | 'commercial' | 'realistic';
   mode?: GenerationMode;
+  llm?: LlmConfig;   // V2.0：**凭据绝不在此字段**
 }
 
 export interface PromptEnhanceResponse {
   enhancedPrompt: string;
   cameraMovementSuggested?: string;
   lightingSuggested?: string;
+  engine: 'llm' | 'rules';  // V2.0 必填；本服务只返回 'llm'
+  notice?: string;          // 例：「上游返回的不是 JSON，已按纯文本采用」
 }
 ```
+
+**状态映射（本路由的唯一权威口径）**：
+
+| 情形 | HTTP | code | disposition |
+|---|---|---|---|
+| 请求头无 `X-LLM-Key`（或仅空白） | `501` | `LLM_NOT_CONFIGURED` | `terminal` |
+| `originalPrompt` 为空 / 超 `MAX_PROMPT_CHARS`（2000，与 `/api/generate` 共用常量） | `400` | `PROMPT_REJECTED` | `terminal` |
+| 自定义预设未填全 `baseUrl` / `model`，或地址非法 | `501` | `LLM_NOT_CONFIGURED` | `terminal` |
+| 上游 `401` / `403` | `401` | `KEY_INVALID` | `terminal` |
+| 上游其它非 2xx / 超时 / 网络异常 / 空内容 | `502` | `UPSTREAM_ERROR` | `retryable` |
+
+> **为什么超时不是 `UNCERTAIN_RESULT`**：§6 硬规则 2 的适用范围（V1.8 收窄）是
+> **有持久副作用的任务型上游**。文本扩写没有副作用、重试不会重复计费，
+> 因此按 PLAN §6-D28 归 `UPSTREAM_ERROR`（可重试）。
+> **响应与日志中不得出现 Key 明文**：上游错误体常回显 Key，服务端在拼装消息前必须擦除（§5）。
 
 ---
 
@@ -189,7 +237,7 @@ export interface VideoProvider {
 | `POST` | `/api/generate` | 创建视频生成任务（凭据经 `X-Provider-Key`，见下方注记段）。**200 → `{ taskId }`**（幂等：同一 `Idempotency-Key` 或缺省指纹重复提交返回同一 `taskId`）；提示词为空或超过 2000 字符 → **400 `PROMPT_REJECTED`**（terminal）；引擎未实现 / 未启用 → **503 `PROVIDER_UNAVAILABLE`**；60s 防抖限流 → 429 |
 | `GET` | `/api/tasks/:taskId` | 轮询任务状态与结果。**200 → `TaskProgress`（§4）**；不存在或已清理 → **404 `TASK_NOT_FOUND`** |
 | `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消；已在终态 → `{ ok: false }`）。**200 → `{ ok, taskId }`**。语义是**尽力而为**：服务端把任务置 `cancelled`（此后调度器**不再推进**、也不会被 heartbeat 覆盖），并**通知上游停止**；上游是否真的停止、是否已产生费用，本服务无法代上游保证 —— 前端文案必须如实说明并指向服务商后台核对 |
-| `POST` | `/api/prompt/enhance` | 提示词扩写助手 —— **demo 版返回 `501` + `LLM_NOT_CONFIGURED`**（前端 ✨ 置灰）；完整实现见 §3 的 V2.0【规划】 |
+| `POST` | `/api/prompt/enhance` | 提示词扩写助手（**V2.0 已实现**，凭据经 `X-LLM-Key`，见下方注记段）。**200 → `PromptEnhanceResponse`（§3，含必填 `engine`）**；无 Key → **501 `LLM_NOT_CONFIGURED`**；空 / 超长提示词 → **400 `PROMPT_REJECTED`**；上游拒绝凭据 → **401 `KEY_INVALID`**；其余上游故障（含超时）→ **502 `UPSTREAM_ERROR`**。状态映射的完整口径见 §3 |
 | `POST` | `/api/upload` | 上传参考图/视频（multipart，≤20MB × ≤4，**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目） |
 | `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[] }`**（最近 50 条） |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
@@ -200,7 +248,7 @@ export interface VideoProvider {
 - 这是 §6 `UNCERTAIN_RESULT` 与 PLAN §3 防线 7 能够落地的**前提**：没有 `submitting` 标记，就无法区分「没提交」与「提交了但不知道结果」。
 
 **凭据传递约定（V1.8 新增，决策 PLAN §6-D23）**：
-- **唯一载体是请求头**：视频轨 `X-Provider-Key`、文本轨 `X-LLM-Key`（后者随 V2.0 启用）。**禁止**出现在 query、URL path、body 或 cookie 中。
+- **唯一载体是请求头**：视频轨 `X-Provider-Key`、文本轨 `X-LLM-Key`（**V2.0 起已启用**，两条轨的 Key **相互独立**，前端可一键复用但服务端始终分别读取）。**禁止**出现在 query、URL path、body 或 cookie 中。
 - **服务端零留存**：只用不存——不落 SQLite、不写日志（pino `redact` 必须覆盖相应请求头）、不回显明文；错误响应也必须保证不含 Key 片段。日志或响应中出现 Key 明文 = **发布级缺陷**。
 - **状态端点不表达客户端凭据**：`GET /api/providers/status` 无凭据上下文，其 `cloud.available` 只表示 env 兜底 Key 是否存在；"前端是否持有 Key"由前端自行合成（§2 的 `acceptsClientKey` + 本地存储）。
 - **写入 / 清除无服务端路由**：Key 存于浏览器，清除即清本地存储。凭据校验路由（`keys/verify`）与本地引擎运行时自检（`local/verify`）**均未实现**，属 PLAN §9 台账 **B2 / B4**；实现时必须先在本节登记。

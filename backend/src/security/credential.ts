@@ -32,16 +32,30 @@ export const LOG_REDACT_PATHS: readonly string[] = [
   'authorization',
 ];
 
+/** 从请求头取一个凭据头（两条轨共用同一套读取规则，避免"一处 trim 一处不 trim"） */
+function resolveHeaderKey(req: FastifyRequest, header: string): string | null {
+  const raw = req.headers[header];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
 /**
  * 从请求头解析视频轨凭据。
  * @returns 去掉首尾空白后的 Key；缺失或空白时返回 `null`（**不回落**到其它位置）
  */
 export function resolveProviderKey(req: FastifyRequest): string | null {
-  const raw = req.headers[PROVIDER_KEY_HEADER];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed === '' ? null : trimmed;
+  return resolveHeaderKey(req, PROVIDER_KEY_HEADER);
+}
+
+/**
+ * 文本轨凭据（V2.0 启用）：与视频 Key **相互独立**（PLAN §6-D24）——
+ * 视频是方舟、文本可以是任意 OpenAI 兼容端点，共用一把 Key 会让人以为"填了视频 Key 就能扩写"。
+ * 前端允许一键复用，但**服务端始终只认这个头**。
+ */
+export function resolveLlmKey(req: FastifyRequest): string | null {
+  return resolveHeaderKey(req, LLM_KEY_HEADER);
 }
 
 /**
