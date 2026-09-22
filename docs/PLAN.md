@@ -269,7 +269,18 @@
       - **破坏性验证**：视觉自检临时移除 `flow` 功能位 + 塞一处 `fontSize: '14px'` → 两项均精确报错（含行号）后恢复 ✓。
       - **顺手修掉的两个真实缺陷**：① React StrictMode 双挂载下 `AbortController.abort()` 的报错被当作"后端未连通"（只有实机才暴露，单测抓不到）；② `vite.config.ts` 缺 `/media` 代理会导致"任务成功但播放器黑屏"（请求落到 SPA fallback 拿回 `index.html`，HTTP 还是 200）。
       - **AC1 待补**：端到端 T2V 需云端 provider（S5b 阻塞中），本轮以 mock 验证了「提交 → 轮询 → 冷却」链路。
-- [ ] Step 4 ~ Step 5：见 §4。
+- [ ] **Step 5 公网部署【交付物已就绪，等三项输入】**
+      - **⏳ 待你提供（施工单 §9-1，仅此三项 + 一条信息）**：
+        1. **服务器地址** `DEPLOY_HOST`（域名或 IP）；
+        2. **对外 HTTPS 端口** `DEPLOY_PORT`（建议 443）；
+        3. **火山方舟 API Key** `VOLCANO_API_KEY` —— **可选**（这是服务端兜底 Key，供访客未带 BYOK Key 时使用；不填也能跑，只是 `cloud.available:false`，访客必须自带 Key 才能出片）；
+        4. **另需告知"有没有域名"**，用以决定 HTTPS 档位（有域名 → Caddy + Let's Encrypt 自动证书；只有 IP → Caddy 本地 CA 自签，浏览器会告警一次需手工信任）。前两项里其实已隐含这项信息，`scripts/deploy.mjs` 会自动分档，告知只是为了确认。
+      - 已就绪的交付物：`Dockerfile`（多阶段；运行层装 ffmpeg；`data`/`outputs` 走卷）、`deploy/compose.yaml`（app **不映射任何宿主端口**，只经 Caddy，避免"绕过 HTTPS 的明文入口"；caddy 挂 80 供 ACME 挑战）、`deploy/Caddyfile.domain` 与 `deploy/Caddyfile.ip`（两种 TLS 档，按 `DEPLOY_HOST` 自动选择）、`scripts/deploy.mjs`（校验三项 → 推导 `PUBLIC_BASE_URL`/`CORS_ORIGINS` → `docker compose up -d --build`；支持 `--dry-run` / `--logs`）、`.env.deploy.example`、`.dockerignore`、`backend/src/server/spa.ts`（**单进程形态**：一个 Fastify 同时托管 `/api` + `/media` + 前端产物与 SPA fallback）。
+      - **AC3（.env / SQLite / outputs 不入镜像不入 git）的达成方式**：这四类路径同时被 `.gitignore` 与 `.dockerignore` 排除。两道防线职责不同——前者防入仓库，后者防入镜像——缺任一都可能漏。
+      - **反代三个坑已在配置内消除**：请求体上限 ≥20M（否则参考图被**静默**拦掉）、**刻意不写 `encode`**（任何视频压缩都会破坏 206 Range，用"不写"而非"写排除规则"，因为没法被误配置的东西才安全）、`X-Forwarded-For` + `TRUST_PROXY=1`（否则防线 5 的 IP 冷却退化成全局锁，症状是"别人提交过我就被限流"）。
+      - **实测**：单进程形态三条路径已验证（`GET /` → 200 HTML、SPA 深链回退 → 同一 index.html、`/api/nonexistent` 与 `/media/nonexistent.mp4` → **404 且不被 fallback 吞成 200 HTML**）；`deploy.mjs` 四类拦截已验证（缺配置文件 / 缺必填项 / `DEPLOY_HOST` 端口与 `DEPLOY_PORT` 不一致 / domain·ip 自动分档 + 自签告警）。
+      - **⚠️ 未验证（不得当作已验证引用）**：镜像**未在本机构建过**（本机无 Docker），因此 Dockerfile 与 compose 属"已写完但未实测"；ffmpeg 的版本与许可证结论待首次构建后回填 `docs/UPSTREAM.md`。
+- [ ] **Step 4 端到端验收【阻塞：需一把可用 Key】**：见 §4。AC1 明确要求用**真实云端轨**跑通 T2V（含双引号台词人声）与 I2V（含 32 倍数裁切），因此与 AC2 共用同一把 Key —— 拿到 Key 后 Step 4 与 Step 2-AC2 可一并完成。
 
 ---
 

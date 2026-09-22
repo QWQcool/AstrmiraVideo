@@ -28,6 +28,7 @@ import {
 import { LLM_KEY_HEADER, LOG_REDACT_PATHS, PROVIDER_KEY_HEADER } from './security/credential.js';
 import { createKeyVault } from './security/keyVault.js';
 import { CooldownStore } from './security/rateLimit.js';
+import { registerSpa } from './server/spa.js';
 import { registerStaticOutputs, resolveOutputsDir } from './server/staticOutputs.js';
 import { createAssetUrlResolver } from './store/assets.js';
 import { openDatabase } from './store/db.js';
@@ -185,6 +186,10 @@ export async function buildApp() {
   await app.register(createTaskRoutes({ store }));
   await app.register(createHistoryRoutes({ store }));
   await registerStaticOutputs(app);
+
+  // 单进程形态（施工单 §9-3）：进程同时托管 /api、/media 与前端产物。
+  // 刻意放在**所有路由之后**——`setNotFoundHandler` 是全局的，顺序反了会把 API 的 404 变成 index.html。
+  await registerSpa(app);
 
   return app;
 }

@@ -229,6 +229,19 @@ export function LeftPanel(props: LeftPanelProps) {
             ? byokSummary
             : providerStatus?.local.reason ?? '本地引擎状态未知'}
         </span>
+
+        {/* AC2：本地轨不可用时给出**推荐配置说明**，但开关本身**保持可选、不置灰** ——
+            状态端点只陈述"本服务有没有配"，不替访客判断能不能用（CONTRACT §2 V1.8）。 */}
+        {isCloud || providerStatus?.local.available === true ? null : (
+          <span className="wb-note">
+            推荐配置（可选）：本服务自身配置本地引擎后重启即可开放，需在服务端设置
+            <code> H3_WORKDIR </code>（本地推理工作目录）或
+            <code> COMFYUI_BASE_URL </code>（已运行的 ComfyUI 地址，仅回环 / 内网），
+            再置 <code>EXPOSE_HOST_LOCAL_TRACK=1</code>。
+            在此之前选择本地轨提交，会如实返回 <code>PROVIDER_UNAVAILABLE</code>。
+          </span>
+        )}
+
         {isCloud ? (
           <button type="button" className="wb-btn" onClick={onOpenByok}>
             配置云端凭据（BYOK）

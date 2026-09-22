@@ -1,0 +1,28 @@
+# 反代配置 · TLS_MODE=domain（有域名，PLAN §9-2 首选路径）
+#
+# Caddy 会自动申请并续期 Let's Encrypt 证书 —— 前提是：
+#   1. 域名已解析到本机公网 IP；
+#   2. 宿主 80 / 443 可从公网访问（80 用于 HTTP-01 挑战，见 compose.yaml）。
+#
+# 施工单 §9-3 点名的三件事，逐条对应到下面的指令。
+
+{$DEPLOY_HOST} {
+	reverse_proxy app:3000 {
+		# ③ 真实 IP 透传：漏了它，防线 5 的 IP 冷却会把所有访客当成同一个人（全局锁），
+		#    而症状是"别人提交过，我就被限流了"——极难联想到反代配置。
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	# ① 请求体上限：必须 ≥ 上传上限（施工单 §9-3 要求 ≥20M）。
+	#    nginx 默认只有 1M，参考图会被**静默拦掉**（客户端只看到失败，看不出原因）。
+	request_body {
+		max_size 20MB
+	}
+
+	# ② 刻意**不写 encode 指令**。
+	#    Caddy 默认不对 video/mp4 做压缩；一旦有人"顺手"加上 encode gzip/zstd，
+	#    206 Range 响应会被破坏 → 播放器拖不动进度、断点续播失效。
+	#    这里用"不写"而不是"写排除规则"：没法被误配置的东西才是安全的。
+}

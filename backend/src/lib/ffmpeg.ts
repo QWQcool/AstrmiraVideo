@@ -4,7 +4,14 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 
 /**
- * 媒体工具层（P0-2 / P0-3）：ffmpeg 与 ffprobe 的**系统安装**（仓库与镜像都不内置二进制）。
+ * 媒体工具层（P0-2 / P0-3）：ffmpeg 与 ffprobe 的**外部依赖**封装。
+ *
+ * 二进制从哪来（Step 5 起口径已明确，勿再写"处处都不内置"）：
+ * - **开发机**：开发者自行安装（缺失时下方会抛中文安装指引）；
+ * - **生产镜像**：由 `Dockerfile` 运行层 `apt-get install -y ffmpeg` 提供；
+ *   来源 / 版本 / 许可证登记见 `docs/UPSTREAM.md`（GPL 影响需人工确认）。
+ *
+ * 调用方式：**子进程**（`execFile`），不链接、不修改其源码。
  *
  * 两条硬纪律：
  * 1. 缺失时抛**中文安装指引**并显式失败，不许崩栈（P0-3）；
@@ -17,7 +24,7 @@ export class MediaToolUnavailableError extends Error {
   constructor(public readonly tool: 'ffmpeg' | 'ffprobe') {
     super(
       [
-        `未找到 ${tool}：本项目要求系统安装 ffmpeg / ffprobe（仓库与镜像均不内置二进制）。`,
+        `未找到 ${tool}：本项目要求系统安装 ffmpeg / ffprobe（开发机需自行安装；生产镜像内已随镜像提供）。`,
         '请任选一种方式安装后重试：',
         '  Windows:  winget install Gyan.FFmpeg    （或 winget install BtbN.FFmpeg.GPL.8.1）',
         '  macOS:    brew install ffmpeg',

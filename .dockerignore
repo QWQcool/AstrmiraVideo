@@ -1,0 +1,54 @@
+# 构建上下文瘦身与**敏感物隔离**（PLAN Step 5-AC3：.env / SQLite / outputs 不入镜像）
+#
+# ⚠️ 这个文件是 AC3 的**第一道**防线：即便 Dockerfile 忘了排除，
+# 只要构建上下文不包含它们，镜像里就不可能存在。
+# 第二道防线是 .gitignore（不入仓库）——两者职责不同，都要有。
+
+# 依赖与构建残留（镜像内会重新安装 / 构建）
+node_modules
+**/node_modules
+.pnpm-store
+dist
+**/dist
+*.tsbuildinfo
+
+# 运行时数据（必须走卷挂载，绝不进镜像）
+data
+outputs
+media-cache
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.mp4
+*.mp3
+*.wav
+
+# 凭据与本地配置（发布级红线）
+.env
+.env.*
+!.env.example
+
+# 测试夹具：由 scripts/make-fixture-clips.mjs 现场合成，且属开发期校验 provider，
+# 生产镜像不需要（夹具 provider 在 NODE_ENV=production 下默认关闭）
+tests/fixtures/clips
+
+# 开发与协作产物
+.git
+.github
+.vscode
+.idea
+.tmp
+.temp
+coverage
+playwright-report
+test-results
+.playwright-cli
+*.log
+logs
+
+# 文档：镜像里没有读者
+*.md
+docs

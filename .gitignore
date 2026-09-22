@@ -11,6 +11,8 @@ build/
 .env
 .env.*
 !.env.example
+# 部署配置模板（Step 5）：只放占位符，不含真实值
+!.env.deploy.example
 
 # logs
 *.log
