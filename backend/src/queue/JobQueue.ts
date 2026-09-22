@@ -48,7 +48,14 @@ export interface JobQueue {
   /** 进度心跳：落库以支持刷新重挂载（防线 2）与 warnings 持久化（CONTRACT §4） */
   heartbeat(taskId: string, progress: TaskProgress): Promise<void>;
 
-  complete(taskId: string, output: { videoUrl: string }): Promise<void>;
+  /**
+   * 置终态成功。
+   *
+   * `message` 是可选的**终态文案**：必须允许覆盖上一阶段的进行中说明，
+   * 否则会留下「succeeded 却写着『上游生成中』」这种自相矛盾的展示
+   * （实测踩到：轮询阶段的 heartbeat 写入 message，成功后不动它就残留在终态上）。
+   */
+  complete(taskId: string, output: { videoUrl: string; message?: string }): Promise<void>;
 
   fail(taskId: string, error: TaskProgress['error']): Promise<void>;
 

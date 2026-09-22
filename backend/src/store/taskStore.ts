@@ -203,6 +203,17 @@ export class TaskStore {
     return row === undefined ? null : rowToRecord(row);
   }
 
+  /**
+   * 按状态列出任务 —— 启动调解（`store/reconciliation.ts`）用它找回"进程崩了就遗留"的
+   * `running` 孤儿。刻意不提供通用的任意查询：多一个入口就多一份被误用的机会。
+   */
+  listByStatus(status: TaskProgress['status'], limit = 500): TaskRecord[] {
+    const rows = this.db
+      .prepare('SELECT * FROM tasks WHERE status = ? ORDER BY created_at ASC LIMIT ?')
+      .all(status, limit) as TaskRow[];
+    return rows.map(rowToRecord);
+  }
+
   /** 某轨当前 running 数量（防线 1：local 轨必须恒 ≤ 1） */
   countRunning(track: TrackId): number {
     const row = this.db

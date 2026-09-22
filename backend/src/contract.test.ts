@@ -149,6 +149,7 @@ describe('AC1 · 关键响应形状抽样（契约投影）', () => {
   });
 
   it('未实现的 provider → 503 PROVIDER_UNAVAILABLE（不静默降级）', async () => {
+    // 云端轨 S5b 起已实现，故用仍未实现的本地轨做这条抽样（铁律：未实现不得静默降级）
     const res = await app.inject({
       method: 'POST',
       url: '/api/generate',
@@ -157,7 +158,7 @@ describe('AC1 · 关键响应形状抽样（契约投影）', () => {
         prompt: '契约抽样',
         mode: 't2v',
         aspectRatio: '16:9',
-        provider: 'cloud-volcano-seedance',
+        provider: 'local-minimax-h3',
       },
     });
 

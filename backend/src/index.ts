@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -25,9 +26,12 @@ import {
   resolveAuthToken,
 } from './security/auth.js';
 import { LLM_KEY_HEADER, LOG_REDACT_PATHS, PROVIDER_KEY_HEADER } from './security/credential.js';
+import { createKeyVault } from './security/keyVault.js';
 import { CooldownStore } from './security/rateLimit.js';
-import { registerStaticOutputs } from './server/staticOutputs.js';
+import { registerStaticOutputs, resolveOutputsDir } from './server/staticOutputs.js';
+import { createAssetUrlResolver } from './store/assets.js';
 import { openDatabase } from './store/db.js';
+import { reconcileOrphanTasks } from './store/reconciliation.js';
 import { TaskStore } from './store/taskStore.js';
 
 /**
@@ -127,9 +131,37 @@ export async function buildApp() {
   // 防线 5：60s 防抖冷却（键的构成见 security/rateLimit.ts）
   const cooldown = new CooldownStore(db);
 
+  // B 方案（PLAN §6-D23）：BYOK 凭据的**进程内**暂存。不落库、终态即清、重启即空
+  // （重启后仍在途的任务由下面的启动调解如实归档，绝不猜、绝不自动重提）。
+  const keyVault = createKeyVault();
+
+  // 参考资产 → 上游可访问地址；`PUBLIC_BASE_URL` 未配（本地/内网）时退回 data URL
+  const publicBaseUrl = process.env.PUBLIC_BASE_URL?.trim();
+  const resolveAssetUrl = createAssetUrlResolver({
+    assetsDir: path.join(resolveOutputsDir(), 'assets'),
+    ...(publicBaseUrl === undefined || publicBaseUrl === '' ? {} : { publicBaseUrl }),
+  });
+
+  // 启动调解：上次进程退出时留下的 running 任务必须归档 ——
+  // 否则界面上它们会永远停在 40%，而持有上游 id 的那批其实已经可能计费了。
+  const reconciled = reconcileOrphanTasks(store);
+  if (reconciled.uncertain.length > 0 || reconciled.retryable.length > 0) {
+    app.log.warn(
+      {
+        uncertain: reconciled.uncertain.length,
+        retryable: reconciled.retryable.length,
+      },
+      '已归档上次退出时遗留的在途任务（uncertain 需人工核对）',
+    );
+  }
+
   const dispatcher = new JobDispatcher({
     queue,
     resolveProvider: getProvider,
+    // B 方案：凭据按任务暂存在进程内存，调度器领取时取出、终态时释放
+    keyVault,
+    // 参考资产 → 上游可访问地址（公网基址未配时退回 data URL）
+    resolveAssetUrl,
     // 防线 3：合成结束即清中间帧目录（成败都清）
     cleanup: (taskId) => cleanupTaskTemp(taskId),
     // 防线 7：上游接受提交后立即写回，此后该任务不可 requeue
@@ -146,7 +178,7 @@ export async function buildApp() {
   });
 
   await app.register(
-    createGenerateRoutes({ store, queue, resolveProvider: getProvider, cooldown }),
+    createGenerateRoutes({ store, queue, resolveProvider: getProvider, cooldown, keyVault }),
   );
   await app.register(createUploadRoutes());
   await app.register(createEnhanceRoutes());

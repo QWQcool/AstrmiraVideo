@@ -9,6 +9,8 @@ import {
 import type { ProviderType, VideoGenerateRequest, VideoProvider } from '@astrmira/shared';
 import { createErrorResponse } from '../errors.js';
 import type { JobQueue } from '../queue/JobQueue.js';
+import { resolveProviderKey } from '../security/credential.js';
+import type { KeyVault } from '../security/keyVault.js';
 import type { CooldownStore } from '../security/rateLimit.js';
 import { rateLimitKey, resolveClientIp } from '../security/rateLimit.js';
 import type { TaskStore, TrackId } from '../store/taskStore.js';
@@ -29,6 +31,13 @@ export interface GenerateRoutesDeps {
   resolveProvider: (id: ProviderType) => VideoProvider | null;
   /** 防线 5 冷却；缺省则不启用限流（测试可省略，生产必须传入） */
   cooldown?: CooldownStore;
+  /**
+   * B 方案（PLAN §6-D23）：把请求头里的 BYOK 凭据**转交**给调度器能读到的地方（进程内存），
+   * 因为真正的上游调用发生在请求结束之后的队列里。
+   *
+   * 不传 = 不做交接，云端任务会在提交阶段报 `KEY_MISSING`（fail loud，不静默）。
+   */
+  keyVault?: KeyVault;
 }
 
 /** 请求指纹（provider + 规范化请求体） */
@@ -110,6 +119,15 @@ export const createGenerateRoutes =
         }
 
         const taskId = randomUUID();
+
+        // B 方案（PLAN §6-D23）：先把凭据转交给进程内 vault，**再**入队。
+        // 顺序绝不能反 —— 调度器可能在下一个 tick 就领走这条任务，
+        // 那时 vault 里必须已经有 Key，否则会误报 KEY_MISSING（用户明明填了 Key）。
+        const providerKey = resolveProviderKey(request);
+        if (providerKey !== null) {
+          deps.keyVault?.set(taskId, providerKey);
+        }
+
         await deps.queue.submit({
           taskId,
           track: trackFor(body.provider),

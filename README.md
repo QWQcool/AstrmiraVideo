@@ -21,7 +21,7 @@ pnpm install
 pnpm dev               # 并行拉起 backend + frontend
 ```
 
-> 当前进度：Step 1 骨架【已验证】、Step 1.5 地基整改【已验证】均已完成；**Step 2 进行中**——进度唯一权威为 PLAN §5。
+> 当前进度：Step 1 骨架【已验证】、Step 1.5 地基整改【已验证】、**Step 3 前端工作台【已验证】**均已完成；**Step 2 双轨中枢接近收口**（S5b 云端 Seedance provider 已落地，AC2 的真实出片冒烟待一把可用 Key；S6 已按非目标转台账 B7）——进度唯一权威为 PLAN §5。
 
 填入自己的火山方舟 Key 即可出片（Key 存在**你的浏览器**，服务端过手不留存）；本地轨由**部署者显式启用**（`EXPOSE_HOST_LOCAL_TRACK`），未启用时选择本地引擎会返回 `PROVIDER_UNAVAILABLE`。推荐档位与引擎接入详见 [docs/GUIDE.md](docs/GUIDE.md)。
 

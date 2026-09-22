@@ -1,6 +1,8 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { ProviderType, TaskProgress, VideoProvider } from '@astrmira/shared';
 import { ProviderFailureError, resolveTaskError } from '../errors.js';
+import type { ProviderResolutionContext } from '../providers/registry.js';
+import type { KeyVault } from '../security/keyVault.js';
 import type { TrackId } from '../store/taskStore.js';
 import type { JobQueue, QueueJob } from './JobQueue.js';
 
@@ -18,7 +20,16 @@ import type { JobQueue, QueueJob } from './JobQueue.js';
  */
 export interface JobDispatcherOptions {
   queue: JobQueue;
-  resolveProvider: (id: ProviderType) => VideoProvider | null;
+  /** 取 provider；`ctx` 携带本任务的凭据与资产解析器（B 方案：provider 每任务一份） */
+  resolveProvider: (id: ProviderType, ctx: ProviderResolutionContext) => VideoProvider | null;
+  /**
+   * B 方案的凭据暂存（PLAN §6-D23）。**必需**才能跑云端轨：
+   * 缺了它，云端任务在提交阶段会如实报 `KEY_MISSING`（而不是偷偷用 env）。
+   * 终态时由本类负责释放（`finally`）。
+   */
+  keyVault?: KeyVault;
+  /** 资产 id → 上游可访问地址（透传给 provider） */
+  resolveAssetUrl?: (assetId: string) => Promise<string | null>;
   cleanup?: (taskId: string) => Promise<void>;
   /**
    * 上游接受了提交（拿到了上游 taskId）时的写回钩子。
@@ -84,8 +95,19 @@ export class JobDispatcher {
      */
     let submissionAttempted = false;
 
+    // B 方案（PLAN §6-D23）：凭据按任务从进程内 vault 取出、注入 provider 实例。
+    // 取不到就是取不到 —— provider 会如实报 KEY_MISSING / UNCERTAIN_RESULT，
+    // 绝不在这一层偷偷回落到 env（那会让"用户以为自己用的是自己的 Key"变成谎话）。
+    const providerKey = this.options.keyVault?.get(job.taskId);
+
     try {
-      const provider = this.options.resolveProvider(job.request.provider);
+      const provider = this.options.resolveProvider(job.request.provider, {
+        taskId: job.taskId,
+        ...(providerKey === undefined ? {} : { providerKey }),
+        ...(this.options.resolveAssetUrl === undefined
+          ? {}
+          : { resolveAssetUrl: this.options.resolveAssetUrl }),
+      });
       if (provider === null) {
         await this.options.queue.fail(job.taskId, {
           code: 'PROVIDER_UNAVAILABLE',
@@ -135,6 +157,8 @@ export class JobDispatcher {
         }
         await this.options.queue.complete(job.taskId, {
           videoUrl: progress.outputVideoUrl ?? '',
+          // 带上 provider 的终态文案，覆盖轮询阶段残留的"生成中"
+          ...(progress.message === undefined ? {} : { message: progress.message }),
         });
         return;
       }
@@ -165,6 +189,10 @@ export class JobDispatcher {
 
       this.options.onError?.(err);
     } finally {
+      // B 方案铁律 2「终态即清」：无论成功、失败还是异常，凭据都不得留在内存里过夜。
+      // 放 finally 而不是各分支里，是为了让"新增一条退出路径忘了清 Key"这种错误不可能发生。
+      this.options.keyVault?.delete(job.taskId);
+
       // 防线 3：无论成败，合成结束后清理该任务的临时目录
       try {
         await this.options.cleanup?.(job.taskId);

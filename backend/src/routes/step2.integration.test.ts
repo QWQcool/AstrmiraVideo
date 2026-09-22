@@ -177,12 +177,24 @@ describe('POST /api/generate 幂等键（CONTRACT §5）', () => {
   });
 
   it('未实现的 provider 显式报 PROVIDER_UNAVAILABLE（不静默降级）', async () => {
-    const res = await postGenerate(baseRequest({ provider: 'cloud-volcano-seedance' }));
+    // S5b 起云端轨**已实现**：它不再被 503 拦下（能否出片取决于凭据，属异步语义）。
+    // 因此用仍未实现的本地轨来继续钉住"未实现不得静默降级"这条铁律。
+    const res = await postGenerate(baseRequest({ provider: 'local-minimax-h3' }));
 
     expect(res.statusCode).toBe(503);
     const body = res.json() as { code: string; disposition: string };
     expect(body.code).toBe('PROVIDER_UNAVAILABLE');
     expect(body.disposition).toBe('terminal');
+  });
+
+  it('S5b：云端 provider 已实现，提交被正常受理（返回 taskId）', async () => {
+    const res = await postGenerate(
+      baseRequest({ provider: 'cloud-volcano-seedance', prompt: '云端受理用例' }),
+      'cloud-s5b-accepted',
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { taskId: string }).taskId).toBeTruthy();
   });
 });
 

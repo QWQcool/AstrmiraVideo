@@ -64,12 +64,16 @@ export class SqliteJobQueue implements JobQueue {
     });
   }
 
-  async complete(taskId: string, output: { videoUrl: string }): Promise<void> {
+  async complete(taskId: string, output: { videoUrl: string; message?: string }): Promise<void> {
     this.store.update(taskId, {
       status: 'succeeded',
       progressPercent: 100,
       outputVideoUrl: output.videoUrl,
       submitting: false,
+      // 终态文案：不传则回落到中性文案。
+      // 关键是不能沿用上一阶段（轮询 heartbeat 写下的"上游生成中"）——
+      // 那会让界面出现"succeeded + 上游生成中"的矛盾组合。
+      message: output.message ?? '生成完成',
     });
   }
 
