@@ -8,6 +8,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { healthRoutes } from './routes/health.js';
 import { providerRoutes } from './routes/providers.js';
+import { LLM_KEY_HEADER, LOG_REDACT_PATHS, PROVIDER_KEY_HEADER } from './security/credential.js';
 
 /**
  * CORS 白名单（PLAN §7-6 第一步）：由 `origin: true` 收紧为 `CORS_ORIGINS` 白名单，
@@ -33,9 +34,13 @@ const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'tru
  */
 export async function buildApp() {
   const app = Fastify({
+    // R2：反代后 req.ip 的正确性 —— 未开启时所有请求同 IP，防线 5 的冷却会退化成全局锁
+    trustProxy: process.env.TRUST_PROXY === '1',
     logger: isTestEnv
       ? false
       : {
+          // R2：Key 零留存 —— 凭据请求头与 authorization 一律不入日志（CONTRACT §5）
+          redact: [...LOG_REDACT_PATHS],
           transport: {
             target: 'pino-pretty',
             options: {
@@ -53,6 +58,15 @@ export async function buildApp() {
   await app.register(cors, {
     origin: resolveCorsOrigins(),
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    // R2：浏览器携带自定义请求头必须先被预检放行，否则本地 curl 通、浏览器必失败
+    // （CONTRACT §5「凭据传递约定」）
+    allowedHeaders: [
+      'content-type',
+      PROVIDER_KEY_HEADER,
+      LLM_KEY_HEADER,
+      'idempotency-key',
+      'authorization',
+    ],
   });
 
   // 路由目录惯例：backend/src/routes/<域>.ts（Step 2 的 6 条新路由沿用同一惯例）

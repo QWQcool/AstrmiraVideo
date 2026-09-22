@@ -3,61 +3,97 @@ import { ProviderStatusSchema } from '@astrmira/shared';
 import type { ProviderStatus } from '@astrmira/shared';
 
 /**
- * BYOK Key 的第二入口：会话内存（前端设置抽屉填入、服务端持有，见 GUIDE §二轨道 B）。
- * Step 1.5 阶段会话存储尚不存在，此处为恒空 stub；保留该入口是为了让 available 判定
- * 与 CONTRACT §2 语义保持一致（env VOLCANO_API_KEY 或会话 Key 任一存在即为 true），
- * 避免 Step 2 接入会话存储时再改动判定分支。
+ * 本地引擎自检结果（服务端内存缓存）。
+ *
+ * V1.8（PLAN §6-D22）：本端点**不再是硬件探针**，只陈述**本服务自身**的配置事实。
+ * 到达路径 = 配置 env + 重启（S5 由 `providers/statusProbe.ts` 启动时做一次轻量自检并写入这里）；
+ * 运行时自检路由属 PLAN §9 台账 B4，**未实现**。
  */
-const sessionKeyStore: { volcanoApiKey: string | null } = { volcanoApiKey: null };
-
-function resolveCloudKeySource(): 'env' | 'session' | null {
-  const envKey = process.env.VOLCANO_API_KEY;
-  if (typeof envKey === 'string' && envKey.trim() !== '') {
-    return 'env';
-  }
-  if (typeof sessionKeyStore.volcanoApiKey === 'string' && sessionKeyStore.volcanoApiKey !== '') {
-    return 'session';
-  }
-  return null;
+export interface LocalEngineSelfCheck {
+  available: boolean;
+  tier?: 0 | 1 | 2 | 3;
+  reason: string;
 }
 
-/**
- * 算力探针（占位实现，Step 2 由 statusProbe 真实探测替换）。
- * 契约：CONTRACT §2（V1.6）。本文件禁止出现任何具体显卡型号或显存数字（PLAN §6-D12 / §1）。
- */
-export function buildProviderStatus(): ProviderStatus {
-  const keySource = resolveCloudKeySource();
+/** 部署者是否向访客开放 host 本地轨（CONTRACT §2：`EXPOSE_HOST_LOCAL_TRACK`，默认 0） */
+function isHostLocalTrackExposed(): boolean {
+  return process.env.EXPOSE_HOST_LOCAL_TRACK === '1';
+}
 
-  // 显式标注为契约类型：字段改名 / 漏字段会在编译期立刻暴露
-  const cloud: ProviderStatus['cloud'] = keySource
+/** 启动自检缓存；在 S5 接入前恒为 null（即"未配置本地引擎"） */
+let localEngineSelfCheck: LocalEngineSelfCheck | null = null;
+
+/** 供 S5 的 statusProbe 写入自检结果 */
+export function setLocalEngineSelfCheck(next: LocalEngineSelfCheck | null): void {
+  localEngineSelfCheck = next;
+}
+
+/** 服务端视角的云端状态：只表示 env 兜底 Key 是否存在（客户端 Key 由前端自行合成） */
+function resolveCloudStatus(): ProviderStatus['cloud'] {
+  const envKey = process.env.VOLCANO_API_KEY;
+  const hasEnvKey = typeof envKey === 'string' && envKey.trim() !== '';
+
+  return hasEnvKey
     ? {
         available: true,
         provider: 'volcano-seedance',
-        keySource,
-        reason:
-          keySource === 'env'
-            ? '已从服务端环境变量读取火山方舟 Key（BYOK）'
-            : '已使用会话内存中的 BYOK Key（前端设置抽屉填入）',
+        keySource: 'env',
+        acceptsClientKey: true,
+        reason: '服务端已配置兜底 Key（env）',
       }
     : {
         available: false,
         provider: 'volcano-seedance',
-        reason: '未配置火山方舟 Key，请在前端设置抽屉或 .env 中填入',
+        acceptsClientKey: true,
+        reason: '服务端未配置兜底 Key（BYOK：由客户端随请求头携带）',
       };
-
-  // 本地算力探测尚未实现：一律 available: false + reason
-  const local: ProviderStatus['local'] = {
-    available: false,
-    provider: 'minimax-h3',
-    tier: 0,
-    reason: '本地算力探测尚未实现（Step 2 接入真实探针）',
-  };
-
-  return { cloud, local, defaultProvider: 'cloud-volcano-seedance' };
 }
 
 /**
- * 算力状态探测路由（CONTRACT §5；Tier 0 默认锁定云端）。
+ * 本地段：只报告本服务的配置状态，**不替访客判断设备能力**。
+ * 文案纪律（PLAN §3 铁律 2）：reason 不得出现「你的设备 / 你没有显卡」类判断。
+ */
+function resolveLocalStatus(): ProviderStatus['local'] {
+  if (!isHostLocalTrackExposed()) {
+    return {
+      available: false,
+      provider: 'minimax-h3',
+      reason: '本服务未向访客开放本地轨',
+    };
+  }
+
+  const selfCheck = localEngineSelfCheck;
+  if (selfCheck === null) {
+    return {
+      available: false,
+      provider: 'minimax-h3',
+      reason: '本服务未配置本地引擎',
+    };
+  }
+
+  return {
+    available: selfCheck.available,
+    provider: 'minimax-h3',
+    tier: selfCheck.tier,
+    reason: selfCheck.reason,
+  };
+}
+
+/**
+ * 本地引擎配置状态（S5 接入启动自检前为固定未配置态）。
+ * 契约：CONTRACT §2（V1.8）。
+ * 本文件**不得**出现任何具体显卡型号或显存数字（PLAN §6-D27）。
+ */
+export function buildProviderStatus(): ProviderStatus {
+  return {
+    cloud: resolveCloudStatus(),
+    local: resolveLocalStatus(),
+    defaultProvider: 'cloud-volcano-seedance',
+  };
+}
+
+/**
+ * 算力 / 本地引擎状态路由（CONTRACT §5）。
  */
 export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get(

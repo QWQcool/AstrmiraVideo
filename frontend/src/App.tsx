@@ -33,11 +33,11 @@ export default function App() {
       .then((data: ProviderStatus | null) => {
         if (data) {
           setProviders(data);
-          // 连带修复（Step 1.5 / T5-6，见 PLAN §5）：T1 起 local 恒为 available:false，
-          // 该分支成为真实可达路径——
-          // 探针判定本地不可用时必须回退 'cloud'，否则按钮已置灰而引擎状态仍停在 'local'。
-          setSelectedEngine(
-            data.local.available && data.defaultProvider === 'local-minimax-h3' ? 'local' : 'cloud',
+          // V1.8（PLAN §6-D22）：状态端点只报告**本服务自身**的本地引擎配置状态，不替访客下结论。
+          // 因此：未配置本地引擎时保持初始建议 'cloud'，但**不剥夺用户手选**（本地按钮不再置灰，
+          // 提交未配置的本地轨会得到 PROVIDER_UNAVAILABLE）。
+          setSelectedEngine((prev) =>
+            data.local.available && data.defaultProvider === 'local-minimax-h3' ? 'local' : prev,
           );
         }
       })
@@ -71,11 +71,6 @@ export default function App() {
             </div>
           )}
 
-          {providers?.local?.available && (
-            <div style={styles.gpuBadge}>
-              <span>GPU: {providers.local.gpuName} (Tier {providers.local.tier})</span>
-            </div>
-          )}
         </div>
       </header>
 
@@ -130,10 +125,13 @@ export default function App() {
                 style={{
                   ...styles.segmentBtn,
                   ...(selectedEngine === 'local' ? styles.segmentBtnActive : {}),
-                  ...(!providers?.local?.available ? styles.segmentBtnDisabled : {}),
                 }}
-                onClick={() => providers?.local?.available && setSelectedEngine('local')}
-                disabled={!providers?.local?.available}
+                onClick={() => setSelectedEngine('local')}
+                title={
+                  providers?.local?.available
+                    ? '使用本服务已配置的本地引擎'
+                    : '本服务未配置本地引擎：可以选，提交时会返回 PROVIDER_UNAVAILABLE'
+                }
               >
                 本地 MiniMax H3
               </button>
@@ -327,14 +325,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '50%',
     backgroundColor: 'var(--danger)',
   },
-  gpuBadge: {
-    ...eyebrowStyle,
-    color: 'var(--gold)',
-    padding: '4px 10px',
-    borderRadius: '20px',
-    border: '1px solid var(--line-gold)',
-    backgroundColor: 'rgba(214, 184, 129, 0.08)',
-  },
   mainLayout: {
     flex: 1,
     display: 'grid',
@@ -437,10 +427,6 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--action-fill)',
     color: 'var(--on-segment)',
     fontWeight: 600,
-  },
-  segmentBtnDisabled: {
-    opacity: 0.4,
-    cursor: 'not-allowed',
   },
   ratioGroup: {
     display: 'grid',
