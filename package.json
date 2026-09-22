@@ -2,6 +2,7 @@
   "name": "astrmiravideo-monorepo",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.30.3",
   "scripts": {
     "dev": "pnpm --parallel --filter \"*\" dev",
     "build": "pnpm --filter @astrmira/shared build && pnpm --filter backend build && pnpm --filter frontend build",

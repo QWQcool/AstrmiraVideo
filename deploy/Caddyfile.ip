@@ -2,27 +2,49 @@
 #
 # 用 Caddy 的**本地 CA** 自签证书。代价是浏览器会弹证书告警、需要手工信任一次；
 # 但它仍然显著强于明文：BYOK 的 Key 走请求头，明文 HTTP 等于把 Key 公开发布。
-#
-# 若这一步的告警让你想退回纯 HTTP，请先读 PLAN §9-2 与 §9-3：
-# 公网纯 HTTP 下前端会**主动禁用 Key 输入**（HTTPS 守卫），也就是无法出片。
 
 {
 	# 全局：启用本机 CA，让下面站点的证书由它签发（首次启动时生成）
 	local_certs
+
+	# ⚠️ 这一行是**必须的**，缺了会导致浏览器完全打不开（连登录框都看不到）。
+	#
+	# RFC 6066 规定 SNI 只用于承载**域名**，所以客户端用 IP 访问时**不会发 SNI**。
+	# 没有 SNI，Caddy 在握手时选不出该用哪张证书，只能回
+	# `tlsv1 alert internal error`（alert 80）—— 实测在 schannel 与 Node 两侧都是这个报错，
+	# 而它读起来像"服务端 TLS 坏了"，完全看不出是"少了一个默认证书标识"。
+	#
+	# 值必须是**纯主机名**（不能带端口），由 scripts/deploy.mjs 推导后注入。
+	default_sni {$DEPLOY_SNI}
 }
 
 {$DEPLOY_HOST} {
-	# 使用内部 CA 签发的证书（而非 Let's Encrypt —— IP 无法申请公信证书）
+	# 使用内部 CA 签发的证书（IP 无法申请公信证书）
 	tls internal
-
-	reverse_proxy app:3000 {
-		header_up X-Forwarded-For {remote_host}
-		header_up X-Real-IP {remote_host}
-		header_up X-Forwarded-Proto {scheme}
-	}
 
 	request_body {
 		max_size 20MB
+	}
+
+	# 存活探针豁免登录：与后端 `ALWAYS_PUBLIC_PATHS`（/api/health）的口径保持一致。
+	# 容器内的 HEALTHCHECK 走 127.0.0.1:3000 不经这里，但外部探活 / 监控需要它能匿名访问。
+	@health path /api/health
+	handle @health {
+		reverse_proxy app:3000
+	}
+
+	# 其余全部路径：先登录，再把 Basic 凭据换成后端认的 Bearer
+	handle {
+		basic_auth {
+			{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+		}
+
+		reverse_proxy app:3000 {
+			header_up Authorization "Bearer {$PUBLIC_API_TOKEN}"
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
 	}
 
 	# 同 domain 档：不写 encode —— 任何视频压缩都会破坏 206 Range

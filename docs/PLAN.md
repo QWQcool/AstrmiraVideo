@@ -269,8 +269,14 @@
       - **破坏性验证**：视觉自检临时移除 `flow` 功能位 + 塞一处 `fontSize: '14px'` → 两项均精确报错（含行号）后恢复 ✓。
       - **顺手修掉的两个真实缺陷**：① React StrictMode 双挂载下 `AbortController.abort()` 的报错被当作"后端未连通"（只有实机才暴露，单测抓不到）；② `vite.config.ts` 缺 `/media` 代理会导致"任务成功但播放器黑屏"（请求落到 SPA fallback 拿回 `index.html`，HTTP 还是 200）。
       - **AC1 待补**：端到端 T2V 需云端 provider（S5b 阻塞中），本轮以 mock 验证了「提交 → 轮询 → 冷却」链路。
-- [ ] **Step 5 公网部署【交付物已就绪，等三项输入】**
-      - **⏳ 待你提供（施工单 §9-1，仅此三项 + 一条信息）**：
+- [x] **Step 5 公网部署【已上线；CI → CD 全自动】**
+      - **线上地址**：`https://<DEPLOY_HOST>/`（当前为 IP 档：自签证书需浏览器信任一次 + 站点级 Basic Auth 登录）。主机 / 端口 / 口令只存在于**服务器本地 `.env.deploy`** 与 **GitHub Secrets**，不入仓库、不入文档。
+      - **CD（本片新增）**：`.github/workflows/ci.yml` 的 `deploy` job —— `needs: verify`（**CI 全绿才部署**）、仅 `push` 到 main 触发、`concurrency` 串行且 `cancel-in-progress: false`（不取消进行中的部署，半途取消会留下"解压完但没重启"的中间态）。代码走 **scp 上传**（实测目标服务器**访问不了 github.com**，但 runner → 服务器的入站 SSH 是通的，方向反过来即可），镜像在服务器本地构建。
+      - **GitHub Secrets（4 项）**：`DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / `SSH_PRIVATE_KEY`（ed25519、空 passphrase，在服务器上生成后下载 —— Windows 给程序传空参数不可靠，`-N ''` 在 bash 里才是一次就对的写法）。
+      - **实测**（从外网用 Node 的 TLS 栈复测，§5 下方列出六条路径的判定）：`/`（带登录）200 + HTML；`/`（无凭据）**401**；`/api/providers/status` 200 且 `cloud.available:false`（未配兜底 Key，符合 AC6）；SPA 深链 200 回退同一 `index.html`；`/api/nonexistent` 与 `/media/nonexistent.mp4` 均 **404**（未被 fallback 吞成 200 HTML）；容器 `healthy`。
+      - **部署过程中修掉的四个真实问题**（都属于"不看日志绝对猜不到"的那类）：① **pnpm 版本漂移** → `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`（Docker 里 corepack 装的是最新 pnpm，对同一份 lockfile 的判定与本地/CI 不同）→ 根 `package.json` 钉 `packageManager: pnpm@10.30.3`；② **`deb.debian.org` 只有 ~60KB/s**，ffmpeg 那 134MB 依赖要 37 分钟 → 换国内镜像（实测快约 30 倍）；③ **`better-sqlite3` 无 prebuilt 需现场编译**，而 slim 运行层没有编译器 → 临时装 `python3 make g++` 编译后立刻卸掉；④ **IP 访问时客户端不发 SNI**（RFC 6066 规定 SNI 只承载域名），Caddy 选不出证书直接以 `tlsv1 alert internal error` 失败 → 加 `default_sni`（**症状是浏览器连登录框都看不到**，完全不像证书问题）。另修 `/api/health` 被站点登录挡住的偏差（该端点应公开，与后端 `ALWAYS_PUBLIC_PATHS` 口径一致）→ Caddy 对探针豁免登录。
+      - **✅ 三项输入已提供并配置完成**（服务器地址 / 端口 / SSH 凭据）；**火山方舟 Key 仍待补**（它是 Step 2-AC2 真实冒烟与 Step 4 端到端验收的共同前置；不补也能跑，只是访客必须自带 BYOK Key）。原始清单如下，供后续换机参考：
+        0. **（历史记录）**
         1. **服务器地址** `DEPLOY_HOST`（域名或 IP）；
         2. **对外 HTTPS 端口** `DEPLOY_PORT`（建议 443）；
         3. **火山方舟 API Key** `VOLCANO_API_KEY` —— **可选**（这是服务端兜底 Key，供访客未带 BYOK Key 时使用；不填也能跑，只是 `cloud.available:false`，访客必须自带 Key 才能出片）；
@@ -279,7 +285,7 @@
       - **AC3（.env / SQLite / outputs 不入镜像不入 git）的达成方式**：这四类路径同时被 `.gitignore` 与 `.dockerignore` 排除。两道防线职责不同——前者防入仓库，后者防入镜像——缺任一都可能漏。
       - **反代三个坑已在配置内消除**：请求体上限 ≥20M（否则参考图被**静默**拦掉）、**刻意不写 `encode`**（任何视频压缩都会破坏 206 Range，用"不写"而非"写排除规则"，因为没法被误配置的东西才安全）、`X-Forwarded-For` + `TRUST_PROXY=1`（否则防线 5 的 IP 冷却退化成全局锁，症状是"别人提交过我就被限流"）。
       - **实测**：单进程形态三条路径已验证（`GET /` → 200 HTML、SPA 深链回退 → 同一 index.html、`/api/nonexistent` 与 `/media/nonexistent.mp4` → **404 且不被 fallback 吞成 200 HTML**）；`deploy.mjs` 四类拦截已验证（缺配置文件 / 缺必填项 / `DEPLOY_HOST` 端口与 `DEPLOY_PORT` 不一致 / domain·ip 自动分档 + 自签告警）。
-      - **⚠️ 未验证（不得当作已验证引用）**：镜像**未在本机构建过**（本机无 Docker），因此 Dockerfile 与 compose 属"已写完但未实测"；ffmpeg 的版本与许可证结论待首次构建后回填 `docs/UPSTREAM.md`。
+      - **镜像与构建已实测**：多阶段构建在目标服务器上跑通（`astrmiravideo:latest` 约 1.5GB），两个容器 `healthy`。**仍未回填**：ffmpeg 的具体版本号与许可证结论（`docs/UPSTREAM.md` 中标注为【待验证】，需在服务器上 `docker run --rm astrmiravideo:latest ffmpeg -version` 后补）。
 - [ ] **Step 4 端到端验收【阻塞：需一把可用 Key】**：见 §4。AC1 明确要求用**真实云端轨**跑通 T2V（含双引号台词人声）与 I2V（含 32 倍数裁切），因此与 AC2 共用同一把 Key —— 拿到 Key 后 Step 4 与 Step 2-AC2 可一并完成。
 
 ---

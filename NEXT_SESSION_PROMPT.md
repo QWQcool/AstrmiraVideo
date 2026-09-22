@@ -25,7 +25,9 @@
 
 **Step 2 双轨 Provider（接近收口）＋ Step 3 前端工作台（已完成）＋ Step 5 部署交付物（已就绪，等输入）**——施工步骤以 **`docs/EXEC-STEP2-5.md` 为唯一权威**（分段施工卡 + 片内改动清单 + 破坏性验证 + 证据格式）；决策见 `docs/PLAN.md` §6（D22~D28）与 `docs/CONTRACT.md` **V1.8**；本次主动降级 / 延后项见 `docs/PLAN.md` **§9 待优化台账（B1~B15）**。以 §5 进度日志的实际状态为准，不要以本文件为准。
 
-**当前卡点与待办**：Step 2-AC2（真实出片冒烟）与 Step 4（端到端验收）共用同一把火山 Key —— **等用户提供服务器地址 / 端口 / Key（施工单 §9-1 三项，清单见 PLAN §5 的 Step 5 条目）**后一并完成；STEP 5 的交付物（`Dockerfile` / `deploy/` / `scripts/deploy.mjs`）已写完但**镜像未实测**（本机无 Docker）。
+**当前卡点与待办**：**Step 5 已上线，且 CI → CD 全自动**（push 到 main → CI 全绿 → `deploy` job 自动 scp 上传 + 服务器本地构建镜像 + 健康检查；Secrets 为 `DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / `SSH_PRIVATE_KEY`）。**唯一剩余卡点是一把可用的火山方舟 Key** —— 它同时解锁 Step 2-AC2（真实出片冒烟 + 回填 §8 成本表）与 Step 4（端到端验收，其 AC1 明确要求用真实云端轨跑 T2V + I2V）。
+
+**改服务器配置前先读这三条**（都是实测踩出来的）：① 目标服务器**访问不了 github.com**，所以代码只能从 CI/本机 scp 推过去，不能让它 `git pull`；② IP 档访问时客户端**不发 SNI**，Caddy 必须有 `default_sni`，否则握手直接失败（症状是浏览器连登录框都看不到）；③ 运行层构建 `better-sqlite3` **需要编译器**（无 prebuilt），当前 Dockerfile 是"临时装工具链 → 编译 → 立刻卸掉"。
 
 开工前注意两条**尚未实测**的边界：① S5b 的上游字段（请求体结构、`--` 尾缀参数、`status` 枚举、`content.video_url` 位置）全部集中在 `backend/src/providers/seedanceProtocol.ts` 并逐项标注【待验证】，AC2 冒烟时逐项核对，**不得当作已验证事实引用**；② 云端轨凭据为 **B 方案**（进程内暂存至终态），进程重启会清空暂存 Key，此时在途已提交任务如实归 `UNCERTAIN_RESULT`——这是**设计代价，不是缺陷**，任何情况下都不得改成自动重提。
 

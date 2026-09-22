@@ -13,6 +13,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   verify:
@@ -59,3 +60,90 @@ jobs:
 
       - name: 全部测试（后端产物层 + 前端单测与视觉自检）
         run: pnpm test
+
+  # ── CD：CI 全绿后自动发布到服务器（Step 5）────────────────────────────────
+  #
+  # 设计取舍（都是刻意的）：
+  # 1. `needs: verify` —— **只有 CI 通过才部署**，避免把红着的代码送上线；
+  # 2. 只在 `push` 到 main 时部署 —— PR 不部署（否则每个 PR 都会重发布一次）；
+  # 3. `concurrency` 且 `cancel-in-progress: false` —— 串行，且**不取消进行中的部署**
+  #    （半途取消会留下解压完但没重启的中间态，比排队更糟）；
+  # 4. 代码靠 **scp 上传**而不是让服务器 `git pull` —— 实测目标服务器**访问不了 github.com**
+  #    （15 秒超时），但 runner → 服务器的入站 SSH 是通的，方向反过来就行；
+  # 5. 服务器上**本地构建镜像**（而不是推 registry）—— 服务器能访问 docker.io / npm /
+  #    Debian 镜像，8G 内存足够，避免每次往 registry 推 ~1.5GB；
+  # 6. 健康检查查**容器状态**而不是 HTTP —— 容器内的 HEALTHCHECK 走 127.0.0.1:3000
+  #    不经反代，不受站点登录影响，是最干净的判据。
+  deploy:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 打包（与 .dockerignore 同一套排除口径）
+        run: |
+          tar -czf deploy.tar.gz \
+            --exclude=./.git \
+            --exclude=./.env \
+            --exclude=./.env.deploy \
+            --exclude=./node_modules \
+            --exclude=./backend/node_modules \
+            --exclude=./frontend/node_modules \
+            --exclude=./packages/shared/node_modules \
+            --exclude=./backend/dist \
+            --exclude=./frontend/dist \
+            --exclude=./packages/shared/dist \
+            --exclude=./data \
+            --exclude=./outputs \
+            --exclude=./tests/fixtures/clips .
+          ls -lh deploy.tar.gz
+
+      - name: 配置 SSH
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # accept-new：首次连接自动接受主机密钥，同时保留后续的变更检测
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: 上传代码包
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          scp -P "$DEPLOY_PORT" -i ~/.ssh/id_ed25519 \
+            -o StrictHostKeyChecking=accept-new \
+            deploy.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/root/astrmira/deploy.tar.gz"
+
+      - name: 远程解压并部署
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/id_ed25519 \
+            -o StrictHostKeyChecking=accept-new \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            'cd /root/astrmira && tar -xzf deploy.tar.gz && rm -f deploy.tar.gz && node scripts/deploy.mjs'
+
+      - name: 健康检查（容器状态）
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/id_ed25519 \
+            -o StrictHostKeyChecking=accept-new \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            'docker ps --format "{{.Names}} | {{.Status}}"'

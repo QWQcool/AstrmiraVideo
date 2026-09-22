@@ -21,7 +21,7 @@ pnpm install
 pnpm dev               # 并行拉起 backend + frontend
 ```
 
-> 当前进度：Step 1 骨架【已验证】、Step 1.5 地基整改【已验证】、**Step 3 前端工作台【已验证】**均已完成；**Step 2 双轨中枢接近收口**（S5b 云端 Seedance provider 已落地，AC2 的真实出片冒烟待一把可用 Key；S6 已按非目标转台账 B7）；**Step 5 部署交付物已就绪**（Dockerfile / compose / Caddyfile / 一键部署脚本，等服务器地址·端口·Key 三项输入）——进度唯一权威为 PLAN §5，**待提供输入清单见 PLAN §5 的 Step 5 条目**。
+> 当前进度：Step 1 骨架【已验证】、Step 1.5 地基整改【已验证】、**Step 3 前端工作台【已验证】**均已完成；**Step 2 双轨中枢接近收口**（S5b 云端 Seedance provider 已落地，AC2 的真实出片冒烟待一把可用 Key；S6 已按非目标转台账 B7）；**Step 5 已上线，且 CI → CD 全自动**（push 到 main → CI 全绿 → 自动发布到服务器；主机 / 端口 / 凭据只存在于服务器本地 `.env.deploy` 与 GitHub Secrets，不入仓库）——进度唯一权威为 PLAN §5。
 
 填入自己的火山方舟 Key 即可出片（Key 存在**你的浏览器**，服务端过手不留存）；本地轨由**部署者显式启用**（`EXPOSE_HOST_LOCAL_TRACK`），未启用时选择本地引擎会返回 `PROVIDER_UNAVAILABLE`。推荐档位与引擎接入详见 [docs/GUIDE.md](docs/GUIDE.md)。
 
