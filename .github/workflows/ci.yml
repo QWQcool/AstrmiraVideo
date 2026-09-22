@@ -88,9 +88,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ⚠️ 产物必须写到**工作区之外**（/tmp）。写到 `.` 里会变成"打包时往被打包的目录里写"，
+      # tar 随即报 `file changed as we read it` 并以退出码 1 结束 —— 看起来像 tar 坏了，
+      # 实际只是输出文件落在了输入目录内。
       - name: 打包（与 .dockerignore 同一套排除口径）
         run: |
-          tar -czf deploy.tar.gz \
+          tar -czf /tmp/deploy.tar.gz \
             --exclude=./.git \
             --exclude=./.env \
             --exclude=./.env.deploy \
@@ -104,7 +107,7 @@ jobs:
             --exclude=./data \
             --exclude=./outputs \
             --exclude=./tests/fixtures/clips .
-          ls -lh deploy.tar.gz
+          ls -lh /tmp/deploy.tar.gz
 
       - name: 配置 SSH
         env:
@@ -126,7 +129,7 @@ jobs:
         run: |
           scp -P "$DEPLOY_PORT" -i ~/.ssh/id_ed25519 \
             -o StrictHostKeyChecking=accept-new \
-            deploy.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/root/astrmira/deploy.tar.gz"
+            /tmp/deploy.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/root/astrmira/deploy.tar.gz"
 
       - name: 远程解压并部署
         env:
