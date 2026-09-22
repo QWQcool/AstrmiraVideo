@@ -25,7 +25,11 @@
 
 **Step 2 双轨 Provider（接近收口）＋ Step 3 前端工作台（已完成）＋ Step 5 部署交付物（已就绪，等输入）**——施工步骤以 **`docs/EXEC-STEP2-5.md` 为唯一权威**（分段施工卡 + 片内改动清单 + 破坏性验证 + 证据格式）；决策见 `docs/PLAN.md` §6（D22~D28）与 `docs/CONTRACT.md` **V1.8**；本次主动降级 / 延后项见 `docs/PLAN.md` **§9 待优化台账（B1~B15）**。以 §5 进度日志的实际状态为准，不要以本文件为准。
 
-**当前卡点与待办**：**Step 5 已上线，且 CI → CD 全自动**（push 到 main → CI 全绿 → `deploy` job 自动 scp 上传 + 服务器本地构建镜像 + 健康检查；Secrets 为 `DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / `SSH_PRIVATE_KEY`）。**唯一剩余卡点是一把可用的火山方舟 Key** —— 它同时解锁 Step 2-AC2（真实出片冒烟 + 回填 §8 成本表）与 Step 4（端到端验收，其 AC1 明确要求用真实云端轨跑 T2V + I2V）。
+**当前卡点与待办**：**Step 5 已上线，且 CI → CD 已实测跑通**（push 到 main → CI 全绿 → `deploy` job 自动 scp 上传 + 服务器本地构建镜像 + 健康检查；实测 `verify` 与 `deploy` 双绿，站点返回 CSP 与三项安全头，`/api/health` 为 200）。Secrets 为 `DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / **`SSH_PASSWORD`**。
+
+> ⚠️ **CD 用密码认证，不是密钥**（改动前先读）：runner 上 `ssh` 无法解析本项目那把 ed25519 私钥 —— **同一个文件 `ssh-keygen -y` 却接受它**，报错是 `Load key ...: error in libcrypto`；base64 传输、剥 CR、`IdentitiesOnly=yes` 全都无效。已改用 `sshpass -f`（密码先 `tr -d '\r\n'` 落成 0600 文件，各步从文件读，既避开命令行也避开 CR）。**同一个 CR 陷阱出现过两次**：写 `gh secret set` 时不要用 PowerShell 管道（会附加 CRLF），用 `Start-Process -RedirectStandardInput`。想换回密钥只需替换那两步的连接方式。
+
+**唯一剩余卡点是一把可用的火山方舟 Key** —— 它同时解锁 Step 2-AC2（真实出片冒烟 + 回填 §8 成本表）与 Step 4（端到端验收，其 AC1 明确要求用真实云端轨跑 T2V + I2V）。
 
 **改服务器配置前先读这三条**（都是实测踩出来的）：① 目标服务器**访问不了 github.com**，所以代码只能从 CI/本机 scp 推过去，不能让它 `git pull`；② IP 档访问时客户端**不发 SNI**，Caddy 必须有 `default_sni`，否则握手直接失败（症状是浏览器连登录框都看不到）；③ 运行层构建 `better-sqlite3` **需要编译器**（无 prebuilt），当前 Dockerfile 是"临时装工具链 → 编译 → 立刻卸掉"。
 

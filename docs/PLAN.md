@@ -272,7 +272,10 @@
 - [x] **Step 5 公网部署【已上线；CI → CD 全自动】**
       - **线上地址**：`https://<DEPLOY_HOST>/`（当前为 IP 档：自签证书需浏览器信任一次 + 站点级 Basic Auth 登录）。主机 / 端口 / 口令只存在于**服务器本地 `.env.deploy`** 与 **GitHub Secrets**，不入仓库、不入文档。
       - **CD（本片新增）**：`.github/workflows/ci.yml` 的 `deploy` job —— `needs: verify`（**CI 全绿才部署**）、仅 `push` 到 main 触发、`concurrency` 串行且 `cancel-in-progress: false`（不取消进行中的部署，半途取消会留下"解压完但没重启"的中间态）。代码走 **scp 上传**（实测目标服务器**访问不了 github.com**，但 runner → 服务器的入站 SSH 是通的，方向反过来即可），镜像在服务器本地构建。
-      - **GitHub Secrets（4 项）**：`DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / `SSH_PRIVATE_KEY`（ed25519、空 passphrase，在服务器上生成后下载 —— Windows 给程序传空参数不可靠，`-N ''` 在 bash 里才是一次就对的写法）。
+      - **GitHub Secrets（4 项）**：`DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / **`SSH_PASSWORD`**。
+      - **⚠️ CD 认证改用密码（实测结论，别改回密钥）**：曾用 ed25519 私钥（`SSH_PRIVATE_KEY`），在 runner 上稳定失败于 `Load key ...: error in libcrypto` → `Permission denied (publickey)`。**决定性证据**：同一个 job 内、同一份文件，`ssh-keygen -y` 接受它而 `ssh` 拒绝它；base64 传输 / `tr -d '\r'` / `IdentitiesOnly=yes` 三样都试过，全无效。故改用 `sshpass -f`（密码先 `tr -d '\r\n'` 落成 0600 文件，各步从文件读 —— 既避开命令行，也避开下面那个 CR 陷阱）。想换回密钥只需替换那两步的连接方式，其余逻辑不动。
+      - **⚠️ 同一个 CR 陷阱踩了两次（写 Secret 时务必避开）**：用 **PowerShell 管道**喂 `gh secret set` 会给值附加 CRLF，而两种表现完全不像同一个原因 —— 私钥里是 `error in libcrypto`，密码里是服务端回一句 `Permission denied, please try again.`（看起来像密码填错了）。正确做法：`Start-Process -RedirectStandardInput <无 CR 的文件>`。
+      - **实测（2026-09-22，CD 首次全绿）**：`verify` + `deploy` 双绿；`docker ps` → `astrmiravideo-app-1 | Up (healthy)`；站点返回 `Content-Security-Policy`（生产启用）+ `X-Content-Type-Options` / `X-Frame-Options` / `Referrer-Policy`；`/api/health` 由 401 转 200（Caddy 的 health 豁免随镜像生效）；六项语义判定全对（无凭据 401 / 深链回退 200 / 未定义 API 与不存在媒体均为 404 JSON，未与 SPA fallback 混淆）；首页稳态 **33~39ms**（首次含完整 TLS 握手 ~200ms）。
       - **实测**（从外网用 Node 的 TLS 栈复测，§5 下方列出六条路径的判定）：`/`（带登录）200 + HTML；`/`（无凭据）**401**；`/api/providers/status` 200 且 `cloud.available:false`（未配兜底 Key，符合 AC6）；SPA 深链 200 回退同一 `index.html`；`/api/nonexistent` 与 `/media/nonexistent.mp4` 均 **404**（未被 fallback 吞成 200 HTML）；容器 `healthy`。
       - **部署过程中修掉的四个真实问题**（都属于"不看日志绝对猜不到"的那类）：① **pnpm 版本漂移** → `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`（Docker 里 corepack 装的是最新 pnpm，对同一份 lockfile 的判定与本地/CI 不同）→ 根 `package.json` 钉 `packageManager: pnpm@10.30.3`；② **`deb.debian.org` 只有 ~60KB/s**，ffmpeg 那 134MB 依赖要 37 分钟 → 换国内镜像（实测快约 30 倍）；③ **`better-sqlite3` 无 prebuilt 需现场编译**，而 slim 运行层没有编译器 → 临时装 `python3 make g++` 编译后立刻卸掉；④ **IP 访问时客户端不发 SNI**（RFC 6066 规定 SNI 只承载域名），Caddy 选不出证书直接以 `tlsv1 alert internal error` 失败 → 加 `default_sni`（**症状是浏览器连登录框都看不到**，完全不像证书问题）。另修 `/api/health` 被站点登录挡住的偏差（该端点应公开，与后端 `ALWAYS_PUBLIC_PATHS` 口径一致）→ Caddy 对探针豁免登录。
       - **✅ 三项输入已提供并配置完成**（服务器地址 / 端口 / SSH 凭据）；**火山方舟 Key 仍待补**（它是 Step 2-AC2 真实冒烟与 Step 4 端到端验收的共同前置；不补也能跑，只是访客必须自带 BYOK Key）。原始清单如下，供后续换机参考：
@@ -286,6 +289,10 @@
       - **反代三个坑已在配置内消除**：请求体上限 ≥20M（否则参考图被**静默**拦掉）、**刻意不写 `encode`**（任何视频压缩都会破坏 206 Range，用"不写"而非"写排除规则"，因为没法被误配置的东西才安全）、`X-Forwarded-For` + `TRUST_PROXY=1`（否则防线 5 的 IP 冷却退化成全局锁，症状是"别人提交过我就被限流"）。
       - **实测**：单进程形态三条路径已验证（`GET /` → 200 HTML、SPA 深链回退 → 同一 index.html、`/api/nonexistent` 与 `/media/nonexistent.mp4` → **404 且不被 fallback 吞成 200 HTML**）；`deploy.mjs` 四类拦截已验证（缺配置文件 / 缺必填项 / `DEPLOY_HOST` 端口与 `DEPLOY_PORT` 不一致 / domain·ip 自动分档 + 自签告警）。
       - **镜像与构建已实测**：多阶段构建在目标服务器上跑通（`astrmiravideo:latest` 约 1.5GB），两个容器 `healthy`。**仍未回填**：ffmpeg 的具体版本号与许可证结论（`docs/UPSTREAM.md` 中标注为【待验证】，需在服务器上 `docker run --rm astrmiravideo:latest ffmpeg -version` 后补）。
+- [x] **Step 5 补充 · 审计发现并补齐的两项台账阻断项（B8 / B15）**：§9 台账把这两项分别标为「**上线前必须做**」与「**Step 5 内落地（公网刚需）**」，而发现时 Step 5 已上线、两者都还没做 —— 属"文档明确要求、代码没做"的真实缺口（不是文档过时）。
+      - **B8 复合限流键（IP + 凭据指纹）**：`rateLimitKey` 的签名早就预留了 `keyFingerprint`，但 `generate.ts` 只传了 IP。后果不是"洁癖"而是**用户可见的误伤**：共享出口（公司 NAT / 校园网 / 移动网络）下所有人同 IP，A 提交后 B 被「冷却中 60s」挡住，而 B **完全无法自查** —— 防线 5 的本意是防单人刷接口，不是防整栋楼。补 `fingerprintKey()`：SHA-256 前 8 位（足以区分、**不可逆**、不构成"存储凭据"），输入先 `trim()`（否则加个空格就能绕过冷却），并接进限流键；未带 Key 的访客退化纯 IP 键（他们本来也提交不了：无凭据 → `KEY_MISSING`）。
+      - **B15 CSP + 零 `innerHTML` 断言**：CSP 落于 `backend/src/server/securityHeaders.ts`，**仅生产启用** —— 开发环境必须放开内联与 ws，否则 `pnpm dev` 直接白屏；而"为了安全把开发环境弄坏"的做法，最终结果一定是有人把 CSP 整段删掉。`innerHTML` 现状本已为零，已固化成 `visual-selfcheck.mjs` 的第 ⑦ 条断言，防止日后被写回来。
+      - **验证**：后端 **190 项** + 前端 **24 项** + 视觉自检全绿；线上实测 `Content-Security-Policy` 头存在、三项安全头齐全。
 - [ ] **Step 4 端到端验收【阻塞：需一把可用 Key】**：见 §4。AC1 明确要求用**真实云端轨**跑通 T2V（含双引号台词人声）与 I2V（含 32 倍数裁切），因此与 AC2 共用同一把 Key —— 拿到 Key 后 Step 4 与 Step 2-AC2 可一并完成。
 
 ---
