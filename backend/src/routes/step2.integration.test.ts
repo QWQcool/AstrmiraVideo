@@ -78,10 +78,22 @@ function baseRequest(overrides: Partial<VideoGenerateRequest> = {}): VideoGenera
   };
 }
 
+/**
+ * 每次提交使用不同的来源 IP。
+ * S4 起 `/api/generate` 带 60s 防抖（IP 单键），inject 默认回环 IP 会让同一文件内的用例互相 429
+ * ——限流的专项验证在 step4.integration.test.ts，这里只需把 IP 隔离开。
+ */
+let ipSequence = 100;
+function nextIp(): string {
+  ipSequence += 1;
+  return `198.51.100.${(ipSequence % 200) + 1}`;
+}
+
 async function postGenerate(body: VideoGenerateRequest, idempotencyKey?: string) {
   return app.inject({
     method: 'POST',
     url: '/api/generate',
+    remoteAddress: nextIp(),
     payload: body,
     ...(idempotencyKey === undefined ? {} : { headers: { 'idempotency-key': idempotencyKey } }),
   });
@@ -120,7 +132,12 @@ beforeAll(async () => {
 afterAll(async () => {
   await app.close();
   __clearProviderTestOverrides();
-  rmSync(TMP_DATA_DIR, { recursive: true, force: true });
+  // Windows 上 SQLite 的 WAL 句柄可能延迟释放：清理失败不应让测试失败
+  try {
+    rmSync(TMP_DATA_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch {
+    /* 临时目录残留无碍 */
+  }
 });
 
 describe('POST /api/generate 幂等键（CONTRACT §5）', () => {

@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import {
   serializerCompiler,
   validatorCompiler,
@@ -15,7 +16,14 @@ import { healthRoutes } from './routes/health.js';
 import { createHistoryRoutes } from './routes/history.js';
 import { providerRoutes } from './routes/providers.js';
 import { createTaskRoutes } from './routes/tasks.js';
+import { createUploadRoutes, MAX_FILE_BYTES } from './routes/upload.js';
+import {
+  assertAuthConfiguredForProduction,
+  createAuthHook,
+  resolveAuthToken,
+} from './security/auth.js';
 import { LLM_KEY_HEADER, LOG_REDACT_PATHS, PROVIDER_KEY_HEADER } from './security/credential.js';
+import { CooldownStore } from './security/rateLimit.js';
 import { registerStaticOutputs } from './server/staticOutputs.js';
 import { openDatabase } from './store/db.js';
 import { TaskStore } from './store/taskStore.js';
@@ -65,6 +73,30 @@ export async function buildApp() {
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
+  // 生产护栏：未配置访问令牌直接启动失败（PLAN §7-4）
+  assertAuthConfiguredForProduction();
+
+  // 安全响应头（PLAN §7-4 加固）
+  app.addHook('onSend', async (_request, reply) => {
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('Referrer-Policy', 'no-referrer');
+  });
+
+  // 最小鉴权：两层免鉴权（回环来源全部 + 任何来源的 /api/health），其余需 Bearer
+  const authToken = resolveAuthToken();
+  if (authToken === undefined && !isTestEnv) {
+    app.log.warn(
+      '未配置 PUBLIC_API_TOKEN：当前不启用鉴权（本地开发）。公网部署必须配置（PLAN §7-4）',
+    );
+  }
+  app.addHook('onRequest', createAuthHook(authToken));
+
+  // 上传：体积上限交给 multipart 做流式保护；**数量**上限由路由自行计数（见 routes/upload.ts）
+  await app.register(multipart, {
+    limits: { fileSize: MAX_FILE_BYTES },
+  });
+
   await app.register(cors, {
     origin: resolveCorsOrigins(),
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -87,6 +119,8 @@ export async function buildApp() {
   const db = openDatabase();
   const store = new TaskStore(db);
   const queue = new SqliteJobQueue(store);
+  // 防线 5：60s 防抖冷却（键的构成见 security/rateLimit.ts）
+  const cooldown = new CooldownStore(db);
 
   const dispatcher = new JobDispatcher({
     queue,
@@ -106,7 +140,10 @@ export async function buildApp() {
     db.close();
   });
 
-  await app.register(createGenerateRoutes({ store, queue, resolveProvider: getProvider }));
+  await app.register(
+    createGenerateRoutes({ store, queue, resolveProvider: getProvider, cooldown }),
+  );
+  await app.register(createUploadRoutes());
   await app.register(createTaskRoutes({ store }));
   await app.register(createHistoryRoutes({ store }));
   await registerStaticOutputs(app);

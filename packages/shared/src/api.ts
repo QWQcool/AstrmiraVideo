@@ -31,7 +31,25 @@ export const OperationResultSchema = z.object({
   taskId: z.string(),
 });
 
+/**
+ * `POST /api/upload` 的资产描述（CONTRACT §5 / §7）。
+ * `mime` 来自**魔数嗅探**结果，不是客户端声明的 Content-Type（PLAN §7-6）。
+ */
+export const UploadedAssetSchema = z.object({
+  assetId: z.string(),
+  kind: z.enum(['image', 'video']),
+  mime: z.string(),
+  size: z.number().int().nonnegative(),
+});
+
+/** `POST /api/upload` 的 200 响应 */
+export const UploadResponseSchema = z.object({
+  assets: z.array(UploadedAssetSchema),
+});
+
 export type GenerateResponse = z.infer<typeof GenerateResponseSchema>;
 export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
 export type HistoryResponse = z.infer<typeof HistoryResponseSchema>;
 export type OperationResult = z.infer<typeof OperationResultSchema>;
+export type UploadedAsset = z.infer<typeof UploadedAssetSchema>;
+export type UploadResponse = z.infer<typeof UploadResponseSchema>;

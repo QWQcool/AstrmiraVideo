@@ -181,7 +181,7 @@ export interface VideoProvider {
 | `GET` | `/api/tasks/:taskId` | 轮询任务状态与结果。**200 → `TaskProgress`（§4）**；不存在或已清理 → **404 `TASK_NOT_FOUND`** |
 | `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消）。**200 → `{ ok, taskId }`** |
 | `POST` | `/api/prompt/enhance` | 提示词扩写助手 —— **demo 版返回 `501` + `LLM_NOT_CONFIGURED`**（前端 ✨ 置灰）；完整实现见 §3 的 V2.0【规划】 |
-| `POST` | `/api/upload` | 上传参考图/视频，自动 32 倍数居中裁切，返回资产 ID（加固细则见 PLAN §7-6） |
+| `POST` | `/api/upload` | 上传参考图/视频（multipart，≤20MB × ≤4，**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**；超体积 / 超数量 → **413**；白名单外或伪造类型 → **415**（加固细则见 PLAN §7-6） |
 | `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[] }`**（最近 50 条） |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
 
@@ -196,6 +196,7 @@ export interface VideoProvider {
 - **状态端点不表达客户端凭据**：`GET /api/providers/status` 无凭据上下文，其 `cloud.available` 只表示 env 兜底 Key 是否存在；"前端是否持有 Key"由前端自行合成（§2 的 `acceptsClientKey` + 本地存储）。
 - **写入 / 清除无服务端路由**：Key 存于浏览器，清除即清本地存储。凭据校验路由（`keys/verify`）与本地引擎运行时自检（`local/verify`）**均未实现**，属 PLAN §9 台账 **B2 / B4**；实现时必须先在本节登记。
 - `Idempotency-Key` 与上述两个凭据头一样，必须在 CORS `allowedHeaders` 中显式放行，否则浏览器预检直接失败（本地 curl 通、浏览器必失败）。
+- **访问鉴权（V1.8 补充口径，细则见 PLAN §7-4）**：公网部署时，除「**回环来源**（127.0.0.1 / ::1）的全部请求」与「**任何来源**的 `/api/health`」两层免鉴权外，其余 `/api/*` 一律要求 `Authorization: Bearer <PUBLIC_API_TOKEN>`。鉴权未通过返回 **401**。
 
 **通信方式**：MVP 使用轮询（`GET /api/tasks/:taskId`，建议 2s 间隔）；SSE 实时推送为【规划】，Step 4 后评估（决策记录 PLAN §6-D7）。
 

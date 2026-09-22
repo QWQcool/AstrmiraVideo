@@ -7,7 +7,10 @@ import {
   VideoGenerateRequestSchema,
 } from '@astrmira/shared';
 import type { ProviderType, VideoGenerateRequest, VideoProvider } from '@astrmira/shared';
+import { createErrorResponse } from '../errors.js';
 import type { JobQueue } from '../queue/JobQueue.js';
+import type { CooldownStore } from '../security/rateLimit.js';
+import { rateLimitKey, resolveClientIp } from '../security/rateLimit.js';
 import type { TaskStore, TrackId } from '../store/taskStore.js';
 
 /**
@@ -24,6 +27,8 @@ export interface GenerateRoutesDeps {
   store: TaskStore;
   queue: JobQueue;
   resolveProvider: (id: ProviderType) => VideoProvider | null;
+  /** 防线 5 冷却；缺省则不启用限流（测试可省略，生产必须传入） */
+  cooldown?: CooldownStore;
 }
 
 /** 请求指纹（provider + 规范化请求体） */
@@ -64,7 +69,11 @@ export const createGenerateRoutes =
       {
         schema: {
           body: VideoGenerateRequestSchema,
-          response: { 200: GenerateResponseSchema, 503: ErrorResponseSchema },
+          response: {
+            200: GenerateResponseSchema,
+            429: ErrorResponseSchema,
+            503: ErrorResponseSchema,
+          },
         },
       },
       async (request, reply) => {
@@ -82,9 +91,22 @@ export const createGenerateRoutes =
 
         const idempotencyKey = resolveIdempotencyKey(request, body);
 
+        // 幂等重放优先：返回既有任务**不消耗**冷却窗口（否则客户端重试会被 429 挡住）
         const existing = deps.store.findTaskIdByIdempotencyKey(idempotencyKey);
         if (existing !== null) {
           return { taskId: existing };
+        }
+
+        // 防线 5：60s 防抖（Step 2 按来源 IP 单键；复合键 IP + Key 指纹见 PLAN §7-5 的 Step 5 时点）
+        const cooldownKey = rateLimitKey({ ip: resolveClientIp(request) });
+        const decision = deps.cooldown?.check(cooldownKey);
+        if (decision !== undefined && !decision.allowed) {
+          return reply.code(429).send(
+            createErrorResponse(
+              'RATE_LIMITED',
+              `提交过于频繁：请在 ${Math.ceil(decision.retryAfterMs / 1000)}s 后重试`,
+            ),
+          );
         }
 
         const taskId = randomUUID();
@@ -96,6 +118,9 @@ export const createGenerateRoutes =
           // 「即将提交」标记：在真正触达上游之前先落库（CONTRACT §5，防线 7 前提）
           submitting: true,
         });
+
+        // 入队成功才进冷却（入队失败不该罚用户等 60s）
+        deps.cooldown?.record(cooldownKey);
 
         return { taskId };
       },
