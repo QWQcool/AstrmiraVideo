@@ -61,11 +61,11 @@
    - 历史画廊：参数一键回填、单片删除释放磁盘。
 
 ### 2.2 健壮性要求
-全部见 §3 六大防线，本节不重复。
+全部见 §3 七道防线，本节不重复。
 
 ---
 
-## 3. 六大业务防线（全项目唯一详写处，其他文档只准链接本节）
+## 3. 七道业务防线（全项目唯一详写处，其他文档只准链接本节）
 
 | # | 防线 | 机制 |
 |---|---|---|
@@ -75,6 +75,7 @@
 | 4 | 图像格式清洗网关 | HEIC/WebP/CMYK 自动转码，大图下采样，防爆显存 |
 | 5 | 短窗口防抖限流 | 提交后 60s 冷却，防连点刷光云端 Token |
 | 6 | 台词长度友好引导 | 双引号对白建议 ≤ 20 字，匹配 5 秒镜头节奏 |
+| 7 | **付费不确定性不自动重提** | 已提交但无法确认结果 → `UNCERTAIN_RESULT`，**禁止任何自动重提**，走人工核对路径；配套幂等键 + 提交前 `submitting` 落库（细则见 CONTRACT §5 / §6） |
 
 ---
 
@@ -91,11 +92,15 @@
 - **验证**：人工开箱 + `curl /api/health`。
 
 ### Step 2：双轨 Provider 与核心调度
-- **任务**：`pipeline/smartCrop.ts`（32 倍数居中裁切）；`providers/VolcanoSeedanceProvider.ts`（提交+轮询+下载）；`providers/LocalH3Provider.ts`（子进程调度+互斥锁）；路由挂载 `/api/generate`、`/api/tasks/:taskId`、`/api/providers/status`、`/api/prompt/enhance`、`/api/upload`、`/api/history`；SQLite 任务存储。
-- **AC1**：mock provider 契约测试全绿（`pnpm test:contract`，覆盖 CONTRACT.md 全部路由与错误码）。
+- **任务**：`pipeline/smartCrop.ts`（32 倍数居中裁切）；`providers/VolcanoSeedanceProvider.ts`（提交+轮询+下载）；`providers/LocalH3Provider.ts`（子进程调度+互斥锁）；`providers/registry.ts`（provider 唯一注册点）；`providers/statusProbe.ts`（**真实算力探测**，替换 Step 1 占位实现）；**三态错误码与幂等键**（CONTRACT V1.3 §5 / §6）；**开发期故障注入层**（见下方「Step 2 补充」）；**CI 三件套（lint / type / test）**；路由挂载 `/api/generate`、`/api/tasks/:taskId`、`/api/providers/status`、`/api/prompt/enhance`、`/api/upload`、`/api/history`；SQLite 任务存储。
+- **AC1**：契约层测试全绿（`pnpm test:contract`，覆盖 CONTRACT.md 全部路由与错误码，含三态 `disposition` 穷举）。
 - **AC2**：Seedance 真实冒烟出片 1 次，记录实际耗时与费用，回填 §8 成本表（消除【待验证】标记）。
 - **AC3**：本地并发提交 2 个任务，第 2 个任务状态为 `queued`，无第二个推理进程被拉起。
 - **AC4**：服务重启后，进行中的任务能从 SQLite 恢复状态，前端刷新可重挂载。
+- **AC5**：可选实现项 OI-2（`fixture-local`）产出真实可播 MP4，`ffprobe` 校验通过，全程零外网依赖、零配额消耗；见下方「Step 2 补充」。
+- **AC6**：`/api/providers/status` 由真实探测驱动——无 GPU / 引擎未实现时必须返回 `available: false` + `reason`，**任何情况下不得返回硬编码型号**；Step 1 的占位实现同步移除。
+- **AC7**：注入 `uncertain` 故障后任务归 `UNCERTAIN_RESULT`，**不发生任何自动重提**（硬断言：上游调用次数 = 1）；同一幂等键重复提交返回同一 `taskId`。
+- **AC8**：CI 三件套就位，`pnpm test` 同时覆盖契约层与真实产物层（AC1 + AC5）。
 
 ### Step 3：前端 Astrmira 工作台
 - **任务**：左栏（Prompt + ✨扩写 + 拖拽槽 + 画幅 + BYOK 抽屉）；中栏（播放视窗 + 进度环 + 下载）；右栏（任务队列 + 画廊回填/删除）。
@@ -108,6 +113,7 @@
 - **AC1**：T2V（含双引号台词人声）与 I2V（含 32 倍数裁切）各跑通 1 次完整链路。
 - **AC2**：HEIC / WebP / 超大图各上传 1 次，清洗网关无报错、输出合规。
 - **AC3**：项目级 DoD 达成——后端契约测试全绿 + 上述两条 e2e 全绿。
+- **AC4**：CI 以 OI-2（`fixture-local`）跑通端到端并产出可播 MP4；OI-1（`stock-local`）手动回归 1 次。
 - **产出**：`walkthrough.md` 验收记录【规划】。
 
 ### Step 5：公网部署与交付
@@ -115,6 +121,72 @@
 - **AC1**：外部手机浏览器访问公网地址，无卡环境下默认云端轨出片成功。
 - **AC2**：探针返回 `local.available: false`，前端本地开关置灰并展示说明。
 - **AC3**：`.env`、SQLite、outputs 均不入镜像、不入 git。
+
+---
+
+### Step 2 补充 · 可选实现项（OI，可整块删除）
+
+> 定位：**开发初期校验用，不属于产品线**；默认关闭，不进入 README 电梯陈述与 GUIDE 工作流清单。
+> 不需要时按下方「删除动作清单」整体移除，主干不受影响。多镜头相关内容一律不出现在本文以外的文档。
+
+**OI-1 `stock-local`：单镜头素材 provider**
+- 形状与其余 provider 完全同构（`checkHealth` / `submit` / `queryStatus` / `cancel`），**一次调用对应一条输出**，不引入多镜头概念；
+- 流程：`prompt` → 检索候选 → 下载 → 清洗 / 裁切对齐 `durationSec` → 落盘输出；
+- 数据源：Pexels 为主（默认配额 200 次/小时、20000 次/月）、Pixabay 备用（官方宣称不限次；其视频库偏空镜与动态背景，人物剧情向素材较少）。两家均要求先下载到自有服务器、不允许永久 hotlink，与本项目「下载归档 + 落盘」路线一致；
+- 价值：在**无 Key、无 GPU、零现金成本**的条件下，实测防线 2 / 3 / 4 / 5 四条公共链路（任务落库与刷新重挂载 / 磁盘 LRU / 图像清洗网关 / 防抖限流），并用**真实视频**替代 mock 产出（防线 7 由下方故障注入层覆盖；防线 1 属本地轨、防线 6 属提示词侧）。
+
+**OI-2 `fixture-local`：CI 专用夹具 provider**
+- 读取 `tests/fixtures/clips/`，实现同一 provider 接口；
+- **CI 用合成片**：由 `scripts/make-fixture-clips.mjs` 用 ffmpeg 现场合成（`testsrc2` / `smptebars` + 正弦音轨），**二进制不入库**，仓库只存脚本。理由是纯工程性的，与素材站无关：**确定性**（帧数 / 时长 / 尺寸 / 音轨全部已知，断言可钉死）、**体积**（脚本约 5KB vs 真实片段 2–5MB/段；二进制在 git 无增量存储，每次替换永久留在历史）、**边界覆盖**（真实素材提供不了下表的边界）；
+- **演示与观感走查用真实素材**：另置少量精选片段（3–5 段），只服务人工演示与 OI-1 离线调试，**不进 CI 流水线**；
+- 用途：CI / E2E 产出真实可播 MP4（`ffprobe` 校验），同时是将来验证 OI-3 的最小素材集。
+
+**CI 必须覆盖的边界用例（合成片不可替代的价值）**
+
+| 用例 | 生成方式 | 断言重点 |
+| :--- | :--- | :--- |
+| 基线 720p 横屏 5s + 音轨 | 标准参数 | 宽高 / 时长 / 音轨齐全 |
+| 竖屏 9:16 | 尺寸互换 | 画幅分支正确 |
+| **短于请求**（0.5s vs 请求 5s） | `duration=0.5` | 行为必须显式定义（循环拉伸 or 拒绝报错）——**当前为空白待定** |
+| **长于请求**（30s vs 请求 5s） | `duration=30` | 必须裁切到 `durationSec`，不许多出 |
+| **无音轨** | `-an` | 拼接音轨链路不崩 |
+| 32 倍数不规整（如 831×479） | 交给 `smartCrop` | 补边 / 居中裁切后必为 32 倍数 |
+| 极短 / 单帧 | `-frames:v 1` | 边界不崩 |
+| **损坏文件**（截断 moov） | 截断字节 | 归 `INVALID_ASSET` 或 `UPSTREAM_ERROR`，**且不进重试死循环** |
+
+**OI-3 多镜头编排层（暂缓，不在 Step 2 范围内）**
+- 形态：N 次单镜头 provider 调用 + TTS + 字幕 + ffmpeg 拼接；**位于 provider 之上，不改 `VideoGenerateRequest`、不改 provider 契约、不改队列与存储**；
+- 触发条件：出现「成片时长超过单段素材可得时长」的需求时再评估；
+- 落地方式：开实验分支实现，验证后决定合并或废弃；
+- 备注：长片多镜头化对云端 / 本地生成轨同样适用，因此该层未来属于公共能力，不是 OI-1 的附属设施。
+
+**可插入 / 可废弃的四条设计约束**
+1. **唯一注册点**：provider 只在 `providers/registry.ts` 注册一次；删除 = 删一行 + 删一个目录；
+2. **前端零硬编码**：引擎选项由 `GET /api/providers/status` 的能力位动态渲染，前端不认识具体 provider → 删除时前端零改动；
+3. **专属字段不外泄**：`VideoGenerateRequest` 不新增仅服务于此项的字段；provider 私有参数走 `options?: Record<string, unknown>`（已在 CONTRACT V1.3 §1 落地）；
+4. **默认关闭**：env `ENABLE_STOCK_PROVIDER`（默认 off）决定能力位是否出现在探针返回值中。
+
+**删除动作清单**：去 `registry.ts` 注册 → 删 `providers/stock/`、`providers/fixture/` 目录 → 删 env 项 → 删对应单测 → 前端无改动。
+
+---
+
+### Step 2 补充 · 开发期故障注入（默认关闭）
+
+**位置**：provider 与调度器之间加一层薄包装 `withFaultInjection(provider, plan)`，**仅在 `FAULT_INJECT=1` 时挂载**（默认 off；非本地环境启动直接拒绝挂载）→ 主干零成本、生产无法误开。
+
+**为什么不能用 mock 代替**：mock 不产生真实的 HTTP 流、真实文件与真实落盘，而「流中断 / 半包 / 磁盘写满」恰是要验的对象。故障注入必须发生在**真实 provider 调用链路**上。
+
+| 注入项 | 验证目标 |
+| :--- | :--- |
+| `delay:ms` | 前端轮询进度与超时表现 |
+| `rate_limit` | 防线 5：限流与前端 60s 冷却置灰 |
+| `upstream_5xx` | `UPSTREAM_ERROR` 的有限次退避与转 `terminal` |
+| `stream_cut@40%` | **下载中断 / 半包**（素材为流式下载，mock 无法覆盖） |
+| `disk_full` | `DISK_FULL` 分支与清理提示 |
+| `slow_progress` | 进度推进与刷新重挂载（防线 2） |
+| `uncertain` | **防线 7**：`UNCERTAIN_RESULT` 不自动重提 |
+
+**验收**：每个注入项至少 1 条自动化断言；其中 `uncertain` 必须有「上游调用次数 = 1」的硬断言，防止该护栏日后被静默改回自动重试。
 
 ---
 
@@ -127,7 +199,10 @@
 - [x] 云端调研：火山方舟 Seedance API 与 BYOK 模式对齐（实际耗时/费用【待验证】，Step 2-AC2 回填）；
 - [x] Astrmira 视觉：19 CSS Tokens + 8 Keyframes 提取，三张概念设计图归档（`docs/assets/`）；
 - [x] 文档体系 V8.0 整改：9 → 6 份、脱敏占位符化、Step 补 AC、单一事实源确立；
-- [x] **Step 1 全栈骨架与设计 Token 落地【已验证】**：Fastify 后端 + React 19 前端 + Astrmira 19 Tokens 就绪，前后端联通探针与算力探测通过，构建无报错；
+- [x] **Step 1 全栈骨架与设计 Token 落地【已验证】**：Fastify 后端 + React 19 前端 + Astrmira 19 Tokens 就绪，前后端**联通探针**通过，构建无报错；⚠️ `/api/providers/status` 为**占位实现（硬编码显卡型号）**，真实算力探测排入 Step 2（见 §6-D12）；
+- [x] 可选实现项定稿【规划】：素材能力降级为开发期校验 provider（OI-1 `stock-local` / OI-2 `fixture-local`），多镜头编排列暂缓项（OI-3）——见 §4「Step 2 补充」与 §6-D8 ~ D10；
+- [x] 付费护栏补齐【规划】：错误码升级为三态 `ErrorDisposition`，新增 `UNCERTAIN_RESULT`、幂等键与提交前 `submitting` 标记，配套防线 7（CONTRACT V1.3）；
+- [x] 开发期校验方案定稿【规划】：真实素材（演示走查）与 CI 合成片（8 条边界用例）分工、故障注入层 7 项注入清单；
 - [ ] Step 2 ~ Step 5：见 §4。
 
 ---
@@ -143,6 +218,13 @@
 | D5 | 任务存储用 SQLite（better-sqlite3） | 零运维、单文件、重启可恢复任务；`data/` 已入 .gitignore | 2026-09-22 |
 | D6 | 探针端点统一为 `/api/providers/status` | 原 `/api/system/probe` 与路由表矛盾，以语义更准者为准 | 2026-09-22 |
 | D7 | MVP 通信用轮询，SSE 标记【规划】 | 轮询实现成本低且够用；长任务体验优化留待 Step 4 后评估 | 2026-09-22 |
+| D8 | 素材能力降级为「可选开发期校验 provider」（OI-1 / OI-2），不做产品线 | 需要一条零成本、无 Key、无 GPU 的真实视频通道用于早期校验与回归；默认关闭 + 唯一注册点设计使其可整体删除，不构成架构负担 | 2026-09-22 |
+| D9 | 多镜头编排层列为暂缓项（OI-3） | L1 优先：Step 2 只做单镜头；多镜头对云端 / 本地轨同样适用，属未来公共能力，需要时开分支验证后再决定合并 | 2026-09-22 |
+| D10 | CI 夹具片段由 ffmpeg 合成；真实素材只用于演示走查 | 合成片确定性高、体积可控、可参数化覆盖边界（真实素材提供不了）；真实素材的价值在"给人看"而不在"给 CI 跑" | 2026-09-22 |
+| D11 | 错误码升级三态（`retryable` / `terminal` / `uncertain`），新增 `UNCERTAIN_RESULT` | 付费轨无法确认结果时自动重提会造成**重复计费**；三态是"不确定性不自动重提"落地的唯一载体（CONTRACT V1.3 + 防线 7） | 2026-09-22 |
+| D12 | `/api/providers/status` 改真实探测，禁止硬编码型号 | 占位实现恒真会让无卡机器误报本地可用，并使能力位开关（含 OI 的默认关闭）失去载体；探测不到必须显式 `available: false` + `reason` | 2026-09-22 |
+| D13 | 开发期故障注入层（`FAULT_INJECT` 默认 off） | 流中断 / 半包 / 磁盘写满只能发生在真实调用链上，mock 无法覆盖；每个注入项配自动化断言 | 2026-09-22 |
+| D14 | CI 三件套（lint / type / test）纳入 Step 2 范围 | Step 2 的全部 AC 依赖自动化验证；Step 1 骨架期不铺流水线，避免为未定型代码建 CI | 2026-09-22 |
 
 ---
 
@@ -167,4 +249,5 @@
 **风险登记**：
 - R1：DiffSynth-Studio / H3 权重版本漂移 → 锁版本号并记录于 UPSTREAM.md；
 - R2：Seedance API 变更 → Provider 接口隔离，变更只动 `VolcanoSeedanceProvider`；
-- R3：画廊磁盘膨胀 → 防线 3（LRU + 一键删除）已在设计内。
+- R3：画廊磁盘膨胀 → 防线 3（LRU + 一键删除）已在设计内；
+- R4：素材站配额（Pexels 200 次/小时）被流水线反复消耗 → CI 一律走 OI-2 `fixture-local`，仅手动回归用例允许联网走 OI-1。

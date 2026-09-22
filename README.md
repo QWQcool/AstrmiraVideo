@@ -28,7 +28,7 @@ pnpm dev               # 并行拉起 backend + frontend
 | 文档 | 职责 | 独家拥有的内容 |
 |---|---|---|
 | **README.md**（本文） | 入口与导航 | 电梯陈述、文档地图、协作规范 |
-| [docs/PLAN.md](docs/PLAN.md) | 产品与开发规划 | 架构、功能清单、**六大防线**、**Step+AC**、**进度日志**、决策记录、安全合规、成本风险 |
+| [docs/PLAN.md](docs/PLAN.md) | 产品与开发规划 | 架构、功能清单、**七道防线**、**Step+AC**、**进度日志**、决策记录、安全合规、成本风险 |
 | [docs/CONTRACT.md](docs/CONTRACT.md) | 接口唯一权威 | TS 类型、**路由表**、错误码字典、存储与资产生命周期 |
 | [docs/GUIDE.md](docs/GUIDE.md) | 上手指南 | **Tier 0~3 算力矩阵**、双轨引擎接入、四种生成工作流、FAQ |
 | [docs/UPSTREAM.md](docs/UPSTREAM.md) | 上游台账 | 参考/复刻项目与版本追溯 |
