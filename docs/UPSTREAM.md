@@ -22,9 +22,23 @@
 
 ## 二进制 / 外部程序依赖（随镜像分发）
 
-> 这些不是"参考的源码项目"，而是**运行时会调用到的外部程序**。因为它们随镜像一起分发，
-> 许可证影响必须单独登记（施工单 §9-3 第 1 条）。
+> 这些不是"参考的源码项目"，而是**随产物 / 镜像一起分发的外部程序与二进制资源**（如字体）。
+> 因为分发物里**包含**它们，许可证影响必须逐项登记（部署任务见 PLAN §4 Step 5）。
 
 | 工具 | 引入方式 | 版本 | 许可证 | 影响与说明 |
 |---|---|---|---|---|
-| `ffmpeg` / `ffprobe` | 生产镜像运行层 `apt-get install -y ffmpeg`（Debian bookworm）；开发机需自行安装 | 【待验证】首次构建后用 `ffmpeg -version` 回填 | **GPL**（Debian 的构建启用了 libx264 等 GPL 组件，而本项目合成命令用 `-c:v libx264`） | 调用方式为**子进程**（`backend/src/lib/ffmpeg.ts` 用 `execFile`），不链接、不修改其源码。但镜像内**包含** GPL 二进制，再分发时需一并满足 GPL 的源码提供义务（以 Debian / FFmpeg 官方许可说明为准）。**此处只陈述事实，许可证结论需人工确认。** |
+| `ffmpeg` / `ffprobe` | ① 生产镜像运行层 `apt-get install -y ffmpeg`（Debian bookworm，走镜像站）；② 开发机自行安装；③ CI runner `apt-get install -y ffmpeg`（ubuntu-latest） | ① 生产镜像 **【待验证】**——需容器内实测，命令见下；② 开发机 **`n8.1.2-50-g1a748fe2cd-20260831`**【已验证实测】（winget `Gyan.FFmpeg`）；③ CI **`6.1.1-3ubuntu5`**【已验证实测】（2026-09-22 的 CI 日志，`ffprobe` 同版本） | **GPL**：三个构建的 `configuration` 行都启用了 `--enable-gpl`（含 `libx264` 等 GPL 组件，而本项目合成命令固定用 `-c:v libx264`）。开发机与 CI 的配置行**已实测**确认；生产镜像待下列第一条命令核对 | 调用方式为**子进程**（`backend/src/lib/ffmpeg.ts` 用 `execFile`），不链接、不修改其源码。但镜像内**包含** GPL 二进制，再分发时需一并满足 GPL 的源码提供义务（以 Debian / FFmpeg 官方许可说明为准）。 |
+| `Cinzel`（woff2，latin + latin-ext 子集，字重 500） | 前端静态资源 `frontend/public/fonts/cinzel-*.woff2`，**随产物与镜像分发**（不是外链 CDN） | **v26**（2026-09-22 取自 google/fonts 的 `ofl/cinzel`，两个子集合计约 23KB）【已验证实测：随产物分发，且在 `NODE_ENV=production` 的 CSP 下正常加载（UI 冒烟 `scripts/smoke-ui.mjs`）】 | **SIL OFL 1.1**（允许再分发，**要求随字体附许可证文本**） | 用途：`--serif-caps`（全大写 eyebrow 标签）。许可证文本已随资源分发（`frontend/public/fonts/OFL.txt`）。**这类资源必须自托管**：生产 CSP 是 `style-src 'self'` / `font-src 'self'`，任何跨源字体/样式都会被浏览器拦掉（2026-09-22 实测踩过：外链 `fonts.googleapis.com` 自上线起就没生效，见 PLAN §5 的 B9 条目 ⑤）。 |
+
+**三处各自怎么测**（避免下次再出现「文档标着待验证，而答案其实早就跑在机器上」）：
+
+```bash
+# ① 生产镜像（在部署机上执行；容器名以 docker ps 为准）
+docker exec astrmiravideo-app-1 ffmpeg -version | head -1   # configuration 行也在此输出里
+docker exec astrmiravideo-app-1 dpkg -s ffmpeg | grep ^Version  # Debian 打包版本（含 epoch/修订号）
+
+# ② 开发机
+ffmpeg -version | head -1
+
+# ③ CI：`ci.yml` 的「安装 ffmpeg / ffprobe」步骤已打印 `ffmpeg -version | head -n 1`，查 run 日志即可
+```
