@@ -31,6 +31,17 @@ export interface QueueJob {
 }
 
 /**
+ * 进度心跳的载荷（V2.3）。
+ *
+ * 为什么不直接复用 `TaskProgress`：心跳的语义是**更新进度**，不是"重建一条任务记录"。
+ * 契约 V2.3 给 `TaskProgress` 加了 `createdAt` 之后，若心跳仍要求整份 `TaskProgress`，
+ * 调度器就被迫填一个它不知道的时间（`tasks.created_at` 才是权威，且由 store 在入队时写入）。
+ * 收窄成 `Omit<…, 'createdAt'>` 之后：**权威创建时间没有任何路径会被覆盖**，
+ * 而调度器的调用点一个字都不用改（它们本来就没传这个字段）。
+ */
+export type TaskProgressUpdate = Omit<TaskProgress, 'createdAt'>;
+
+/**
  * 队列抽象：当前由 SQLite 实现承载（Step 2），
  * 多实例公网部署时可替换为 BullMQ 适配器，调度器不得感知差异。
  */
@@ -45,8 +56,11 @@ export interface JobQueue {
    */
   claim(track: TrackId): Promise<QueueJob | null>;
 
-  /** 进度心跳：落库以支持刷新重挂载（防线 2）与 warnings 持久化（CONTRACT §4） */
-  heartbeat(taskId: string, progress: TaskProgress): Promise<void>;
+  /**
+   * 进度心跳：落库以支持刷新重挂载（防线 2）与 warnings 持久化（CONTRACT §4）。
+   * V2.3：载荷是 `TaskProgressUpdate`（不含 `createdAt`，见上方类型注释）。
+   */
+  heartbeat(taskId: string, progress: TaskProgressUpdate): Promise<void>;
 
   /**
    * 置终态成功。

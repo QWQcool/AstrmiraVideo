@@ -1,10 +1,10 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { ProviderType, TaskProgress, VideoProvider } from '@astrmira/shared';
+import type { ProviderType, VideoProvider } from '@astrmira/shared';
 import { ProviderFailureError, resolveTaskError } from '../errors.js';
 import type { ProviderResolutionContext } from '../providers/registry.js';
 import type { KeyVault } from '../security/keyVault.js';
 import type { TrackId } from '../store/taskStore.js';
-import type { JobQueue, QueueJob } from './JobQueue.js';
+import type { JobQueue, QueueJob, TaskProgressUpdate } from './JobQueue.js';
 
 /**
  * 最小调度器（PLAN §1「双轨调度器」）：周期性向 `JobQueue` 领取任务并驱动 provider。
@@ -267,7 +267,7 @@ export class JobDispatcher {
     job: QueueJob,
     provider: VideoProvider,
     upstreamTaskId: string,
-  ): Promise<TaskProgress> {
+  ): Promise<TaskProgressUpdate> {
     const intervalMs = this.options.pollIntervalMs ?? 2000;
     const timeoutMs = this.options.pollTimeoutMs ?? 10 * 60_000;
     const deadline = Date.now() + timeoutMs;
@@ -319,7 +319,7 @@ export class JobDispatcher {
     provider: VideoProvider,
     upstreamTaskId: string,
     progressPercent: number,
-  ): Promise<TaskProgress> {
+  ): Promise<TaskProgressUpdate> {
     let acknowledged = false;
 
     try {

@@ -44,6 +44,7 @@ class StuckProvider implements VideoProvider {
       progressPercent: 10,
       requestSnapshot: request,
       message: '上游生成中（桩）',
+      createdAt: Date.now(), // V2.3：桩上游也要满足契约形状
     });
     return { taskId };
   }

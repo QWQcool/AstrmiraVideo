@@ -20,9 +20,24 @@ export const ErrorResponseSchema = z.object({
   disposition: ErrorDispositionSchema,
 });
 
+/**
+ * V2.3（CONTRACT §4 末尾）：`GET /api/history` 响应里的**输出目录聚合**。
+ * 目录级扫描（不是逐条累加），因此**老数据同样准确**；对账口径 = `du -sb outputs/`。
+ */
+export const StorageUsageSchema = z.object({
+  totalBytes: z.number().int().nonnegative(),
+  videoBytes: z.number().int().nonnegative(),
+  videoCount: z.number().int().nonnegative(),
+  thumbBytes: z.number().int().nonnegative(),
+  assetBytes: z.number().int().nonnegative(),
+  assetCount: z.number().int().nonnegative(),
+});
+
 /** `GET /api/history` 的 200 响应（含完整参数快照，供画廊一键回填） */
 export const HistoryResponseSchema = z.object({
   items: z.array(TaskProgressSchema),
+  // V2.3：输出目录聚合 —— 总览"存储占用"卡与"去清理"的数据源
+  storage: StorageUsageSchema,
 });
 
 /** `DELETE /api/history/:taskId` 与 `POST /api/tasks/:taskId/cancel` 的 200 响应 */
@@ -50,6 +65,7 @@ export const UploadResponseSchema = z.object({
 export type GenerateResponse = z.infer<typeof GenerateResponseSchema>;
 export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
 export type HistoryResponse = z.infer<typeof HistoryResponseSchema>;
+export type StorageUsage = z.infer<typeof StorageUsageSchema>;
 export type OperationResult = z.infer<typeof OperationResultSchema>;
 export type UploadedAsset = z.infer<typeof UploadedAssetSchema>;
 export type UploadResponse = z.infer<typeof UploadResponseSchema>;

@@ -38,6 +38,7 @@ class NeverCalledProvider implements VideoProvider {
       status: 'succeeded',
       progressPercent: 100,
       requestSnapshot: { prompt: 'x', mode: 't2v', aspectRatio: '16:9', provider: 'fixture-local' },
+      createdAt: Date.now(), // V2.3：桩上游也要满足契约形状
     };
   }
 

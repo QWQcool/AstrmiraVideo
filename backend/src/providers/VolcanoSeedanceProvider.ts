@@ -74,6 +74,15 @@ export class VolcanoSeedanceProvider implements VideoProvider {
   readonly name = '火山方舟 Seedance（BYOK）';
 
   private readonly taskId: string;
+  /**
+   * V2.3：`TaskProgress.createdAt` 在 provider 侧的口径。
+   *
+   * provider **不知道**服务端任务的创建时间（那是 `tasks.created_at`，权威在 store）；
+   * 调度器消费 provider 返回时走**显式字段更新**（`dispatcher` 的 `store.update` 逐字段列举），
+   * 因此这个值**不会**落库、也不会覆盖权威时间。这里取"本实例开始观测的时刻"，
+   * 仅用于让返回值满足契约形状（每次调用都造一个 `Date.now()` 反而会让同一任务的时间乱跳）。
+   */
+  private readonly observedAt = Date.now();
   private readonly providerKey: string | null;
   private readonly model: string;
   private readonly modelSource: 'request' | 'env' | 'default' | undefined;
@@ -192,6 +201,7 @@ export class VolcanoSeedanceProvider implements VideoProvider {
         requestSnapshot: snapshot,
         outputVideoUrl: localUrl,
         message: parsed.message ?? '上游生成完成',
+        createdAt: this.observedAt,
       };
     }
 
@@ -202,6 +212,7 @@ export class VolcanoSeedanceProvider implements VideoProvider {
       requestSnapshot: snapshot,
       ...(parsed.message === undefined ? {} : { message: parsed.message }),
       ...(parsed.error === undefined ? {} : { error: parsed.error }),
+      createdAt: this.observedAt,
     };
   }
 

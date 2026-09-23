@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { ErrorResponseSchema, OperationResultSchema, TaskProgressSchema } from '@astrmira/shared';
+import { resolveOutputsDir } from '../server/staticOutputs.js';
+import { withOutputSize } from '../server/storageUsage.js';
 import { toTaskProgress, type TaskStore } from '../store/taskStore.js';
 
 /**
@@ -12,6 +14,8 @@ const TaskIdParamsSchema = z.object({ taskId: z.string() });
 
 export interface TaskRoutesDeps {
   store: TaskStore;
+  /** 成片体积（V2.3）需要输出目录；默认 `OUTPUT_DIR` / `outputs` */
+  outputsDir?: string;
 }
 
 export const createTaskRoutes =
@@ -34,7 +38,8 @@ export const createTaskRoutes =
             disposition: 'terminal',
           });
         }
-        return toTaskProgress(record);
+        // V2.3：成功任务带上成片体积（详情抽屉的"文件大小"要用；文件已清理时省略该字段）
+        return withOutputSize(toTaskProgress(record), deps.outputsDir ?? resolveOutputsDir());
       },
     );
 

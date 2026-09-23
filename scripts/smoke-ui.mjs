@@ -498,6 +498,65 @@ try {
   await page.screenshot({ path: path.join(SHOT_DIR, 'gallery.png'), fullPage: false });
   note('画廊截图留档：artifacts/ui-smoke/gallery.png');
 
+  console.log('\n[6b] 总览（V9 · B3：四卡数字与 /api/history 逐一对账）');
+  await page.evaluate(() => { location.hash = '#/overview'; });
+  await page.locator('.ov-kpi').first().waitFor({ timeout: 10_000 });
+  assert((await page.locator('.ov-kpi').count()) === 4, '四卡齐全（今日生成 / 成功率 / 队列中 / 存储占用）');
+  assert((await page.locator('.ov-shot').count()) > 0, '最近成片九宫格有内容（[6] 段刚生成过一条）');
+  assert((await page.locator('.ov-feed-row').count()) > 0, '最近操作 feed 有内容');
+
+  // Step 6-AC2 的硬断言：界面上的数字必须与**原始 API 现算**的一致（不许出现算不出来的指标）
+  const audit = await page.evaluate(async () => {
+    const response = await fetch('/api/history');
+    const data = await response.json();
+    const items = data.items ?? [];
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+
+    const settled = items.filter((item) =>
+      ['succeeded', 'failed', 'cancelled'].includes(item.status),
+    );
+    const succeeded = settled.filter((item) => item.status === 'succeeded').length;
+
+    return {
+      expected: {
+        today: items.filter((item) => item.createdAt >= dayStart.getTime()).length,
+        rate: settled.length === 0 ? null : Math.round((succeeded / settled.length) * 100),
+        inFlight: items.filter((item) => item.status === 'queued' || item.status === 'running')
+          .length,
+        totalBytes: data.storage?.totalBytes ?? 0,
+        shots: Math.min(succeeded, 9),
+      },
+      cardText: Array.from(document.querySelectorAll('.ov-kpi')).map((el) => el.innerText),
+      shotCount: document.querySelectorAll('.ov-shot').length,
+    };
+  });
+
+  const [todayCard, rateCard, queueCard, storageCard] = audit.cardText;
+  assert(
+    todayCard.includes(String(audit.expected.today)),
+    `今日生成对账：界面含 ${audit.expected.today}（原始 API 现算）`,
+  );
+  assert(
+    rateCard.includes(audit.expected.rate === null ? '—' : String(audit.expected.rate)),
+    `成功率对账：界面含 ${audit.expected.rate === null ? '—' : `${audit.expected.rate}%`}`,
+  );
+  assert(
+    queueCard.includes(String(audit.expected.inFlight)),
+    `队列中对账：界面含 ${audit.expected.inFlight}`,
+  );
+  assert(
+    audit.expected.totalBytes === 0 ? storageCard.includes('0 B') : !storageCard.includes('0 B'),
+    `存储占用对账：totalBytes=${audit.expected.totalBytes}（界面=「${storageCard.split('\n').join(' / ')}」）`,
+  );
+  assert(
+    audit.shotCount === audit.expected.shots,
+    `九宫格数量对账：界面 ${audit.shotCount} = min(成功任务数, 9) = ${audit.expected.shots}`,
+  );
+
+  await page.screenshot({ path: path.join(SHOT_DIR, 'overview.png'), fullPage: false });
+  note('总览截图留档：artifacts/ui-smoke/overview.png');
+
   console.log('\n[7] 操作日志（V2.1，CONTRACT §10）');
   // 上面 [6] 段用界面真的提交过一条任务 → 它必须已经躺在操作日志里。
   // 这条断言把"界面动作 → 服务端留痕"整条链钉住（也是这次故障排错最需要的能力）。

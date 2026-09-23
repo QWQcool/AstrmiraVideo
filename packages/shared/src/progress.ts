@@ -55,6 +55,12 @@ export const TaskProgressSchema = z.object({
   warnings: z.array(z.string()).optional(),
   // 完整请求快照，供画廊一键回填
   requestSnapshot: VideoGenerateRequestSchema,
+  // V2.3（CONTRACT §4）：任务创建时间（epoch ms）——直接暴露 `tasks.created_at`（列与索引本就存在，零迁移）。
+  // 总览"今日生成"与视频库"按时间排序"的数据源。
+  createdAt: z.number().int(),
+  // V2.3（CONTRACT §4）：成片字节数（成功且文件仍在磁盘上时，服务端 stat 得出）。
+  // 用途：视频库"按大小排序"与详情抽屉的"文件大小"；**文件已清理时省略该字段**（不填 0）。
+  outputSizeBytes: z.number().int().nonnegative().optional(),
   error: TaskErrorSchema.optional(),
 });
 

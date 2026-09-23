@@ -110,6 +110,8 @@ export function withFaultInjection(provider: VideoProvider, plan: FaultPlan): Vi
               progressPercent: Math.round((pollCount / (total + 1)) * 100),
               requestSnapshot: { prompt: '', mode: 't2v', aspectRatio: '16:9', provider: provider.id },
               message: `注入：进度推进中（${pollCount}/${total}）`,
+              // V2.3：注入层兜出的假进度也要满足契约形状（该值不被调度器落库）
+              createdAt: Date.now(),
             };
           }
           break;

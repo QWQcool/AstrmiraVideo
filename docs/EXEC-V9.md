@@ -57,7 +57,8 @@
 - **破坏性验证**：临时把 `#/library` 从注册表删掉 → 访问该 hash 必须落到"未知视图"兜底（不许白屏）。
 - **提交**：`feat(shell): sidebar + hand-rolled hash router with a data-driven view registry`。
 
-### B3 · 总览页
+### B3 · 总览页【已完成 2026-09-23】
+> 含**契约 V2.3** 最小增量（createdAt / outputSizeBytes / storage）+ 心跳载荷收窄为 `TaskProgressUpdate`。实测：冒烟 [6b] 四卡对账全绿；破坏性验证（UTC 日界）命中；门禁 lint 0 / type 0 / 前端 86 / 后端 307 / 视觉自检 / UI 冒烟。
 - **改动**：`views/OverviewView.tsx`；数据全部来自既有 `GET /api/history` 与 `GET /api/logs`（前端聚合：今日生成数、成功率、队列中、存储占用），**不新增后端路由、不造成本指标**（PLAN §6-D33 注记）。
 - **细节**：存储占用卡带「去清理」→ `navigate('#/library')` 并带上"按大小排序"的状态；最近成片九宫格点卡片 → `#/library` 对应详情；最近操作 feed → `#/logs`。
 - **AC**：Step 6-AC2（四卡数字可与原始 API 逐一对账；空态文案）。

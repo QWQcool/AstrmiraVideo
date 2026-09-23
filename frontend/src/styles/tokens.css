@@ -113,6 +113,9 @@
   --fs-label: 12px;
   --fs-note: 11px;
   --fs-micro: 10px;
+  /* V9 B3 追加：总览 KPI 的"大数字"档。此前没有这一档，想比 --fs-display(20px) 更大
+     就只能写字面量 —— 而 AC6 明令禁止（F6 静态检查会拦）。 */
+  --fs-metric: 30px;
   --track-tight: -0.01em;
 }
 

@@ -5,6 +5,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { ErrorResponseSchema, HistoryResponseSchema, OperationResultSchema } from '@astrmira/shared';
 import { THUMBNAIL_DIR_NAME } from '../pipeline/thumbnail.js';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
+import { readStorageUsage, withOutputSize } from '../server/storageUsage.js';
 import { toTaskProgress, type TaskStore } from '../store/taskStore.js';
 
 /**
@@ -61,9 +62,19 @@ export const createHistoryRoutes =
       {
         schema: { response: { 200: HistoryResponseSchema } },
       },
-      async () => ({
-        items: deps.store.listRecent(50).map(toTaskProgress),
-      }),
+      async () => {
+        const outputsDir = deps.outputsDir ?? resolveOutputsDir();
+        const records = deps.store.listRecent(50).map(toTaskProgress);
+
+        // V2.3（CONTRACT §4/§5）：逐条补成片体积（stat）+ 目录级聚合（扫 outputs/）。
+        // 两者都是**只读**，并发跑；任何一项失败都在 storageUsage 内部降级，不让接口 500。
+        const [items, storage] = await Promise.all([
+          Promise.all(records.map((record) => withOutputSize(record, outputsDir))),
+          readStorageUsage(outputsDir),
+        ]);
+
+        return { items, storage };
+      },
     );
 
     app.delete(

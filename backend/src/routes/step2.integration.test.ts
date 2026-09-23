@@ -47,6 +47,7 @@ class CountingStubProvider implements VideoProvider {
       requestSnapshot: request,
       outputVideoUrl: `/media/${upstreamId}.mp4`,
       warnings: ['桩告警：验证 warnings 持久化'],
+      createdAt: Date.now(), // V2.3：桩上游也要满足契约形状
     });
     return { taskId: upstreamId };
   }

@@ -90,6 +90,7 @@ class StubProvider implements VideoProvider {
         provider: 'fixture-local',
       },
       outputVideoUrl: `/media/${taskId}.mp4`,
+      createdAt: Date.now(), // V2.3：桩上游也要满足契约形状
     };
   }
 

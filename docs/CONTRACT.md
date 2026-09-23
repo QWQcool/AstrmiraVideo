@@ -1,6 +1,11 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.2 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.3 · 已冻结（变更需先改本文，再改代码）**
+> **V2.3 修订（2026-09-23）**：**V9 B3 的最小数据增量**（方案 A；用户 2026-09-23 在 B1 闸门确认"确认做吧"）。
+>   ① **§4**：`TaskProgress` 新增 `createdAt`（epoch ms —— 直接暴露 `tasks.created_at`，**列本就存在、零迁移**）与可选 `outputSizeBytes`（成片字节数，服务端 `stat` 落盘文件得出）；
+>   ② **§5**：`GET /api/history` 的响应由 `{ items }` 扩为 `{ items, storage }`，`storage` 是 `outputs/` 的**目录级聚合**（成片 / 缩略图 / 参考资产）——老数据同样准确，不依赖逐条累加；`StorageUsage` 形状见 §4 末尾。
+>   为什么加：V9 总览页四卡（今日生成 / 成功率 / 队列中 / 存储占用）与视频库"按时间 / 大小排序"此前**算不出来**（history 既无时间戳也无体积）——这是 Step 6-AC2「不许出现算不出来的指标」的落地前提。
+>   纪律：只暴露**已有列**、只做**只读聚合**；不新增表、不新增路由、不引入后台任务。
 > **V2.2 修订（2026-09-23）**：**V9 前端改版的接口规划**（PLAN §4 Step 6，决策 D33~D38）。本节内容均为**【规划】**，实现前不得当作事实引用。
 >   ① **§3**：`PromptEnhanceRequest` 新增可选 `recipeId`（配方库作为扩写的风格上下文）；
 >   ② **§5**：路由表新增 `POST /api/edits`（轻剪辑台，本地 ffmpeg，**零上游调用**）；
@@ -235,6 +240,11 @@ export interface TaskProgress {
   warnings?: string[];            // 用户可见的非阻断告警（如"素材短于请求时长，已循环播放"、"循环素材自带音轨，已静音"）
                                   // 与 message（进度描述）职责分离：可并存多条、不随进度刷新被覆盖、随任务记录持久化
   requestSnapshot: VideoGenerateRequest; // 完整请求快照，供画廊一键回填
+  createdAt: number;               // V2.3：任务创建时间（epoch ms）——总览"今日生成"与视频库"按时间排序"的数据源
+                                   // 直接暴露 `tasks.created_at`（该列与索引本就存在，零迁移）
+  outputSizeBytes?: number;        // V2.3：成片字节数（成功且文件仍在磁盘上时，服务端 stat 得出）
+                                   // 用途：视频库"按大小排序"、详情抽屉的"文件大小"；
+                                   // 文件已被清理时**省略该字段**（不填 0 —— 0 会被读成"空文件"）
   error?: {
     code: ErrorCode;              // 见 §6 错误码字典
     message: string;
@@ -249,6 +259,20 @@ export interface VideoProvider {
   submit(req: VideoGenerateRequest): Promise<{ taskId: string }>;
   queryStatus(taskId: string): Promise<TaskProgress>;
   cancel(taskId: string): Promise<boolean>;
+}
+
+/**
+ * V2.3：`GET /api/history` 响应里的**输出目录聚合**（不是逐条累加——老数据同样准确）。
+ * 对账口径：与 `du -sb outputs/` 一致（成片 + 缩略图 + 参考资产）。
+ * 实现：`backend/src/server/storageUsage.ts`（只读扫描，可选 5s 缓存）。
+ */
+export interface StorageUsage {
+  totalBytes: number;   // 三项之和
+  videoBytes: number;   // 成片（`outputs/*.mp4`）
+  videoCount: number;
+  thumbBytes: number;   // 缩略图（`outputs/thumbs/*.jpg`）
+  assetBytes: number;   // 参考资产（`outputs/assets/*`）
+  assetCount: number;
 }
 ```
 
@@ -268,7 +292,7 @@ export interface VideoProvider {
 | `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消；已在终态 → `{ ok: false }`）。**200 → `{ ok, taskId }`**。语义是**尽力而为**：服务端把任务置 `cancelled`（此后调度器**不再推进**、也不会被 heartbeat 覆盖），并**通知上游停止**；上游是否真的停止、是否已产生费用，本服务无法代上游保证 —— 前端文案必须如实说明并指向服务商后台核对 |
 | `POST` | `/api/prompt/enhance` | 提示词扩写助手（**V2.0 已实现**，凭据经 `X-LLM-Key`，见下方注记段）。**200 → `PromptEnhanceResponse`（§3，含必填 `engine`）**；无 Key → **501 `LLM_NOT_CONFIGURED`**；空 / 超长提示词 → **400 `PROMPT_REJECTED`**；上游拒绝凭据 → **401 `KEY_INVALID`**；其余上游故障（含超时）→ **502 `UPSTREAM_ERROR`**。状态映射的完整口径见 §3 |
 | `POST` | `/api/upload` | 上传参考图/视频（multipart，≤20MB × ≤4，**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目） |
-| `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[] }`**（最近 50 条） |
+| `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage }`**（`items` 最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾） |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
 | `POST` | `/api/providers/keys/verify` | **V2.1 新增（原【规划·B2】）**：凭据与模型校验，**零费用**。请求头按轨取（视频 `X-Provider-Key` / 文本 `X-LLM-Key`）；**200 → `KeyVerifyResponse`（§9）**；未带 Key → **501 `KEY_MISSING`**；凭据被上游拒绝 → **401 `KEY_INVALID`**；上游不可达 → **502 `UPSTREAM_ERROR`** |
 | `GET` | `/api/logs` | **V2.1 新增**：操作日志查询（筛选 + 分页，见 §10）。**200 → `{ items, total }`** |

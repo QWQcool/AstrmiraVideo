@@ -34,6 +34,8 @@ const VALID_TASK = {
     aspectRatio: '16:9',
     provider: 'fixture-local',
   },
+  // V2.3（CONTRACT §4）：任务创建时间（epoch ms）现在是必填 —— 缺了就该被契约拦下
+  createdAt: 1_756_000_000_000,
 };
 
 afterEach(() => {

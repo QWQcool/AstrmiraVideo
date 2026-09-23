@@ -75,6 +75,8 @@ export class FixtureLocalProvider implements VideoProvider {
       progressPercent: 0,
       requestSnapshot: request,
       message: '夹具渲染中',
+      // V2.3：任务创建时间（夹具自己就是"上游"，它知道得最准）
+      createdAt: Date.now(),
     });
 
     const progress = await this.render(taskId, request, clipPath);
@@ -176,6 +178,9 @@ export class FixtureLocalProvider implements VideoProvider {
     const outputPath = path.join(this.outputDir, outputName);
     args.push('-y', outputPath);
 
+    // V2.3：沿用 submit 时记下的创建时间（拿不到才回落，避免上下文丢失时崩）
+    const createdAt = this.tasks.get(taskId)?.createdAt ?? Date.now();
+
     try {
       await runMediaTool('ffmpeg', args);
     } catch (err) {
@@ -184,6 +189,7 @@ export class FixtureLocalProvider implements VideoProvider {
         status: 'failed',
         progressPercent: 0,
         requestSnapshot: request,
+        createdAt,
         error: {
           code: 'UPSTREAM_ERROR',
           message: `夹具渲染失败：${(err as Error).message}`,
@@ -199,6 +205,7 @@ export class FixtureLocalProvider implements VideoProvider {
       requestSnapshot: request,
       outputVideoUrl: `/media/${outputName}`,
       warnings,
+      createdAt,
       message: needsTrim ? '夹具渲染完成（已裁切到请求时长）' : '夹具渲染完成',
     };
   }

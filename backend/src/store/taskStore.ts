@@ -78,6 +78,11 @@ export function toTaskProgress(record: TaskRecord): TaskProgress {
     ...(record.warnings.length === 0 ? {} : { warnings: record.warnings }),
     ...(record.error === undefined ? {} : { error: record.error }),
     ...(record.message === undefined ? {} : { message: record.message }),
+    // V2.3：任务创建时间（`tasks.created_at` 列本就存在且有索引，零迁移）。
+    // 总览"今日生成"与视频库"按时间排序"的数据源。
+    createdAt: record.createdAt,
+    // 注：`outputSizeBytes` **不在这里**填 —— 它要 stat 落盘文件（IO），
+    // 由路由层的 `withOutputSize` 补（见 routes/history.ts），本函数保持纯映射。
   };
 }
 

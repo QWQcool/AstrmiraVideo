@@ -42,6 +42,7 @@ function createCountingStub() {
         progressPercent: 100,
         requestSnapshot: request,
         outputVideoUrl: `/media/${upstreamId}.mp4`,
+        createdAt: Date.now(), // V2.3：桩上游也要满足契约形状
       });
       return { taskId: upstreamId };
     },

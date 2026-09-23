@@ -1,6 +1,6 @@
 import type { TaskError, TaskProgress } from '@astrmira/shared';
 import type { TaskStore, TrackId } from '../store/taskStore.js';
-import type { JobQueue, QueueJob } from './JobQueue.js';
+import type { JobQueue, QueueJob, TaskProgressUpdate } from './JobQueue.js';
 
 /**
  * `JobQueue` 的 SQLite 实现（PLAN §6-D20）：调度器只面向接口，
@@ -55,7 +55,7 @@ export class SqliteJobQueue implements JobQueue {
     };
   }
 
-  async heartbeat(taskId: string, progress: TaskProgress): Promise<void> {
+  async heartbeat(taskId: string, progress: TaskProgressUpdate): Promise<void> {
     this.store.update(taskId, {
       status: progress.status,
       progressPercent: progress.progressPercent,
