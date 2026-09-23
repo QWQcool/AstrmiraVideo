@@ -225,6 +225,39 @@ if (result.status !== 0) {
   fail(`docker compose 执行失败（退出码 ${result.status}）。上方的输出即为原因。`);
 }
 
+/**
+ * Caddyfile 是**挂载进容器**的：`up -d --build` 不会因为文件内容变化而让它重读配置，
+ * 于是"仓库改了反代配置、线上还是旧行为"这种漂移会一直躺着 —— 正是本项目最忌讳的那类问题
+ * （2026-09-23 实测踩到：补了 `/media/assets/*` 的匿名豁免，线上却仍返回 401）。
+ *
+ * 用 Caddy 自己的 `reload` 做**优雅重载**：零停机，且配置语法错误会当场暴露。
+ * 重载失败**视为部署失败**：旧配置仍在生效（站点不会中断），但这说明仓库与线上已经不一致。
+ */
+if (!LOGS_ONLY) {
+  const reload = spawnSync('docker', [
+    'compose',
+    '--env-file',
+    envPath,
+    '-f',
+    composePath,
+    'exec',
+    '-T',
+    'caddy',
+    'caddy',
+    'reload',
+    '--config',
+    '/etc/caddy/Caddyfile',
+  ]);
+
+  if (reload.status !== 0) {
+    fail(
+      'Caddy 配置重载失败（旧配置仍在生效，站点不会中断）。\n' +
+        '  多半是 Caddyfile 语法错误 —— 修好后重跑本次部署即可。',
+    );
+  }
+  console.log('✓ Caddy 配置已重载（反代配置与仓库保持一致）\n');
+}
+
 if (!LOGS_ONLY) {
   console.log('\n✓ 已启动。建议按顺序自检：');
   console.log(`  1. 健康探针      curl -k https://${deployHost}/api/health`);
