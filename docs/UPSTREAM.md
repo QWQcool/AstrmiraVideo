@@ -78,7 +78,7 @@ curl -s -X POST https://ark.cn-beijing.volces.com/api/v3/chat/completions \
 
 | 引用位置 | 值 | 验证状态 |
 |---|---|---|
-| `SEEDANCE_DEFAULT_MODEL`（协议层兜底） | `doubao-seedance-2-0-mini-260615` | **【已验证】**该账号已开通（400 探针）+ 2.0 最便宜档 |
+| `SEEDANCE_DEFAULT_MODEL`（协议层兜底） | `doubao-seedance-2-0-mini-260615` | **【已验证】开通状态 + 真实出片**（2026-09-23：T2V 5s/720p 出片成功，提交→终态 86.5s，产物 5.09s/1280×720/h264+AAC，无水印） |
 | `VIDEO_MODEL_PRESETS`（抽屉下拉，6 档） | `doubao-seedance-2-0-mini-260615` / `1-0-pro-fast-251015` / `1-0-pro-250528` / `2-0-fast-260128` / `2-0-260128` / `2-5-260628` | **【已验证】**六档均通过空 content 探针（2026-09-23）；**价格说明仅为【待验证】**（官方活动页与公开报道，未经我方计费账单核对） |
 | `LLM_PRESETS.volcano-ark.model`（文本轨） | `doubao-seed-2-1-lite-260915` | **【已验证】**`max_tokens:1` 返回 200（同账号另可用：`doubao-seed-2-0-mini-260215` / `deepseek-v4-flash-ga-260731` / `glm-5-3-flash-260828`） |
 | 已淘汰的错值 | `doubao-seedance-video`（模板占位符，**非真实 id**） | **【已验证不可用】**404；曾导致线上故障，见 PLAN §5「V8.3 批次 6」 |

@@ -13,6 +13,7 @@
     "test:frontend": "pnpm --filter frontend test",
     "test:e2e": "pnpm --filter backend test:e2e",
     "test:coverage": "pnpm --filter backend test:coverage",
+    "smoke:paid": "node scripts/smoke-seedance-paid.mjs",
     "test:contract": "pnpm --filter backend exec vitest run src/contract.test.ts",
     "test:fixtures": "node scripts/make-fixture-clips.mjs",
     "smoke:ui": "node scripts/smoke-ui.mjs",

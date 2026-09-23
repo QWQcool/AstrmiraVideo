@@ -4,13 +4,19 @@ import { createTaskError } from '../errors.js';
 /**
  * 火山方舟 Seedance 的**协议适配层**（纯函数，无 IO —— 便于单测与桩验证）。
  *
- * ## ⚠️ 证据等级声明（不要在别处复制这段话又改口气）
- * 本文件里的上游细节分两级，混淆它们就等于伪造验证：
- * - **【已确认】**：端点是官方公开信息（官方文档 snippet 直接给出
- *   `POST/GET/DELETE https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks[/{id}]`）；
- * - **【待验证】**：请求体字段名、`content` 数组结构、`--` 尾缀参数、响应 `status` 枚举与
- *   `content.video_url` 位置 —— 多来源一致，但**官方文档页是 SPA 抓不到正文、且本仓库尚无可用 Key**，
- *   因此**尚未实测**。首次真实冒烟（AC2）时逐项核对本文件；有出入**只改这里**（PLAN §8 风险 R2）。
+ * ## ✅ 证据等级（2026-09-23 真实出片后更新，逐项见下）
+ * 本文件里的上游细节原先分【已确认】/【待验证】两级。**2026-09-23 用一把可用 Key
+ * 真机出片一次（`scripts/smoke-seedance-paid.mjs`，720p / 5s / mini）**，四个待验证项全部落地：
+ * | 待验证项 | 实测结论 | 证据 |
+ * |---|---|---|
+ * | 请求体字段名 + `content` 数组结构 | **一致** | 上游受理并产出任务（HTTP 200 + 可轮询） |
+ * | `--` 尾缀参数（duration/ratio/resolution/watermark） | **一致** | 请求 5s/16:9/720p → 成片 5.09s / 1280×720；`--watermark false` 下画面无水印 |
+ * | 响应 `status` 枚举 | **queued/running/succeeded 一致**；`failed`/`cancelled` 仍未实测 | 轮询依次读到 queued → running → succeeded |
+ * | `content.video_url` 位置 | **一致** | 成片被成功下载（2.23MB）并落盘到 `outputs/` |
+ *
+ * 仍未实测的两项（**不得**当作已验证）：`image_url` 的 `role` 语义（首/尾/参考帧）与
+ * `failed`/`cancelled` 两个枚举值 —— 前者要一次 I2V 真机、后者要一次真实失败。
+ * 有出入**只改这里**（PLAN §8 风险 R2）。
  *
  * ## 设计要点
  * 把"可能出错的上游细节"全部收进本文件，`VolcanoSeedanceProvider` 只负责流程与错误归类。
@@ -52,7 +58,8 @@ export interface SeedanceSubmitBody {
 }
 
 /**
- * 【待验证】分辨率档位：方舟按 `480p / 720p / 1080p` 这类档位表达，而不是像素尺寸。
+ * 【已验证】分辨率档位：方舟按 `480p / 720p / 1080p` 这类档位表达，而不是像素尺寸
+ * （2026-09-23 实测：传 `--resolution 720p` 得到 1280×720 成片）。
  * 这里按**短边**归档（480p≈短边 480），仅作默认；用户可用 `options.seedanceResolution` 覆盖。
  */
 export function resolutionToTier(width: number, height: number): '480p' | '720p' | '1080p' {
@@ -93,7 +100,8 @@ export interface BuildSubmitOptions {
 /**
  * 契约请求 → 上游请求体。
  *
- * 【待验证】的两个约定都体现在这里：
+ * 【已验证 2026-09-23】的两个约定都体现在这里（真机出片一次：请求 5s / 16:9 / 720p →
+ * 成片 5.09s / 1280×720 / h264 + AAC 音轨；`--watermark false` 下画面无水印）：
  * 1. `duration / ratio / resolution / seed / watermark` **不是独立字段**，而是拼在 `text` 末尾的 `--` 参数；
  * 2. 图片走 `content` 里的 `image_url` 元素，`role` 区分首/尾/参考帧。
  */
@@ -133,7 +141,12 @@ export function buildSeedanceSubmitBody(
   return { model: options.model, content };
 }
 
-/** 【待验证】上游状态枚举 → 契约状态。未知值一律当 `running`（**绝不能把未知当成功**） */
+/**
+ * 上游状态枚举 → 契约状态。未知值一律当 `running`（**绝不能把未知当成功**）。
+ *
+ * 【部分已验证 2026-09-23】实测依次读到 `queued` → `running` → `succeeded`；
+ * `failed` / `cancelled` / `canceled` / `expired` 四个分支**仍未实测**（要一次真实失败或取消）。
+ */
 export function mapUpstreamStatus(raw: unknown): TaskProgress['status'] {
   switch (raw) {
     case 'queued':
@@ -158,7 +171,8 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 /**
- * 【待验证】响应形状的**容错读取**。
+ * 响应形状的**容错读取**（`content.video_url` 的位置【已验证 2026-09-23】：成片被成功下载；
+ * 其余别名键仍属"见过但未逐一对过"的保险）。
  * 刻意写得宽松（`id`/`task_id`、`content.video_url`/`video_url` 都认），因为上游字段名
  * 在文档版本间有差异；但**严谨处不放松**：读不到就返回 `undefined`，由上层报错，
  * 绝不编一个地址出来。

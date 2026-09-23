@@ -34,6 +34,13 @@
 > **服务器 `.env.deploy` 里那行占位符仍未清**（实测：不带 model 调校验接口会得到"模型 `doubao-seedance-video` 不可用"）——
 > 界面用户已不受影响，但"不带模型的 API 调用"仍会 404；清掉那行 + `docker compose up -d` 即可。
 > 另：V2.1 起顶栏有「日志」（操作日志，CONTRACT §10，噪声纪律：只记写操作与失败请求）。
+>
+> ✅ **服务器那行占位符已清（2026-09-23）**：借 runner 的一次性工作流备份并注释后重建容器，实测容器内 `VOLCANO_MODEL_NAME` 为空、启动日志无占位符告警；
+> 线上复验："不带模型的校验请求"已从"模型 `doubao-seedance-video` 不可用"变为"未提供模型：凭据有效，上游共 135 个模型可选"。
+>
+> ✅ **真实出片已完成一次（T2V，2026-09-23）**：`pnpm smoke:paid --confirm-spend`（`scripts/smoke-seedance-paid.mjs`，走产品路径 + `X-Provider-Key`）。
+> 实测：提交→终态 **86.5s**、成片 5.09s/1280×720/h264+**AAC 音轨**、2.23MB、206 Range 正常、封面抽帧成功、无水印；§8 成本表已回填（金额待账单核对）。
+> **仍待**：I2V / FL2V / V2V 各一次（同脚本 `--i2v <图>`，验 `image_url` 的 `role` 语义）+ Step 4 端到端验收。
 
 **当前卡点与待办**：**Step 5 已上线，且 CI → CD 已实测跑通**（push 到 main → CI 全绿 → `deploy` job 自动 scp 上传 + 服务器本地构建镜像 + 健康检查；实测 `verify` 与 `deploy` 双绿，站点返回 CSP 与三项安全头，`/api/health` 为 200）。Secrets 为 `DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / **`SSH_PASSWORD`**。
 

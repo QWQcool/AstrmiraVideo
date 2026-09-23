@@ -113,7 +113,9 @@
 - **实施顺序（已定）**：`OI-2 夹具 provider` → 公共链路（存储 / 画廊 / 206 / 磁盘 / 幂等键）→ `Seedance`（AC2，真金白银）→ `OI-1 素材`。理由：公共链路是所有 provider 的共同地基；OI-2 是唯一「无 Key、无网、无 GPU、零成本、结果确定」的 provider，而 AC4（重启恢复）与 AC7（不确定不重提）需要**反复制造故障**，只有用夹具 provider 才能不花钱地反复跑。
 - **任务**：`pipeline/smartCrop.ts`（32 倍数居中裁切）；`pipeline/imageSanitize.ts`（防线 4 图像清洗网关）；`providers/VolcanoSeedanceProvider.ts`（提交+轮询+下载）；`providers/LocalH3Provider.ts`（子进程调度+互斥锁，**host scope**）；`providers/registry.ts`（provider 唯一注册点）；`providers/statusProbe.ts`（**本地引擎配置自检**——读 env 做一次轻量校验并写内存缓存，**非硬件扫描**；到达路径 = 配 env + 重启，细则见 §6-D22 / §7-2）；**凭据中间件（`X-Provider-Key` 解析 + 掩码 + pino `redact`，见 CONTRACT §5「凭据传递约定」）**；**三态错误码与幂等键**（CONTRACT §5 / §6）；**开发期故障注入层**（见下方「Step 2 补充」）；**CI 三件套（lint / type / test）** 及 `pnpm test:contract` 契约层脚本；**防线 5 防抖限流（60s 冷却落 SQLite，键 = 来源 IP + BYOK Key 指纹的**复合键**；台账 B8 已随 Step 5 前置落地）**；**`/api/upload` 上传加固（≤20MB × ≤4 个、魔数嗅探、类型白名单、路径不含用户输入）**；**公网最小鉴权中间件骨架（Step 5 前强制启用；回环免鉴权，细则 §7-4）**；`/api/prompt/enhance`（**已实现（CONTRACT V2.0 / V8.3 批次 4）**：OpenAI 兼容单实现 + `LLM_PRESETS`；前端 ✨ **未配置文本 Key 时不可用、配置后可用**，**纯 BYOK：服务端不设兜底 Key**）；路由挂载 `/api/generate`、`/api/tasks/:taskId`、`/api/providers/status`、`/api/upload`、`/api/history`；SQLite 任务存储；`packages/shared` 契约包随契约变更同步。
 - **AC1**：契约层测试全绿（`pnpm test:contract`，覆盖 CONTRACT.md 全部路由与错误码，含三态 `disposition` 穷举）。
-- **AC2**：Seedance 真实冒烟出片 1 次，记录实际耗时与费用，回填 §8 成本表（消除【待验证】标记）。**硬要求：冒烟必须走 `X-Provider-Key` 通道**（用 env 兜底 Key 绕开 = 等于没验证 BYOK 通道，见 §6-D23）；并逐项核对 `backend/src/providers/seedanceProtocol.ts` 中标【待验证】的上游字段（请求体结构 / `--` 尾缀参数 / `status` 枚举 / `content.video_url` 位置）。**当前阻塞：待一把可用的火山方舟 Key。**
+- **AC2**：Seedance 真实冒烟出片 1 次，记录实际耗时与费用，回填 §8 成本表（消除【待验证】标记）。**硬要求：冒烟必须走 `X-Provider-Key` 通道**（用 env 兜底 Key 绕开 = 等于没验证 BYOK 通道，见 §6-D23）；并逐项核对 `backend/src/providers/seedanceProtocol.ts` 中标【待验证】的上游字段（请求体结构 / `--` 尾缀参数 / `status` 枚举 / `content.video_url` 位置）。
+  **【T2V 已完成 2026-09-23】**：`scripts/smoke-seedance-paid.mjs`（走产品路径：本地后端 + `X-Provider-Key` + 2s 轮询）用 `doubao-seedance-2-0-mini-260615` / 720p / 5s 出片成功 —— 提交→终态 **86.5s**、成片 **5.09s / 1280×720 / h264 + AAC 2ch**、2.23MB、`/media` **206 Range 正常**、封面抽帧成功、画面**无水印**；四项【待验证】上游字段全部落地（见协议层文件头的证据表）；§8 成本表已回填（金额待账单核对）。
+  **仍待**：`image_url` 的 `role` 语义（首/尾/参考帧）需一次真实 **I2V / FL2V / V2V** 冒烟（同脚本 `--i2v <图>`），以及 `failed`/`cancelled` 枚举的真实样本。
 - **AC3**：本地并发提交 2 个任务，第 2 个任务状态为 `queued`，无第二个推理进程被拉起。
 - **AC4**：服务重启后，进行中的任务能从 SQLite 恢复状态，前端刷新可重挂载。
 - **AC5**：可选实现项 OI-2（`fixture-local`）产出真实可播 MP4，`ffprobe` 校验通过，全程零外网依赖、零配额消耗；见下方「Step 2 补充」。
@@ -342,7 +344,11 @@
         - **操作日志（CONTRACT §10）**：`event_log` 表 + `EventLogStore`（增删查 + 筛选）+ `server/requestLog.ts` 钩子（**噪声纪律**：写操作与失败请求记；`/media`、`/api/health`、日志页自身、成功的读请求不记）+ `routes/logs.ts` + 前端顶栏「日志」全屏页（时间/IP/动作/错误码/关键词筛选、分页、展开详情、删单条、按筛选清空、自动刷新 3s 可关）。用户 2026-09-23 拍板：**明文 IP、全员可见不加权限、全保留可手删、记请求体**（multipart 只记摘要、JSON 截断 4KB）。
         - **验证**：后端 **31 文件 / 291 用例**（新增 43：假上游 11 / 校验路由 8 / 请求日志 8 / 日志存储 8 / 注册点门控 1 + 既有用例修订），前端 **74**（+8），UI 冒烟新增第 7 节（**界面提交的任务必须出现在操作日志里** + 日志页轮询不被自记）；覆盖率总 **90.8%**，新增模块带文件级门限（覆盖率还逼出了 `listAvailableProviders()` 这段**死代码**，已删）。
         - **顺手清掉的两处**：① `checkHealth` 提示里指向不存在的 env 名；② 前端 `api.test.ts` 复用同一个 `Response` 导致第二次读 body 抛错（测试自身的缺陷）。
-      - [ ] **批次 5 · 等 Key**（**剩余项：真实出片冒烟与成本表回填**）：Step 2-AC2 真实冒烟 + §8 成本表回填；Step 4 端到端；顺带核验 `seedanceProtocol.ts` 里时长/分辨率等【待验证】字段，**以及本批次 3-⑤ 新增的 `last_frame` / `reference_image`（视频）字段接受度**。
+      - [~] **批次 5 · 真实出片【T2V 已完成 2026-09-23】**（用户提供可用方舟 Key 后开跑）：
+        - **已完成**：`scripts/smoke-seedance-paid.mjs`（新，付费冒烟工具，带 `--confirm-spend` 防误跑）用 `doubao-seedance-2-0-mini-260615` / T2V / 720p / 5s **真机出片 1 次**，走的是产品路径（本地后端 + **`X-Provider-Key` 请求头**，符合 AC2 的硬要求）。实测：提交→终态 **86.5s**；成片 **5.09s / 1280×720 / 24fps / h264 + AAC 2ch 32kHz**（上游自带音轨）；**2.23MB**；`/media` 段请求 **HTTP 206**（`content-range=bytes 0-1023/2337094`）；**封面抽帧成功**；画面**无水印**（`--watermark false` 生效）；`requestSnapshot.options.model` 就是请求下发的那个（**优先级修复在真机上成立**）。§8 成本表已回填。
+        - **四项【待验证】上游字段全部落地**（证据表写进 `seedanceProtocol.ts` 文件头）：请求体结构 ✓、`--` 尾缀参数 ✓（5s/16:9/720p 全部生效）、`status` 枚举 ✓（queued→running→succeeded）、`content.video_url` ✓（成片成功下载）。
+        - **顺带发现的真实缺陷（都已登记）**：① **跨镜头主体一致性**：同一盏灯在 0.3s（近方形灯罩）、2.4s（圆形底座特写）、4.6s（圆筒灯罩）三个镜头里形态略有漂移 —— 广告片要"同一产品"必须用 I2V/首尾帧锁形或参考图，**说明 3-⑤ 新增的模式入口有真实用武之地**；② **云端轨默认带音轨**：prompt 未要求声音却产出 AAC 2ch —— 不可再假定"云端无声"，相关文案已改（`GUIDE` Q1 只讲本地 H3 的双引号台词纪律）；③ **费用只能估算**：`TaskProgress` 不含上游 usage，脚本只能按官方计费公式推算（≈108k token ≈ 1~2.5 元），**要精确入账得去方舟账单**（已登记 B24）。
+        - **仍待（同一批次内）**：**I2V / FL2V / V2V 各一次真实出片**（验 `image_url` 的 `role` 语义与 3-⑤ 的槽位映射，同脚本 `--i2v <图>` 即可）；Step 4 端到端验收（AC1 要求 T2V + I2V 各跑通完整链路）。
 
 ---
 
@@ -402,8 +408,8 @@
 | 项 | 数字 | 标记 |
 |---|---|---|
 | 本地 H3 出片耗时 | 480x832 / 124 帧：Tier 2（16GB）实测 Disk Offload 单步耗时约 8~14 分钟，50 步全量生成约需 7~10 小时；不可用于实时交互，仅适合离线批处理 | 【已验证实测】详见 gen_drama.log |
-| 云端 Seedance 耗时 | 约 30 秒~1 分钟 | 【待验证】Step 2-AC2 回填 |
-| 云端 Seedance 单次成本 | 待冒烟后按官方计费回填 | 【待验证】 |
+| 云端 Seedance 耗时 | **提交→终态 86.5s**（`doubao-seedance-2-0-mini-260615` / T2V / 720p / 5s；其中排队与生成合计，轮询在 2s 内首次拿到 `queued`） | **【已验证实测】**2026-09-23，`scripts/smoke-seedance-paid.mjs` |
+| 云端 Seedance 单次成本 | **约 1~2.5 元 / 条（5s @720p）【估算】**：按上游计费口径 `token = (输入时长+输出时长) × 宽 × 高 × 帧率 ÷ 1024` = 5×1280×720×24÷1024 ≈ **108,000 token**；mini 档第三方价目 $3.24/M（输入不含视频）→ ≈ $0.35。**实际扣费以方舟控制台账单为准**（未核对我方账单） | **【待验证】**金额待账单核对；**计算口径与耗时口径已实测** |
 
 **风险登记**：
 - R1：DiffSynth-Studio / H3 权重版本漂移 → 锁版本号并记录于 UPSTREAM.md；
