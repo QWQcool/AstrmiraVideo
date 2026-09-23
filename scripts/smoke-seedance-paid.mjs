@@ -71,7 +71,10 @@ const DEFAULT_PROMPT = [
   '质感：广告大片，2700K 暖光与冷蓝环境光的对比，浅景深，微距质感，画面干净稳定，无文字无字幕。',
 ].join('\n');
 
-const PROMPT = flagValue('--prompt') ?? DEFAULT_PROMPT;
+// `--prompt-file` 是为了避开在命令行里传中文长文本：Windows 的 shell 编码很容易把它弄坏
+const PROMPT_FILE = flagValue('--prompt-file');
+const PROMPT =
+  PROMPT_FILE === undefined ? (flagValue('--prompt') ?? DEFAULT_PROMPT) : readFileSync(PROMPT_FILE, 'utf8').trim();
 const MODE = I2V_IMAGE === undefined ? 't2v' : 'i2v';
 
 console.log('── 将要发生的事 ─────────────────────────────');

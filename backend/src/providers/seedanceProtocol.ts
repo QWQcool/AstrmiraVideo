@@ -18,6 +18,13 @@ import { createTaskError } from '../errors.js';
  * `failed`/`cancelled` 两个枚举值 —— 前者要一次 I2V 真机、后者要一次真实失败。
  * 有出入**只改这里**（PLAN §8 风险 R2）。
  *
+ * ## 追加证据（同日第二次冒烟：I2V）
+ * `image_url` + `role: 'first_frame'` **已实测可用**：把上一条成片的首帧 JPEG（1280×720）经
+ * `/api/upload`（过防线 4 清洗网关）上传为资产，再走 I2V 出片成功 —— 提交→终态 **124.7s**，
+ * 成片 5.09s / 1280×720 / h264 + AAC 音轨，且**灯型与首帧保持一致**（这正是"锁形"的用处）。
+ * 同时确认：`image_url.url` 接受 **base64 data URL**（本机 `PUBLIC_BASE_URL` 为空时的回落路径）。
+ * `last_frame` / `reference_image`（含视频）**仍未实测**。
+ *
  * ## 设计要点
  * 把"可能出错的上游细节"全部收进本文件，`VolcanoSeedanceProvider` 只负责流程与错误归类。
  * 这样上游改字段时，改动面就是这一个文件，且它的单测会立刻告诉你哪些假设被打破。

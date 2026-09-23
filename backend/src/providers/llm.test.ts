@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { LLM_PRESETS } from '@astrmira/shared';
 import { ProviderFailureError } from '../errors.js';
 import { redactSecrets } from '../security/redact.js';
-import { enhancePromptWithLlm, extractJsonObject, resolveLlmEndpoint } from './llm.js';
+import {
+  enhancePromptWithLlm,
+  extractEnhancedPromptLoosely,
+  extractJsonObject,
+  looksLikeJsonEnvelope,
+  resolveLlmEndpoint,
+} from './llm.js';
 
 /**
  * 文本轨（V2.0，PLAN §6-D24 落地台账 B3）。
@@ -130,6 +136,42 @@ describe('extractJsonObject · 模型不一定乖乖只回 JSON', () => {
   });
 });
 
+/**
+ * 模型把 JSON 写坏时的三条退路（2026-09-23 线上实测驱动）。
+ *
+ * 真实事故：模型在 JSON 字符串里写了**真换行**→ 严格解析失败 → 旧实现把整段 JSON 当成提示词回填，
+ * 用户接着就把 `{"enhancedPrompt":"…"}` 提交去出片了（花了钱）。
+ * 新口径：先宽松抠正文；抠不出就**保留用户原文**；只有"看起来是普通散文"时才按纯文本采用。
+ */
+describe('extractEnhancedPromptLoosely / looksLikeJsonEnvelope', () => {
+  it('多行 JSON（字符串里有真换行）也能把正文抠出来', () => {
+    const broken = `{
+  "enhancedPrompt": "竖屏短剧画面，一位年轻女孩独自站在雨夜的城市街头，
+  她缓缓抬起头，脸上绽放出微笑着说道：\\"我等的就是你\\"",
+  "cameraMovementSuggested": "缓慢推近"
+}`;
+
+    expect(extractJsonObject(broken)).toBeNull(); // 严格解析确实失败
+    const loose = extractEnhancedPromptLoosely(broken);
+    expect(loose).toContain('竖屏短剧画面');
+    expect(loose).toContain('我等的就是你');
+    expect(loose).not.toContain('cameraMovementSuggested');
+  });
+
+  it('抠不出正文时返回 undefined（由调用方保留原文，绝不回填 JSON 外壳）', () => {
+    expect(extractEnhancedPromptLoosely('{"foo":1}')).toBeUndefined();
+    expect(extractEnhancedPromptLoosely('{"enhancedPrompt":"{坏的"}')).toBeUndefined();
+    expect(extractEnhancedPromptLoosely('完全不是 JSON')).toBeUndefined();
+  });
+
+  it('"看起来像结构化数据"的判定：JSON 外壳与键值对形态都算', () => {
+    expect(looksLikeJsonEnvelope('{"a":1}')).toBe(true);
+    expect(looksLikeJsonEnvelope('[1,2]')).toBe(true);
+    expect(looksLikeJsonEnvelope('{"enhancedPrompt":"x"')).toBe(true);
+    expect(looksLikeJsonEnvelope('雨夜街头，女孩撑伞回头')).toBe(false);
+  });
+});
+
 describe('enhancePromptWithLlm · 出站请求与结果归一化', () => {
   it('请求形状：`{baseUrl}/chat/completions` + Bearer + model + 系统提示带风格与模式', async () => {
     const { fetchImpl, calls } = stubFetch(() =>
@@ -239,6 +281,35 @@ describe('enhancePromptWithLlm · 出站请求与结果归一化', () => {
 
     expect(err.code).toBe('UPSTREAM_ERROR');
     expect(err.message).toContain('超时');
+  });
+
+  it('JSON 解析失败但能抠出正文 → 用正文，且带 notice（不把 JSON 外壳当提示词）', async () => {
+    const { fetchImpl } = stubFetch(() =>
+      chatResponse('{"enhancedPrompt":"雨夜街头，女孩微笑，\\n镜头缓慢推近","cameraMovementSuggested":"推近"}'),
+    );
+
+    const result = await enhancePromptWithLlm({
+      apiKey: 'sk-test-1234567890',
+      originalPrompt: '女孩在雨夜街头微笑',
+      fetchImpl,
+    });
+
+    // 注：这段是**合法** JSON（`\n` 是转义符），因此走严格解析；这里断言正文被取出且不含字段名
+    expect(result.enhancedPrompt).toContain('雨夜街头，女孩微笑');
+    expect(result.enhancedPrompt).not.toContain('cameraMovementSuggested');
+  });
+
+  it('JSON 写坏又抠不出正文 → **保留用户原文**（绝不回填 JSON 外壳让用户拿去出片）', async () => {
+    const { fetchImpl } = stubFetch(() => chatResponse('{"foo":1,"bar":2}'));
+
+    const result = await enhancePromptWithLlm({
+      apiKey: 'sk-test-1234567890',
+      originalPrompt: '女孩在雨夜街头微笑',
+      fetchImpl,
+    });
+
+    expect(result.enhancedPrompt).toBe('女孩在雨夜街头微笑');
+    expect(result.notice).toContain('保留你的原文');
   });
 
   it('上游返回空内容 → UPSTREAM_ERROR（当成功继续只会让用户看到空提示词）', async () => {

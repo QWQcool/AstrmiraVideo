@@ -130,6 +130,35 @@ function isTimeoutError(err: unknown): boolean {
   return name === 'TimeoutError' || name === 'AbortError' || /aborted due to timeout/i.test(message);
 }
 
+/**
+ * 宽松兜底：模型返回的 JSON **解析失败**时，尽量把 `enhancedPrompt` 的正文抠出来。
+ *
+ * 为什么需要它（2026-09-23 线上实测）：模型有时会把 JSON 里的字符串**拆成多行**（真换行而非 `\n`），
+ * 于是 `JSON.parse` 失败 → 旧实现在"纯文本"分支里把**整段 JSON 原样**当成提示词回填，
+ * 用户接着就把 `{"enhancedPrompt":"…"}` 这种文本提交去出片了（真的花了钱）。
+ * 这里做两件事：① 抠正文；② 抠不出来时返回 `undefined`，由调用方**保留用户原文**（绝不回填垃圾）。
+ */
+export function extractEnhancedPromptLoosely(text: string): string | undefined {
+  const match = /"enhancedPrompt"\s*:\s*"([\s\S]*?)"\s*[,}]/.exec(text);
+  if (match === null) return undefined;
+
+  const value = (match[1] ?? '')
+    .replace(/\\n/g, '\n')
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\')
+    .trim();
+
+  // 抠出来的东西若仍像一段 JSON 外壳，说明这次兜底不成立
+  if (value === '' || /^[[{]/.test(value) || value.includes('":"')) return undefined;
+  return value;
+}
+
+/** 该文本"看起来是结构化数据"吗？（用于判定能否安全地当成提示词） */
+export function looksLikeJsonEnvelope(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.includes('":"');
+}
+
 function stringField(source: Record<string, unknown>, key: string): string | undefined {
   const value = source[key];
   if (typeof value !== 'string') return undefined;
@@ -145,6 +174,8 @@ function buildSystemPrompt(style: PromptEnhanceStyle | undefined, mode: Generati
     '2. 保留原意，引号内的台词**一字不改**；',
     '3. 不要解释、不要序言、不要 Markdown 标题；',
     '4. 只输出一个 JSON 对象：{"enhancedPrompt":"完整提示词","cameraMovementSuggested":"镜头运动","lightingSuggested":"光线建议"}',
+    // 实测踩点：模型会把 JSON 字符串**写成多行**，导致严格解析失败 → 必须明确要求单行 + `\\n` 转义
+    '5. JSON 必须是**单行**：字符串里不能出现真实换行，需要分段请写成 \\n 转义；不要用 Markdown 代码块包裹。',
   ];
   if (style !== undefined) lines.push(`风格：${STYLE_LABELS[style]}。`);
   if (mode !== undefined) lines.push(`生成模式：${MODE_HINTS[mode]}`);
@@ -221,18 +252,36 @@ export async function enhancePromptWithLlm(options: EnhancePromptOptions): Promi
   }
 
   const json = extractJsonObject(text);
-  if (json === null) {
-    // 模型没按 JSON 回答：**照实说是纯文本**，不假装结构化、也不用规则引擎补字段
+  const strict = json === null ? undefined : stringField(json, 'enhancedPrompt');
+
+  if (strict !== undefined && json !== null) {
+    const camera = stringField(json, 'cameraMovementSuggested');
+    const lighting = stringField(json, 'lightingSuggested');
+    return {
+      enhancedPrompt: strict,
+      ...(camera === undefined ? {} : { cameraMovementSuggested: camera }),
+      ...(lighting === undefined ? {} : { lightingSuggested: lighting }),
+    };
+  }
+
+  // 走到这里有两种情况：严格解析失败，或解析成功但**没有** `enhancedPrompt` 字段。
+  // 两者都**不能**把原文当结果（那会把一段 JSON 外壳塞给用户去出片，实测发生过）。
+
+  // ① 先试"宽松抠正文"（模型偶尔把 JSON 字符串写成多行，严格解析必然失败）
+  const loose = extractEnhancedPromptLoosely(text);
+  if (loose !== undefined) {
+    return { enhancedPrompt: loose, notice: '上游的 JSON 无法严格解析，已从字段中取出提示词正文' };
+  }
+
+  // ② 纯文本且不像结构化数据 → 照实采用（**不许**假装结构化、更不许用规则引擎补字段）
+  if (!looksLikeJsonEnvelope(text)) {
     return { enhancedPrompt: text, notice: '上游返回的不是 JSON，已按纯文本采用' };
   }
 
-  const enhancedPrompt = stringField(json, 'enhancedPrompt') ?? text;
-  const camera = stringField(json, 'cameraMovementSuggested');
-  const lighting = stringField(json, 'lightingSuggested');
-
+  // ③ 看起来是结构化数据却拿不到正文：**保留用户原文**，并说明原因。
+  // 回填一段 `{"enhancedPrompt":…}` 是最坏的结果 —— 用户很可能直接拿它去出片（2026-09-23 线上实测）。
   return {
-    enhancedPrompt,
-    ...(camera === undefined ? {} : { cameraMovementSuggested: camera }),
-    ...(lighting === undefined ? {} : { lightingSuggested: lighting }),
+    enhancedPrompt: options.originalPrompt,
+    notice: '上游返回的结构化结果里没有可用的提示词正文（疑似 JSON 格式错误），已保留你的原文：请重试或改用其他模型',
   };
 }
