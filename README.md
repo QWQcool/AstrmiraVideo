@@ -2,7 +2,7 @@
 
 > **自然语言描述 + 参考图/参考视频 → 本地/云端双轨 AI 视频生成工作台**
 
-[![Status](https://img.shields.io/badge/status-Step%206%20进行中-blue)](docs/PLAN.md)
+[![Status](https://img.shields.io/badge/status-Step%206%20V9%20已完成-blue)](docs/PLAN.md)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Node%2022%20%2B%20TypeScript%20%2B%20Fastify-3178c6)](docs/PLAN.md)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20Vite%20%2B%20Astrmira%20Theme-61dafb)](docs/PLAN.md)
@@ -21,7 +21,7 @@ pnpm install
 pnpm dev               # 并行拉起 backend + frontend
 ```
 
-> 当前进度：Step 1 骨架【已验证】、Step 1.5 地基整改【已验证】、**Step 3 前端工作台【已验证】**均已完成；**Step 2 只剩 host 本地轨 `LocalH3Provider` 未实现**（选择本地引擎会如实返回 `PROVIDER_UNAVAILABLE`；OI-1 素材 provider 是非目标，见台账 B7）——**AC2 的真实出片已于 2026-09-23 在真机全模式跑通（T2V / I2V / FL2V / V2V，走 `X-Provider-Key` 通道）**；**Step 4 端到端验收【已完成 2026-09-23】**（AC1 的 T2V / I2V 真实云端轨复验 + AC2 固化进集成测试，证据见 [docs/walkthrough.md](docs/walkthrough.md)）；**Step 5 已上线，且 CI → CD 全自动**；**V8.3 体验与功能补强全部批次（0~7）已完成**；**Step 6（V9 前端改版：总览 + 可伸收侧栏 + hash 路由 + 动效体系 + 配方库 + 轻剪辑台）进行中** —— **B1 原型稿闸门已通过 · B2 应用壳 · B3 总览页 · B4 视频库 · B5 日志视图化 · B6 动效体系 · B7 移动端 · B8 配方库 · B9 剪辑台已完成**（契约 V2.3：createdAt / outputSizeBytes / 存储聚合；`docs/ui-proto/index.html` 可双击看形态）——计划与 AC 见 PLAN §4 Step 6，接口规划见 CONTRACT V2.2，执行手册为 `docs/EXEC-V9.md`（一次性）——进度唯一权威为 PLAN §5。
+> 当前进度：Step 1 骨架【已验证】、Step 1.5 地基整改【已验证】、**Step 3 前端工作台【已验证】**均已完成；**Step 2 只剩 host 本地轨 `LocalH3Provider` 未实现**（选择本地引擎会如实返回 `PROVIDER_UNAVAILABLE`；OI-1 素材 provider 是非目标，见台账 B7）——**AC2 的真实出片已于 2026-09-23 在真机全模式跑通（T2V / I2V / FL2V / V2V，走 `X-Provider-Key` 通道）**；**Step 4 端到端验收【已完成 2026-09-23】**（AC1 的 T2V / I2V 真实云端轨复验 + AC2 固化进集成测试，证据见 [docs/walkthrough.md](docs/walkthrough.md)）；**Step 5 已上线，且 CI → CD 全自动**；**V8.3 体验与功能补强全部批次（0~7）已完成**；**Step 6（V9 前端改版：总览 + 可伸收侧栏 + hash 路由 + 动效体系 + 配方库 + 轻剪辑台）【已完成 2026-09-23】** —— 侧栏五视图（总览 / 生成工作台 / 视频库 / 配方库 / 操作日志）+ 独立剪辑台 `#/edit`；契约升 **V2.3**；验收证据见 [docs/v9-acceptance.md](docs/v9-acceptance.md)，高保真原型见 `docs/ui-proto/index.html`（可双击打开）——计划与 AC 见 PLAN §4 Step 6，接口见 CONTRACT V2.3——进度唯一权威为 PLAN §5。
 
 填入自己的火山方舟 Key 即可出片（Key 存在**你的浏览器**，服务端过手不留存）；本地轨由**部署者显式启用**（`EXPOSE_HOST_LOCAL_TRACK`），未启用时选择本地引擎会返回 `PROVIDER_UNAVAILABLE`。推荐档位与引擎接入详见 [docs/GUIDE.md](docs/GUIDE.md)。
 
@@ -41,6 +41,7 @@ pnpm dev               # 并行拉起 backend + frontend
 | [docs/GUIDE.md](docs/GUIDE.md) | 上手指南 | **Tier 0~3 算力矩阵**、双轨引擎接入、四种生成工作流、FAQ |
 | [docs/UPSTREAM.md](docs/UPSTREAM.md) | 上游台账 | 参考/复刻项目与版本追溯（含 ffmpeg 等外部工具的来源 / 版本 / 许可证登记） |
 | [docs/walkthrough.md](docs/walkthrough.md) | Step 4 验收记录 | AC1~AC4 的逐条证据（命令 / 输出摘录 / 判定）、如实澄清项——**只放证据，不放状态**（状态见 PLAN §5） |
+| [docs/v9-acceptance.md](docs/v9-acceptance.md) | Step 6（V9）验收记录 | AC1~AC8 的逐条证据、门禁基线、遗留与如实说明——**只放证据，不放状态** |
 | ~~docs/EXEC-STEP2-5.md~~ | ~~施工手册（一次性）~~ | **已归档删除**（2026-09-23）：Step 2 ~ Step 5 已完工，其仍有效的口径逐处迁入 PLAN（§3 铁律 → 本文协作规范、§7-9 部署硬要求、§8 施工避坑、§9 台账、§4 各 Step 的 AC）。历史从 git 取回即可，**不再建第二份施工手册** |
 | [NEXT_SESSION_PROMPT.md](NEXT_SESSION_PROMPT.md) | 跨会话接力 | 纯指针，不含任何独家信息 |
 
