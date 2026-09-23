@@ -429,6 +429,7 @@
    - **镜像要求**：运行层装 ffmpeg（来源/版本/许可证登记在 `UPSTREAM.md`）；`.env` / `data/` / `outputs/` **不入镜像、不入 git**（用卷挂载）；生产必填 `PUBLIC_API_TOKEN`。
    - **两个"仓库改了但线上没变"的坑**（都实测踩过）：① 目标服务器**访问不了 github.com**，代码只能由 CI/本机 scp 推过去，**不能让它 `git pull`**；② **挂载进容器的配置文件（如 `Caddyfile.*`）内容变化不会让进程重读** —— `docker compose up -d` 不会重载 Caddy，已由 `scripts/deploy.mjs` 里的 `caddy reload` 兜住。
    - **`assets/` 的匿名可读是**有意为之**：云端参考图模式要让**上游**去抓 `<PUBLIC_BASE_URL>/media/assets/<文件>`，因此该子目录豁免站点登录（成片与封面仍在登录之后）。代价与替代方案见 §9-B27。
+   - **`PUBLIC_BASE_URL` / `CORS_ORIGINS` 必须在 compose 的 `environment:` 里显式透传**：`env_file` 只搬运 `.env.deploy` 里的值（模板里是**空值**），而 `deploy.mjs` 推导出来的值只存在于 compose 的**变量替换上下文** —— 不写进 `environment:` 就永远进不了容器（2026-09-23 实测：线上 `PUBLIC_BASE_URL` 为空 → 资产地址退化成 data URL → 图片能用、**V2V 必失败**）。
 
 ---
 

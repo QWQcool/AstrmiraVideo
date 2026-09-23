@@ -33,6 +33,16 @@ services:
       # 反代后 req.ip 的正确性：不设 1 时所有请求同 IP，防线 5 的冷却会退化成全局锁
       TRUST_PROXY: "1"
 
+      # ⚠️ 这两个**必须**在这里显式透传（`env_file` 不够）：
+      # `env_file` 只会把 `.env.deploy` 里的值带进容器，而模板里它们是**空值**；
+      # `scripts/deploy.mjs` 推导出来的值只存在于 compose 的**变量替换上下文**里，
+      # 不写进 `environment:` 就永远进不了容器 —— 症状是"资产地址退化成内联 data URL"：
+      # 图片参考能用（上游接受 data URL），**视频参考会被上游直接拒**（只接受公网 URL）。
+      # 2026-09-23 实测踩到：线上容器里 `PUBLIC_BASE_URL` 为空，V2V 因此无法工作。
+      # 取值优先级（由 deploy.mjs 决定）：`.env.deploy` 里给了就用它，否则用 `DEPLOY_HOST` 推导。
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+
     volumes:
       # 运行时数据只走卷：镜像重建不丢任务库与成片（AC3：它们不进镜像）
       - ../data:/app/data

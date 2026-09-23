@@ -71,6 +71,16 @@ const BASIC_AUTH =
   CREDS_FILE === undefined ? undefined : `Basic ${Buffer.from(readFileSync(CREDS_FILE, 'utf8').trim()).toString('base64')}`;
 
 /**
+ * `--insecure`：跳过 TLS 证书校验。**只用于 IP 档部署**（Caddy 用本地 CA 自签，
+ * 浏览器里手工信任一次即可，Node 的 `fetch` 没有这个"信任一次"的口子）。
+ * 显式开关而不是默认跳过 —— 默认跳过等于把"证书校验"这件事从工程里删掉。
+ */
+if (args.includes('--insecure')) {
+  process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
+  console.warn('⚠️  --insecure：本次不校验证书（自签 IP 档专用；不要对公网域名这么做）\n');
+}
+
+/**
  * Key 只从**环境变量**或**本地 gitignore 文件**读；`--key-file` 传的是路径而不是 Key 本身
  * —— 把 Key 直接写进命令行会让它进入 shell history 与进程列表。
  */
