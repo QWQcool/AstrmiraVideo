@@ -23,7 +23,17 @@
 
 ## 当前指针
 
-**Step 2 双轨 Provider（cloud 待 AC2；host 本地轨 `LocalH3Provider` 未实现）＋ Step 3 前端工作台（已完成）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ Step 4 端到端验收（阻塞于同一把 Key）＋ V8.3 体验与功能补强（**批次 0~4 已完成，仅剩批次 5 = 等 Key**，见 PLAN §5）**——施工步骤以 **`docs/EXEC-STEP2-5.md` 为唯一权威**（分段施工卡 + 片内改动清单 + 破坏性验证 + 证据格式；**Step 2-AC2 与 Step 4 尚未验收，该手册继续保留、不提前归档**）；决策见 `docs/PLAN.md` §6（D22~D29）与 `docs/CONTRACT.md` **V2.0**；主动降级 / 延后项见 `docs/PLAN.md` **§9 待优化台账（B1~B22）**。以 §5 进度日志的实际状态为准，不要以本文件为准。
+**Step 2 双轨 Provider（cloud 待 AC2；host 本地轨 `LocalH3Provider` 未实现）＋ Step 3 前端工作台（已完成）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ Step 4 端到端验收（阻塞于同一把 Key，**现已具备 Key**）＋ V8.3 体验与功能补强（**批次 0~4 与批次 6 已完成，仅剩批次 5 = 真实出片冒烟**，见 PLAN §5）**——施工步骤以 **`docs/EXEC-STEP2-5.md` 为唯一权威**（分段施工卡 + 片内改动清单 + 破坏性验证 + 证据格式；**Step 2-AC2 与 Step 4 尚未验收，该手册继续保留、不提前归档**）；决策见 `docs/PLAN.md` §6（D22~D32）与 `docs/CONTRACT.md` **V2.1**；主动降级 / 延后项见 `docs/PLAN.md` **§9 待优化台账（B1~B25）**。以 §5 进度日志的实际状态为准，不要以本文件为准。
+
+> ⚠️ **2026-09-23 线上故障与修复（批次 6，读一遍再动手）**：用户报 `invalidEndpointorModel.NotFound`。
+> 根因是三层叠加：① `options.model` / `options.baseUrl` **此前无人消费**（云端 provider 只读 env）；
+> ② `.env.example` 里的 `VOLCANO_MODEL_NAME=doubao-seedance-video` 是**占位符却像真值**，被抄进了服务器 `.env`；
+> ③ 于是界面选的模型被**静默覆盖**，而错误报文只提 env 的值。
+> 现优先级为 **请求 > env > 内置默认**（CONTRACT §1 已写成契约级要求），并新增
+> `POST /api/providers/keys/verify` + 抽屉「测试连接」（**零费用**：`GET /models` + 空 content 探针 + 文本 `max_tokens:1`）。
+> **服务器 `.env.deploy` 里那行占位符仍未清**（实测：不带 model 调校验接口会得到"模型 `doubao-seedance-video` 不可用"）——
+> 界面用户已不受影响，但"不带模型的 API 调用"仍会 404；清掉那行 + `docker compose up -d` 即可。
+> 另：V2.1 起顶栏有「日志」（操作日志，CONTRACT §10，噪声纪律：只记写操作与失败请求）。
 
 **当前卡点与待办**：**Step 5 已上线，且 CI → CD 已实测跑通**（push 到 main → CI 全绿 → `deploy` job 自动 scp 上传 + 服务器本地构建镜像 + 健康检查；实测 `verify` 与 `deploy` 双绿，站点返回 CSP 与三项安全头，`/api/health` 为 200）。Secrets 为 `DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / **`SSH_PASSWORD`**。
 
