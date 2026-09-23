@@ -58,6 +58,14 @@ export default function App() {
   const [rail, setRail] = useState(() => readBool(storage, STORAGE_KEYS.sidebarRail));
   const railTouched = useRef(false);
 
+  /**
+   * 移动端（≤768px）的导航抽屉（V9 · B7）。
+   *
+   * 桌面端用不上它（汉堡按钮在宽屏是 `display: none`），所以这个状态不影响桌面行为；
+   * 而"切视图后自动收起"由 route 变化驱动 —— 移动端点导航后抽屉必须让位给内容。
+   */
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
   // ── 壳级通知（保存凭据这类壳动作的反馈；工作台自己的提示仍在中栏上方） ──
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -129,6 +137,11 @@ export default function App() {
     if (railTouched.current) return;
     setRail(view?.preferRail === true);
   }, [view]);
+
+  // 切视图后收起移动端抽屉（点了导航项就该看到内容，而不是继续被抽屉挡着）
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [route.path]);
 
   const handleToggleRail = useCallback((): void => {
     railTouched.current = true;
@@ -210,6 +223,17 @@ export default function App() {
     <ShellProvider value={shellServices}>
       <div className="wb-shell app">
         <header className="wb-header">
+          {/* 移动端导航抽屉的开关（宽屏由 CSS 隐藏；见 workbench.css 的 ≤768px 段） */}
+          <button
+            type="button"
+            className="wb-burger"
+            aria-label="打开导航"
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen(true)}
+          >
+            ☰
+          </button>
+
           <div className="wb-brand">
             <span className="wb-brand-mark">✧</span>
             <span className="wb-brand-title">AstrmiraVideo</span>
@@ -243,7 +267,17 @@ export default function App() {
           themePref={themePref}
           onThemeChange={handleThemeChange}
           errorLogCount={errorLogCount}
+          mobileOpen={mobileNavOpen}
+          onNavigate={() => setMobileNavOpen(false)}
         />
+
+        {mobileNavOpen ? (
+          <div
+            className="sidebar-scrim"
+            role="presentation"
+            onClick={() => setMobileNavOpen(false)}
+          />
+        ) : null}
 
         <main className="app-content">
           {notice === null ? null : (

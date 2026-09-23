@@ -86,7 +86,8 @@
 - **破坏性验证**：删任一 keyframes 的挂接 → 冒烟红。
 - **提交**：`feat(motion): interface-level motion system with reduced-motion zeroing`。
 
-### B7 · 移动端响应式
+### B7 · 移动端响应式【已完成 2026-09-23】
+> ≤768px：侧栏 → overlay 抽屉（fixed + translateX，带遮罩、点导航自动收起）；三栏纵向堆叠；画廊/九宫格/KPI 单列；详情抽屉全屏。实测：冒烟 [7c] 390×844 档 9 条断言全绿（含堆叠几何），AC7 两档齐备。门禁 lint 0 / type 0 / 前端 96 / 后端 307 / 视觉自检 / UI 冒烟。
 - **改动**：≤768px：侧栏 → 汉堡唤出的 overlay 抽屉；工作台三栏 → 纵向堆叠（控制区在前）；画廊网格 1 列；详情抽屉 → 全屏。
 - **AC**：Step 6-AC7；UI 冒烟加 390×844 档断言。
 - **提交**：`feat(mobile): responsive shell with overlay drawer sidebar`。

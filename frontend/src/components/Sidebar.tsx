@@ -72,6 +72,13 @@ export interface SidebarProps {
   onThemeChange(pref: ThemePref): void;
   /** 「操作日志」的红点条数（壳统计；0 = 不显示） */
   errorLogCount?: number;
+  /**
+   * 移动端（≤768px）：侧栏退化为**汉堡唤出的 overlay 抽屉**（V9 · B7）。
+   * 桌面端这个值不参与渲染 —— 样式表里 `[data-mobile-open]` 只在窄屏生效。
+   */
+  mobileOpen?: boolean;
+  /** 点了导航项之后的通知（移动端用来关掉抽屉） */
+  onNavigate?: () => void;
 }
 
 function SideIcon({ children }: { children: ReactNode }) {
@@ -89,11 +96,17 @@ export function Sidebar({
   themePref,
   onThemeChange,
   errorLogCount = 0,
+  mobileOpen = false,
+  onNavigate,
 }: SidebarProps) {
   const { openByok } = useShell();
 
   return (
-    <aside className="sidebar" data-rail={rail ? '1' : '0'}>
+    <aside
+      className="sidebar"
+      data-rail={rail ? '1' : '0'}
+      data-mobile-open={mobileOpen ? '1' : '0'}
+    >
       <nav className="sidebar-nav" aria-label="一级视图">
         {NAV_VIEWS.map((view) => {
           const active = currentPath === view.path;
@@ -106,6 +119,7 @@ export function Sidebar({
               aria-current={active ? 'page' : undefined}
               // 收起态没有文字，用 title 给悬停提示（rail 态的可达性）
               title={rail ? view.title : undefined}
+              onClick={onNavigate}
             >
               <SideIcon>{ICONS[view.icon]}</SideIcon>
               <span className="nav-label">{view.title}</span>

@@ -770,6 +770,73 @@ try {
   assert(glowRuleExists, '生成中微光晕的挂接规则存在（data-status=running → breathe-glow）');
   await motionContext.close();
 
+  console.log('\n[7c] 移动端（V9 · B7：390×844，Step 6-AC7 的第二档）');
+  const mobileContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 2,
+    colorScheme: 'dark',
+    reducedMotion: 'reduce',
+  });
+  const mobile = await mobileContext.newPage();
+  await mobile.goto(`${baseUrl}/#/workbench`, { waitUntil: 'load' });
+  await mobile.waitForSelector('.wb-main', { timeout: 10_000 });
+
+  // ① 侧栏默认被推到视口外（overlay 抽屉未打开）
+  const closedBox = await mobile.locator('.sidebar').boundingBox();
+  assert(
+    closedBox === null || closedBox.x + closedBox.width <= 1,
+    `移动端侧栏默认在视口外（right=${closedBox === null ? 'null' : Math.round(closedBox.x + closedBox.width)}）`,
+  );
+
+  // ② 汉堡 → 抽屉滑入 + 遮罩出现
+  assert(await mobile.locator('.wb-burger').isVisible(), '窄屏显示汉堡按钮');
+  await mobile.locator('.wb-burger').click();
+  await mobile.waitForFunction(
+    () => (document.querySelector('.sidebar')?.getBoundingClientRect().x ?? -999) >= 0,
+    { timeout: 5_000 },
+  );
+  assert(true, '点汉堡后侧栏滑入视口（overlay 抽屉形态）');
+  assert(await mobile.locator('.sidebar-scrim').isVisible(), '抽屉展开时有遮罩层');
+
+  // 点导航项 → 抽屉收起（否则内容被挡着）
+  await mobile.getByRole('link', { name: '视频库' }).click();
+  await mobile.waitForFunction(
+    () => (document.querySelector('.sidebar')?.getBoundingClientRect().x ?? 0) < 0,
+    { timeout: 5_000 },
+  );
+  assert(true, '点导航项后抽屉自动收起');
+
+  // ③ 三栏纵向堆叠（控制区在前）
+  await mobile.evaluate(() => { location.hash = '#/workbench'; });
+  await mobile.waitForSelector('.wb-main', { timeout: 5_000 });
+  const stack = await mobile.evaluate(() =>
+    Array.from(document.querySelectorAll('.wb-main > *')).map((el) => {
+      const box = el.getBoundingClientRect();
+      return { x: Math.round(box.x), y: Math.round(box.y) };
+    }),
+  );
+  assert(stack.length === 3, `三栏数量不变（${stack.length}）`);
+  assert(
+    stack[0].x === stack[1].x && stack[1].x === stack[2].x,
+    `三栏左对齐（x=${stack.map((item) => item.x).join('/')}）`,
+  );
+  assert(
+    stack[0].y < stack[1].y && stack[1].y < stack[2].y,
+    `三栏纵向堆叠（y=${stack.map((item) => item.y).join('/')}）`,
+  );
+
+  // ④ 画廊单列
+  await mobile.evaluate(() => { location.hash = '#/library'; });
+  await mobile.waitForSelector('.lib-card', { timeout: 10_000 });
+  const columnCount = await mobile.evaluate(
+    () => getComputedStyle(document.querySelector('.lib-grid')).gridTemplateColumns.split(' ').length,
+  );
+  assert(columnCount === 1, `窄屏画廊单列（实际 ${columnCount} 列）`);
+
+  await mobile.screenshot({ path: path.join(SHOT_DIR, 'mobile.png'), fullPage: false });
+  note('移动端截图留档：artifacts/ui-smoke/mobile.png');
+  await mobileContext.close();
+
   console.log('\n[8] 控制台卫生');
   const realConsoleErrors = consoleErrors.filter(
     (text) => !IGNORED_CONSOLE.some((pattern) => pattern.test(text)),

@@ -1870,3 +1870,137 @@
     position: static;
   }
 }
+
+/* ═══════════════ V9 移动端（B7：≤768px）═══════════════
+   四处退化：① 侧栏 → 汉堡唤出的 overlay 抽屉（不再是 56px 图标栏）；
+   ② 工作台三栏 → 纵向堆叠（控制区在前）；③ 画廊 / 九宫格 / KPI → 单列；④ 详情抽屉 → 全屏。
+   桌面端零影响（全部在媒体查询里）。顶栏高度沿用 .wb-header 的 64px（两处绑定，改一处要改两处）。 */
+
+.wb-burger {
+  display: none; /* 宽屏不显示；移动端才露出 */
+}
+
+.sidebar-scrim {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* 侧栏脱离栅格：内容区独占一行 */
+  .app {
+    grid-template-areas:
+      'topbar'
+      'content';
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wb-burger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-right: 6px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--text);
+    font-size: var(--fs-title);
+    cursor: pointer;
+  }
+
+  /* 抽屉形态：固定在顶栏之下，默认推到视口外 */
+  .sidebar,
+  .sidebar[data-rail='1'] {
+    position: fixed;
+    top: 64px;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    width: 240px;
+    transform: translateX(-100%);
+    transition: transform 180ms var(--ease-ui);
+    box-shadow: 0 0 0 1px var(--line);
+    /* 移动端不存在"56px 图标栏"这回事：要么全出要么全隐 */
+    padding-inline: 10px;
+  }
+
+  .sidebar[data-mobile-open='1'] {
+    transform: translateX(0);
+  }
+
+  /* 覆盖 rail 态的隐藏规则（抽屉里永远显示文字） */
+  .sidebar[data-rail='1'] .nav-label,
+  .sidebar[data-rail='1'] .side-foot-label {
+    display: inline;
+  }
+
+  .sidebar[data-rail='1'] .side-row--theme {
+    display: flex;
+  }
+
+  .sidebar[data-rail='1'] .nav-item,
+  .sidebar[data-rail='1'] .side-row {
+    justify-content: flex-start;
+    padding: 0 10px;
+  }
+
+  .sidebar[data-rail='1'] .nav-badge {
+    position: static;
+    min-width: 18px;
+    width: auto;
+    height: 18px;
+    padding: 0 5px;
+    font-size: var(--fs-micro);
+    line-height: 18px;
+    text-indent: 0;
+  }
+
+  .sidebar-scrim {
+    display: block;
+    position: fixed;
+    inset: 64px 0 0 0;
+    z-index: 30;
+    background: var(--canvas-veil);
+  }
+
+  /* 三栏 → 纵向堆叠（DOM 顺序即控制区 → 预览 → 画廊） */
+  .wb-main {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 14px 14px 24px;
+  }
+
+  .wb-page {
+    padding: 16px 14px 24px;
+  }
+
+  .lib-grid,
+  .ov-shots,
+  .ov-kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lib-body[data-drawer='1'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* 详情抽屉 → 全屏 */
+  .lib-drawer {
+    position: fixed;
+    inset: 64px 0 0 0;
+    z-index: 40;
+    border-radius: 0;
+    border: none;
+    overflow-y: auto;
+  }
+
+  /* 日志页的筛选器在窄屏竖排（原先横排会挤成一条） */
+  .wb-log-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .wb-page .wb-log-panel {
+    height: auto;
+    max-height: calc(100vh - 64px - 96px);
+  }
+}
