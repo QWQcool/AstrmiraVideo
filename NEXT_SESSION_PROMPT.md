@@ -25,7 +25,7 @@
 
 ## 当前指针
 
-**Step 2 双轨 Provider（cloud 的 AC2 已全模式跑通：T2V / I2V / FL2V / V2V；host 本地轨 `LocalH3Provider` 仍未实现）＋ Step 3 前端工作台（已完成）＋ Step 4 端到端验收（**已完成 2026-09-23**，证据见 `docs/walkthrough.md`）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ V8.3 体验与功能补强（**批次 0~7 全部完成**）＋ Step 6 V9 前端改版（**已立项【规划】，未开工**：总览 + 可伸收侧栏 + 自写 hash 路由 + 动效体系 + 配方库 + 轻剪辑台，执行手册 = `docs/EXEC-V9.md`）**——施工入口 = `docs/PLAN.md` **§4 的 Step+AC**（§5 进度日志是唯一进度权威、§6 是决策 D22~D38、§9 是台账 B1~B32）与 `docs/CONTRACT.md` **V2.2**（§11 是 V9 的配方/剪辑台规划）。以 §5 进度日志的实际状态为准，不要以本文件为准。
+**Step 2 双轨 Provider（cloud 的 AC2 已全模式跑通：T2V / I2V / FL2V / V2V；host 本地轨 `LocalH3Provider` 仍未实现）＋ Step 3 前端工作台（已完成）＋ Step 4 端到端验收（**已完成 2026-09-23**，证据见 `docs/walkthrough.md`）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ V8.3 体验与功能补强（**批次 0~7 全部完成**）＋ Step 6 V9 前端改版（**进行中 2026-09-23：B1 高保真原型稿已交付、待闸门确认；B2 起未开工**：总览 + 可伸收侧栏 + 自写 hash 路由 + 动效体系 + 配方库 + 轻剪辑台，执行手册 = `docs/EXEC-V9.md`）**——施工入口 = `docs/PLAN.md` **§4 的 Step+AC**（§5 进度日志是唯一进度权威、§6 是决策 D22~D38、§9 是台账 B1~B33）与 `docs/CONTRACT.md` **V2.2**（§11 是 V9 的配方/剪辑台规划）。以 §5 进度日志的实际状态为准，不要以本文件为准。
 
 > ⚠️ **2026-09-23 线上故障与修复（批次 6，读一遍再动手）**：用户报 `invalidEndpointorModel.NotFound`。
 > 根因是三层叠加：① `options.model` / `options.baseUrl` **此前无人消费**（云端 provider 只读 env）；
@@ -48,7 +48,7 @@
 
 > ⚠️ **CD 用密码认证，不是密钥**（改动前先读）：runner 上 `ssh` 无法解析本项目那把 ed25519 私钥 —— **同一个文件 `ssh-keygen -y` 却接受它**，报错是 `Load key ...: error in libcrypto`；base64 传输、剥 CR、`IdentitiesOnly=yes` 全都无效。已改用 `sshpass -f`（密码先 `tr -d '\r\n'` 落成 0600 文件，各步从文件读，既避开命令行也避开 CR）。**同一个 CR 陷阱出现过两次**：写 `gh secret set` 时不要用 PowerShell 管道（会附加 CRLF），用 `Start-Process -RedirectStandardInput`。想换回密钥只需替换那两步的连接方式。
 
-**剩余的两个工作项（都不是卡点）**：① **Step 2 的 host 本地轨 `LocalH3Provider`** —— 唯一未实现的代码项（选本地引擎如实返回 `PROVIDER_UNAVAILABLE`；实现需一台配好 H3 的机器，本机无该环境，见 PLAN §5）；② **Step 6（V9 前端改版）** —— 已立项【规划】，执行手册 = `docs/EXEC-V9.md`（**B1 是人工闸门：原型稿须经用户确认才准进 B2**；全程零 API 成本）。
+**剩余的两个工作项（都不是卡点）**：① **Step 2 的 host 本地轨 `LocalH3Provider`** —— 唯一未实现的代码项；**用户 2026-09-23 决策 = 先搁置、待换机后再议**（本机没有 H3 环境；本机有 ComfyUI，将来可探讨把本地轨做成"可选 comfyui / MiniMax H3"双后端 —— 见台账 **B33**）；② **Step 6（V9 前端改版）** —— **进行中：B1 原型稿已交付待确认**（`docs/ui-proto/index.html`，双击可看），B2 起未开工；执行手册 = `docs/EXEC-V9.md`（**B1 是人工闸门**；全程零 API 成本）。
 
 **改服务器配置前先读这四条**（都是实测踩出来的）：① 目标服务器**访问不了 github.com**，所以代码只能从 CI/本机 scp 推过去，不能让它 `git pull`；② IP 档访问时客户端**不发 SNI**，Caddy 必须有 `default_sni`，否则握手直接失败（症状是浏览器连登录框都看不到）；③ 运行层构建 `better-sqlite3` **需要编译器**（无 prebuilt），当前 Dockerfile 是"临时装工具链 → 编译 → 立刻卸掉"；④ **本机到服务器只有 80/443 可达**（SSH 端口本机探测全部超时），所以"进容器看一眼"这类运维查询要借 **runner 的 SSH 通道**（CI 里已有端口与口令；本次查容器内 ffmpeg 版本就是这么做的——`.github/workflows/ops-ffmpeg-version.yml` 临时工作流，用完即删）。
 

@@ -31,7 +31,7 @@
 - `App.tsx` —— 单页三栏壳 + 全部状态装配（改造主战场：B2 把它拆成"壳 + 视图"）；
 - `components/` —— `LeftPanel`（控制台）/ `CenterPanel`（播放器+进度）/ `RightPanel`（队列+画廊）/ `GalleryCard` / `AssetDropZone` / `ByokDrawer`（凭据抽屉，保留形态）/ `LogPanel`（操作日志，**弹层形态**，B5 把它视图化）/ `ProgressRing` / `UncertainNotice` / `Eyebrow`；
 - `lib/` —— `api.ts`（含 `enhancePrompt`，V2.0 起带 `llm` 配置）/ `byok.ts`（双轨凭据）/ `assets.ts`（槽位↔模式纯函数）/ `theme.ts`（双主题）/ `storage.ts`；
-- `styles/` —— `tokens.css`（**19 个设计 token + 双主题**，原型稿必须复用它）/ `workbench.css` / `index.css`；
+- `styles/` —— `tokens.css`（**设计 token + 双主题**；原型稿必须复用它。⚠️ 原稿此处写"19 个"是陈旧数字：2026-09-23 核对实际有 60+ 个自定义属性，含派生色 / 字号 / 几何 / 缓动 / 字体栈 —— **一律以文件为准**）/ `workbench.css` / `index.css`；
 - `hooks/useTaskPolling.ts` —— 2s 轮询（预览与生成共用，零额外上游请求）。
 
 **后端**（`backend/src/`）：`routes/`（`generate` / `tasks` / `history` / `upload` / `providers` / `enhance` / `keysVerify` / `logs` / `health`）；`lib/ffmpeg.ts`（探测 + 中文报错，剪辑台复用）；`pipeline/thumbnail.ts`（抽帧，剪辑台的 extractFrame 复用其思路）；`store/db.ts`（SQLite + 列迁移机制 `COLUMN_MIGRATIONS`，`edit_script` 列走它）；`queue/dispatcher.ts`。
