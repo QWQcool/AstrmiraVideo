@@ -303,8 +303,8 @@ export type ErrorDisposition =
 | `UNCERTAIN_RESULT` | 已提交但无法确认结果：轮询中断 / 进程重启 / 上游超时无响应 | **`uncertain`（禁止自动重提）** |
 | `TASK_NOT_FOUND` | taskId 不存在或已清理 | `terminal` |
 | `DISK_FULL` | 输出目录磁盘不足 | `terminal`（清理后手动重试） |
-| `LLM_NOT_CONFIGURED` | 扩写未配置 LLM（demo 版恒返回，`/api/prompt/enhance` → `501`） | `terminal` |
-| `KEY_INVALID` | 凭据被上游拒绝（首次真实调用时产生；校验路由见 PLAN §9 台账 B2） | `terminal` |
+| `LLM_NOT_CONFIGURED` | 扩写未配置 LLM（V2.0 起：请求未携带 `X-LLM-Key`，或自定义端点没配全 → `/api/prompt/enhance` 返回 `501`；服务端**不设**文本侧兜底 Key，见 §3） | `terminal` |
+| `KEY_INVALID` | 凭据被上游拒绝（真实调用与 `POST /api/providers/keys/verify` 两处产生，见 §9） | `terminal` |
 | `KEY_MISSING` | 需要凭据的端点既未收到 `X-Provider-Key`，服务端也无 env 兜底 Key（也用于访问令牌缺失） | `terminal` |
 
 **V1.3 三条硬规则**：

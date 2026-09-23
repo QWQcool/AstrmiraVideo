@@ -228,7 +228,7 @@
 
 ## 5. 进度日志（唯一进度权威，其他文档只准链接本节）
 
-**截至 2026-09-22 · 当前指针：Step 2 仅剩 AC2（真实出片冒烟，待一把可用 Key）＋ Step 4（端到端验收，阻塞于同一把 Key）；Step 1 / 1.5 / 3 已完成、Step 5 已上线且 CI → CD 全自动（施工入口仍见 [EXEC-STEP2-5.md](EXEC-STEP2-5.md)）**
+**截至 2026-09-23 · 当前指针：Step 2 仅剩 host 本地轨 `LocalH3Provider` 未实现（AC2 的真实出片冒烟已在真机跑通：T2V + I2V，走 `X-Provider-Key` 通道）；Step 1 / 1.5 / 3 已完成、Step 4 的云端半边已具证据、Step 5 已上线且 CI → CD 全自动**
 
 - [x] 架构纠偏：淘汰素材拼贴路线，确立【描述 + 参考图/视频 → 双轨生成】多模态管线（见 §6-D1）；
 - [x] 本地算力验证【已验证】：MiniMax H3 NF4 在 Tier 2 机器（16GB 显存）全量缓存并跑通 T2V / I2V / 双引号立体声台词；
@@ -251,13 +251,13 @@
       - **T5** 前端 token 化 + 字体修正：`--serif` 去 Cinzel 改大小写混排高对比衬线、新增 `--serif-caps` 仅供全大写 eyebrow；eyebrow 标签体系落位（`--fs-eyebrow` / `--track-caps`）；`App.tsx` 内 hex 色值与字体名零残留；
       - **T6** `JobQueue` 接口骨架（只立契约，无实现）：`requeue`（仅限未提交上游）与 `markUncertain`（已提交但结果不明）分列，防线 7 在接口层落地；
       - 依赖事实：`fastify-type-provider-zod@7.0.0` 的 peer 要求 `zod >= 4.1.5`，故 zod 由 3 升至 **4.6.5**——Step 1 期间 zod 为「已装零使用」，major 切换无迁移成本；
-- [ ] **Step 2 双轨 Provider 与核心调度【两条轨未完成：cloud 待 AC2、host-local 未实现】**：架构决策定稿（§6-**D22 ~ D28**、CONTRACT **V1.8**、新增 §9 台账）；S1 ~ S5b / S7 全部完成（见下）。**未完成项有两块**：① **AC2**（真实出片冒烟 + §8 成本表回填）阻塞于一把可用的火山方舟 Key；② **host 本地轨 `LocalH3Provider.ts` 尚未实现**（`registry.ts` 里 `'local-minimax-h3' → null`）——选本地轨会如实返回 `503 PROVIDER_UNAVAILABLE`，`GUIDE §二·轨道 A` 描述的工作目录自检与【测试连接】按钮属台账 B4，**文档已按【规划】标注**（此前"仅剩 AC2"的写法是错的，见 V8.3 批次 0）；施工手册 `docs/EXEC-STEP2-5.md` **继续保留**（一次性手册，Step 5 验收后归档删除），实施顺序与切片以该手册 §6 为准。
+- [ ] **Step 2 双轨 Provider 与核心调度【只剩 host 本地轨未实现】**：架构决策定稿（§6-**D22 ~ D32**、CONTRACT **V2.1**、新增 §9 台账）；S1 ~ S5b / S7 全部完成（见下），**AC2 的真实出片冒烟已于 2026-09-23 在真机跑通**（T2V + I2V，走 `X-Provider-Key` 通道；见 §5「V8.3 批次 5」与 §8 成本表）。**唯一未完成项**：**host 本地轨 `LocalH3Provider.ts` 尚未实现**（`registry.ts` 里 `'local-minimax-h3' → null`）——选本地轨会如实返回 `503 PROVIDER_UNAVAILABLE`，`GUIDE §二·轨道 A` 描述的工作目录自检与【测试连接】按钮属台账 B4，**文档已按【规划】标注**（此前"仅剩 AC2"的写法是错的，见 V8.3 批次 0）。
       - [x] **S1 · OI-2 夹具 provider【已验证】**（AC5）：`scripts/make-fixture-clips.mjs`（ffmpeg 现场合成 9 条边界片，二进制不入库）、`lib/ffmpeg.ts`（工具缺失中文指引 + `-nostdin`/超时 + 探测失败统一包装）、`pipeline/smartCrop.ts`（32 倍数规整 + 居中裁切纯函数）、`providers/registry.ts`（唯一注册点）、`providers/fixture/FixtureLocalProvider.ts`（四方法 + 时长对齐 + 循环/静音双告警）；**38 项测试全绿**（9 条边界用例逐条断言 + 4 项破坏性验证回归）。
       - [x] **S2 · 公共链路【已验证】**（AC3 / AC4 / AC7 幂等半边）：`store/db.ts`（SQLite + 建表：任务 / 幂等键 / 冷却）、`store/taskStore.ts`（CRUD + 参数快照 + `warnings` + `submitting` + 原子领取，含防线 7 的 SQL 排除条件）、`queue/SqliteJobQueue.ts`（实现既有 `JobQueue` 接口 + `requeue` 守卫）、`queue/dispatcher.ts`（双轨调度，local 并发 1 + 防线 3 收尾清理）、`routes/generate|tasks|history.ts`、`pipeline/cleanup.ts`、`server/staticOutputs.ts`（`/media/*` 的 206 载体）；**54 项测试全绿**（幂等上游计数 = 1、并发第 2 个保持 `queued`、重启恢复、206 Range、画廊删除、防线 7 双护栏、防线 3 目录不存在）；CONTRACT §5 补登各路由响应形状。
       - [x] **S3 · 三态错误码 + 故障注入层【已验证】**（AC7 的 uncertain 半边）：`errors.ts`（12 码 → 三态的**穷举映射表**，`satisfies Record<ErrorCode, ErrorDisposition>` 编译期钉死 + `resolveTaskError` 唯一归类入口）、`providers/withFaultInjection.ts`（7 项注入 + `FAULT_INJECT` 默认关闭 + 生产挂载直接拒绝）、dispatcher 补**上报轮询循环**（进度 heartbeat 落库 + 超时归 `UNCERTAIN_RESULT`）；`packages/shared` 的 `ErrorCodeSchema` 同步到 V1.8 的 12 个码（修掉 R 段的遗漏）；**87 项测试全绿**；AC7 的「上游调用次数 = 1」硬断言经破坏性验证（把 `markUncertain` 临时改成 `requeue` → 断言精确变红）钉住；判据修正为「是否**已进入提交阶段**」（`submitting` 语义），而非「是否拿到 upstreamTaskId」。
       - [x] **S4 · 防线 5 限流 + 上传加固 + 鉴权骨架【已验证】**（AC9 / AC10）：`security/rateLimit.ts`（`rateLimitKey` 预留 `keyFingerprint?` 复合键位；60s 冷却**落 SQLite**，重启不丢窗口）、`security/auth.ts`（Bearer + 两层免鉴权：回环来源全部 + 任何来源 `/api/health`；生产未配 Token **启动即拒**）、`routes/upload.ts`（≤20MB × ≤4、**魔数嗅探**定类型、白名单、路径只含服务端随机 ID）、`index.ts` 挂安全响应头；`packages/shared` 补上传响应形状、CONTRACT §5 同步；**116 项测试全绿**；两项破坏性验证均命中（嗅探换读 `Content-Type` → 伪造类型用例红；冷却换内存 Map → 重启用例红）。测试基建：`backend/vitest.config.ts` 设 `fileParallelism: false`（集成测试经 env 指定配置，并行文件会互相覆盖）。
       - [x] **S5a · 本地引擎配置自检【已验证】**（AC6）：`providers/statusProbe.ts`（**只读 env 的配置自检**——不扫描硬件、不返回型号/显存/路径明文；`COMFYUI_BASE_URL` 白名单仅回环与 RFC1918、`H3_WORKDIR` 要求存在的绝对目录；档位由 `H3_TIER` **显式声明**，不由探测推导）、`index.ts` 启动时写内存缓存；**133 项测试全绿**；破坏性验证命中（reason 临时夹带型号 → 正则取反断言 `not to match /(RTX|GTX|A100|H100|[0-9]+\s?GB)/i` 精确变红）。
-      - [x] **S5b · Seedance 云端 provider【已完成；AC2 真实冒烟待一把可用 Key】**（用户裁定 **B 方案**：进程内暂存至终态）：新增 `security/keyVault.ts`（凭据按 taskId 进程内暂存：**入队前写入**、调度器领取时取出、终态 `finally` 释放；不落库 / 不落日志 / 不落盘；自检只报条数，类型层面就没有枚举 Key 的能力）、`providers/seedanceProtocol.ts`（**协议适配层**：端点 / 请求体 / `--` 尾缀参数 / 状态枚举 / 错误归类集中一处，逐项标注**【已确认】与【待验证】**——上游改字段只动这一个文件）、`providers/VolcanoSeedanceProvider.ts`（提交 → 轮询 → **流式下载到 outputs**，对外只暴露同源 `/media/<taskId>.mp4`，规避上游临时地址 24h 失效）、`store/assets.ts`（资产 → 上游可访问地址：配 `PUBLIC_BASE_URL` 走公网 URL，否则 data URL；assetId 做 UUID 形状校验防路径穿越）、`store/reconciliation.ts`（**补 S2 遗留缺口**：进程中途退出会遗留永远停在 `running` 的任务），以及 registry / dispatcher / generate / index 的接线（provider **每任务一份**，凭据由调度器注入）。
+      - [x] **S5b · Seedance 云端 provider【已完成；AC2 真实冒烟已于 2026-09-23 跑通】**（用户裁定 **B 方案**：进程内暂存至终态）：新增 `security/keyVault.ts`（凭据按 taskId 进程内暂存：**入队前写入**、调度器领取时取出、终态 `finally` 释放；不落库 / 不落日志 / 不落盘；自检只报条数，类型层面就没有枚举 Key 的能力）、`providers/seedanceProtocol.ts`（**协议适配层**：端点 / 请求体 / `--` 尾缀参数 / 状态枚举 / 错误归类集中一处，逐项标注**【已确认】与【待验证】**——上游改字段只动这一个文件）、`providers/VolcanoSeedanceProvider.ts`（提交 → 轮询 → **流式下载到 outputs**，对外只暴露同源 `/media/<taskId>.mp4`，规避上游临时地址 24h 失效）、`store/assets.ts`（资产 → 上游可访问地址：配 `PUBLIC_BASE_URL` 走公网 URL，否则 data URL；assetId 做 UUID 形状校验防路径穿越）、`store/reconciliation.ts`（**补 S2 遗留缺口**：进程中途退出会遗留永远停在 `running` 的任务），以及 registry / dispatcher / generate / index 的接线（provider **每任务一份**，凭据由调度器注入）。
         - **测试**：新增 **47 项**（协议 18 / provider 17 / vault 6 / 调解 6），后端总量 144 → **192 全绿**；`lint 0 warning / type 0 error`。provider 全部走桩 `fetch`，**零真实调用**。
         - **凭据优先级**：请求头里的用户 BYOK Key > `VOLCANO_API_KEY`（部署者兜底）。顺序不可颠倒——反了会让用户以为在烧自己的额度、实际烧部署者的。`cloud.available:true` 的语义正是"存在 env 兜底"。
         - **无凭据的两条分支**（都显式、都不许静默）：`submit()` 报 `KEY_MISSING`（还没提交，谈不上不确定）；`queryStatus()` 报 `UNCERTAIN_RESULT`（**已提交过**，只是查不了 → 人工核对，禁止自动重提）。
@@ -424,6 +424,23 @@
 - R2：Seedance API 变更 → Provider 接口隔离，变更只动 `VolcanoSeedanceProvider`；
 - R3：画廊磁盘膨胀 → 防线 3（LRU + 一键删除）已在设计内；
 - R4：素材站配额（Pexels 200 次/小时）被流水线反复消耗 → CI 一律走 OI-2 `fixture-local`，仅手动回归用例允许联网走 OI-1。
+
+### 施工期避坑清单（原一次性施工手册 §12 的存档，2026-09-23 迁入）
+
+> 这些是"不知道就会白跑几小时"的坑。手册已归档删除，此表成为**唯一位置**。
+
+| # | 坑 | 现状 |
+|---|---|---|
+| 1 | **本地 H3 全量出片 7~10 小时/条** → 任何验收 / e2e / 调试一律用 Seedance 云端轨或 OI-2 夹具；用本地轨验收 = 把验收变成一周级阻塞 | 仍适用（§8 有实测） |
+| 2 | **`packages/shared` 必须先 build**：backend / frontend 消费 `dist` 而非 `src`；改契约不 build 会**安静地跑旧契约**（症状：改了字段名、行为不变） | 仍适用（CI 已固化这一步） |
+| 3 | **反代后 `trustProxy` 未开** → 所有请求同 IP，防线 5 的冷却退化成全局锁（症状："别人提交过，我就被限流了"） | 已在 compose 里固定 `TRUST_PROXY=1` |
+| 4 | **幂等 / 不重复提交的断言必须计数**（上游调用次数 = 1），不能只看返回同一个 taskId | 已固化为测试断言 |
+| 5 | **"已清理"类断言要用"目录不存在"**，不能只看日志打印 | 已固化为测试断言 |
+| 6 | **ffmpeg 依赖必须"缺失即明确报错"**，否则 CI 上表现为神秘的 `ENOENT` | 已实现（`lib/ffmpeg.ts` 中文指引） |
+| 7 | **`.tmp/` 是 gitignore 的**：施工产物（日志 / 临时脚本 / 真机冒烟输出）放 `.tmp/`，不要混进 `docs/` | 仍适用 |
+| 8 | **Windows 下 `better-sqlite3` / sharp 可能需要 build tools**；装不上要记录，不许静默换实现 | 仍适用（本机 Node 24 + 预编译包已可用） |
+| 9 | **跨源资源会被生产 CSP 拦掉**（2026-09-22 实测：外链 Google Fonts 导致线上字体从未生效）→ 字体 / 样式 / 脚本一律自托管；静态自检与 UI 冒烟各守一层 | 已实现（见台账 B19） |
+| 10 | **`deploy/` 与 `scripts/` 里的配置改完必须走 CD**：仓库改 ≠ 线上生效。2026-09-23 实测：挂载的 Caddyfile 内容变化**不会**被 `docker compose up -d` 重载 → 已在 `scripts/deploy.mjs` 里补 `caddy reload` | 已修复（同批次的真实踩点） |
 
 ---
 

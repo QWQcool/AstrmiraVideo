@@ -21,7 +21,7 @@ pnpm install
 pnpm dev               # 并行拉起 backend + frontend
 ```
 
-> 当前进度：Step 1 骨架【已验证】、Step 1.5 地基整改【已验证】、**Step 3 前端工作台【已验证】**均已完成；**Step 2 剩两项**——AC2 的真实出片冒烟（待一把可用 Key）与 **host 本地轨 `LocalH3Provider` 未实现**（选择本地引擎会如实返回 `PROVIDER_UNAVAILABLE`；OI-1 素材 provider 是非目标，见台账 B7）；**Step 4 端到端验收阻塞于同一把 Key**；**Step 5 已上线，且 CI → CD 全自动**（push 到 main → CI 全绿 → 自动发布到服务器；主机 / 端口 / 凭据只存在于服务器本地 `.env.deploy` 与 GitHub Secrets，不入仓库）；**V8.3 体验与功能补强批次 0~4、6、7 已完成**（生成参数与布局 / 主题体系 / 取消与清理 / 画廊封面与首尾帧·视频参考入口 / 提示词扩写 / **线上故障修复 + 操作日志** / **点封面即播 + 日间可读性 + 反代资产豁免**），批次 5 的 T2V 与 I2V 真实出片已在真机跑通（仅剩 FL2V·V2V）——进度唯一权威为 PLAN §5。
+> 当前进度：Step 1 骨架【已验证】、Step 1.5 地基整改【已验证】、**Step 3 前端工作台【已验证】**均已完成；**Step 2 只剩 host 本地轨 `LocalH3Provider` 未实现**（选择本地引擎会如实返回 `PROVIDER_UNAVAILABLE`；OI-1 素材 provider 是非目标，见台账 B7）——**AC2 的真实出片冒烟已于 2026-09-23 在真机跑通（T2V + I2V，走 `X-Provider-Key` 通道）**；**Step 4 端到端验收**的云端半边（T2V / I2V 各一条完整链路）已具备证据；**Step 5 已上线，且 CI → CD 全自动**（push 到 main → CI 全绿 → 自动发布到服务器；主机 / 端口 / 凭据只存在于服务器本地 `.env.deploy` 与 GitHub Secrets，不入仓库）；**V8.3 体验与功能补强批次 0~4、6、7 已完成**（生成参数与布局 / 主题体系 / 取消与清理 / 画廊封面与首尾帧·视频参考入口 / 提示词扩写 / **线上故障修复 + 操作日志** / **点封面即播 + 日间可读性 + 反代资产豁免**），批次 5 的 T2V 与 I2V 真实出片已在真机跑通（仅剩 FL2V·V2V）——进度唯一权威为 PLAN §5。
 
 填入自己的火山方舟 Key 即可出片（Key 存在**你的浏览器**，服务端过手不留存）；本地轨由**部署者显式启用**（`EXPOSE_HOST_LOCAL_TRACK`），未启用时选择本地引擎会返回 `PROVIDER_UNAVAILABLE`。推荐档位与引擎接入详见 [docs/GUIDE.md](docs/GUIDE.md)。
 
