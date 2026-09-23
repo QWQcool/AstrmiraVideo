@@ -25,7 +25,7 @@
 
 ## 当前指针
 
-**Step 2 双轨 Provider（cloud 的 AC2 已全模式跑通：T2V / I2V / FL2V / V2V；host 本地轨 `LocalH3Provider` 仍未实现）＋ Step 3 前端工作台（已完成）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ Step 4 端到端验收（云端半边已具证据）＋ V8.3 体验与功能补强（**批次 0~7 全部完成**）＋ Step 6 V9 前端改版（**已立项【规划】，未开工**：总览 + 可伸收侧栏 + 自写 hash 路由 + 动效体系 + 配方库 + 轻剪辑台，执行手册 = `docs/EXEC-V9.md`）**——施工入口 = `docs/PLAN.md` **§4 的 Step+AC**（§5 进度日志是唯一进度权威、§6 是决策 D22~D38、§9 是台账 B1~B31）与 `docs/CONTRACT.md` **V2.2**（§11 是 V9 的配方/剪辑台规划）。以 §5 进度日志的实际状态为准，不要以本文件为准。
+**Step 2 双轨 Provider（cloud 的 AC2 已全模式跑通：T2V / I2V / FL2V / V2V；host 本地轨 `LocalH3Provider` 仍未实现）＋ Step 3 前端工作台（已完成）＋ Step 4 端到端验收（**已完成 2026-09-23**，证据见 `docs/walkthrough.md`）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ V8.3 体验与功能补强（**批次 0~7 全部完成**）＋ Step 6 V9 前端改版（**已立项【规划】，未开工**：总览 + 可伸收侧栏 + 自写 hash 路由 + 动效体系 + 配方库 + 轻剪辑台，执行手册 = `docs/EXEC-V9.md`）**——施工入口 = `docs/PLAN.md` **§4 的 Step+AC**（§5 进度日志是唯一进度权威、§6 是决策 D22~D38、§9 是台账 B1~B32）与 `docs/CONTRACT.md` **V2.2**（§11 是 V9 的配方/剪辑台规划）。以 §5 进度日志的实际状态为准，不要以本文件为准。
 
 > ⚠️ **2026-09-23 线上故障与修复（批次 6，读一遍再动手）**：用户报 `invalidEndpointorModel.NotFound`。
 > 根因是三层叠加：① `options.model` / `options.baseUrl` **此前无人消费**（云端 provider 只读 env）；
@@ -40,19 +40,19 @@
 > ✅ **服务器那行占位符已清（2026-09-23）**：借 runner 的一次性工作流备份并注释后重建容器，实测容器内 `VOLCANO_MODEL_NAME` 为空、启动日志无占位符告警；
 > 线上复验："不带模型的校验请求"已从"模型 `doubao-seedance-video` 不可用"变为"未提供模型：凭据有效，上游共 135 个模型可选"。
 >
-> ✅ **真实出片已完成一次（T2V，2026-09-23）**：`pnpm smoke:paid --confirm-spend`（`scripts/smoke-seedance-paid.mjs`，走产品路径 + `X-Provider-Key`）。
-> 实测：提交→终态 **86.5s**、成片 5.09s/1280×720/h264+**AAC 音轨**、2.23MB、206 Range 正常、封面抽帧成功、无水印；§8 成本表已回填（金额待账单核对）。
-> **仍待**：I2V / FL2V / V2V 各一次（同脚本 `--i2v <图>`，验 `image_url` 的 `role` 语义）+ Step 4 端到端验收。
+> ✅ **真实出片四模式全部跑通（T2V / I2V / FL2V / V2V，2026-09-23）**，且 **Step 4 端到端验收【已完成 2026-09-23】**：
+> AC1 复验 T2V（含直角双引号对白，89.0s）+ I2V（非 32 倍数图 831×479 → 清洗 800×448 → 出片，62.3s）；AC2 把六类输入（WebP / 超大图 / 非规整 / 透明 / HEIC 拒绝 / EXIF 剥离）固化为集成测试；**证据归档 = `docs/walkthrough.md`**。
+> 实测顺带发现：上游会对 **I2V 输入图做隐私检测**（含拟真人脸 → 400，未开始生成），登记为台账 **B32**。
 
-**当前卡点与待办**：**Step 5 已上线，且 CI → CD 已实测跑通**（push 到 main → CI 全绿 → `deploy` job 自动 scp 上传 + 服务器本地构建镜像 + 健康检查；实测 `verify` 与 `deploy` 双绿，站点返回 CSP 与三项安全头，`/api/health` 为 200）。Secrets 为 `DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / **`SSH_PASSWORD`**。
+**当前卡点与待办**：无阻塞卡点。**Step 5 已上线，且 CI → CD 已实测跑通**（push 到 main → CI 全绿 → `deploy` job 自动 scp 上传 + 服务器本地构建镜像 + 健康检查；实测 `verify` 与 `deploy` 双绿，站点返回 CSP 与三项安全头，`/api/health` 为 200）。Secrets 为 `DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / **`SSH_PASSWORD`**。
 
 > ⚠️ **CD 用密码认证，不是密钥**（改动前先读）：runner 上 `ssh` 无法解析本项目那把 ed25519 私钥 —— **同一个文件 `ssh-keygen -y` 却接受它**，报错是 `Load key ...: error in libcrypto`；base64 传输、剥 CR、`IdentitiesOnly=yes` 全都无效。已改用 `sshpass -f`（密码先 `tr -d '\r\n'` 落成 0600 文件，各步从文件读，既避开命令行也避开 CR）。**同一个 CR 陷阱出现过两次**：写 `gh secret set` 时不要用 PowerShell 管道（会附加 CRLF），用 `Start-Process -RedirectStandardInput`。想换回密钥只需替换那两步的连接方式。
 
-**唯一剩余卡点是一把可用的火山方舟 Key** —— 它同时解锁 Step 2-AC2（真实出片冒烟 + 回填 §8 成本表）与 Step 4（端到端验收，其 AC1 明确要求用真实云端轨跑 T2V + I2V）。
+**剩余的两个工作项（都不是卡点）**：① **Step 2 的 host 本地轨 `LocalH3Provider`** —— 唯一未实现的代码项（选本地引擎如实返回 `PROVIDER_UNAVAILABLE`；实现需一台配好 H3 的机器，本机无该环境，见 PLAN §5）；② **Step 6（V9 前端改版）** —— 已立项【规划】，执行手册 = `docs/EXEC-V9.md`（**B1 是人工闸门：原型稿须经用户确认才准进 B2**；全程零 API 成本）。
 
 **改服务器配置前先读这四条**（都是实测踩出来的）：① 目标服务器**访问不了 github.com**，所以代码只能从 CI/本机 scp 推过去，不能让它 `git pull`；② IP 档访问时客户端**不发 SNI**，Caddy 必须有 `default_sni`，否则握手直接失败（症状是浏览器连登录框都看不到）；③ 运行层构建 `better-sqlite3` **需要编译器**（无 prebuilt），当前 Dockerfile 是"临时装工具链 → 编译 → 立刻卸掉"；④ **本机到服务器只有 80/443 可达**（SSH 端口本机探测全部超时），所以"进容器看一眼"这类运维查询要借 **runner 的 SSH 通道**（CI 里已有端口与口令；本次查容器内 ffmpeg 版本就是这么做的——`.github/workflows/ops-ffmpeg-version.yml` 临时工作流，用完即删）。
 
-开工前注意两条**尚未实测**的边界：① S5b 的上游字段（请求体结构、`--` 尾缀参数、`status` 枚举、`content.video_url` 位置）全部集中在 `backend/src/providers/seedanceProtocol.ts` 并逐项标注【待验证】，AC2 冒烟时逐项核对，**不得当作已验证事实引用**；② 云端轨凭据为 **B 方案**（进程内暂存至终态），进程重启会清空暂存 Key，此时在途已提交任务如实归 `UNCERTAIN_RESULT`——这是**设计代价，不是缺陷**，任何情况下都不得改成自动重提。
+开工前注意两条边界：① 上游字段的**唯一 Owner** 是 `backend/src/providers/seedanceProtocol.ts`（文件头有逐项证据表）—— 四项待验证字段已于 2026-09-23 全部落地，但上游 `status` 枚举里的 `failed`/`cancelled`/`canceled`/`expired` **仍无真实样本**（不得当作已验证事实引用）；② 云端轨凭据为 **B 方案**（进程内暂存至终态），进程重启会清空暂存 Key，此时在途已提交任务如实归 `UNCERTAIN_RESULT`——这是**设计代价，不是缺陷**，任何情况下都不得改成自动重提。
 
 ## 工作规则（继承自 README 协作规范）
 

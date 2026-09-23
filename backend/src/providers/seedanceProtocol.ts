@@ -14,8 +14,10 @@ import { createTaskError } from '../errors.js';
  * | 响应 `status` 枚举 | **queued/running/succeeded 一致**；`failed`/`cancelled` 仍未实测 | 轮询依次读到 queued → running → succeeded |
  * | `content.video_url` 位置 | **一致** | 成片被成功下载（2.23MB）并落盘到 `outputs/` |
  *
- * 仍未实测的一项（**不得**当作已验证）：`failed` / `cancelled` / `canceled` / `expired`
- * 四个分支要一次真实的失败或取消样本。有出入**只改这里**（PLAN §8 风险 R2）。
+ * 仍未实测的一项（**不得**当作已验证）：上游 `status` 枚举里的 `failed` / `cancelled` /
+ * `canceled` / `expired` 四个分支要一次真实的失败或取消样本。有出入**只改这里**（PLAN §8 风险 R2）。
+ * （2026-09-23 补：**我们自己的任务终态 `failed`** 已获真实样本——见下方"追加证据（Step 4）"；
+ *   那是"提交阶段被上游拒绝"，与"上游任务跑起来之后变 failed"不是同一件事，引用时勿混。）
  *
  * ## 追加证据（同日第三/四次：FL2V 与 V2V）
  * - **FL2V（首尾帧）【已验证】**：两个资产（首帧 + 尾帧，均经清洗网关上传达 71KB JPEG）→
@@ -37,6 +39,21 @@ import { createTaskError } from '../errors.js';
  * 成片 5.09s / 1280×720 / h264 + AAC 音轨，且**灯型与首帧保持一致**（这正是"锁形"的用处）。
  * 同时确认：`image_url.url` 接受 **base64 data URL**（本机 `PUBLIC_BASE_URL` 为空时的回落路径）。
  * `last_frame` / `reference_image`（含视频）**仍未实测**。
+ *
+ * ## 追加证据（Step 4 端到端验收复验，2026-09-23；证据归档见 docs/walkthrough.md）
+ * - **I2V 输入图会被上游做隐私检测【已验证】**：同一张含拟真人物的图作为 `image_url` +
+ *   `role:'first_frame'` 提交 → 上游 **400**：
+ *   `InputImageSensitiveContentDetected.PrivacyInformation` /
+ *   `The request failed because the input image 'content[1]' may contain real person`。
+ *   特征：**8.1s 即终态**（落在参数校验阶段、**未开始生成**，故无成片费用）；归类为
+ *   `UPSTREAM_ERROR` + `terminal`（不适用 `uncertain`：并没有"提交了但不知结果"）。
+ *   产品含义：真人照片（或含拟真人物的生成图）做首帧/尾帧会被拒，**这不是我们的缺陷**；
+ *   改进项（前置提示 / 更可读文案）登记在 PLAN §9 台账 **B32**。
+ * - **非 32 倍数输入图走完整链路【已验证】**：831×479 JPEG 经 `/api/upload`（防线 4 清洗网关）
+ *   落盘为 **800×448**，再以该资产走 I2V 出片成功（提交→终态 62.3s），成片首帧与输入图
+ *   PSNR **40.22dB** —— 证明"清洗 → 规整 → 提交"三段在真实链路上衔接正确。
+ * - **T2V 音轨【已验证】带音轨**：提示词含直角双引号对白时，成片自带 AAC 2ch 32kHz 音轨
+ *   （mean -15.8dB、无 ≥0.3s 静音段）；**"是否念出台词"属内容层、本层不做断言**。
  *
  * ## 设计要点
  * 把"可能出错的上游细节"全部收进本文件，`VolcanoSeedanceProvider` 只负责流程与错误归类。

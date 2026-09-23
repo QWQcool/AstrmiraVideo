@@ -1,4 +1,10 @@
-# AstrmiraVideo · 产品与开发规划（PLAN V8.4）
+# AstrmiraVideo · 产品与开发规划（PLAN V8.5）
+
+> **修订说明（V8.5，2026-09-23）**
+> 1. **Step 4 端到端验收【已完成】**：AC1（真实云端轨 T2V / I2V 复验）与 AC2（上传清洗网关的**落盘产物**断言，固化为集成测试）全部通过；产出 [walkthrough.md](walkthrough.md)（§4 Step 4 各 AC 与 §5 进度日志已按结果更新）。
+> 2. §8 成本表回填本轮实测（T2V 89.0s / I2V 62.3s / 上游隐私检测 8.1s 终态）。
+> 3. §9 台账新增 **B32**（I2V / FL2V 真人输入的体验收敛）——源自本轮**真实踩到**的上游隐私检测（`InputImageSensitiveContentDetected.PrivacyInformation`）。
+> 4. 上游行为知识同步进其唯一 Owner：`backend/src/providers/seedanceProtocol.ts` 文件头证据表（隐私检测 / 非 32 倍数输入链路 / 云端音轨）；GUIDE §三与 FAQ 补 Q10 的用户侧口径。
 
 > **修订说明（V8.4，2026-09-23）**
 > 1. **新增 §4 Step 6「V9 前端改版」**（总览页 + 可收展侧栏 + 自写 hash 路由 + 界面级动效体系 + 移动端响应式 + 提示词配方库 + 轻剪辑台 MVP），决策见 §6 的 **D33~D38**，全部接口规划落在 CONTRACT **V2.2**。
@@ -136,7 +142,7 @@
     - 错误二（部署配置，**只有线上 V2V 会暴露**）：`PUBLIC_BASE_URL` / `CORS_ORIGINS` 虽由 `deploy.mjs` 推导，却**没写进 compose 的 `environment:`** —— `env_file` 只能搬运 `.env.deploy` 里的值（模板是空值），推导值永远进不了容器。后果是资产地址退化成 data URL：**图片能用、视频被上游拒**，所以此前没有任何路径暴露它。修法见 §7-9。
     - **最终验证（线上实例）**：`pnpm smoke:paid --server https://<站点> --creds-file … --video <参考片>` → 提交→终态 **116.7s**、成片 5.09s / 1280×720 / h264+AAC / 2.40MB、`/media` 206 正常；抽帧核对**画面确实按参考视频重绘**（2.5s 即参考片里"手指按开关 + 冒热气的茶杯 + 翻开的书"那一刻）。该成片同时留在线上画廊，可供人工查看。
     - 测试 +5（协议 2 / provider 3，含"视频给 data URL → 零上游调用"）。`smoke-seedance-paid.mjs` 因此扩出 `--server` / `--creds-file` / `--insecure`（自签 IP 档）与"线上模式先把成片取回再 ffprobe"。
-  - **仍未实测**：`failed` / `cancelled` / `canceled` / `expired` 四个**状态枚举分支**（需要一次真实的失败或取消样本）。
+  - **仍未实测**：上游 `status` 枚举里的 `failed` / `cancelled` / `canceled` / `expired` 四个**分支**（需要一次真实的上游失败或取消样本）。**2026-09-23 补**：**我们自己的任务终态 `failed`** 已获真实样本（I2V 输入图被上游隐私检测拒绝 → 400 → `UPSTREAM_ERROR` + `terminal`，提交→终态 8.1s；见 [walkthrough.md](walkthrough.md) §1-3a）——它与"上游 `status` 枚举"不是一回事，勿混。
 - **AC3**：本地并发提交 2 个任务，第 2 个任务状态为 `queued`，无第二个推理进程被拉起。
 - **AC4**：服务重启后，进行中的任务能从 SQLite 恢复状态，前端刷新可重挂载。
 - **AC5**：可选实现项 OI-2（`fixture-local`）产出真实可播 MP4，`ffprobe` 校验通过，全程零外网依赖、零配额消耗；见下方「Step 2 补充」。
@@ -157,11 +163,12 @@
 - **AC7**：任务归 `UNCERTAIN_RESULT` 时，界面展示「可能已产生费用，请到服务商后台核对后手动处理」，且**不提供任何一键重跑入口**。
 
 ### Step 4：端到端验收与体验打磨
-- **AC1**：T2V（含双引号台词人声）与 I2V（含 32 倍数裁切）各跑通 1 次完整链路，**必须用真实云端轨**（本地轨全量出片 7~10 小时/条，不作为验收手段，见 §8）。**当前阻塞：与 Step 2-AC2 同一把 Key。**
-- **AC2**：WebP / 超大图各上传 1 次，清洗网关**输出合规**（sRGB、32 倍数、长边 ≤ 2048、透明通道保留）——**断言以落盘产物为准**（`ffprobe` / sharp 元数据复核），不看响应字段自证；**HEIC 按实测能力走"诚实拒绝"**：`.heic`（HEVC）返回 **415 `INVALID_ASSET`** + 可执行转格式指引，**不得**静默放行、也不得假装成功（实测：预编译 libvips 与 ffmpeg 都没有 HEVC 解码器，见 §5 的 S6 条目；让它真正可用的路径见台账 B21）。
-- **AC3**：项目级 DoD 达成——后端契约测试全绿 + 上述两条 e2e 全绿。
+> **状态【已完成 2026-09-23】**：AC1 ~ AC4 全部通过，证据归档 = [walkthrough.md](walkthrough.md)。以下 AC 原文保留（口径不变），括号内为本轮结果。
+- **AC1**：T2V（含双引号台词人声）与 I2V（含 32 倍数裁切）各跑通 1 次完整链路，**必须用真实云端轨**（本地轨全量出片 7~10 小时/条，不作为验收手段，见 §8）。~~当前阻塞：与 Step 2-AC2 同一把 Key。~~ **【已完成】**：两条链路均于 2026-09-23 复验（走 `X-Provider-Key`，证据见 walkthrough §1）；**"双引号台词人声"是本地 H3 的能力、不在本轮范围**（本地轨未实现），云端音轨只做客观检测（能量 / 静音段）不做内容断言——验收记录已如实澄清。
+- **AC2**：WebP / 超大图各上传 1 次，清洗网关**输出合规**（sRGB、32 倍数、长边 ≤ 2048、透明通道保留）——**断言以落盘产物为准**（`ffprobe` / sharp 元数据复核），不看响应字段自证；**HEIC 按实测能力走"诚实拒绝"**：`.heic`（HEVC）返回 **415 `INVALID_ASSET`** + 可执行转格式指引，**不得**静默放行、也不得假装成功（实测：预编译 libvips 与 ffmpeg 都没有 HEVC 解码器，见 §5 的 S6 条目；让它真正可用的路径见台账 B21）。**【已完成】**：六类输入（WebP / 超大图 / 非规整 / 透明 / HEIC / EXIF）已**固化为集成测试** `backend/src/routes/upload.sanitize.integration.test.ts`（走真实 `/api/upload` + 落盘断言），而非只留一次手工记录。
+- **AC3**：项目级 DoD 达成——后端契约测试全绿 + 上述两条 e2e 全绿。**【已完成】**（见 walkthrough §3）。
 - **AC4**：CI 以 OI-2（`fixture-local`）跑通端到端并产出可播 MP4（**已完成**：`backend/src/e2e/` 走真实 TCP + `/media` 206 Range + `ffprobe` 校验，见 §5 的 B9 条目）；OI-1（`stock-local`）已按非目标跳过（台账 B7），**不参与验收**——验收记录必须如实写明，不得含糊带过。
-- **产出**：`walkthrough.md` 验收记录【规划】。
+- **产出**：`walkthrough.md` 验收记录 —— **已产出**（[docs/walkthrough.md](walkthrough.md)）。
 
 ### Step 5：公网部署与交付
 - **任务**：`Dockerfile` + `docker-compose.yml`；反向代理 + HTTP 206；部署至 `DEPLOY_HOST`（值在本地 `.env`，勿写入文档）。
@@ -274,7 +281,7 @@
 
 ## 5. 进度日志（唯一进度权威，其他文档只准链接本节）
 
-**截至 2026-09-23 · 当前指针：Step 2 仅剩 host 本地轨 `LocalH3Provider` 未实现（AC2 已在真机跑通 T2V / I2V / FL2V / V2V 四种模式，均走 `X-Provider-Key` 通道，证据见 §4 Step 2-AC2）；Step 1 / 1.5 / 3 已完成、Step 4 的云端半边已具证据、Step 5 已上线且 CI → CD 全自动；Step 6（V9 前端改版）已立项【规划】，执行手册 = `docs/EXEC-V9.md`**
+**截至 2026-09-23 · 当前指针：Step 2 仅剩 host 本地轨 `LocalH3Provider` 未实现（AC2 已在真机跑通 T2V / I2V / FL2V / V2V 四种模式，均走 `X-Provider-Key` 通道，证据见 §4 Step 2-AC2）；Step 1 / 1.5 / 3 已完成；**Step 4 端到端验收【已完成】**（AC1 / AC2 于 2026-09-23 完成复验与固化，证据见 [walkthrough.md](walkthrough.md)）；Step 5 已上线且 CI → CD 全自动；Step 6（V9 前端改版）已立项【规划】，执行手册 = `docs/EXEC-V9.md`**
 
 - [x] 架构纠偏：淘汰素材拼贴路线，确立【描述 + 参考图/视频 → 双轨生成】多模态管线（见 §6-D1）；
 - [x] 本地算力验证【已验证】：MiniMax H3 NF4 在 Tier 2 机器（16GB 显存）全量缓存并跑通 T2V / I2V / 双引号立体声台词；
@@ -333,7 +340,7 @@
       - **实测（2026-09-22，CD 首次全绿）**：`verify` + `deploy` 双绿；`docker ps` → `astrmiravideo-app-1 | Up (healthy)`；站点返回 `Content-Security-Policy`（生产启用）+ `X-Content-Type-Options` / `X-Frame-Options` / `Referrer-Policy`；`/api/health` 由 401 转 200（Caddy 的 health 豁免随镜像生效）；六项语义判定全对（无凭据 401 / 深链回退 200 / 未定义 API 与不存在媒体均为 404 JSON，未与 SPA fallback 混淆）；首页稳态 **33~39ms**（首次含完整 TLS 握手 ~200ms）。
       - **实测**（从外网用 Node 的 TLS 栈复测，§5 下方列出六条路径的判定）：`/`（带登录）200 + HTML；`/`（无凭据）**401**；`/api/providers/status` 200 且 `cloud.available:false`（未配兜底 Key，符合 AC6）；SPA 深链 200 回退同一 `index.html`；`/api/nonexistent` 与 `/media/nonexistent.mp4` 均 **404**（未被 fallback 吞成 200 HTML）；容器 `healthy`。
       - **部署过程中修掉的四个真实问题**（都属于"不看日志绝对猜不到"的那类）：① **pnpm 版本漂移** → `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`（Docker 里 corepack 装的是最新 pnpm，对同一份 lockfile 的判定与本地/CI 不同）→ 根 `package.json` 钉 `packageManager: pnpm@10.30.3`；② **`deb.debian.org` 只有 ~60KB/s**，ffmpeg 那 134MB 依赖要 37 分钟 → 换国内镜像（实测快约 30 倍）；③ **`better-sqlite3` 无 prebuilt 需现场编译**，而 slim 运行层没有编译器 → 临时装 `python3 make g++` 编译后立刻卸掉；④ **IP 访问时客户端不发 SNI**（RFC 6066 规定 SNI 只承载域名），Caddy 选不出证书直接以 `tlsv1 alert internal error` 失败 → 加 `default_sni`（**症状是浏览器连登录框都看不到**，完全不像证书问题）。另修 `/api/health` 被站点登录挡住的偏差（该端点应公开，与后端 `ALWAYS_PUBLIC_PATHS` 口径一致）→ Caddy 对探针豁免登录。
-      - **✅ 三项输入已提供并配置完成**（服务器地址 / 端口 / SSH 凭据）；**火山方舟 Key 仍待补**（它是 Step 2-AC2 真实冒烟与 Step 4 端到端验收的共同前置；不补也能跑，只是访客必须自带 BYOK Key）。原始清单如下，供后续换机参考：
+      - **✅ 三项输入已提供并配置完成**（服务器地址 / 端口 / SSH 凭据）；**服务端兜底 `VOLCANO_API_KEY` 仍未配置**（可选：不配也能跑，只是 `cloud.available:false`，访客必须自带 BYOK Key）——**冒烟与验收所需的 Key 已由用户提供（2026-09-23，仅本地使用，未写入任何文档与仓库）**，Step 2-AC2 与 Step 4 均已完成。原始清单如下，供后续换机参考：
         0. **（历史记录）**
         1. **服务器地址** `DEPLOY_HOST`（域名或 IP）；
         2. **对外 HTTPS 端口** `DEPLOY_PORT`（建议 443）；
@@ -356,7 +363,11 @@
       - **⑤ 顺手修掉一个「只有浏览器才看得见」的真实缺陷**：`frontend/index.html` 外链 `fonts.googleapis.com`，而生产 CSP 是 `style-src 'self'` / `font-src 'self'` → **线上 Cinzel 标题字其实一直没有生效**（开发环境按设计不开 CSP，所以是"本地正常、线上变形"）。修法：Cinzel 两个拉丁子集（合计 ~23KB，**SIL OFL 1.1**）自托管进 `frontend/public/fonts/`（含 `OFL.txt`，登记见 UPSTREAM）；`visual-selfcheck.mjs` 增加第 **⑧** 条静态断言「index.html 零跨源资源」（破坏性验证：加回外链 → 精确报错）。CSP 因此**保持严格**，也不再有任何第三方出网请求。
       - **⑥ 性能基准（只提供可复跑的手动脚本，CI 不设门）**：`scripts/bench.mjs`（`pnpm bench`）。本机实测：`/api/health` p50 0.6ms / p95 1.7ms、`/api/providers/status` p50 0.5ms、画廊查询 p50 0.6ms、夹具出片（2s 片，含 ffmpeg 转码）**1.1s**、`/media` Range 首字节 p95 3.9ms、回环下载 117.8MB/s（2026-09-22，node v24.14.0 / win32 / 未插桩）。**引用时必须带上测量条件**。
       - **余项转台账**：像素基线（B16）、性能门限（B17）、开发机与 CI / 镜像的 Node 版本对齐（**B18**：本机 v24.14.0 vs CI 与镜像 22）、中文衬线自托管策略（**B19**）。
-- [ ] **Step 4 端到端验收【阻塞：需一把可用 Key】**：见 §4。AC1 明确要求用**真实云端轨**跑通 T2V（含双引号台词人声）与 I2V（含 32 倍数裁切），因此与 AC2 共用同一把 Key —— 拿到 Key 后 Step 4 与 Step 2-AC2 可一并完成；**AC4 的 CI 半边已完成**（见上方 B9 条目 ①）。
+- [x] **Step 4 端到端验收【已完成 2026-09-23；证据归档 = [walkthrough.md](walkthrough.md)】**（原阻塞条件"需一把可用 Key"已解除，与 Step 2-AC2 共用同一把）：
+      - **AC1【已完成】**：真实云端轨（`doubao-seedance-2-0-mini-260615` / 720p / 5s / 走 `X-Provider-Key`）复验两条链路 —— T2V 提交→终态 **89.0s**、成片 5.09s/1280×720/h264+AAC、2.80MB、206 正常、封面正常、**音轨 mean -15.8dB 且无 ≥0.3s 静音段**；I2V 用**非 32 倍数图**（831×479 → 清洗落盘 **800×448** → 出片）提交→终态 **62.3s**、5.09s/1280×720/2.81MB、成片首帧与输入图 **PSNR 40.22dB**（确实以首帧为起点）。**如实澄清**：云端成片自带音轨但"是否念出台词"属内容层、不做自动化断言；**双引号触发对白是本地 H3 的能力**，host 本地轨未实现故不在本轮范围。
+      - **AC2【已完成】**：WebP / 超大图 / 非规整尺寸 / 透明通道 / HEIC 拒绝 / EXIF 剥离六项**固化为集成测试**（`backend/src/routes/upload.sanitize.integration.test.ts`，全部走真实 `/api/upload` + **落盘产物 sharp 元数据断言**）；破坏性验证命中（`MAX_LONG_EDGE` 2048→1024 → `expected 672 to be 1344`）。
+      - **AC3 / AC4【已完成】**：契约层 11 全绿 + 真实 TCP e2e 全绿（`pnpm test:e2e`）；OI-1 按非目标跳过、不参与验收。
+      - **本轮顺带实证的三条边界（都非 AC 要求）**：① **上游对 I2V 输入图做隐私检测** —— 含拟真人脸会被 `InputImageSensitiveContentDetected.PrivacyInformation` 拒绝（400 / 8.1s 终态 / 如实归 `UPSTREAM_ERROR`+terminal，未误归 uncertain），改进项登记台账 **B32**；② 防线 5 的 429 冷却在真实付费路径上自然复现（复合键）；③ "请求 > env > 内置默认"的模型优先级在真机成立（本地后端刻意未设 `VOLCANO_*`）。
 - [~] **V8.3 体验与功能补强【进行中：批次 0~4 / 6 / 7 已完成，批次 5 剩 FL2V·V2V】**（2026-09-22 立项）：起因是一次"文档 ↔ 代码"全面核对（11 条防线/功能项 + 10 条路由 + 12 个错误码产生点 + `process.env` 全量 + 存储生命周期，两路独立探查 + 逐条复核）。**批次 6 与 7 都是 2026-09-23 用户报障驱动的修复，插在批次 5 之前**。**以下顺序即批次**：
       - [x] **批次 0 · 文档对齐（零风险）【已完成】**：把"文档承诺 > 代码事实"的地方逐条改回事实 —— LRU 降级并登记 **B22**（`§1` 架构图 / `§3` 防线 3 / CONTRACT §7 三处）；防线 3 补注「当前生产链路**没有中间帧生产者**，清理属预留兜底」；防线 4 写实（已落地 + `.heic` 诚实拒绝）；**鉴权作用域写实**（钩子是全局 `onRequest`：除回环与 `/api/health` 外，`/media/*` 与前端产物同样要求 Bearer，线上由 Caddy 注入）；**限流复合键时点写实**（已落地，非"Step 5 才做"）；**Step 2 状态修正**（`LocalH3Provider.ts` 未实现 → 不再写"仅剩 AC2"）；CONTRACT 消除"修订说明说新增 `keys/verify`、表格里却没有"的自相矛盾；GUIDE 未实现项标注【规划】；README 删除视觉免责段（**已获 Astrmira 作者许可**，来源改登记在 UPSTREAM）。
         - **当场钉死的两条"未能确认"**：① `app.hasRoute({method:'GET',url:'/media/*'}) === true` → 契约测试对 `/media/*` 的断言口径**有效**，疑虑排除；② **`cancelled` 会被 dispatcher 覆盖 —— 实测确认是真缺陷**（桩上游场景：取消后 3 秒状态变回 `running 10%`，最终会走到 succeeded）→ 修复排入批次 3 首位（它直接关系到"用户以为取消了、实际仍在计费"）。
@@ -403,7 +414,7 @@
         - **[x] I2V 真实出片（同日第二次）【已验证】**：以上一条成片的首帧 JPEG（1280×720）经 `/api/upload`（过防线 4 清洗网关，产物 66KB JPEG）上传为资产 → I2V 出片成功。实测 **提交→终态 124.7s**、成片 5.09s / 1280×720 / **h264 + AAC 2ch** / 2.78MB、206 Range 正常、封面抽帧成功；**画面首尾与首帧灯型一致**（抽帧比对：0.1s 与输入首帧几乎相同，4.8s 拉远后灯罩形状不变）——**这正好解决 T2V 里发现的"跨镜头主体漂移"**。顺带确认 `image_url.url` **接受 base64 data URL**（本机 `PUBLIC_BASE_URL` 为空时的回落路径）。
         - **[x] FL2V 真实出片【已验证】**（同批次第四次）：首尾帧两资产 → 出片成功，提交→终态 **100.4s**、5.09s / 1280×720 / h264+AAC / 2.50MB；0.1s 起于首帧、4.9s 与尾帧几乎一致 → **`last_frame` 角色语义成立**。
         - **[x] V2V【已验证：线上端到端跑通】**：原实现把视频塞进 `image_url`+`reference_image` → 上游 400；三次参数级探测问出正确形态 `video_url` + `role='reference_video'`，且**必须公网 URL**（data URL 被拒）。修好请求形状后，线上验证又暴露**第二个真错误**：`PUBLIC_BASE_URL` 从未进容器（compose 只靠 `env_file`）→ 资产退化成 data URL。两处都修完后在**线上实例**跑通：提交→终态 **116.7s**、5.09s/1280×720/h264+AAC/2.40MB、206 正常，且**画面确实按参考视频重绘**（详见 §4 Step 2-AC2）。
-        - **仍待**：`failed`/`cancelled` 等状态枚举的真实样本；Step 4 端到端验收（AC1 的 T2V + I2V 已各跑通，"含双引号台词人声"是本地 H3 的能力，需在验收记录里如实澄清）。
+        - **仍待（2026-09-23 更新）**：上游 `status` 枚举里的 `failed`/`cancelled`/`canceled`/`expired` 仍无真实样本；**Step 4 端到端验收已完成**（证据 = [walkthrough.md](walkthrough.md)；"含双引号台词人声"是本地 H3 的能力，已在验收记录里如实澄清）；任务终态 `failed` 已获真实样本（上游隐私检测拒绝，见 [walkthrough.md](walkthrough.md) §1-3a）。
 - [ ] **Step 6 · V9 前端改版【规划已定稿 2026-09-23，未开工】**：方向由用户逐条拍板（顶栏精简保留 logo+服务状态 / HTML 高保真稿先行确认 / 自写 hash 路由、react-router 入台账 B28 / 拆帧剪辑定位=时间轴确定性操作 + 抽帧→生成闭环（D38）/ 配方库双入口（D36）/ 剪映导出**砍掉**（D37）/ 双主题保留 / 移动端响应式同批 / 存储占用卡带"去清理"入口）。任务与 AC 见 §4 Step 6；接口规划见 CONTRACT **V2.2**（§3 `recipeId`、§5 路由表、§11 配方与剪辑台契约）；决策 D33~D38；**执行手册 = `docs/EXEC-V9.md`（一次性，验收后归档删除）**。视觉参考：`docs/assets/`（索引在其 README）。**零 API 成本红线**：本 Step 全程不调付费上游。
 
 ---
@@ -487,6 +498,9 @@
 | 云端 Seedance 耗时（FL2V） | **提交→终态 100.4s**（同一模型 / 720p / 5s，首尾帧双输入） | **【已验证实测】**2026-09-23，`--i2v A --last B` |
 | V2V 的参数级探测 | **不产生成片费用**：形态不合法时上游在**参数校验阶段**就 400（2 秒内终态），不会开始生成 | **【已验证实测】**2026-09-23：3 次探测均 400；另一次经产品路径的 V2V 也在此阶段失败 |
 | 云端 Seedance 耗时（V2V） | **提交→终态 116.7s**（同一模型 / 720p / 5s，**参考视频**输入；线上实例实测） | **【已验证实测】**2026-09-23 |
+| 云端 Seedance 耗时（Step 4 复验 · T2V） | **提交→终态 89.0s**（同一模型 / 720p / 5s；提示词含直角双引号对白，成片音轨 mean -15.8dB、无 ≥0.3s 静音段） | **【已验证实测】**2026-09-23，见 [walkthrough.md](walkthrough.md) §1-1 |
+| 云端 Seedance 耗时（Step 4 复验 · I2V） | **提交→终态 62.3s**（同一模型 / 720p / 5s；输入 831×479 → 清洗落盘 800×448；成片首帧与输入图 PSNR 40.22dB） | **【已验证实测】**2026-09-23，见 [walkthrough.md](walkthrough.md) §1-2 |
+| 上游 I2V 输入图隐私检测 | **含拟真人脸 → 400 + 8.1s 终态**（`InputImageSensitiveContentDetected.PrivacyInformation`）；落在**参数校验阶段、未开始生成**（无成片费用） | **【已验证实测】**2026-09-23，见 [walkthrough.md](walkthrough.md) §1-3a |
 | 云端 Seedance 单次成本 | **约 1~2.5 元 / 条（5s @720p）【估算】**：按上游计费口径 `token = (输入时长+输出时长) × 宽 × 高 × 帧率 ÷ 1024` = 5×1280×720×24÷1024 ≈ **108,000 token**；mini 档第三方价目 $3.24/M（输入不含视频）→ ≈ $0.35。**实际扣费以方舟控制台账单为准**（未核对我方账单） | **【待验证】**金额待账单核对；**计算口径与耗时口径已实测** |
 
 **风险登记**：
@@ -555,3 +569,4 @@
 | B29 | **剪辑台增强**：更多转场类型与时长档位、逐段滤镜（亮度/对比度/饱和）、字幕轨（drawtext）、音频轨替换、剪辑模板 | §6-D37 / Step 6-AC6 | MVP 三件套（trim/concat/xfade）上线后有人真的用时 |
 | B30 | **配方库加"行业"维**（电商/短剧/产品广告）与配方数量扩充 | §6-D36 | 首批配方上线后按使用反馈再定（避免无人用先膨胀） |
 | B31 | **图片生成入口**（可灵式"图片生成"一级能力位）：上游其实支持文生图，但我们当前只做视频 | 用户 2026-09-23 的讨论记录 | 产品明确要扩到图片生成时；届时它应有独立的能力位与计价口径，不蹭视频轨的契约 |
+| B32 | **I2V / FL2V 真人输入的体验收敛**：上游会对输入图做隐私检测（含拟真人脸 → 400 `InputImageSensitiveContentDetected.PrivacyInformation`），当前姿态是**如实透传上游报文 + `terminal`**（归类正确、无静默降级）。候选改进：① 前端对"疑似真人照片"给前置提示（本项目无本地人脸检测能力，只能做文案引导）；② 把这一类上游拒绝映射成更可读的中文说明 + 建议动作（换非真人素材 / 改用 T2V / 用生成图而非实拍） | 2026-09-23 Step 4 验收的真实发现（[walkthrough.md](walkthrough.md) §1-3a） | 真人素材成为常见路径时，或出现第二次用户报障时（在此之前保持"如实透传"） |
