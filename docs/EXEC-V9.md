@@ -50,7 +50,8 @@
 - **闸门结果（2026-09-23 已确认，四处拍板）**：① 配方库为**第 5 个一级视图** `#/recipes`（不做工作台内的面板）；② 剪辑台为**更彻底的独立视图** `#/edit`（源片经 hash 查询参数 `?task=<id>`，**不是**路径参数，故**不触发**台账 B28；不进侧栏，空态引导）；③ 默认视图 = `#/workbench`；④ 总览四卡按**方案 A** 落地（最小契约增量 → CONTRACT V2.3：暴露 `TaskProgress.createdAt`（`tasks.created_at` 列本就存在，零迁移）+ `outputSizeBytes`（后端 stat）+ `/api/history` 的 `storage` 目录级聚合——在 B3 内做）。
 - **提交**：`docs(proto): high-fidelity V9 prototype with real tokens`（cf466dc；闸门确认后的增补改动见同一片后续提交）。
 
-### B2 · 应用壳：侧栏 + 自写 hash 路由 + 视图注册表
+### B2 · 应用壳：侧栏 + 自写 hash 路由 + 视图注册表【已完成 2026-09-23】
+> 实测：门禁全绿（lint 0 / type 0 / 前端 74 / build / UI 冒烟）；破坏性验证命中（删 `#/library` 注册项 → 落兜底非白屏，还原后冒烟全绿）。冒烟新增 **[1b] 应用壳**断言组。
 - **改动**：新增 `frontend/src/lib/router.ts`（hash 解析 + `hashchange` 监听 + `navigate()`，约 40 行；**hash 查询参数（`#/edit?task=<id>`）由视图自己读**，**路径参数 `#/library/:taskId` 不做**——那是台账 B28 的迁移触发条件）；新增 `frontend/src/views/registry.ts`（**数据化**：`[{ path, title, icon, component, hidden? }]`——剪辑台 `hidden:true` 不进侧栏）；新增 `components/Sidebar.tsx`（展开 240px / 收起 56px 图标栏，状态存 `localStorage`，移动端行为在 B7）；`App.tsx` 重构为「顶栏（logo + 服务状态）+ Sidebar + 内容区按路由渲染」；现有三栏**原样**搬进 `views/WorkbenchView.tsx`；顶栏的 日志/主题/凭据 入口移到侧栏底部区。
 - **AC**：PLAN §4 Step 6-AC1（五视图 + 剪辑台可切、刷新保持、前进后退可用）。
 - **破坏性验证**：临时把 `#/library` 从注册表删掉 → 访问该 hash 必须落到"未知视图"兜底（不许白屏）。

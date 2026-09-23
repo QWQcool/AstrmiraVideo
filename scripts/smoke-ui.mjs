@@ -225,6 +225,58 @@ try {
   });
   assert(cinzelLoaded, 'Cinzel（--serif-caps）自托管加载成功，不依赖外部 CDN');
 
+  console.log('\n[1b] 应用壳（V9 · B2：侧栏 + 自写 hash 路由 + 数据化视图注册表）');
+  // 默认视图（用户拍板 2026-09-23）：无 hash 打开时落到 #/workbench，且工作台默认收起侧栏
+  assert(page.url().includes('#/workbench'), `默认视图为 #/workbench（实际 ${page.url()}）`);
+  assert(await page.locator('.sidebar').isVisible(), '侧栏渲染出来了');
+  const bootRail = await page.locator('.sidebar').getAttribute('data-rail');
+  assert(bootRail === '1', `工作台默认收起侧栏（data-rail=${bootRail}，期望 1）`);
+  assert(
+    (await page.locator('.sidebar .nav-item').count()) === 5,
+    `侧栏有五个一级视图入口（剪辑台不进侧栏；实际 ${await page.locator('.sidebar .nav-item').count()}）`,
+  );
+
+  // 五个一级视图可切换，且侧栏 aria-current 跟随（剪辑台是 hidden 视图，单独验）
+  for (const hash of ['#/overview', '#/library', '#/recipes', '#/logs', '#/workbench']) {
+    await page.evaluate((h) => { location.hash = h; }, hash);
+    await page.waitForFunction(
+      (h) => document.querySelector('.nav-item[aria-current="page"]')?.getAttribute('href') === h,
+      hash,
+      { timeout: 5_000 },
+    );
+  }
+  assert(true, '五个一级视图可切换，侧栏 aria-current 跟随');
+
+  // 前进后退可用（hash 变化产生历史条目）
+  await page.evaluate(() => { location.hash = '#/overview'; });
+  await sleep(150);
+  await page.evaluate(() => { location.hash = '#/library'; });
+  await sleep(150);
+  await page.goBack();
+  await page.waitForFunction(() => location.hash === '#/overview', { timeout: 5_000 });
+  assert(true, '浏览器后退可用（#/library → #/overview）');
+  await page.goForward();
+  await page.waitForFunction(() => location.hash === '#/library', { timeout: 5_000 });
+  assert(true, '浏览器前进可用（#/overview → #/library）');
+
+  // 刷新保持当前视图
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.wb-shell', { timeout: 10_000 });
+  assert(page.url().includes('#/library'), `刷新后保持当前视图（期望 #/library，实际 ${page.url()}）`);
+
+  // 剪辑台（hidden 视图）可直达；无 task 时是空态引导（B9 才填实现）
+  await page.evaluate(() => { location.hash = '#/edit'; });
+  await page.waitForSelector('.wb-placeholder', { timeout: 5_000 });
+  assert(true, '剪辑台 #/edit 可直达（B9 前是占位视图；不进侧栏）');
+
+  // 未知 hash 落兜底（不白屏、不静默重定向）—— 这也是 B2 破坏性验证的固化
+  await page.evaluate(() => { location.hash = '#/definitely-not-a-view'; });
+  await page.waitForSelector('.wb-unknown', { timeout: 5_000 });
+  assert(await page.getByText('这个视图不存在').isVisible(), '未知 hash 落到兜底页（不白屏）');
+  await page.getByRole('button', { name: '回到工作台' }).click();
+  await page.waitForSelector('.wb-main', { timeout: 5_000 });
+  assert(page.url().includes('#/workbench'), '兜底页可回到工作台');
+
   console.log('\n[2] 首屏与后端真的通了（同源 /api/providers/status）');
   await page.getByText('服务在线').waitFor({ timeout: 10_000 });
   assert(true, '头部徽章进入「服务在线」（说明 /api 请求成功了：CSP + 鉴权都没拦）');
@@ -293,6 +345,10 @@ try {
   console.log('\n[5] 主题（V8.3 批次 2：默认跟随系统 + 可覆盖，日间为"现代简洁·蔚蓝"）');
   const themeAttr = () =>
     page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+
+  // V9：主题分段控件移到了侧栏底部；工作台默认收起侧栏（分段在收起态隐藏）→ 先展开
+  await page.getByRole('button', { name: '展开侧栏' }).click();
+  await page.locator('.sidebar[data-rail="0"]').waitFor({ timeout: 5_000 });
 
   assert((await themeAttr()) === null, '默认（跟随系统）下不打 data-theme —— 暗色是 :root 默认值');
 
@@ -453,9 +509,10 @@ try {
   assert(submitRows.total > 0, `界面提交的生成任务已记入操作日志（action=generate.submit，${submitRows.total} 条）`);
   assert(submitRows.paths.includes('/api/generate'), '日志里能看到 /api/generate 这条记录');
 
-  await page.getByRole('button', { name: '日志', exact: true }).click();
-  await page.locator('.wb-log-panel').waitFor({ timeout: 5_000 });
-  assert(true, '顶栏「日志」打开全屏日志页');
+  // V9：日志从顶栏弹层升级为一级视图（D33）—— 从侧栏导航进入 `#/logs`
+  await page.getByRole('link', { name: '操作日志' }).click();
+  await page.locator('.view-logs .wb-log-panel').waitFor({ timeout: 5_000 });
+  assert(true, '侧栏点「操作日志」→ 日志一级视图（#/logs）');
   assert(
     (await page.locator('.wb-log-filters select').count()) >= 2,
     '筛选器含时间范围与动作下拉（按 IP / 错误码 / 关键词也能筛）',

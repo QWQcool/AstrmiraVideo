@@ -24,6 +24,8 @@ export const STORAGE_KEYS = {
   cooldownUntil: 'astrmira.cooldownUntil',
   /** 主题偏好（V8.3 批次 2）：`system`（默认，跟随系统）/ `dark` / `day` */
   themePref: 'astrmira.themePref',
+  /** 侧栏收起态（V9 B2）：true = 收起为 56px 图标栏 */
+  sidebarRail: 'astrmira.sidebarRail',
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
