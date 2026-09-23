@@ -13,6 +13,7 @@ import {
   UploadResponseSchema,
 } from '@astrmira/shared';
 import type {
+  EditScript,
   ErrorCode,
   ErrorDisposition,
   GenerateResponse,
@@ -192,6 +193,19 @@ export function submitGenerate(
     idempotencyKey: options.idempotencyKey,
     ...(options.providerKey === undefined ? {} : { providerKey: options.providerKey }),
   });
+}
+
+/**
+ * 提交剪辑任务（V9 · B9；CONTRACT §11-2）。
+ *
+ * 与生成任务的两处不同：
+ * - **不需要凭据**（本地 ffmpeg，零上游调用）；
+ * - **不需要幂等键**（每次提交都是一条新任务 —— 剪辑不像生成那样会被网络重试打重）。
+ *
+ * 返回的 `taskId` 复用 `GET /api/tasks/:taskId` 轮询（与生成任务同一条链路）。
+ */
+export function submitEdit(script: EditScript): Promise<GenerateResponse> {
+  return request('/api/edits', GenerateResponseSchema, { method: 'POST', body: script });
 }
 
 export function fetchTask(taskId: string, signal?: AbortSignal): Promise<TaskProgress> {

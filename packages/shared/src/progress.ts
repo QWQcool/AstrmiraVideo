@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EditScriptSchema } from './edit.js';
 import { VideoGenerateRequestSchema } from './request.js';
 import type { ProviderType, VideoGenerateRequest } from './request.js';
 
@@ -29,6 +30,10 @@ export const ErrorCodeSchema = z.enum([
   'LLM_NOT_CONFIGURED', // 扩写未配置 LLM（V2.0：请求未携带 X-LLM-Key 时 → 501；服务端不设兜底 Key）
   'KEY_INVALID', // 凭据被上游拒绝（校验路由见 PLAN §9 台账 B2）
   'KEY_MISSING', // 需要凭据的端点既未收到 X-Provider-Key，服务端也无 env 兜底 Key
+  // ── V2.3 追加（V9 · B9 剪辑台落地时补齐）──
+  // 说明：CONTRACT §11-2 早在 V2.2 就引用了 `INVALID_REQUEST`，但那次的错误码字典（§6）
+  // **没有登记它** —— 契约内部不自洽。B9 实现时把它补进字典（详见 CONTRACT §6 / §11-2）。
+  'INVALID_REQUEST', // 请求**形状合法但值/组合不合法**（如剪辑的 endSec ≤ startSec、连续两次拼接）
 ]);
 
 export const TaskErrorSchema = z.object({
@@ -61,6 +66,23 @@ export const TaskProgressSchema = z.object({
   // V2.3（CONTRACT §4）：成片字节数（成功且文件仍在磁盘上时，服务端 stat 得出）。
   // 用途：视频库"按大小排序"与详情抽屉的"文件大小"；**文件已清理时省略该字段**（不填 0）。
   outputSizeBytes: z.number().int().nonnegative().optional(),
+  /**
+   * V9 · B9（CONTRACT §11-2）：这条任务是不是"剪辑产物"、以及它的 EDL。
+   *
+   * **可选**：缺省即"生成产物"（老记录同理），只有剪辑任务才会写。
+   * 画廊与详情抽屉据此显示"剪辑自 xxx"徽标、并列出本片的操作序列。
+   */
+  origin: z
+    .discriminatedUnion('kind', [
+      z.object({ kind: z.literal('generate') }),
+      z.object({ kind: z.literal('edit'), sourceTaskId: z.string(), script: EditScriptSchema }),
+    ])
+    .optional(),
+  /**
+   * 抽帧产物（`extractFrame` 落下的参考资产 id，可能多个）。
+   * 它们与上传达的资产同目录同规则，可直接作为下一次 I2V / FL2V 的首帧或尾帧（D38 闭环）。
+   */
+  extractedAssetIds: z.array(z.string()).optional(),
   error: TaskErrorSchema.optional(),
 });
 

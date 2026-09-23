@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { EDIT_OPERATION_LABELS } from '@astrmira/shared';
 import type { HistoryResponse, TaskProgress } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
 import { ApiError, deleteHistory, fetchHistory, resolveMediaUrl } from '../lib/api';
@@ -228,6 +229,12 @@ export function LibraryView() {
                 <div className="lib-bar">
                   <span className={`ov-dot ov-dot--${statusDot(task.status)}`} />
                   <span className="lib-idx">{String(index + 1).padStart(3, '0')}</span>
+                  {/* V9 · B9：剪辑产物带来源徽标（B4 留的位在这里填上） */}
+                  {task.origin?.kind === 'edit' ? (
+                    <span className="recipe-tag recipe-tag--gold" title={`剪辑自 ${task.origin.sourceTaskId}`}>
+                      剪辑自 {task.origin.sourceTaskId.slice(0, 8)}
+                    </span>
+                  ) : null}
                   <span className="lib-meta">
                     {STATUS_TEXT[task.status]} · {formatRelativeTime(task.createdAt, Date.now())}
                   </span>
@@ -338,7 +345,23 @@ export function LibraryView() {
               {/* B9 才产生 origin.kind='edit' 的数据；本批先留位（不假装有历史） */}
               <div className="lib-edl-slot">
                 <Eyebrow>本片剪辑历史</Eyebrow>
-                <p className="wb-note">这条还没有剪辑记录（剪辑台在 B9 上线）。</p>
+                {selected.origin?.kind === 'edit' ? (
+                  <>
+                    <p className="wb-note">
+                      剪辑自 {selected.origin.sourceTaskId.slice(0, 8)} —— 操作序列：
+                    </p>
+                    <ol className="edit-history">
+                      {selected.origin.script.operations.map((operation, index) => (
+                        <li key={`${operation.type}-${index}`}>
+                          <span className="edit-order">{String(index + 1).padStart(2, '0')}</span>
+                          <span className="wb-note">{EDIT_OPERATION_LABELS[operation.type]}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </>
+                ) : (
+                  <p className="wb-note">这条还没有剪辑记录（在视频库里点它的 ✂ 就能开始剪）。</p>
+                )}
               </div>
 
               <div className="lib-drawer-acts">

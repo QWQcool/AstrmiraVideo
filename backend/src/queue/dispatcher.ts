@@ -28,6 +28,14 @@ export interface JobDispatcherOptions {
    * 终态时由本类负责释放（`finally`）。
    */
   keyVault?: KeyVault;
+  /**
+   * V9 · B9：剪辑任务的执行器（本地 ffmpeg）。
+   *
+   * 它**全权负责**该任务的生命周期：跑 ffmpeg、写产物、落 `extractedAssetIds`，
+   * 最后自己调 `queue.complete` / `queue.fail`。调度器不猜它的内部状态 ——
+   * 因为"剪辑有没有成功"只有它自己知道（与 provider 的轮询语义不同：本地操作是同步的）。
+   */
+  runEditJob?: (job: QueueJob) => Promise<void>;
   /** 资产 id → 上游可访问地址（透传给 provider） */
   resolveAssetUrl?: (assetId: string) => Promise<string | null>;
   cleanup?: (taskId: string) => Promise<void>;
@@ -103,6 +111,33 @@ export class JobDispatcher {
 
   private async run(job: QueueJob): Promise<void> {
     this.inFlight.add(job.taskId);
+
+    /**
+     * V9 · B9：剪辑任务是**本地 ffmpeg 作业**，没有 provider —— 在这里分流，
+     * 不进"取凭据 → 建 provider → 提交 → 轮询"那条路径。
+     *
+     * 三条随之而来的性质（都符合 CONTRACT §11-2）：
+     * - **零上游调用**：不碰 provider，也就不可能花钱；
+     * - **不走防线 5 冷却**：60s 防抖防的是付费上游，本地 CPU 不在其列；
+     * - 执行与落库全权交给注入的 `runEditJob`（它自己 complete / fail），
+     *   调度器在这里只是一个"按类别分派"的路由。
+     */
+    if (job.kind === 'edit') {
+      try {
+        if (this.options.runEditJob === undefined) {
+          await this.options.queue.fail(job.taskId, {
+            code: 'PROVIDER_UNAVAILABLE',
+            message: '本服务未启用本地剪辑执行器（ffmpeg 不可用或未装配）',
+            disposition: 'terminal',
+          });
+          return;
+        }
+        await this.options.runEditJob(job);
+      } finally {
+        this.inFlight.delete(job.taskId);
+      }
+      return;
+    }
 
     /**
      * 是否**已进入提交阶段**（CONTRACT §5 的 `submitting` 语义）。

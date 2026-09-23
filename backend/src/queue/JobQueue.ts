@@ -1,4 +1,4 @@
-import type { TaskProgress, VideoGenerateRequest } from '@astrmira/shared';
+import type { EditScript, TaskProgress, VideoGenerateRequest } from '@astrmira/shared';
 
 /**
  * 任务队列抽象层（PLAN §6-D20；生命周期与存储口径见 CONTRACT §5 / §7）。
@@ -28,6 +28,15 @@ export interface QueueJob {
   submitting: boolean;
   /** 上游任务 ID；仅在上游接受提交后写回。空值 = 尚未提交上游 */
   upstreamTaskId?: string;
+  /**
+   * 任务类别（V9 · B9）。缺省 = `'generate'`（生成任务，走 provider）。
+   *
+   * `'edit'` = 轻剪辑台的本地 ffmpeg 任务：它**没有 provider**（不碰上游、不花钱），
+   * 调度器为此走一条独立分支（`runEditJob` 钩子），而不是硬塞一个假 provider 进去。
+   */
+  kind?: 'generate' | 'edit';
+  /** `kind: 'edit'` 时必填：要执行的编辑决策清单（随任务落库，见 CONTRACT §11-2） */
+  editScript?: EditScript;
 }
 
 /**

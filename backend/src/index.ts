@@ -9,12 +9,15 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
+import { createErrorResponse } from './errors.js';
 import { cleanupTaskTemp } from './pipeline/cleanup.js';
+import { createEditJobRunner } from './pipeline/editExecutor.js';
 import { createTaskThumbnail } from './pipeline/thumbnail.js';
 import { getEnvModelWarning, getProvider } from './providers/registry.js';
 import { runLocalEngineSelfCheck } from './providers/statusProbe.js';
 import { JobDispatcher } from './queue/dispatcher.js';
 import { SqliteJobQueue } from './queue/SqliteJobQueue.js';
+import { createEditRoutes } from './routes/edits.js';
 import { createEnhanceRoutes } from './routes/enhance.js';
 import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
@@ -95,6 +98,25 @@ export async function buildApp() {
 
   // 生产护栏：未配置访问令牌直接启动失败（PLAN §7-4）
   assertAuthConfiguredForProduction();
+
+  /**
+   * 请求体不符合 zod schema 时，统一回 **400 + `ErrorResponse` 形状**（CONTRACT §5 / §6）。
+   *
+   * 为什么必须有：Fastify 默认的校验错误体是 `{ statusCode, error, message }` ——
+   * 与契约的 ErrorResponse 不符，于是 **response schema 序列化会失败并把结果升级成 500**
+   * （实测：一个本该 400 的剪辑请求返回了 500，前端拿不到可读原因）。
+   * 这里只拦"校验类"错误；其余错误交回 Fastify 的默认处理（不吞真实故障）。
+   */
+  app.setErrorHandler((error, _request, reply) => {
+    // 这个 Fastify 版本把 error 标成 unknown（它可能是任意抛出的东西）—— 显式窄化，不用 as any
+    const shaped = error as { validation?: unknown; message?: string };
+    if (shaped.validation !== undefined) {
+      return reply
+        .code(400)
+        .send(createErrorResponse('INVALID_REQUEST', `请求不符合契约：${shaped.message ?? '校验失败'}`));
+    }
+    return reply.send(error as Error);
+  });
 
   // 安全响应头 + 生产环境 CSP（PLAN §7-4；CSP 属 §9 台账 B15「公网刚需」）
   registerSecurityHeaders(app);
@@ -186,6 +208,9 @@ export async function buildApp() {
     resolveAssetUrl,
     // 防线 3：合成结束即清中间帧目录（成败都清）
     cleanup: (taskId) => cleanupTaskTemp(taskId),
+    // V9 · B9：剪辑任务（本地 ffmpeg，**零上游调用**）——
+    // 它自己 complete/fail，调度器只负责"按类别分派"
+    runEditJob: createEditJobRunner({ store, queue, outputsDir: resolveOutputsDir() }),
     // 画廊封面（V1.9）：成功出片后抽首帧为 JPEG；失败只记日志，不改任务终态
     createThumbnail: (taskId, videoUrl) =>
       createTaskThumbnail({ outputsDir: resolveOutputsDir(), taskId, videoUrl }),
@@ -209,6 +234,8 @@ export async function buildApp() {
   );
   await app.register(createUploadRoutes());
   await app.register(createEnhanceRoutes());
+  // V9 · B9：轻剪辑台（本地 ffmpeg；与生成任务共用队列与轮询）
+  await app.register(createEditRoutes({ store, queue }));
   await app.register(createKeyVerifyRoutes());
   await app.register(createTaskRoutes({ store }));
   await app.register(createHistoryRoutes({ store }));

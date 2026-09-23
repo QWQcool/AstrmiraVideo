@@ -6,7 +6,7 @@
 >   ② **§5**：`GET /api/history` 的响应由 `{ items }` 扩为 `{ items, storage }`，`storage` 是 `outputs/` 的**目录级聚合**（成片 / 缩略图 / 参考资产）——老数据同样准确，不依赖逐条累加；`StorageUsage` 形状见 §4 末尾。
 >   为什么加：V9 总览页四卡（今日生成 / 成功率 / 队列中 / 存储占用）与视频库"按时间 / 大小排序"此前**算不出来**（history 既无时间戳也无体积）——这是 Step 6-AC2「不许出现算不出来的指标」的落地前提。
 >   纪律：只暴露**已有列**、只做**只读聚合**；不新增表、不新增路由、不引入后台任务。
-> **V2.2 修订（2026-09-23）**：**V9 前端改版的接口规划**（PLAN §4 Step 6，决策 D33~D38）。本节内容当时均为**【规划】**；**现状（2026-09-23 追加）**：§3 的 `recipeId` 与 §11-1 配方库已由 **V9 · B8 实现**，§5 的 `POST /api/edits` 与 §11-2 剪辑台仍为【规划】（B9）。
+> **V2.2 修订（2026-09-23）**：**V9 前端改版的接口规划**（PLAN §4 Step 6，决策 D33~D38）。本节内容当时均为**【规划】**；**现状（2026-09-23 追加）**：**全部四项已实现** —— §3 的 `recipeId` 与 §11-1 配方库 = **B8**；§5 的 `POST /api/edits` 与 §11-2 剪辑台 = **B9**。
 >   ① **§3**：`PromptEnhanceRequest` 新增可选 `recipeId`（配方库作为扩写的风格上下文）；
 >   ② **§5**：路由表新增 `POST /api/edits`（轻剪辑台，本地 ffmpeg，**零上游调用**）；
 >   ③ **新增 §11**「配方库与轻剪辑台」：`RecipeCard` 与 `EditScript` 的完整形状、`/api/edits` 的状态映射、剪辑产物与 EDL 的生命周期。
@@ -298,7 +298,7 @@ export interface StorageUsage {
 | `GET` | `/api/logs` | **V2.1 新增**：操作日志查询（筛选 + 分页，见 §10）。**200 → `{ items, total }`** |
 | `DELETE` | `/api/logs/:id` | **V2.1 新增**：删单条日志。**200 → `{ ok, deleted }`**（删除不存在的条目**不是错误**：DELETE 幂等，`deleted: 0`） |
 | `DELETE` | `/api/logs` | **V2.1 新增**：按当前筛选清空日志（不带筛选即全清）。**200 → `{ ok, deleted }`** |
-| `POST` | `/api/edits` | **V2.2【V9 规划】**：轻剪辑台（本地 ffmpeg，**零上游调用**）。**200 → `{ taskId }`**（复用 §4 的 `GET /api/tasks/:taskId` 轮询与画廊）；操作序列非法 → **400 `INVALID_REQUEST`**；源任务不存在或无成 → **404 `TASK_NOT_FOUND`**。完整契约见 §11 |
+| `POST` | `/api/edits` | **V2.2【规划】→ V9 · B9 已实现**：轻剪辑台（本地 ffmpeg，**零上游调用**、**不走防线 5 冷却**）。**200 → `{ taskId }`**（复用 §4 的 `GET /api/tasks/:taskId` 轮询与画廊；任务走 `local` 轨 = 本地互斥 1）；操作序列非法（含 `endSec ≤ startSec`、连续两次拼接、转场未跟在拼接之后）→ **400 `INVALID_REQUEST`**；源任务不存在 / 无成片 / 拼接素材不可用 → **404 `TASK_NOT_FOUND`**；ffmpeg 缺失 → **503 `PROVIDER_UNAVAILABLE`**。完整契约见 §11-2 |
 
 **幂等键与「即将提交」标记（V1.3 新增）**：
 - `POST /api/generate` 必须接受幂等键（请求头 `Idempotency-Key`；缺省时服务端按 `provider + 请求指纹` 生成）。同一幂等键重复提交返回**同一 `taskId`**，不得产生第二次上游调用。
@@ -341,6 +341,7 @@ export type ErrorDisposition =
 | `LLM_NOT_CONFIGURED` | 扩写未配置 LLM（V2.0 起：请求未携带 `X-LLM-Key`，或自定义端点没配全 → `/api/prompt/enhance` 返回 `501`；服务端**不设**文本侧兜底 Key，见 §3） | `terminal` |
 | `KEY_INVALID` | 凭据被上游拒绝（真实调用与 `POST /api/providers/keys/verify` 两处产生，见 §9） | `terminal` |
 | `KEY_MISSING` | 需要凭据的端点既未收到 `X-Provider-Key`，服务端也无 env 兜底 Key（也用于访问令牌缺失） | `terminal` |
+| `INVALID_REQUEST` | **V2.3 登记（V9 · B9 落地时补齐）**：请求**形状合法但值/组合不合法** —— 如剪辑台 `endSec ≤ startSec`、连续两次「拼接」、转场未跟在拼接之后。⚠️ 本码在 V2.2 的 §11-2 里就被引用过，但当时**没有登记进本字典**（契约内部不自洽）；B9 实现时按"契约优先且必须自洽"补齐，契约测试的双向校验（实现 ↔ 文档）会一直盯着这件事 | `terminal` |
 
 **V1.3 三条硬规则**：
 
@@ -468,7 +469,7 @@ export interface EventLogEntry {
 
 ---
 
-## 11. 配方库与轻剪辑台（V2.2 新增；**§11-1 配方库 = V9 · B8 已实现**、§11-2 剪辑台 = 【规划·B9】——后者实现前不得当作事实引用）
+## 11. 配方库与轻剪辑台（V2.2 新增；**§11-1 配方库 = V9 · B8 已实现**、**§11-2 剪辑台 = V9 · B9 已实现**）
 
 > 背景与决策：PLAN §4 Step 6、§6-D36（配方库双入口）/ D37（剪辑台 MVP、剪映导出砍掉）/ D38（抽帧→生成闭环）。
 > **零 API 成本红线**：本节的一切都是本地 ffmpeg 或静态数据，**不产生任何上游调用**。
@@ -504,7 +505,7 @@ export const RecipeCardSchema = z.object({
 // 编辑决策清单（EDL）：对**已有成片**的时间轴操作序列，按顺序应用
 export const EditOperationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('trim'),    startSec: z.number().min(0), endSec: z.number().min(0) }),
-  z.object({ type: z.literal('concat'),  taskIds: z.array(z.string()).min(2) }),      // 与源片依次拼接
+  z.object({ type: z.literal('concat'),  taskIds: z.array(z.string()).min(1) }),      // 依次拼到当前时间轴之后（**不含**源片自身；B9 实现时把规划里的 min(2) 收紧为 min(1)）
   z.object({ type: z.literal('xfade'),   transition: z.enum(['fade','wipeleft','slideright']), durationSec: z.number().min(0.1).max(2) }),
   z.object({ type: z.literal('volume'),  gain: z.number().min(0).max(2) }),           // 0 = 静音
   z.object({ type: z.literal('speed'),   factor: z.number().min(0.25).max(4) }),

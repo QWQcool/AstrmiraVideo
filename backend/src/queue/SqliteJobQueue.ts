@@ -30,6 +30,8 @@ export class SqliteJobQueue implements JobQueue {
       warnings: [],
       upstreamTaskId: job.upstreamTaskId,
       submitting: job.submitting,
+      // V9 · B9：剪辑任务的 EDL 随任务落库 —— 它同时是"这条任务是不是剪辑产物"的判据
+      ...(job.editScript === undefined ? {} : { editScript: job.editScript }),
     });
     this.store.putIdempotencyKey(job.idempotencyKey, job.taskId);
 
@@ -52,6 +54,10 @@ export class SqliteJobQueue implements JobQueue {
       idempotencyKey: '',
       submitting: record.submitting,
       upstreamTaskId: record.upstreamTaskId,
+      // V9 · B9：任务类别由 `edit_script` 列派生（有 EDL = 剪辑任务）
+      ...(record.editScript === undefined
+        ? {}
+        : { kind: 'edit' as const, editScript: record.editScript }),
     };
   }
 

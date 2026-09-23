@@ -1,4 +1,9 @@
-import type { TaskError, TaskProgress, VideoGenerateRequest } from '@astrmira/shared';
+import type {
+  EditScript,
+  TaskError,
+  TaskProgress,
+  VideoGenerateRequest,
+} from '@astrmira/shared';
 import type { Db } from './db.js';
 
 /**
@@ -24,6 +29,14 @@ export interface TaskRecord {
   /** 「即将提交」标记（CONTRACT §5）：提交前落库，成功后写回 upstreamTaskId */
   submitting: boolean;
   message?: string;
+  /**
+   * V9 · B9（CONTRACT §11-2）：剪辑任务的 EDL。
+   * **有值 = 这条任务由剪辑产生**（`TaskProgress.origin.kind === 'edit'` 由它派生）——
+   * 一列两用，避免再加一个"是不是剪辑产物"的布尔列而两者可能不同步。
+   */
+  editScript?: EditScript;
+  /** 抽帧产物的资产 id（可能多个） */
+  extractedAssetIds?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -42,6 +55,8 @@ interface TaskRow {
   upstream_task_id: string | null;
   submitting: number;
   message: string | null;
+  edit_script: string | null;
+  extracted_asset_ids: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -61,6 +76,10 @@ function rowToRecord(row: TaskRow): TaskRecord {
     upstreamTaskId: row.upstream_task_id ?? undefined,
     submitting: row.submitting === 1,
     message: row.message ?? undefined,
+    ...(row.edit_script === null ? {} : { editScript: JSON.parse(row.edit_script) as EditScript }),
+    ...(row.extracted_asset_ids === null
+      ? {}
+      : { extractedAssetIds: JSON.parse(row.extracted_asset_ids) as string[] }),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -78,6 +97,20 @@ export function toTaskProgress(record: TaskRecord): TaskProgress {
     ...(record.warnings.length === 0 ? {} : { warnings: record.warnings }),
     ...(record.error === undefined ? {} : { error: record.error }),
     ...(record.message === undefined ? {} : { message: record.message }),
+    // V9 · B9（CONTRACT §11-2）：剪辑产物 —— 由 `edit_script` 列派生出 `origin`，
+    // 缺省（没有该列值）即"生成产物"，前端据此显示"剪辑自 xxx"徽标。
+    ...(record.editScript === undefined
+      ? {}
+      : {
+          origin: {
+            kind: 'edit' as const,
+            sourceTaskId: record.editScript.sourceTaskId,
+            script: record.editScript,
+          },
+        }),
+    ...(record.extractedAssetIds === undefined
+      ? {}
+      : { extractedAssetIds: record.extractedAssetIds }),
     // V2.3：任务创建时间（`tasks.created_at` 列本就存在且有索引，零迁移）。
     // 总览"今日生成"与视频库"按时间排序"的数据源。
     createdAt: record.createdAt,
@@ -95,10 +128,11 @@ export class TaskStore {
       .prepare(
         `INSERT INTO tasks (task_id, track, provider, status, progress_percent, request_snapshot,
                             output_video_url, thumbnail_url, warnings, error, upstream_task_id,
-                            submitting, message, created_at, updated_at)
+                            submitting, message, edit_script, extracted_asset_ids,
+                            created_at, updated_at)
          VALUES (@taskId, @track, @provider, @status, @progressPercent, @requestSnapshot,
                  @outputVideoUrl, @thumbnailUrl, @warnings, @error, @upstreamTaskId, @submitting,
-                 @message, @createdAt, @updatedAt)`,
+                 @message, @editScript, @extractedAssetIds, @createdAt, @updatedAt)`,
       )
       .run({
         taskId: record.taskId,
@@ -114,6 +148,9 @@ export class TaskStore {
         upstreamTaskId: record.upstreamTaskId ?? null,
         submitting: record.submitting ? 1 : 0,
         message: record.message ?? null,
+        editScript: record.editScript === undefined ? null : JSON.stringify(record.editScript),
+        extractedAssetIds:
+          record.extractedAssetIds === undefined ? null : JSON.stringify(record.extractedAssetIds),
         createdAt: now,
         updatedAt: now,
       });
@@ -140,7 +177,9 @@ export class TaskStore {
                          output_video_url = @outputVideoUrl, thumbnail_url = @thumbnailUrl,
                          warnings = @warnings, error = @error,
                          upstream_task_id = @upstreamTaskId, submitting = @submitting,
-                         message = @message, updated_at = @updatedAt
+                         message = @message,
+                         edit_script = @editScript, extracted_asset_ids = @extractedAssetIds,
+                         updated_at = @updatedAt
          WHERE task_id = @taskId`,
       )
       .run({
@@ -157,6 +196,9 @@ export class TaskStore {
         upstreamTaskId: next.upstreamTaskId ?? null,
         submitting: next.submitting ? 1 : 0,
         message: next.message ?? null,
+        editScript: next.editScript === undefined ? null : JSON.stringify(next.editScript),
+        extractedAssetIds:
+          next.extractedAssetIds === undefined ? null : JSON.stringify(next.extractedAssetIds),
         updatedAt: Date.now(),
       });
   }

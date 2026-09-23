@@ -33,11 +33,14 @@ const CONTRACT_TABLE: Record<ErrorCode, ErrorDisposition> = {
   LLM_NOT_CONFIGURED: 'terminal',
   KEY_INVALID: 'terminal',
   KEY_MISSING: 'terminal',
+  // V2.3（V9 · B9）：剪辑台引用的码在 V2.2 里漏登记，B9 补齐（见 CONTRACT §6 的说明）
+  INVALID_REQUEST: 'terminal',
 };
 
-describe('三态映射表（CONTRACT §6，12 个码全覆盖）', () => {
-  it('契约码数量为 12（V1.8：9 原有 + 3 新增）', () => {
-    expect(listErrorCodes()).toHaveLength(12);
+describe('三态映射表（CONTRACT §6，13 个码全覆盖）', () => {
+  it('契约码数量为 13（V1.8：9 原有 + 3；V2.3 补 `INVALID_REQUEST`）', () => {
+    // 数量断言是刻意的"闸门"：加码必须同时改这里与 CONTRACT §6（两处都改才算数）
+    expect(listErrorCodes()).toHaveLength(13);
   });
 
   it('每个码的处置与 CONTRACT §6 表逐条一致', () => {

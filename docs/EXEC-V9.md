@@ -98,7 +98,8 @@
 - **测试**：数据完整性单测（id 唯一 / 骨架非空 / schema 全过）；插入行为单测；enhance 的 `recipeId` 分支测试（注入文本含配方要点 / 未知 id 400）。
 - **提交**：`feat(recipes): prompt recipe library with skeleton insert and enhance context`。
 
-### B9 · 轻剪辑台 MVP（CONTRACT §11-2 / PLAN §6-D37、D38）
+### B9 · 轻剪辑台 MVP（CONTRACT §11-2 / PLAN §6-D37、D38）【已完成 2026-09-23】
+> 实测：真 ffmpeg 跑 `trim→concat→xfade` 产物 7.5s ±0.2s；抽帧落账；三条破坏性验证命中；"零上游调用"有**源码级结构断言**；冒烟 [6e] 真跑一次剪辑（产物 + 206）。契约收尾：§5/§11 的【规划】标记已摘、错误码 `INVALID_REQUEST` 双向补齐。门禁 lint 0 / type 0 / 前端 103 / 后端 321 / 视觉自检 / UI 冒烟。
 - **形态（闸门已定 2026-09-23）**：**独立视图 `#/edit`**，源片经 hash 查询参数 `?task=<id>` 传入；**不进侧栏**；`#/edit` 无 task 时显示空态引导（"去视频库选一条成片"）。视频库卡片与详情抽屉的 ✂ 入口跳转到这里。
 - **改动（后端）**：`packages/shared` 增 `EditScript`/`EditOperation` schema（**先改契约包并重建**）；`backend/src/routes/edits.ts`（`POST /api/edits`，挂 zod schema）；`backend/src/pipeline/editExecutor.ts`（ffmpeg 按 operations 顺序执行：trim→`concat`→`xfade`→`volume`→`speed`，`extractFrame` 产物落 `outputs/assets/`）；`store/db.ts` 加 `edit_script` 列（**走既有 `COLUMN_MIGRATIONS` 机制**，不许只改 CREATE TABLE）；`TaskProgress` 增 `origin` 与 `extractedAssetIds?`；剪辑任务复用现有队列（**本地互斥 1**）与 `GET /api/tasks/:taskId` 轮询。
 - **改动（前端）**：视频库卡片 ✂ 入口 → 详情抽屉内「剪辑」面板（操作序列编辑器：裁剪区间 / 追加拼接片 / 转场 / 音量 / 变速 / 抽帧时间点）；EDL 历史列表。

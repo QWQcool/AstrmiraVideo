@@ -674,6 +674,73 @@ try {
     `插入骨架：配方文本**逐字**出现在提示词框里（框长 ${promptAfterInsert.length} 字）`,
   );
 
+  console.log('\n[6e] 剪辑台（V9 · B9：独立视图 + 真跑一次本地剪辑）');
+  await page.evaluate(() => { location.hash = '#/edit'; });
+  await page.waitForSelector('.wb-placeholder', { timeout: 10_000 });
+  assert(true, '无 task 参数时显示空态引导（剪辑台不进侧栏）');
+
+  const sourceTask = await page.evaluate(async () => {
+    const data = await (await fetch('/api/history')).json();
+    return (
+      (data.items ?? []).find((item) => item.status === 'succeeded' && item.outputVideoUrl)?.taskId ??
+      null
+    );
+  });
+  assert(sourceTask !== null, `找到可用源片（${sourceTask}）`);
+
+  await page.evaluate((id) => { location.hash = `#/edit?task=${id}`; }, sourceTask);
+  await page.locator('.edit-wrap').waitFor({ timeout: 10_000 });
+  assert(true, '剪辑台加载源片并渲染 EDL 编辑器');
+
+  await page.getByRole('button', { name: '＋ 裁剪' }).click();
+  await page.getByRole('button', { name: '＋ 抽帧' }).click();
+  assert((await page.locator('.edit-row').count()) === 2, '操作序列有两步（裁剪 + 抽帧）');
+
+  await page.getByRole('button', { name: '执行剪辑' }).click();
+  // ⚠️ 等待口径要精确：提交后任务**立刻**以 queued 出现在 /api/history，
+  // 所以不能等"存在一条 edit 任务"（那会立刻为真）。这里等**组件自己的产物播放器**出现
+  // （源码里 activeTask.status === 'succeeded' 才渲染第二个 .lib-preview video）——
+  // 它同时证明了"任务跑完 + 页面拿到终态"。
+  await page.waitForFunction(
+    () => document.querySelectorAll('.edit-wrap .lib-preview video').length >= 2,
+    { timeout: 60_000 },
+  );
+  assert(true, '剪辑产物已在剪辑台里可播放（源片 + 产物两个播放器）');
+
+  const editResult = await page.evaluate(async () => {
+    const data = await (await fetch('/api/history')).json();
+    // 取**最新**一条剪辑任务（不依赖列表顺序）
+    const edits = (data.items ?? []).filter((entry) => entry.origin?.kind === 'edit');
+    const item = edits.sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (item === undefined) return null;
+
+    const target = item.outputVideoUrl ?? '/api/health';
+    const response = await fetch(target, { headers: { range: 'bytes=0-1023' } });
+    return {
+      taskId: item.taskId,
+      status: item.status,
+      error: item.error ?? null,
+      sourceTaskId: item.origin.sourceTaskId,
+      outputVideoUrl: item.outputVideoUrl ?? null,
+      extracted: item.extractedAssetIds ?? [],
+      rangeStatus: response.status,
+    };
+  });
+
+  note(`剪辑诊断：${JSON.stringify(editResult)}`);
+  assert(
+    editResult !== null && editResult.outputVideoUrl !== null,
+    `剪辑产物有 outputVideoUrl（${editResult?.outputVideoUrl ?? 'null'}）`,
+  );
+  assert(
+    editResult?.extracted.length === 1,
+    `抽帧资产已落账（${editResult?.extracted.length ?? 0} 个，期望 1）`,
+  );
+  assert(
+    editResult !== null && editResult.rangeStatus === 206,
+    `剪辑产物支持 Range（HTTP ${editResult?.rangeStatus}）`,
+  );
+
   console.log('\n[7] 操作日志（V2.1，CONTRACT §10）');
   // 上面 [6] 段用界面真的提交过一条任务 → 它必须已经躺在操作日志里。
   // 这条断言把"界面动作 → 服务端留痕"整条链钉住（也是这次故障排错最需要的能力）。
