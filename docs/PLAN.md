@@ -124,7 +124,11 @@
   **【T2V 已完成 2026-09-23】**：`scripts/smoke-seedance-paid.mjs`（走产品路径：本地后端 + `X-Provider-Key` + 2s 轮询）用 `doubao-seedance-2-0-mini-260615` / 720p / 5s 出片成功 —— 提交→终态 **86.5s**、成片 **5.09s / 1280×720 / h264 + AAC 2ch**、2.23MB、`/media` **206 Range 正常**、封面抽帧成功、画面**无水印**；四项【待验证】上游字段全部落地（见协议层文件头的证据表）；§8 成本表已回填（金额待账单核对）。
   **【FL2V / V2V 已完成 2026-09-23】**（`scripts/smoke-seedance-paid.mjs` 扩成四种模式，模式由输入推断而非另传 `--mode`）：
   - **FL2V【已验证】**：首帧+尾帧两个资产（经清洗网关上传达 71KB JPEG）→ 出片成功，提交→终态 **100.4s**、5.09s / 1280×720 / h264+AAC / 2.50MB / 206 正常 / 封面正常；逐帧核对 **0.1s 起于首帧场景、4.9s 与给定尾帧几乎一致** → `last_frame` 角色语义成立。
-  - **V2V【形态已验证 + 修掉一个真错误】**：原实现把视频塞进 `image_url` / 角色 `reference_image`，上游 400（`content[1].image_url is not valid`）。三次**参数级探测**（不产生成片费用）问出正确形态：`{type:'video_url', video_url:{url}, role:'reference_video'}`，且 **URL 必须是上游能抓的公网地址**（原文：`reference_video must be provided as a web url`；data URL 直接拒）。修法：协议层新增 `video_url` 元素与 `SeedanceVideoRole`；provider 拆出 `collectReferenceVideoUrl`（非 http(s) 地址 → 提交前报 `INVALID_ASSET` 并提示配置 `PUBLIC_BASE_URL`，**不发注定 400 的请求**）；CONTRACT §1 的 `referenceVideo` 字段补注。测试 +5（协议 2 / provider 3）。
+  - **V2V【形态已验证 + 修掉两个真错误 + 线上端到端已跑通】**：
+    - 错误一（请求形状）：原实现把视频塞进 `image_url` / 角色 `reference_image`，上游 400（`content[1].image_url is not valid`）。三次**参数级探测**（不产生成片费用）问出正确形态：`{type:'video_url', video_url:{url}, role:'reference_video'}`，且 **URL 必须是上游能抓的公网地址**（原文：`reference_video must be provided as a web url`；data URL 直接拒）。修法：协议层新增 `video_url` 元素与 `SeedanceVideoRole`；provider 拆出 `collectReferenceVideoUrl`（非 http(s) 地址 → 提交前报 `INVALID_ASSET` 并提示配置 `PUBLIC_BASE_URL`，**不发注定 400 的请求**）；CONTRACT §1 的 `referenceVideo` 字段补注。
+    - 错误二（部署配置，**只有线上 V2V 会暴露**）：`PUBLIC_BASE_URL` / `CORS_ORIGINS` 虽由 `deploy.mjs` 推导，却**没写进 compose 的 `environment:`** —— `env_file` 只能搬运 `.env.deploy` 里的值（模板是空值），推导值永远进不了容器。后果是资产地址退化成 data URL：**图片能用、视频被上游拒**，所以此前没有任何路径暴露它。修法见 §7-9。
+    - **最终验证（线上实例）**：`pnpm smoke:paid --server https://<站点> --creds-file … --video <参考片>` → 提交→终态 **116.7s**、成片 5.09s / 1280×720 / h264+AAC / 2.40MB、`/media` 206 正常；抽帧核对**画面确实按参考视频重绘**（2.5s 即参考片里"手指按开关 + 冒热气的茶杯 + 翻开的书"那一刻）。该成片同时留在线上画廊，可供人工查看。
+    - 测试 +5（协议 2 / provider 3，含"视频给 data URL → 零上游调用"）。`smoke-seedance-paid.mjs` 因此扩出 `--server` / `--creds-file` / `--insecure`（自签 IP 档）与"线上模式先把成片取回再 ffprobe"。
   - **仍未实测**：`failed` / `cancelled` / `canceled` / `expired` 四个**状态枚举分支**（需要一次真实的失败或取消样本）。
 - **AC3**：本地并发提交 2 个任务，第 2 个任务状态为 `queued`，无第二个推理进程被拉起。
 - **AC4**：服务重启后，进行中的任务能从 SQLite 恢复状态，前端刷新可重挂载。
@@ -366,7 +370,7 @@
         - **顺带发现的真实缺陷（都已登记）**：① **跨镜头主体一致性**：同一盏灯在 0.3s（近方形灯罩）、2.4s（圆形底座特写）、4.6s（圆筒灯罩）三个镜头里形态略有漂移 —— 广告片要"同一产品"必须用 I2V/首尾帧锁形或参考图，**说明 3-⑤ 新增的模式入口有真实用武之地**；② **云端轨默认带音轨**：prompt 未要求声音却产出 AAC 2ch —— 不可再假定"云端无声"，相关文案已改（`GUIDE` Q1 只讲本地 H3 的双引号台词纪律）；③ **费用只能估算**：`TaskProgress` 不含上游 usage，脚本只能按官方计费公式推算（≈108k token ≈ 1~2.5 元），**要精确入账得去方舟账单**（已登记 B24）。
         - **[x] I2V 真实出片（同日第二次）【已验证】**：以上一条成片的首帧 JPEG（1280×720）经 `/api/upload`（过防线 4 清洗网关，产物 66KB JPEG）上传为资产 → I2V 出片成功。实测 **提交→终态 124.7s**、成片 5.09s / 1280×720 / **h264 + AAC 2ch** / 2.78MB、206 Range 正常、封面抽帧成功；**画面首尾与首帧灯型一致**（抽帧比对：0.1s 与输入首帧几乎相同，4.8s 拉远后灯罩形状不变）——**这正好解决 T2V 里发现的"跨镜头主体漂移"**。顺带确认 `image_url.url` **接受 base64 data URL**（本机 `PUBLIC_BASE_URL` 为空时的回落路径）。
         - **[x] FL2V 真实出片【已验证】**（同批次第四次）：首尾帧两资产 → 出片成功，提交→终态 **100.4s**、5.09s / 1280×720 / h264+AAC / 2.50MB；0.1s 起于首帧、4.9s 与尾帧几乎一致 → **`last_frame` 角色语义成立**。
-        - **[x] V2V：形态已确认并修掉一处真错误【已验证形态】**：原实现把视频塞进 `image_url`+`reference_image` → 上游 400；三次参数级探测问出正确形态 `video_url` + `role='reference_video'`，且**必须公网 URL**（data URL 被拒）。协议层与 provider 已按此修好，并加了"未配 `PUBLIC_BASE_URL` 就在提交前失败"的守卫（详见 §4 Step 2-AC2）。
+        - **[x] V2V【已验证：线上端到端跑通】**：原实现把视频塞进 `image_url`+`reference_image` → 上游 400；三次参数级探测问出正确形态 `video_url` + `role='reference_video'`，且**必须公网 URL**（data URL 被拒）。修好请求形状后，线上验证又暴露**第二个真错误**：`PUBLIC_BASE_URL` 从未进容器（compose 只靠 `env_file`）→ 资产退化成 data URL。两处都修完后在**线上实例**跑通：提交→终态 **116.7s**、5.09s/1280×720/h264+AAC/2.40MB、206 正常，且**画面确实按参考视频重绘**（详见 §4 Step 2-AC2）。
         - **仍待**：`failed`/`cancelled` 等状态枚举的真实样本；Step 4 端到端验收（AC1 的 T2V + I2V 已各跑通，"含双引号台词人声"是本地 H3 的能力，需在验收记录里如实澄清）。
 
 ---
@@ -442,6 +446,7 @@
 | 云端 Seedance 耗时（I2V） | **提交→终态 124.7s**（同一模型 / 720p / 5s，首帧图输入） | **【已验证实测】**2026-09-23，同一脚本 `--i2v` |
 | 云端 Seedance 耗时（FL2V） | **提交→终态 100.4s**（同一模型 / 720p / 5s，首尾帧双输入） | **【已验证实测】**2026-09-23，`--i2v A --last B` |
 | V2V 的参数级探测 | **不产生成片费用**：形态不合法时上游在**参数校验阶段**就 400（2 秒内终态），不会开始生成 | **【已验证实测】**2026-09-23：3 次探测均 400；另一次经产品路径的 V2V 也在此阶段失败 |
+| 云端 Seedance 耗时（V2V） | **提交→终态 116.7s**（同一模型 / 720p / 5s，**参考视频**输入；线上实例实测） | **【已验证实测】**2026-09-23 |
 | 云端 Seedance 单次成本 | **约 1~2.5 元 / 条（5s @720p）【估算】**：按上游计费口径 `token = (输入时长+输出时长) × 宽 × 高 × 帧率 ÷ 1024` = 5×1280×720×24÷1024 ≈ **108,000 token**；mini 档第三方价目 $3.24/M（输入不含视频）→ ≈ $0.35。**实际扣费以方舟控制台账单为准**（未核对我方账单） | **【待验证】**金额待账单核对；**计算口径与耗时口径已实测** |
 
 **风险登记**：

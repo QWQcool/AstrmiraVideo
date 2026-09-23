@@ -308,6 +308,21 @@ const mediaUrl = progress.outputVideoUrl;
 const local = path.join(OUT_DIR, path.basename(mediaUrl));
 
 console.log('\n=== 产物核验 ===');
+
+/**
+ * `--server` 模式下成片在**服务器**上（只有本机后端才会写进我们指定的 OUTPUT_DIR），
+ * 所以这里先把整片拉回来再 ffprobe —— 既完成了"产物可下载"的验证，也让画面核对成为可能。
+ */
+if (SERVER !== undefined) {
+  const full = await fetch(`${base}${mediaUrl}`, { headers: AUTH });
+  if (full.status !== 200 || full.body === null) {
+    console.error(`✗ 成片下载失败：HTTP ${full.status}`);
+    await finish(1);
+  }
+  await pipeline(Readable.fromWeb(full.body), createWriteStream(local));
+  console.log(`成片已从线上取回：${path.basename(local)}（${(statSync(local).size / 1024 / 1024).toFixed(2)} MB）`);
+}
+
 const exists = existsSync(local);
 console.log(
   `成片落盘：${exists ? '✓' : '✗'} ${path.basename(local)}${exists ? `（${(statSync(local).size / 1024 / 1024).toFixed(2)} MB）` : '（缺失）'}`,
