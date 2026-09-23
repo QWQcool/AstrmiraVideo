@@ -33,9 +33,15 @@ interface ContractRoute {
 /** 解析 §5 路由表的「方法 + 路径」 */
 function parseContractRoutes(): ContractRoute[] {
   const routes: ContractRoute[] = [];
-  const lineRe = /^\|\s*`(GET|POST|PUT|DELETE|PATCH)`\s*\|\s*`([^`]+)`/gm;
+  const lineRe = /^\|\s*`(GET|POST|PUT|DELETE|PATCH)`\s*\|\s*`([^`]+)`/;
 
-  for (const match of section('## 5.').matchAll(lineRe)) {
+  for (const line of section('## 5.').split('\n')) {
+    const match = line.match(lineRe);
+    if (match === null) continue;
+    // 带【规划】标记的行是"契约已冻结、实现未开工"（三级标记纪律）：
+    // 路由覆盖检查只约束**已实现**的行，否则"先把规划写进契约"这条铁律会让 CI 永远红。
+    // 实现落地时必须在**同一提交**里摘掉该行的规划标记。
+    if (line.includes('规划')) continue;
     routes.push({ method: match[1] as string, path: match[2] as string });
   }
   return routes;

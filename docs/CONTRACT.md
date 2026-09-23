@@ -1,6 +1,10 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.1 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.2 · 已冻结（变更需先改本文，再改代码）**
+> **V2.2 修订（2026-09-23）**：**V9 前端改版的接口规划**（PLAN §4 Step 6，决策 D33~D38）。本节内容均为**【规划】**，实现前不得当作事实引用。
+>   ① **§3**：`PromptEnhanceRequest` 新增可选 `recipeId`（配方库作为扩写的风格上下文）；
+>   ② **§5**：路由表新增 `POST /api/edits`（轻剪辑台，本地 ffmpeg，**零上游调用**）；
+>   ③ **新增 §11**「配方库与轻剪辑台」：`RecipeCard` 与 `EditScript` 的完整形状、`/api/edits` 的状态映射、剪辑产物与 EDL 的生命周期。
 > **V2.1 修订（2026-09-23）**：线上故障修复（模型被服务端 env 静默覆盖 → 上游 404）+ 操作日志上线。
 >   ① **§1**：`options` 的语义**收紧为白名单**并明确优先级——视频轨承认 `model` / `baseUrl` /
 >      `seedanceResolution` / `seedanceWatermark`；**请求里的 `model` / `baseUrl` 优先于服务端 env**。
@@ -186,6 +190,7 @@ export interface PromptEnhanceRequest {
   style?: 'cinematic' | 'anime' | 'commercial' | 'realistic';
   mode?: GenerationMode;
   llm?: LlmConfig;   // V2.0：**凭据绝不在此字段**
+  recipeId?: string; // V2.2【V9 规划】：配方 id（见 §11）；服务端把该配方的运镜/光线/节奏要点注入 system prompt；未知 id → 400 PROMPT_REJECTED
 }
 
 export interface PromptEnhanceResponse {
@@ -269,6 +274,7 @@ export interface VideoProvider {
 | `GET` | `/api/logs` | **V2.1 新增**：操作日志查询（筛选 + 分页，见 §10）。**200 → `{ items, total }`** |
 | `DELETE` | `/api/logs/:id` | **V2.1 新增**：删单条日志。**200 → `{ ok, deleted }`**（删除不存在的条目**不是错误**：DELETE 幂等，`deleted: 0`） |
 | `DELETE` | `/api/logs` | **V2.1 新增**：按当前筛选清空日志（不带筛选即全清）。**200 → `{ ok, deleted }`** |
+| `POST` | `/api/edits` | **V2.2【V9 规划】**：轻剪辑台（本地 ffmpeg，**零上游调用**）。**200 → `{ taskId }`**（复用 §4 的 `GET /api/tasks/:taskId` 轮询与画廊）；操作序列非法 → **400 `INVALID_REQUEST`**；源任务不存在或无成 → **404 `TASK_NOT_FOUND`**。完整契约见 §11 |
 
 **幂等键与「即将提交」标记（V1.3 新增）**：
 - `POST /api/generate` 必须接受幂等键（请求头 `Idempotency-Key`；缺省时服务端按 `provider + 请求指纹` 生成）。同一幂等键重复提交返回**同一 `taskId`**，不得产生第二次上游调用。
@@ -435,3 +441,64 @@ export interface EventLogEntry {
 - **全量保留，由用户手动删除**（用户拍板）；接口提供单条删除与按筛选清空；
 - **代价如实登记**：长期使用会持续增长（无自动淘汰），见 PLAN §9 台账 **B23**；
 - **凭据永不入库**：请求体与上游文本写入前一律过 `security/redact.ts`。
+
+---
+
+## 11. 配方库与轻剪辑台（**V2.2 新增 · V9【规划】**——实现前不得当作事实引用）
+
+> 背景与决策：PLAN §4 Step 6、§6-D36（配方库双入口）/ D37（剪辑台 MVP、剪映导出砍掉）/ D38（抽帧→生成闭环）。
+> **零 API 成本红线**：本节的一切都是本地 ffmpeg 或静态数据，**不产生任何上游调用**。
+
+### 11-1 配方卡 `RecipeCard`（静态数据，放 `packages/shared/src/recipes.ts`）
+
+配方是**数据，不是路由**：随前端 bundle 下发，前端直接读，**不设 `/api/recipes`**（要筛选用前端本地过滤；若日后要服务端筛选/自定义配方再加路由，并先改本节）。
+
+```ts
+export const RecipeCategorySchema = z.enum(['camera', 'lighting', 'mood', 'rhythm']); // 运镜/光线/氛围/节奏
+
+export const RecipeCardSchema = z.object({
+  id: string,                    // 'camera-push-in-slow' 之类，稳定、不可复用旧 id
+  title: string,                 // 展示名（中文）
+  category: RecipeCategorySchema,
+  modes: GenerationMode[],       // 适用模式（如 ['t2v','i2v']）
+  durationHint?: string,         // 建议时长文案，如 '5s 以内'
+  skeleton: string,              // 「插入骨架」落到提示词框的文本（**逐字**，单测钉住）
+  paramsHint?: {                 // 参数建议（只是建议，不强制改表单）
+    aspectRatio?: AspectRatio;
+    resolutionTier?: '480p' | '720p' | '1080p';
+  };
+  pitfalls?: string[],           // 已知坑（如实写，例如"该运镜在 5s 内容易走不完"）
+});
+```
+
+- **双入口**：① 插入骨架 = 把 `skeleton` **原样**追加/替换进提示词框（用户看得见）；② ✨ 扩写 = 请求带 `recipeId`，服务端把该卡的 `skeleton + pitfalls` 注入 system prompt（§3）。
+- **诚实标记**：配方是"经验骨架"，**不得**在 UI 上承诺"用了就出大片"；`pitfalls` 为空时不得编造。
+
+### 11-2 剪辑操作 `EditScript` 与 `POST /api/edits`
+
+```ts
+// 编辑决策清单（EDL）：对**已有成片**的时间轴操作序列，按顺序应用
+export const EditOperationSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('trim'),    startSec: z.number().min(0), endSec: z.number().min(0) }),
+  z.object({ type: z.literal('concat'),  taskIds: z.array(z.string()).min(2) }),      // 与源片依次拼接
+  z.object({ type: z.literal('xfade'),   transition: z.enum(['fade','wipeleft','slideright']), durationSec: z.number().min(0.1).max(2) }),
+  z.object({ type: z.literal('volume'),  gain: z.number().min(0).max(2) }),           // 0 = 静音
+  z.object({ type: z.literal('speed'),   factor: z.number().min(0.25).max(4) }),
+  z.object({ type: z.literal('extractFrame'), atSec: z.number().min(0) }),            // 抽帧 → 落为参考资产（D38 闭环）
+]);
+
+export interface EditScript {
+  sourceTaskId: string;                 // 源成片（必须 succeeded 且有成片文件）
+  operations: EditOperation[];          // 1..8 个，按序执行
+}
+
+// POST /api/edits  请求体 = EditScript；响应 = { taskId }（**复用** §4 轮询，不新增进度路由）
+```
+
+**语义与约束**：
+- 剪辑产物是一条**新的 `taskId`**，`TaskProgress` 增加 `origin: { kind: 'generate' } | { kind: 'edit', sourceTaskId: string, script: EditScript }`（§4/§7 同步）；画廊卡片据此显示"剪辑自 xxx"徽标。
+- 执行器是**本地 ffmpeg**（复用 `lib/ffmpeg.ts` 的探测与中文报错），**并发 = 1**（与本地轨同一把互斥锁），无上游调用、无凭据需求、**不走防线 5 的 60s 冷却**（它防的是付费上游，本地 CPU 不在其列）。
+- `extractFrame` 的产物落到 `outputs/assets/`（与上传资产同目录同规则），返回在任务的 `origin` 之外另记 `extractedAssetIds: string[]`；其余操作产物为 `outputs/<taskId>.mp4`（**重编码**，因为 trim/xfade 后帧边界与时间戳必须重建）。
+- **失败归类**：输入非法 → `400 INVALID_REQUEST`；源任务不存在/无成 → `404 TASK_NOT_FOUND`；ffmpeg 不存在 → `503 PROVIDER_UNAVAILABLE`（如实说"本服务未装 ffmpeg"）；执行失败 → `500 UPSTREAM_ERROR` 语义无歧义故用 `retryable`。**没有 `uncertain`**：本地操作没有"不知道结果"的状态。
+
+**生命周期**：剪辑产物与原片同规则（`outputs/`、画廊可见、删除即物理删除）；**EDL 随任务落库**（`tasks.edit_script` 列，JSON），删任务连 EDL 一起删；"本片剪辑历史" = 查 `origin.sourceTaskId = 本片` 的全部任务。
