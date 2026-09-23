@@ -127,10 +127,12 @@ export class VolcanoSeedanceProvider implements VideoProvider {
     }
 
     const imageUrls = await this.collectImageUrls(request);
+    const videoUrl = await this.collectReferenceVideoUrl(request);
 
     const body = buildSeedanceSubmitBody(request, {
       model: this.model,
       imageUrls,
+      ...(videoUrl === undefined ? {} : { videoUrl }),
       resolutionOverride: readStringOption(request, 'seedanceResolution'),
       watermark: readBooleanOption(request, 'seedanceWatermark'),
     });
@@ -227,7 +229,8 @@ export class VolcanoSeedanceProvider implements VideoProvider {
     const mapping: Array<[SeedanceImageRole, string | undefined]> = [
       ['first_frame', request.assets?.firstFrameImage],
       ['last_frame', request.assets?.lastFrameImage],
-      ['reference_image', request.assets?.referenceVideo],
+      // ⚠️ `assets.referenceVideo` **不在这里** —— 它是视频，走 `video_url`（见下面的方法）。
+      // 曾经把它映射成 `reference_image`，上游会直接 400（2026-09-23 实测）。
     ];
 
     const resolved: Partial<Record<SeedanceImageRole, string>> = {};
@@ -244,6 +247,39 @@ export class VolcanoSeedanceProvider implements VideoProvider {
       resolved[role] = url;
     }
     return resolved;
+  }
+
+  /**
+   * 参考视频（V2V）→ 上游可访问的**公网 URL**。
+   *
+   * ## 为什么这里必须比图片更严
+   * 实测（2026-09-23，三次参数级探测）确认：图片可以走 data URL，**视频不行** ——
+   * 上游原文是 `reference_video must be provided as a web url`。
+   * 于是在"没有 `PUBLIC_BASE_URL`"（本地开发 / 内网部署）时，解析结果会是 data URL，
+   * 发出去必然 400。与其花一次提交换一句上游报文，不如**在提交前就说清楚**：
+   * 这是"配置缺失"，不是"上游故障"，`INVALID_ASSET`（terminal）语义正好。
+   */
+  private async collectReferenceVideoUrl(request: VideoGenerateRequest): Promise<string | undefined> {
+    const assetId = request.assets?.referenceVideo;
+    if (assetId === undefined) return undefined;
+
+    const url = await this.resolveAssetUrl(assetId);
+    if (url === null) {
+      throw new ProviderFailureError(
+        'INVALID_ASSET',
+        `参考视频资产 ${assetId} 无法解析为上游可访问地址（资产可能已被清理）`,
+      );
+    }
+
+    if (!/^https?:\/\//i.test(url)) {
+      throw new ProviderFailureError(
+        'INVALID_ASSET',
+        '参考视频需要上游能直接抓取的公网地址，而本服务未配置 PUBLIC_BASE_URL（当前只能给出内联 data URL，上游明确拒绝）。' +
+          '请在部署环境配置 PUBLIC_BASE_URL 后重试；图片参考不受此限制。',
+      );
+    }
+
+    return url;
   }
 
   private async request(pathname: string, init: { method: string; body?: string }): Promise<Response> {

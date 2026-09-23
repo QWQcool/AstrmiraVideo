@@ -63,6 +63,29 @@ describe('buildSeedanceSubmitBody（契约请求 → 上游请求体）', () => 
     ]);
   });
 
+  it('V2V：视频参考是**独立元素**（`video_url` + `role=reference_video`），不得塞进 image_url', () => {
+    // 2026-09-23 实测：视频塞进 image_url 会被上游 400（`content[1].image_url is not valid`），
+    // 角色也必须恰好叫 reference_video（`reference media mode requires video role to be reference_video`）。
+    const body = buildSeedanceSubmitBody(baseRequest, {
+      model: 'm',
+      videoUrl: 'https://video.example.com/media/assets/ref.mp4',
+    });
+
+    expect(body.content.filter((item) => item.type === 'video_url')).toEqual([
+      {
+        type: 'video_url',
+        video_url: { url: 'https://video.example.com/media/assets/ref.mp4' },
+        role: 'reference_video',
+      },
+    ]);
+    expect(body.content.filter((item) => item.type === 'image_url')).toHaveLength(0);
+  });
+
+  it('不传视频时不产生 video_url 元素（避免空 url）', () => {
+    const body = buildSeedanceSubmitBody(baseRequest, { model: 'm', videoUrl: '' });
+    expect(body.content.filter((item) => item.type === 'video_url')).toHaveLength(0);
+  });
+
   it('不传图时不产生空元素（避免上游因空 url 报 400）', () => {
     const body = buildSeedanceSubmitBody(baseRequest, { model: 'm', imageUrls: { first_frame: '' } });
     expect(body.content.filter((item) => item.type === 'image_url')).toHaveLength(0);

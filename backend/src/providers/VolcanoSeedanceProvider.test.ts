@@ -173,6 +173,57 @@ describe('提交', () => {
     );
   });
 
+  it('V2V：公网 URL 的参考视频走 video_url + role=reference_video', async () => {
+    const { fetchImpl, calls } = stubFetch(() => jsonResponse(200, { id: 'cgt-1' }));
+    const provider = makeProvider({
+      fetchImpl,
+      resolveAssetUrl: async () => 'https://video.example.com/media/assets/ref.mp4',
+    });
+
+    await provider.submit({ ...request, mode: 'v2v', assets: { referenceVideo: 'a-video' } });
+
+    const body = JSON.parse(String(calls[0].init.body)) as {
+      content: Array<{ type: string; role?: string; video_url?: { url: string } }>;
+    };
+    const videoElement = body.content.find((item) => item.type === 'video_url');
+    expect(videoElement?.role).toBe('reference_video');
+    expect(videoElement?.video_url?.url).toBe('https://video.example.com/media/assets/ref.mp4');
+    // 视频**不得**出现在 image_url 里（上游会 400）
+    expect(body.content.some((item) => item.type === 'image_url')).toBe(false);
+  });
+
+  it('V2V：没有 PUBLIC_BASE_URL（只能给 data URL）→ 提交前就报 INVALID_ASSET，不浪费一次提交', async () => {
+    // 实测依据：上游原文 `reference_video must be provided as a web url`（2026-09-23）。
+    // 这是**配置缺失**而不是上游故障 → terminal 的 INVALID_ASSET，且提示要写清去哪配。
+    const { fetchImpl, calls } = stubFetch(() => jsonResponse(200, { id: 'cgt-1' }));
+    const provider = makeProvider({
+      fetchImpl,
+      resolveAssetUrl: async () => 'data:video/mp4;base64,AAAA',
+    });
+
+    const err = (await provider
+      .submit({ ...request, mode: 'v2v', assets: { referenceVideo: 'a-video' } })
+      .catch((e: unknown) => e)) as ProviderFailureError;
+
+    expect(err).toBeInstanceOf(ProviderFailureError);
+    expect(err.code).toBe('INVALID_ASSET');
+    expect(err.message).toContain('PUBLIC_BASE_URL');
+    expect(err.message).toContain('公网地址');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('图片参考不受此限制：data URL 仍然可以（只有视频要求公网 URL）', async () => {
+    const { fetchImpl, calls } = stubFetch(() => jsonResponse(200, { id: 'cgt-1' }));
+    const provider = makeProvider({
+      fetchImpl,
+      resolveAssetUrl: async () => 'data:image/jpeg;base64,AAAA',
+    });
+
+    await provider.submit({ ...request, mode: 'i2v', assets: { firstFrameImage: 'a-image' } });
+
+    expect(calls).toHaveLength(1);
+  });
+
   it('提交成功但响应没有任务 id → UPSTREAM_ERROR（当成功继续只会更难查）', async () => {
     const { fetchImpl } = stubFetch(() => jsonResponse(200, { status: 'queued' }));
     const provider = makeProvider({ fetchImpl });

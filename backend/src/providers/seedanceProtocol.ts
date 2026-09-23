@@ -14,9 +14,22 @@ import { createTaskError } from '../errors.js';
  * | 响应 `status` 枚举 | **queued/running/succeeded 一致**；`failed`/`cancelled` 仍未实测 | 轮询依次读到 queued → running → succeeded |
  * | `content.video_url` 位置 | **一致** | 成片被成功下载（2.23MB）并落盘到 `outputs/` |
  *
- * 仍未实测的两项（**不得**当作已验证）：`image_url` 的 `role` 语义（首/尾/参考帧）与
- * `failed`/`cancelled` 两个枚举值 —— 前者要一次 I2V 真机、后者要一次真实失败。
- * 有出入**只改这里**（PLAN §8 风险 R2）。
+ * 仍未实测的一项（**不得**当作已验证）：`failed` / `cancelled` / `canceled` / `expired`
+ * 四个分支要一次真实的失败或取消样本。有出入**只改这里**（PLAN §8 风险 R2）。
+ *
+ * ## 追加证据（同日第三/四次：FL2V 与 V2V）
+ * - **FL2V（首尾帧）【已验证】**：两个资产（首帧 + 尾帧，均经清洗网关上传达 71KB JPEG）→
+ *   上游受理并出片成功，提交→终态 **100.4s**、5.09s / 1280×720 / h264+AAC；逐帧核对：
+ *   **0.1s 起于首帧场景、4.9s 与给定尾帧几乎一致** —— `last_frame` 角色语义成立。
+ * - **V2V（视频参考）【形态已验证，实现曾写错】**：把视频塞进 `image_url` / `reference_image`
+ *   （**当时的实现**）被上游 400：`content[1].image_url is not valid`。
+ *   三次参数级探测把正确形态问了出来（原文即证据）：
+ *   ① `video_url` + 角色 `reference_image` → `reference media mode requires video role
+ *      to be reference_video`（**角色名必须恰好是 `reference_video`**）；
+ *   ② `video_url` + 角色 `reference_video` + **data URL** → `reference_video must be
+ *      provided as a web url`（**只接受公网 URL**）；
+ *   ③ 于是正确形态 = `{type:'video_url', video_url:{url}, role:'reference_video'}`，
+ *      且 URL 必须是上游能抓的公网地址 → 未配 `PUBLIC_BASE_URL` 时必须**提前失败**。
  *
  * ## 追加证据（同日第二次冒烟：I2V）
  * `image_url` + `role: 'first_frame'` **已实测可用**：把上一条成片的首帧 JPEG（1280×720）经
@@ -54,9 +67,22 @@ export const SEEDANCE_DEFAULT_MODEL = 'doubao-seedance-2-0-mini-260615';
 
 export type SeedanceImageRole = 'first_frame' | 'last_frame' | 'reference_image';
 
+/**
+ * 【已验证 2026-09-23】视频参考的角色名。
+ *
+ * 这一项是**试出来的**，两次 400 把话说得很清楚（原文见下方证据表）：
+ * ① 视频塞进 `image_url` / `reference_image` → `content[1].image_url is not valid`；
+ * ② `video_url` 但角色写成 `reference_image` → `reference media mode requires video role
+ *    to be reference_video`（**角色名必须恰好是 `reference_video`**）；
+ * ③ 角色对了但给的是 data URL → `reference_video must be provided as a web url`
+ *    （**视频只能给上游可抓的公网 URL**，图片则可以给 data URL）。
+ */
+export type SeedanceVideoRole = 'reference_video';
+
 export type SeedanceContent =
   | { type: 'text'; text: string }
-  | { type: 'image_url'; image_url: { url: string }; role: SeedanceImageRole };
+  | { type: 'image_url'; image_url: { url: string }; role: SeedanceImageRole }
+  | { type: 'video_url'; video_url: { url: string }; role: SeedanceVideoRole };
 
 export interface SeedanceSubmitBody {
   model: string;
@@ -96,8 +122,14 @@ export function aspectRatioToUpstream(ratio: VideoGenerateRequest['aspectRatio']
 export interface BuildSubmitOptions {
   /** 上游模型 id（来自 BYOK 或 env 兜底） */
   model: string;
-  /** 【待验证】`image_url` 需要的可访问地址：优先公网 URL，否则 data URL */
+  /** 【已验证】`image_url` 需要的可访问地址：优先公网 URL，否则 data URL（图片两者都接受） */
   imageUrls?: Partial<Record<SeedanceImageRole, string>>;
+  /**
+   * 【已验证】参考视频地址（V2V）。**必须是上游可抓的公网 URL** ——
+   * 给 data URL 会被上游直接拒绝（原文：`reference_video must be provided as a web url`）。
+   * 因此调用方要在"没有 `PUBLIC_BASE_URL`"时**提前失败**，而不是发一个注定 400 的请求。
+   */
+  videoUrl?: string;
   /** 覆盖分辨率档位（不传则按 resolution 或画幅推导） */
   resolutionOverride?: string;
   /** 是否让上游加水印（默认 false：我们自己不做水印，也不希望上游加） */
@@ -143,6 +175,11 @@ export function buildSeedanceSubmitBody(
   for (const role of roles) {
     const url = options.imageUrls?.[role];
     if (url !== undefined && url !== '') content.push({ type: 'image_url', image_url: { url }, role });
+  }
+
+  // V2V：视频参考是**另一种元素**（`video_url` + 角色 `reference_video`），不能塞进 image_url
+  if (options.videoUrl !== undefined && options.videoUrl !== '') {
+    content.push({ type: 'video_url', video_url: { url: options.videoUrl }, role: 'reference_video' });
   }
 
   return { model: options.model, content };

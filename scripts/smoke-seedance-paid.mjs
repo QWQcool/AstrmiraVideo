@@ -51,8 +51,24 @@ const MODEL = flagValue('--model') ?? 'doubao-seedance-2-0-mini-260615';
 const BASE_URL = flagValue('--base-url') ?? 'https://ark.cn-beijing.volces.com/api/v3';
 const DURATION_SEC = Number(flagValue('--duration') ?? 5);
 const I2V_IMAGE = flagValue('--i2v');
+/** FL2V：尾帧（与 `--i2v` 的首帧配对使用） */
+const LAST_IMAGE = flagValue('--last');
+/** V2V：参考视频（`assets.referenceVideo` → 上游 `reference_image` 角色） */
+const REFERENCE_VIDEO = flagValue('--video');
 const OUT_DIR = path.join(ROOT, '.tmp', 'paid-smoke');
 const DATA_DIR = path.join(ROOT, '.tmp', 'paid-smoke-data');
+
+/**
+ * `--server <https://host>`：**打已部署的实例**而不是起本地后端。
+ *
+ * 为什么需要它：V2V 要求资产是**公网可抓的 URL**，而本机 `PUBLIC_BASE_URL` 为空时只能给
+ * data URL（上游明确拒绝）。也就是说"视频参考"这条路**只存在于线上**，要验证就必须打线上。
+ * 线上有站点登录，于是凭据走 `--creds-file <user:pass>`（Basic），请求头里再带 BYOK Key。
+ */
+const SERVER = flagValue('--server');
+const CREDS_FILE = flagValue('--creds-file');
+const BASIC_AUTH =
+  CREDS_FILE === undefined ? undefined : `Basic ${Buffer.from(readFileSync(CREDS_FILE, 'utf8').trim()).toString('base64')}`;
 
 /**
  * Key 只从**环境变量**或**本地 gitignore 文件**读；`--key-file` 传的是路径而不是 Key 本身
@@ -75,12 +91,26 @@ const DEFAULT_PROMPT = [
 const PROMPT_FILE = flagValue('--prompt-file');
 const PROMPT =
   PROMPT_FILE === undefined ? (flagValue('--prompt') ?? DEFAULT_PROMPT) : readFileSync(PROMPT_FILE, 'utf8').trim();
-const MODE = I2V_IMAGE === undefined ? 't2v' : 'i2v';
+/**
+ * 模式由**给了什么输入**推出来（而不是让用户另外传一个 `--mode`，那样会出现
+ * "传了 `--mode fl2v` 却只给一张图"的自相矛盾输入）：
+ * `--video` → v2v；`--last` → fl2v；`--i2v` → i2v；都没有 → t2v。
+ */
+const MODE =
+  REFERENCE_VIDEO !== undefined ? 'v2v' : LAST_IMAGE !== undefined ? 'fl2v' : I2V_IMAGE !== undefined ? 'i2v' : 't2v';
+
+const INPUT_SUMMARY = [
+  I2V_IMAGE === undefined ? '' : `首帧 ${I2V_IMAGE}`,
+  LAST_IMAGE === undefined ? '' : `尾帧 ${LAST_IMAGE}`,
+  REFERENCE_VIDEO === undefined ? '' : `参考视频 ${REFERENCE_VIDEO}`,
+]
+  .filter((item) => item !== '')
+  .join(' · ');
 
 console.log('── 将要发生的事 ─────────────────────────────');
 console.log(`  模型        ${MODEL}`);
 console.log(`  端点        ${BASE_URL}`);
-console.log(`  模式        ${MODE}${I2V_IMAGE === undefined ? '' : `（首帧：${I2V_IMAGE}）`}`);
+console.log(`  模式        ${MODE}${INPUT_SUMMARY === '' ? '' : `（${INPUT_SUMMARY}）`}`);
 console.log(`  时长/分辨率 ${DURATION_SEC}s / 1280×720`);
 console.log(`  产物目录    ${path.relative(ROOT, OUT_DIR)}`);
 console.log(`  凭据来源    ${API_KEY === undefined ? '(未提供：ARK_API_KEY 或 --key-file)' : '已提供（不回显）'}`);
@@ -111,28 +141,40 @@ function freePort() {
   });
 }
 
-const port = await freePort();
-const base = `http://127.0.0.1:${port}`;
+const port = SERVER === undefined ? await freePort() : 0;
+const base = SERVER?.replace(/\/+$/, '') ?? `http://127.0.0.1:${port}`;
 const API_TOKEN = randomUUID().replace(/-/g, '');
-const AUTH = { authorization: `Bearer ${API_TOKEN}` };
+/** 本地：后端只认 Bearer；线上：Caddy 用站点登录（Basic）换 Bearer，所以带 Basic */
+const AUTH =
+  SERVER === undefined
+    ? { authorization: `Bearer ${API_TOKEN}` }
+    : { ...(BASIC_AUTH === undefined ? {} : { authorization: BASIC_AUTH }) };
 
-console.log(`=== 起本地后端（生产形态 + Bearer 鉴权，端口 ${port}）===`);
-const backend = spawn(process.execPath, [path.join(ROOT, 'backend', 'dist', 'index.js')], {
-  env: {
-    ...process.env,
-    NODE_ENV: 'production',
-    PORT: String(port),
-    DATA_DIR,
-    OUTPUT_DIR: OUT_DIR,
-    PUBLIC_API_TOKEN: API_TOKEN,
-    // 刻意不设 VOLCANO_MODEL_NAME / VOLCANO_API_KEY：本次要验的就是"凭据与模型都来自请求"
-    ENABLE_FIXTURE_PROVIDER: '0',
-  },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
+let backend;
+if (SERVER === undefined) {
+  console.log(`=== 起本地后端（生产形态 + Bearer 鉴权，端口 ${port}）===`);
+  backend = spawn(process.execPath, [path.join(ROOT, 'backend', 'dist', 'index.js')], {
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+      PORT: String(port),
+      DATA_DIR,
+      OUTPUT_DIR: OUT_DIR,
+      PUBLIC_API_TOKEN: API_TOKEN,
+      // 刻意不设 VOLCANO_MODEL_NAME / VOLCANO_API_KEY：本次要验的就是"凭据与模型都来自请求"
+      ENABLE_FIXTURE_PROVIDER: '0',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+} else {
+  console.log(`=== 打已部署实例 ${base}（站点登录 + 请求头 BYOK）===`);
+  if (BASIC_AUTH === undefined) {
+    console.warn('⚠️  未提供 --creds-file：若该实例要求站点登录，后续请求会 401');
+  }
+}
 const backendLog = [];
-backend.stdout.on('data', (chunk) => backendLog.push(String(chunk)));
-backend.stderr.on('data', (chunk) => backendLog.push(String(chunk)));
+backend?.stdout.on('data', (chunk) => backendLog.push(String(chunk)));
+backend?.stderr.on('data', (chunk) => backendLog.push(String(chunk)));
 
 async function waitForHealth(timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
@@ -141,33 +183,58 @@ async function waitForHealth(timeoutMs = 30_000) {
       const response = await fetch(`${base}/api/health`, { headers: AUTH });
       if (response.ok) return;
     } catch {
-      /* 还没起来 */
+      /* 还没起来 / 还不通 */
     }
     await sleep(300);
   }
-  throw new Error(`后端未在 ${timeoutMs}ms 内就绪：\n${backendLog.join('')}`);
+  throw new Error(`服务未在 ${timeoutMs}ms 内就绪（${base}）：\n${backendLog.join('')}`);
 }
 
 async function finish(code) {
-  backend.kill('SIGTERM');
+  backend?.kill('SIGTERM');
   await sleep(300);
   process.exit(code);
 }
 
 await waitForHealth();
-console.log('后端就绪');
+console.log(`就绪：${base}`);
 
-/** I2V：把首帧图先按产品路径上传，拿到 assetId（这一步顺带验了上传 + 清洗网关） */
-let assets;
-if (I2V_IMAGE !== undefined) {
-  const bytes = readFileSync(I2V_IMAGE);
+/**
+ * 参考资产一律走**产品路径**上传（`/api/upload` → 防线 4 清洗网关 → `assets/`），
+ * 这一步顺带把上传链路也验了。返回 assetId 供请求体的 `assets` 使用。
+ */
+async function uploadAsset(filePath) {
+  const bytes = readFileSync(filePath);
+  const isVideo = /\.(mp4|mov)$/i.test(filePath);
   const form = new FormData();
-  form.append('files', new Blob([bytes], { type: 'image/jpeg' }), path.basename(I2V_IMAGE));
+  form.append(
+    'files',
+    new Blob([bytes], { type: isVideo ? 'video/mp4' : 'image/jpeg' }),
+    path.basename(filePath),
+  );
+
   const uploaded = await fetch(`${base}/api/upload`, { method: 'POST', headers: AUTH, body: form });
   const payload = await uploaded.json();
-  console.log(`上传首帧：HTTP ${uploaded.status}`, JSON.stringify(payload));
-  if (uploaded.status !== 200) await finish(1);
-  assets = { firstFrameImage: payload.assets[0].assetId };
+  console.log(
+    `上传 ${path.basename(filePath)}（${(bytes.length / 1024 / 1024).toFixed(2)} MB）→ HTTP ${uploaded.status}`,
+    JSON.stringify(payload),
+  );
+
+  const assetId = payload.assets?.[0]?.assetId;
+  if (uploaded.status !== 200 || assetId === undefined) {
+    console.error('上传失败，终止。');
+    await finish(1);
+  }
+  return assetId;
+}
+
+let assets;
+if (I2V_IMAGE !== undefined || LAST_IMAGE !== undefined || REFERENCE_VIDEO !== undefined) {
+  assets = {
+    ...(I2V_IMAGE === undefined ? {} : { firstFrameImage: await uploadAsset(I2V_IMAGE) }),
+    ...(LAST_IMAGE === undefined ? {} : { lastFrameImage: await uploadAsset(LAST_IMAGE) }),
+    ...(REFERENCE_VIDEO === undefined ? {} : { referenceVideo: await uploadAsset(REFERENCE_VIDEO) }),
+  };
 }
 
 const body = {

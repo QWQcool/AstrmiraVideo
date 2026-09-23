@@ -71,7 +71,12 @@ export interface VideoGenerateRequest {
   assets?: {
     firstFrameImage?: string;     // i2v 和 fl2v 必需
     lastFrameImage?: string;      // fl2v 专用尾帧
-    referenceVideo?: string;      // v2v 风格/动作迁移参考
+    // v2v 风格/动作迁移参考。⚠️ 【已验证 2026-09-23】上游把视频参考当**另一种元素**处理
+    // （`video_url` + 角色 `reference_video`），且**只接受公网 URL、不接受 data URL**
+    // （原文：`reference_video must be provided as a web url`）。
+    // 因此未配置 `PUBLIC_BASE_URL` 的部署（本地/内网）必须**在提交前**报
+    // `INVALID_ASSET`（terminal）并说明去哪配，不得发一个注定 400 的请求。
+    referenceVideo?: string;
   };
 
   // 画面规格（自动对齐为 32 的整数倍）
