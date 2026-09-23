@@ -14,6 +14,8 @@ export interface RightPanelProps {
   loadingHistory: boolean;
   deletingId: string | null;
   onReuse: (task: TaskProgress) => void;
+  /** 点封面 → 中栏播放（V8.3 批次 7 / 台账 B26） */
+  onPreview: (task: TaskProgress) => void;
   onDelete: (taskId: string) => void;
   onRefresh: () => void;
 }
@@ -25,6 +27,7 @@ export function RightPanel({
   loadingHistory,
   deletingId,
   onReuse,
+  onPreview,
   onDelete,
   onRefresh,
 }: RightPanelProps) {
@@ -83,7 +86,9 @@ export function RightPanel({
                 task={item}
                 index={position + 1}
                 deleting={deletingId === item.taskId}
+                active={current?.taskId === item.taskId}
                 onReuse={onReuse}
+                onPreview={onPreview}
                 onDelete={onDelete}
               />
             ))}

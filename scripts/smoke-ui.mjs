@@ -312,6 +312,39 @@ try {
     { timeout: 5_000 },
   );
   assert(true, '日间底色生效（.wb-shell 计算样式 = rgb(244,247,251)，等过渡完成后读）');
+
+  // 放映区在**两套主题下都是深色**，所以区内的文字必须用 `--canvas-*` 那一组。
+  // 2026-09-23 用户在日间模式截图报障："放映区里的提示文字看不见"——
+  // 那时区内的 `.wb-note` 取的是 `--faint`（日间=深灰），落在深色放映底上直接消失。
+  // 这里按 WCAG 公式**实测计算样式**（不是查 token 表），把这类缺陷钉死在浏览器里。
+  const stageContrast = await page.evaluate(() => {
+    const toRgb = (value) => value.match(/\d+/g)?.slice(0, 3).map(Number) ?? [0, 0, 0];
+    const luminance = ([r, g, b]) => {
+      const channel = (v) => {
+        const c = v / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    };
+
+    const viewport = document.querySelector('.wb-viewport');
+    const note = document.querySelector('.wb-viewport .wb-note');
+    if (viewport === null || note === null) return null;
+
+    const background = toRgb(getComputedStyle(viewport).backgroundColor);
+    const foreground = toRgb(getComputedStyle(note).color);
+    const [light, dark] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+    return {
+      ratio: (light + 0.05) / (dark + 0.05),
+      foreground: getComputedStyle(note).color,
+      background: getComputedStyle(viewport).backgroundColor,
+    };
+  });
+
+  assert(
+    stageContrast !== null && stageContrast.ratio >= 4.5,
+    `日间模式下放映区文字可读（对比度 ${stageContrast === null ? '读取失败' : stageContrast.ratio.toFixed(2)}:1 ≥ 4.5，${stageContrast?.foreground ?? ''} on ${stageContrast?.background ?? ''}）`,
+  );
   assert(
     (await page.evaluate(() => window.localStorage.getItem('astrmira.themePref'))) === 'day',
     '主题偏好已持久化到 localStorage',
@@ -379,6 +412,32 @@ try {
     `封面 src 为同源 /media/thumbs/…（实际 ${thumbSrc}）`,
   );
   assert(await card.locator('.wb-card-play').isVisible(), '封面角标可见（静帧不会被误读成图片素材）');
+
+  // ── 点封面 → 中栏播放（V8.3 批次 7 / 台账 B26）────────────────────────────
+  // 用户报障："其它人跑的历史成片我无法预览" —— 原因不是文件缺失（服务端 206 正常），
+  // 而是画廊**根本没有播放入口**（封面上的 ▶ 曾是装饰角标）。这里钉住"点了真的能播"。
+  await card.locator('.wb-card-thumb-button').click();
+
+  await page.waitForFunction(
+    () => {
+      const video = document.querySelector('.wb-viewport video');
+      return video !== null && video.videoWidth > 0;
+    },
+    { timeout: 15_000 },
+  );
+  assert(true, '点封面 → 中栏播放器加载到真实视频（videoWidth > 0）');
+
+  const playing = await page.evaluate(() => {
+    const video = document.querySelector('.wb-viewport video');
+    return video === null ? null : { src: video.getAttribute('src'), controls: video.controls };
+  });
+  assert(
+    typeof playing?.src === 'string' && playing.src.startsWith('/media/'),
+    `播放器 src 为同源 /media/…（实际 ${playing?.src}）`,
+  );
+
+  await page.screenshot({ path: path.join(SHOT_DIR, 'playback.png'), fullPage: false });
+  note('播放截图留档：artifacts/ui-smoke/playback.png');
 
   await page.screenshot({ path: path.join(SHOT_DIR, 'gallery.png'), fullPage: false });
   note('画廊截图留档：artifacts/ui-smoke/gallery.png');

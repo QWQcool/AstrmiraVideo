@@ -783,6 +783,61 @@
   line-height: 1.7;
 }
 
+/* 可播封面做成按钮（V8.3 批次 7）：点它 → 载入中栏播放。
+   视觉上保持原样（它本来就是一块封面图），只补焦点态与悬停提示。 */
+.wb-card-thumb-button {
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.wb-card-thumb-button:hover .wb-card-play,
+.wb-card-thumb-button:focus-visible .wb-card-play {
+  opacity: 1;
+  transform: scale(1.08);
+}
+
+.wb-card-thumb-button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* 当前正在中栏播放的那条：左侧主色描边（避免"点了但不知道在看哪条"） */
+.wb-card-active {
+  border-color: var(--gold);
+  box-shadow: inset 2px 0 0 var(--gold);
+}
+
+/* ── 放映区内的文字（V8.3 批次 7）────────────────────────
+   放映区（`.wb-viewport`）的底色 `--canvas` 在**两套主题下都是深色**，
+   而 `.wb-note` / `.wb-empty-title` / `.wb-timecode` 等默认取的是 `--faint` / `--text` / `--muted`
+   —— 日间主题把这三个换成了深色，于是"深底 + 深字"，放映区里的文字直接看不见
+   （2026-09-23 用户在日间模式下截图报障）。这里把区内的文字统一收到 `--canvas-*` 上。 */
+/* 图标与完成标记保持主色（`--gold`）—— 它们是装饰性强调，不是需要读的文字；
+   日间主题下 `--gold` 是蔚蓝，落在深色放映底上仍然是可辨的强调色。 */
+.wb-viewport .wb-empty-title {
+  color: var(--canvas-text);
+}
+
+.wb-viewport .wb-note,
+.wb-viewport .wb-timecode,
+.wb-viewport .wb-watermark,
+.wb-viewport .wb-label {
+  color: var(--canvas-muted);
+}
+
+.wb-viewport .wb-uncertain-title,
+.wb-viewport .wb-warn {
+  color: var(--canvas-danger);
+}
+
+.wb-viewport .wb-uncertain-body {
+  color: var(--canvas-muted);
+}
+
 /* ── 操作日志（V2.1，CONTRACT §10）────────────────────────
    全屏页而非抽屉：日志要横向排 ip / 动作 / 路径 / 耗时 / 错误码，420px 的抽屉挤不下。
    颜色与字号一律走 token（AC6 的静态检查会拦硬编码值）。 */

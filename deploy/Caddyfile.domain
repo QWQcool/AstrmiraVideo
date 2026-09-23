@@ -5,25 +5,6 @@
 #   2. 宿主 80 可从公网访问（HTTP-01 挑战，见 compose.yaml 的 HTTP_PORT）。
 
 {$DEPLOY_HOST} {
-	# ── 站点级登录（Basic Auth）────────────────────────────────────────────
-	# 后端的 Bearer 令牌前端不会带（它只会自动带浏览器的 Basic 凭据），
-	# 所以这里做两件事：① 用 Basic Auth 挡住匿名访问；② 转发时把它换成 Bearer。
-	# 好处是**前端无需知道任何令牌的存在**，也就不需要在前端存密钥。
-	basic_auth {
-		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
-	}
-
-	reverse_proxy app:3000 {
-		# 凭据形态转换：Basic → Bearer（后端只认后者）
-		header_up Authorization "Bearer {$PUBLIC_API_TOKEN}"
-
-		# ③ 真实 IP 透传：漏了它，防线 5 的 IP 冷却会把所有访客当成同一个人（全局锁），
-		#    症状是"别人提交过，我就被限流了"——极难联想到反代配置。
-		header_up X-Forwarded-For {remote_host}
-		header_up X-Real-IP {remote_host}
-		header_up X-Forwarded-Proto {scheme}
-	}
-
 	# ① 请求体上限：必须 ≥ 上传上限（施工单 §9-3 要求 ≥20M）。
 	#    nginx 默认只有 1M，参考图会被**静默拦掉**（客户端只看到失败，看不出原因）。
 	request_body {
@@ -34,4 +15,57 @@
 	#    Caddy 默认不对 video/mp4 做压缩；一旦有人"顺手"加上 encode gzip/zstd，
 	#    206 Range 响应会被破坏 → 播放器拖不动进度、断点续传失效。
 	#    这里用"不写"而不是"写排除规则"：没法被误配置的东西才是安全的。
+
+	# ── 存活探针：与后端 `ALWAYS_PUBLIC_PATHS`（/api/health）口径保持一致 ──
+	# 容器内的 HEALTHCHECK 走 127.0.0.1:3000 不经这里，但外部探活 / 监控需要匿名可访问。
+	@health path /api/health
+	handle @health {
+		reverse_proxy app:3000 {
+			header_up Authorization "Bearer {$PUBLIC_API_TOKEN}"
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# ── 参考资产：**必须匿名可读**（V8.3 批次 7，2026-09-23 实测缺陷）────────────
+	# 这是"给上游读的"那一类文件：云端参考图模式（I2V / FL2V / V2V）会把
+	# `<PUBLIC_BASE_URL>/media/assets/<文件>` 交给方舟，由**上游的服务器**去抓。
+	# 若这里也要求站点登录，上游只会拿到 401 → 参考图模式在线上**必然失败**
+	# （本机之所以没暴露：`PUBLIC_BASE_URL` 为空时回落成 base64 data URL，不走网络）。
+	#
+	# 如实说明代价：这些文件变成"知道 URL 即可读"（文件名为服务端生成的随机 UUID，
+	# 不承载任何用户输入）。**成片与封面仍在登录之后**，本豁免只覆盖 `assets/` 一个子目录。
+	# 若部署场景不能接受这一点，请把 `PUBLIC_BASE_URL` 留空（走 data URL）——
+	# 代价是请求体变大（base64 约为原图 1.33 倍）。
+	@assets path /media/assets/*
+	handle @assets {
+		reverse_proxy app:3000 {
+			header_up Authorization "Bearer {$PUBLIC_API_TOKEN}"
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# ── 其余全部路径：先登录，再把 Basic 凭据换成后端认的 Bearer ──
+	# 后端的 Bearer 令牌前端不会带（它只会自动带浏览器的 Basic 凭据），
+	# 所以这里做两件事：① 用 Basic Auth 挡住匿名访问；② 转发时把它换成 Bearer。
+	# 好处是**前端无需知道任何令牌的存在**，也就不需要在前端存密钥。
+	handle {
+		basic_auth {
+			{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+		}
+
+		reverse_proxy app:3000 {
+			# 凭据形态转换：Basic → Bearer（后端只认后者）
+			header_up Authorization "Bearer {$PUBLIC_API_TOKEN}"
+
+			# ③ 真实 IP 透传：漏了它，防线 5 的 IP 冷却会把所有访客当成同一个人（全局锁），
+			#    症状是"别人提交过，我就被限流了"——极难联想到反代配置。
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
 }

@@ -463,6 +463,25 @@ export default function App() {
     }
   }
 
+  /**
+   * 把画廊里的一条任务载入中栏播放（V8.3 批次 7，台账 B26）。
+   *
+   * 实现上**只是换一个 taskId**：`useTaskPolling` 拿到的是终态任务 → 立即停止轮询
+   * （它本来就在终态即停），因此**不会产生任何额外的上游请求**，也不会重新生成。
+   * 副作用要清干净：清掉提交错误与上一条任务的提示，避免"看着新片、读着旧错"。
+   */
+  function handlePreview(target: TaskProgress): void {
+    if (target.status !== 'succeeded' || target.outputVideoUrl === undefined) {
+      setNotice('该任务没有可播放的成片（未成功，或成片已被清理）。');
+      return;
+    }
+
+    writeLocal(storage, STORAGE_KEYS.activeTaskId, target.taskId);
+    setTaskId(target.taskId);
+    setSubmitError(null);
+    setNotice(null);
+  }
+
   function handleReuse(target: TaskProgress): void {
     const snapshot = target.requestSnapshot;
 
@@ -712,6 +731,7 @@ export default function App() {
           loadingHistory={loadingHistory}
           deletingId={deletingId}
           onReuse={handleReuse}
+          onPreview={handlePreview}
           onDelete={(targetId) => void handleDelete(targetId)}
           onRefresh={() => void refreshHistory()}
         />

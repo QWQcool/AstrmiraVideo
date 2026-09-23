@@ -248,6 +248,11 @@ const CONTRAST_RULES = [
   ['gold', 'panel', 4.5, '主色（eyebrow / 描边 / 主按钮） / 卡片'],
   ['on-action', 'action-fill', 4.5, '主按钮文字 / 主按钮底'],
   ['faint', 'panel', 3.0, '低对比水印字标（AC5 明确要求"低对比"）'],
+  // V8.3 批次 7：放映区在两套主题下都是深色，区内的文字用独立的 --canvas-* 那一组。
+  // 这三条正是"日间模式下放映区文字看不见"那类缺陷的**机器兜底**（眼睛会骗人，公式不会）。
+  ['canvas-text', 'canvas', 4.5, '放映区标题 / 深色放映底'],
+  ['canvas-muted', 'canvas', 4.5, '放映区说明与时间码 / 深色放映底'],
+  ['canvas-danger', 'canvas', 4.5, '放映区告警 / 深色放映底'],
 ];
 
 for (const theme of THEMES) {

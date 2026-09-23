@@ -26,14 +26,38 @@
 		max_size 20MB
 	}
 
-	# 存活探针豁免登录：与后端 `ALWAYS_PUBLIC_PATHS`（/api/health）的口径保持一致。
-	# 容器内的 HEALTHCHECK 走 127.0.0.1:3000 不经这里，但外部探活 / 监控需要它能匿名访问。
+	# ① 存活探针豁免登录：与后端 `ALWAYS_PUBLIC_PATHS`（/api/health）的口径保持一致。
+	#    容器内的 HEALTHCHECK 走 127.0.0.1:3000 不经这里，但外部探活 / 监控需要它能匿名访问。
 	@health path /api/health
 	handle @health {
-		reverse_proxy app:3000
+		reverse_proxy app:3000 {
+			header_up Authorization "Bearer {$PUBLIC_API_TOKEN}"
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
 	}
 
-	# 其余全部路径：先登录，再把 Basic 凭据换成后端认的 Bearer
+	# ② 参考资产：**必须匿名可读**（V8.3 批次 7，2026-09-23 实测缺陷）。
+	#    这是"给上游读的"那一类文件：云端参考图模式（I2V / FL2V / V2V）会把
+	#    `<PUBLIC_BASE_URL>/media/assets/<文件>` 交给方舟，由**上游的服务器**去抓。
+	#    若这里也要求站点登录，上游只会拿到 401 → 参考图模式在线上**必然失败**
+	#    （本机之所以没暴露：`PUBLIC_BASE_URL` 为空时回落成 base64 data URL，不走网络）。
+	#
+	#    如实说明代价：这些文件变成"知道 URL 即可读"（文件名是服务端生成的随机 UUID，
+	#    不含任何用户输入）。**成片与封面仍在登录之后**，本豁免只覆盖 `assets/` 一个子目录。
+	#    若部署场景不能接受，请把 `PUBLIC_BASE_URL` 留空走 data URL（请求体变大约 1.33 倍）。
+	@assets path /media/assets/*
+	handle @assets {
+		reverse_proxy app:3000 {
+			header_up Authorization "Bearer {$PUBLIC_API_TOKEN}"
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# ③ 其余全部路径：先登录，再把 Basic 凭据换成后端认的 Bearer
 	handle {
 		basic_auth {
 			{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
