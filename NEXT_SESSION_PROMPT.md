@@ -25,7 +25,7 @@
 
 ## 当前指针
 
-**Step 2 双轨 Provider（cloud 的 AC2 已全模式跑通：T2V / I2V / FL2V / V2V；host 本地轨 `LocalH3Provider` 仍未实现）＋ Step 3 前端工作台（已完成）＋ Step 4 端到端验收（**已完成 2026-09-23**，证据见 `docs/walkthrough.md`）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ V8.3 体验与功能补强（**批次 0~7 全部完成**）＋ Step 6 V9 前端改版（**进行中 2026-09-23：B1 闸门已通过 · B2 应用壳已完成 · B3 总览页 · B4 视频库已完成（含契约 V2.3）**（四处拍板：配方库一级视图 `#/recipes` / 剪辑台独立 `#/edit?task=` / 默认 `#/workbench` / 四卡方案 A）；**下一片 = B5 操作日志视图化**：总览 + 可伸收侧栏 + 自写 hash 路由 + 动效体系 + 配方库 + 轻剪辑台，执行手册 = `docs/EXEC-V9.md`）**——施工入口 = `docs/PLAN.md` **§4 的 Step+AC**（§5 进度日志是唯一进度权威、§6 是决策 D22~D38、§9 是台账 B1~B33）与 `docs/CONTRACT.md` **V2.2**（§11 是 V9 的配方/剪辑台规划）。以 §5 进度日志的实际状态为准，不要以本文件为准。
+**Step 2 双轨 Provider（cloud 的 AC2 已全模式跑通：T2V / I2V / FL2V / V2V；host 本地轨 `LocalH3Provider` 仍未实现）＋ Step 3 前端工作台（已完成）＋ Step 4 端到端验收（**已完成 2026-09-23**，证据见 `docs/walkthrough.md`）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ V8.3 体验与功能补强（**批次 0~7 全部完成**）＋ Step 6 V9 前端改版（**进行中 2026-09-23：B1 闸门已通过 · B2 应用壳已完成 · B3 总览页 · B4 视频库 · B5 日志视图化已完成（含契约 V2.3）**（四处拍板：配方库一级视图 `#/recipes` / 剪辑台独立 `#/edit?task=` / 默认 `#/workbench` / 四卡方案 A）；**下一片 = B6 界面级动效体系**：总览 + 可伸收侧栏 + 自写 hash 路由 + 动效体系 + 配方库 + 轻剪辑台，执行手册 = `docs/EXEC-V9.md`）**——施工入口 = `docs/PLAN.md` **§4 的 Step+AC**（§5 进度日志是唯一进度权威、§6 是决策 D22~D38、§9 是台账 B1~B33）与 `docs/CONTRACT.md` **V2.2**（§11 是 V9 的配方/剪辑台规划）。以 §5 进度日志的实际状态为准，不要以本文件为准。
 
 > ⚠️ **2026-09-23 线上故障与修复（批次 6，读一遍再动手）**：用户报 `invalidEndpointorModel.NotFound`。
 > 根因是三层叠加：① `options.model` / `options.baseUrl` **此前无人消费**（云端 provider 只读 env）；

@@ -1290,24 +1290,44 @@
   border-radius: 4px;
 }
 
-/* ── 日志视图化（B2 最小形态；B5 精修）──
-   迁移策略：LogPanel 组件主体一行不改，这里把弹层背板收编为普通块。
-   .wb-log-overlay 是 fixed 弹层 → 在视图里改 static 无背板。 */
-.view-logs .wb-log-overlay {
-  position: static;
-  inset: auto;
-  z-index: auto;
-  background: none;
-  backdrop-filter: none;
-  padding: 22px 24px 32px;
-  display: block;
+/* ── 日志视图（B5）：真正的页面形态 ──
+   overlay 外壳已从组件里去掉（组件不再有"弹层"这个概念）；这里只定义
+   "页面里的日志面板该有多大"：高度 = 视口 − 顶栏 − 页面头与内边距，
+   列表在**面板内部**滚动（页面本身不滚，翻日志时位置稳定）。 */
+.wb-page .wb-log-panel {
+  height: calc(100vh - 64px - 128px);
+  min-height: 320px;
+  animation: none;
 }
 
-.view-logs .wb-log-panel {
-  width: 100%;
-  max-width: 1180px;
-  height: calc(100vh - 64px - 64px);
-  animation: none;
+/* 侧栏「操作日志」红点（B5）：展开态显示条数，收起态退化为纯圆点
+   （56px 里塞不下数字；不写字也就没有硬编码字号的问题） */
+.nav-badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: var(--fs-micro);
+  line-height: 18px;
+  text-align: center;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.sidebar[data-rail='1'] .nav-badge {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  min-width: 8px;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  overflow: hidden;
+  /* 8px 的圆里放不下数字：把文字推出可视区。
+     刻意不写"零字号"那种做法 —— 它属于硬编码字号，F6 静态检查会拦（实测拦过一次）。 */
+  text-indent: -999px;
+  line-height: 8px;
 }
 
 /* ── V9 总览（B3）── */

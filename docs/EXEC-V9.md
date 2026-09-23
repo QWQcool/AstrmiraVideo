@@ -72,7 +72,8 @@
 - **破坏性验证**：搜索词改成「不存在词」→ 必须出现空态而非全部卡片。
 - **提交**：`feat(library): search/filter/sort toolbar and a detail drawer`。
 
-### B5 · 操作日志视图化
+### B5 · 操作日志视图化【已完成 2026-09-23】
+> `components/LogPanel.tsx` → `views/LogsView.tsx`（主体一行未改，去弹层背板 + 页面头 + 「关闭」→「导出 JSON」）。壳侧红点：挂载时统计一次失败请求数（不轮询）；收起态纯圆点（`text-indent`，不用零字号）。实测：冒烟断言导出**真实触发下载**；「没有失败请求时不伪造红点」可判定；门禁 lint 0 / type 0 / 前端 96 / 后端 307 / 视觉自检 / UI 冒烟。
 - **改动**：`components/LogPanel.tsx` → `views/LogsView.tsx`（组件主体复用，去掉弹层背板，加页面头）；顶栏原入口删除；有错误条数时侧栏项带红点（复用现有逻辑）。
 - **AC**：过滤/分页/导出/删除在视图形态下全部可用；日志页自己的轮询**不产生日志**（噪声纪律，CONTRACT §10）。
 - **提交**：`feat(logs): promote the operation log from overlay to a first-class view`。

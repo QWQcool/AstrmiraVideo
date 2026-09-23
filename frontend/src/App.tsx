@@ -3,7 +3,7 @@ import type { ProviderStatus } from '@astrmira/shared';
 import { ByokDrawer } from './components/ByokDrawer';
 import { Eyebrow } from './components/Eyebrow';
 import { Sidebar } from './components/Sidebar';
-import { ApiError, fetchProviderStatus, verifyTrackKey } from './lib/api';
+import { ApiError, fetchLogs, fetchProviderStatus, verifyTrackKey } from './lib/api';
 import type { ByokConfig } from './lib/byok';
 import {
   clearByok,
@@ -61,6 +61,15 @@ export default function App() {
   // ── 壳级通知（保存凭据这类壳动作的反馈；工作台自己的提示仍在中栏上方） ──
   const [notice, setNotice] = useState<string | null>(null);
 
+  /**
+   * 侧栏「操作日志」的红点（V9 · B5）：错误条数。
+   *
+   * 只在壳挂载时统计一次（`errorCode` 非空 = 失败请求），**刻意不轮询**：
+   * 红点是"提醒你去看看"而不是实时指标；而为它每分钟拉一次日志，与"日志噪声纪律"的精神相悖。
+   * 拉不到就静默（不显示红点）——红点消失不是用户需要被通知的事件。
+   */
+  const [errorLogCount, setErrorLogCount] = useState(0);
+
   // 主题：偏好变化（或系统主题变化、且当前跟随系统时）同步到 <html data-theme>
   useEffect(() => {
     const sync = (): void => applyTheme(resolveTheme(themePref, systemPrefersDark()));
@@ -102,6 +111,15 @@ export default function App() {
   // 首次落地无 hash → 落到默认视图（replace 不产生"无 hash → workbench"的历史条目）
   useEffect(() => {
     if (window.location.hash === '') window.location.replace(DEFAULT_VIEW);
+  }, []);
+
+  // 侧栏红点：挂载时统计一次最近的失败请求数（见 errorLogCount 的注释）
+  useEffect(() => {
+    fetchLogs({ limit: 100 })
+      .then((data) => {
+        setErrorLogCount(data.items.filter((item) => item.errorCode !== undefined).length);
+      })
+      .catch(() => undefined);
   }, []);
 
   const view = matchView(route.path);
@@ -224,6 +242,7 @@ export default function App() {
           onToggleRail={handleToggleRail}
           themePref={themePref}
           onThemeChange={handleThemeChange}
+          errorLogCount={errorLogCount}
         />
 
         <main className="app-content">

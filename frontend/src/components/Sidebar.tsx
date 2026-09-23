@@ -12,7 +12,8 @@ import { NAV_VIEWS, type ViewIconKey } from '../views/registry';
  * 导航项来自**视图注册表**（`NAV_VIEWS` = 注册表过滤 `hidden`），不在这里手写清单 ——
  * 加一个视图 = 在注册表加一行，侧栏自动跟上。
  *
- * 日志红点在 B5 才接（"有错误条数时侧栏项带红点"，复用现有逻辑）；本片（B2）先不带。
+ * 日志红点（B5）：`errorLogCount > 0` 时在「操作日志」项上显示条数；收起态退化成**纯圆点**
+ * （56px 里塞不下数字，且不写字号就没有硬编码问题）。
  */
 
 const ICONS: Record<ViewIconKey, ReactNode> = {
@@ -69,6 +70,8 @@ export interface SidebarProps {
   onToggleRail(): void;
   themePref: ThemePref;
   onThemeChange(pref: ThemePref): void;
+  /** 「操作日志」的红点条数（壳统计；0 = 不显示） */
+  errorLogCount?: number;
 }
 
 function SideIcon({ children }: { children: ReactNode }) {
@@ -79,7 +82,14 @@ function SideIcon({ children }: { children: ReactNode }) {
   );
 }
 
-export function Sidebar({ currentPath, rail, onToggleRail, themePref, onThemeChange }: SidebarProps) {
+export function Sidebar({
+  currentPath,
+  rail,
+  onToggleRail,
+  themePref,
+  onThemeChange,
+  errorLogCount = 0,
+}: SidebarProps) {
   const { openByok } = useShell();
 
   return (
@@ -87,6 +97,7 @@ export function Sidebar({ currentPath, rail, onToggleRail, themePref, onThemeCha
       <nav className="sidebar-nav" aria-label="一级视图">
         {NAV_VIEWS.map((view) => {
           const active = currentPath === view.path;
+          const badge = view.path === '#/logs' && errorLogCount > 0 ? errorLogCount : null;
           return (
             <a
               key={view.path}
@@ -98,6 +109,11 @@ export function Sidebar({ currentPath, rail, onToggleRail, themePref, onThemeCha
             >
               <SideIcon>{ICONS[view.icon]}</SideIcon>
               <span className="nav-label">{view.title}</span>
+              {badge === null ? null : (
+                <span className="nav-badge" title={`有 ${badge} 条失败请求`}>
+                  {badge > 99 ? '99+' : badge}
+                </span>
+              )}
             </a>
           );
         })}

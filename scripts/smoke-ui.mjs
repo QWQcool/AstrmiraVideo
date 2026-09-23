@@ -651,7 +651,7 @@ try {
 
   // V9：日志从顶栏弹层升级为一级视图（D33）—— 从侧栏导航进入 `#/logs`
   await page.getByRole('link', { name: '操作日志' }).click();
-  await page.locator('.view-logs .wb-log-panel').waitFor({ timeout: 5_000 });
+  await page.locator('.wb-log-panel').waitFor({ timeout: 5_000 });
   assert(true, '侧栏点「操作日志」→ 日志一级视图（#/logs）');
   assert(
     (await page.locator('.wb-log-filters select').count()) >= 2,
@@ -672,6 +672,27 @@ try {
     return (payload.items ?? []).filter((item) => String(item.path).startsWith('/api/logs')).length;
   });
   assert(selfRows === 0, '日志页自身的轮询没有被记进日志（噪声纪律）');
+
+  // V9 · B5：导出当前筛选结果为 JSON（排错时把日志交给别人的正道）
+  const downloadPromise = page.waitForEvent('download', { timeout: 5_000 });
+  await page.getByRole('button', { name: '导出 JSON' }).click();
+  const download = await downloadPromise;
+  assert(
+    download.suggestedFilename().startsWith('astrmira-logs-'),
+    `导出 JSON 触发下载（${download.suggestedFilename()}）`,
+  );
+  // B5：侧栏「操作日志」的红点。口径要说清：它是**壳挂载时的快照**（不随新错误实时更新），
+  // 所以这里断言的是"没有失败请求时不伪造提醒"（可判定），而不是"一定有红点"（会变成看运气）。
+  const errorRows = await page.evaluate(async () => {
+    const data = await (await fetch('/api/logs?limit=100')).json();
+    return (data.items ?? []).filter((item) => item.errorCode !== undefined).length;
+  });
+  const logBadges = await page.locator('.sidebar .nav-item[href="#/logs"] .nav-badge').count();
+  if (errorRows === 0) {
+    assert(logBadges === 0, '没有失败请求时不显示红点（不伪造提醒）');
+  } else {
+    assert(logBadges <= 1, `有失败请求时最多一个红点徽标（实际 ${logBadges}）`);
+  }
 
   await page.screenshot({ path: path.join(SHOT_DIR, 'logs.png'), fullPage: false });
   note('日志截图留档：artifacts/ui-smoke/logs.png');
