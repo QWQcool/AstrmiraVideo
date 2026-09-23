@@ -172,6 +172,26 @@
   --canvas-veil: rgba(15, 23, 37, 0.55);
 }
 
+/* ── V9 · B6 追加的 3 个 keyframes（**已同步登记**进 frontend/scripts/visual-selfcheck.mjs）──
+   三条纪律与既有的 8 个一致：只动 transform/opacity、每个都必须有功能位、reduced-motion 归零由下方统一兜底。
+   登记机制是刻意的：新增动效必须在自检清单里留下痕迹，否则脚本会拦下来（"计划外的 keyframe"）。 */
+@keyframes breathe-glow {
+  0%, 100% { opacity: 0.28; }
+  50% { opacity: 0.62; }
+}
+
+/* 卡片级联入场：视图切换时逐张浮起（--stagger 由视图按索引注入，40ms 步进） */
+@keyframes card-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 骨架屏扫光：用伪元素位移动画（transform），不用 background-position —— 后者会触发重绘 */
+@keyframes skeleton-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
 /* Astrmira 原生 8 个 Keyframes */
 @keyframes star-gather {
   0% { opacity: 0; transform: scale(1.15) rotate(-8deg); }

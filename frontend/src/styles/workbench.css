@@ -502,6 +502,7 @@
 
 /* ── 中栏：视窗 / 进度环 ────────────────────────────── */
 .wb-viewport {
+  position: relative; /* B6：生成中微光晕的定位基准（::after 铺满视窗） */
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -510,6 +511,19 @@
   border-radius: var(--radius-control);
   overflow: hidden;
   min-height: 0;
+}
+
+/* B6 动效项④：生成中 / 排队中，播放器上一圈**呼吸微光晕**。
+   纯 opacity 脉冲（不碰 box-shadow/背景色——那会触发重绘掉帧）；
+   状态由 CenterPanel 的 `data-status` 给出，因此不需要在组件里加/删节点。 */
+.wb-panel-center[data-status='running'] .wb-viewport::after,
+.wb-panel-center[data-status='queued'] .wb-viewport::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 46%, var(--gold-glow), transparent 62%);
+  animation: breathe-glow 3.4s ease-in-out infinite;
 }
 
 .wb-viewport-stage {
@@ -731,10 +745,25 @@
   color: var(--gold);
 }
 
-/* 完成标记：star-gather 可重播（AC5） */
+/* B6 动效项⑤：完成标记**提级到播放器中央**并"可重播"。
+   两层结构是刻意的：外层负责定位与放大（transform: scale —— AC6 不允许写字面量字号），
+   内层只负责动画本身（star-gather 的 keyframes 里已有自己的 scale/rotate，两层互不覆盖）。
+   重播由 React `key={task.taskId}` 保证：换任务/重新出片 = 元素重挂载 = 动画重头播。 */
+.wb-done-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transform: scale(2.6);
+}
+
 .wb-done-mark {
   display: inline-block;
-  animation: star-gather 5s infinite ease-out;
+  color: var(--gold);
+  font-size: var(--fs-display);
+  animation: star-gather 1.6s var(--ease-ui) both;
 }
 
 /* ── 水印 / 页脚 ────────────────────────────────────── */
@@ -1241,6 +1270,8 @@
 /* ── 视图容器（占位视图 / 兜底 / 后续 B3~B9 的真视图共用） ── */
 .wb-page {
   padding: 22px 24px 32px;
+  /* B6 动效项②：视图切换 fade + slide（复用既有 navigation-enter，从"面板进入"扩展到整页） */
+  animation: navigation-enter 260ms var(--ease-ui) both;
 }
 
 .wb-page-head {
@@ -1353,6 +1384,35 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-surface);
   background: var(--panel);
+  /* B6：四卡也参与级联入场（顺序比卡片早，因为它们在页面更上方） */
+  animation: card-rise 240ms var(--ease-ui) both;
+  animation-delay: calc(var(--stagger, 0) * 40ms);
+}
+
+/* B6 动效项⑦：骨架屏。扫光用伪元素的 transform 位移（不用 background-position，
+   后者会触发重绘）；`min-height` 让它在数据到达前就占住位置，避免布局跳动。 */
+.wb-skeleton {
+  position: relative;
+  overflow: hidden;
+  min-height: 96px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  background: var(--panel2);
+}
+
+.wb-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent, var(--gold-tint), transparent);
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+
+.wb-skeleton-grid {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .ov-kpi-label {
@@ -1436,9 +1496,14 @@
   border-radius: 10px;
   overflow: hidden;
   background: linear-gradient(140deg, var(--panel2), var(--canvas));
+  /* B6：hover 浮起 + 级联入场（与视频库卡片同一套动作，保持一致的手感） */
+  transition: transform 160ms var(--ease-ui), border-color 160ms var(--ease-ui);
+  animation: card-rise 260ms var(--ease-ui) both;
+  animation-delay: calc(var(--stagger, 0) * 40ms);
 }
 
 .ov-shot:hover {
+  transform: translateY(-2px);
   border-color: var(--line-gold);
 }
 
@@ -1605,9 +1670,15 @@
   border-radius: 12px;
   background: var(--panel);
   overflow: hidden;
+  /* B6 动效项⑥：hover 浮起 2px + 金描边（只动 transform 与 border-color） */
+  transition: transform 160ms var(--ease-ui), border-color 160ms var(--ease-ui);
+  /* B6 动效项③：级联入场（--stagger 由视图按索引注入，40ms 步进） */
+  animation: card-rise 260ms var(--ease-ui) both;
+  animation-delay: calc(var(--stagger, 0) * 40ms);
 }
 
 .lib-card:hover {
+  transform: translateY(-2px);
   border-color: var(--line-gold);
 }
 

@@ -10,6 +10,7 @@ import {
   type LibrarySort,
   type LibraryStatusFilter,
 } from '../lib/libraryFilter';
+import { staggerStyle } from '../lib/motion';
 import { navigate, useHashRoute } from '../lib/router';
 import { formatBytes, formatRelativeTime } from '../lib/overviewStats';
 
@@ -191,7 +192,10 @@ export function LibraryView() {
 
       <div className="lib-body" data-drawer={selected === null ? '0' : '1'}>
         <div className="lib-grid">
-          {items.length === 0 ? (
+          {history === null && loading ? (
+            // B6 动效项⑦：数据到达前先占住位置（骨架屏），避免"空 → 有"的布局跳动
+            Array.from({ length: 6 }, (_, index) => <div key={index} className="wb-skeleton" />)
+          ) : items.length === 0 ? (
             <p className="wb-note lib-empty">
               {filtered
                 ? '没有匹配的成片：换个关键词，或把筛选切回「全部」。'
@@ -199,7 +203,13 @@ export function LibraryView() {
             </p>
           ) : (
             items.map((task, index) => (
-              <article className="lib-card" key={task.taskId} data-task={task.taskId}>
+              <article
+                className="lib-card"
+                key={task.taskId}
+                data-task={task.taskId}
+                // B6：级联序号封顶在 12（延迟不随列表长度无限增长）
+                style={staggerStyle(Math.min(index, 11))}
+              >
                 <button
                   type="button"
                   className="lib-thumb"

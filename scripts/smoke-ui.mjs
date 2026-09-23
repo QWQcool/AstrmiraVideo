@@ -697,6 +697,79 @@ try {
   await page.screenshot({ path: path.join(SHOT_DIR, 'logs.png'), fullPage: false });
   note('日志截图留档：artifacts/ui-smoke/logs.png');
 
+  console.log('\n[7b] 动效体系（V9 · B6：reduced-motion 双 context 对照）');
+  // 先切到视频库：卡片级联的探针要挑一个真的有 `.lib-card` 的视图
+  await page.evaluate(() => { location.hash = '#/library'; });
+  await page.locator('.lib-card').first().waitFor({ timeout: 10_000 });
+
+  // 本页所在的 context 是 `reducedMotion: 'reduce'`，在这里断言"归零"是顺理成章的 ——
+  // 但**只有这一侧时断言可能是恒真的**（动画压根没挂上，computed 照样是 0.01ms）。
+  // 所以同时开一个 normal motion 的 context：同一份产物、同一个选择器，必须给出**真实时长**。
+  const pickDurations = () => {
+    const pick = (selector) => {
+      const el = document.querySelector(selector);
+      if (el === null) return null;
+      const raw = getComputedStyle(el).animationDuration;
+      // ⚠️ 不要拿字符串比对：Chromium 会把 tokens.css 里的 `0.01ms` 序列化成 `1e-05s`
+      // （科学计数法 + 换了单位）。统一解析成"秒"再比数量级，断言才不依赖浏览器的格式化。
+      const seconds = Number.parseFloat(raw);
+      return { raw, seconds: Number.isFinite(seconds) ? seconds : null };
+    };
+    return { view: pick('.wb-page'), card: pick('.lib-card') };
+  };
+
+  const reduceDurations = await page.evaluate(pickDurations);
+  assert(
+    reduceDurations.view.seconds !== null && reduceDurations.view.seconds <= 0.001,
+    `reduce 档：视图入场动画被压到接近 0（实际 ${reduceDurations.view.raw}）`,
+  );
+  assert(
+    reduceDurations.card.seconds !== null && reduceDurations.card.seconds <= 0.001,
+    `reduce 档：卡片级联被压到接近 0（实际 ${reduceDurations.card.raw}）`,
+  );
+
+  const motionContext = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 1,
+    colorScheme: 'dark',
+    // 刻意**不设** reducedMotion：对照组要看的就是"动效真实存在"
+  });
+  const motionPage = await motionContext.newPage();
+  await motionPage.goto(`${baseUrl}/#/library`, { waitUntil: 'load' });
+  await motionPage.waitForSelector('.lib-card', { timeout: 10_000 });
+  const normalDurations = await motionPage.evaluate(pickDurations);
+  assert(
+    normalDurations.view.seconds !== null && normalDurations.view.seconds > 0.05,
+    `normal 档：视图入场动画真实存在（${normalDurations.view.raw}）`,
+  );
+  assert(
+    normalDurations.card.seconds !== null && normalDurations.card.seconds > 0.05,
+    `normal 档：卡片级联真实存在（${normalDurations.card.raw}）`,
+  );
+
+  // 生成中微光晕（动效项④）：由 CenterPanel 的 data-status 驱动 —— 这里只验证选择器契约存在
+  // （真正的呼吸效果需要跑一条 running 任务才能看到，那在 [6] 段已有覆盖；此处不做假断言）
+  const glowRuleExists = await motionPage.evaluate(() => {
+    const sheets = Array.from(document.styleSheets);
+    for (const sheet of sheets) {
+      let rules;
+      try {
+        rules = Array.from(sheet.cssRules);
+      } catch {
+        continue; // 跨源样式表（本项目没有，留个兜底）
+      }
+      for (const rule of rules) {
+        // 不比对引号形式：CSSOM 会把 tokens/workbench 里的单引号属性选择器规范化成双引号
+        if (rule.cssText?.includes('data-status') && rule.cssText.includes('breathe-glow')) {
+          return true;
+        }
+      }
+    }
+    return false;
+  });
+  assert(glowRuleExists, '生成中微光晕的挂接规则存在（data-status=running → breathe-glow）');
+  await motionContext.close();
+
   console.log('\n[8] 控制台卫生');
   const realConsoleErrors = consoleErrors.filter(
     (text) => !IGNORED_CONSOLE.some((pattern) => pattern.test(text)),

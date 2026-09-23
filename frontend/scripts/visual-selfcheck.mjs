@@ -17,7 +17,13 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = path.join(ROOT, 'src');
 const TOKENS = path.join(SRC, 'styles', 'tokens.css');
 
-/** Astrmira 原生 8 个 keyframes（AC5 要求全部有实际使用位） */
+/**
+ * keyframes 登记表（AC5 要求全部有实际使用位）。
+ *
+ * V9 · B6 从 8 个扩到 11 个：新增的 3 个属于"界面级动效体系"（呼吸微光晕 / 卡片级联 / 骨架扫光），
+ * 全部只动 transform/opacity。**新增动效必须登记在这里** —— 下面的"计划外 keyframe"检查
+ * 就是防止有人随手往 tokens.css 里塞动画而没人知道它从哪来、为什么在。
+ */
 const REQUIRED_KEYFRAMES = [
   'star-gather',
   'mira-breathe',
@@ -25,6 +31,9 @@ const REQUIRED_KEYFRAMES = [
   'origin-orbit-sway',
   'flow',
   'motion-bootstrap',
+  'breathe-glow',
+  'card-rise',
+  'skeleton-sweep',
   'navigation-enter',
   'language-appear',
 ];
@@ -57,8 +66,20 @@ if (tokensText === undefined) {
   process.exit(1);
 }
 
-// ── ① 8 个 keyframes：定义集合必须恰好一致，且每一个都有功能位使用 ──
-const declared = [...tokensText.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]);
+/**
+ * 剥掉 **块注释**（斜杠星号到星号斜杠之间的部分）再判定，**保留换行数**（行号不能错位）。
+ *
+ * 为什么必须剥（两个方向都真实踩过，2026-09-23 B6 破坏性验证当场发现）：
+ * - **漏检**：把 `animation: breathe-glow …` 注释掉之后，正则仍在注释里匹配到它 →
+ *   "挂接被摘掉"检不出来（这是更危险的方向）；
+ * - **误报**：注释里写"别用 font-size: 0 那种写法"会被 ③ 当成真实硬编码。
+ */
+function stripComments(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '));
+}
+
+// ── ① keyframes：定义集合必须恰好一致，且每一个都有功能位使用 ──
+const declared = [...stripComments(tokensText).matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]);
 
 for (const name of REQUIRED_KEYFRAMES) {
   if (!declared.includes(name)) {
@@ -68,7 +89,7 @@ for (const name of REQUIRED_KEYFRAMES) {
 
   const used = [...contents.entries()].some(([file, text]) => {
     if (path.resolve(file) === TOKENS) return false; // 定义处不算使用
-    return new RegExp(`animation(?:-name)?\\s*:[^;]*\\b${name}\\b`).test(text);
+    return new RegExp(`animation(?:-name)?\\s*:[^;]*\\b${name}\\b`).test(stripComments(text));
   });
 
   if (!used) {
@@ -93,12 +114,14 @@ const HARDCODED_SIZE = /(?:fontSize|letterSpacing|font-size|letter-spacing)\s*:\
 for (const [file, text] of contents) {
   if (path.resolve(file) === TOKENS) continue;
 
-  text.split('\n').forEach((line, position) => {
-    if (!HARDCODED_SIZE.test(line)) return;
-    // 允许在注释里讨论（例如本文件顶部的纪律说明）
-    if (/^\s*(?:\*|\/\/|\/\*)/.test(line)) return;
-    failures.push(`${rel(file)}:${position + 1} 出现硬编码字号/字距（AC6）：${line.trim()}`);
-  });
+  stripComments(text)
+    .split('\n')
+    .forEach((line, position) => {
+      if (!HARDCODED_SIZE.test(line)) return;
+      // 行内注释的兜底豁免（剥块注释后仍可能剩下 `//` 说明）
+      if (/^\s*(?:\*|\/\/)/.test(line)) return;
+      failures.push(`${rel(file)}:${position + 1} 出现硬编码字号/字距（AC6）：${line.trim()}`);
+    });
 }
 
 // ── ④ 分区标题必须使用带索引号的 Eyebrow ──

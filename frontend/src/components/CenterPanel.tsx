@@ -48,7 +48,9 @@ export function CenterPanel({
   const videoUrl = task === null ? null : resolveMediaUrl(task.outputVideoUrl);
 
   return (
-    <section className="wb-panel wb-panel-center">
+    // data-status 是 V9 · B6 的动效挂接点：生成中/排队中时，CSS 会给视窗加一层呼吸微光晕
+    // （纯 CSS，不需要在组件里加/删节点）
+    <section className="wb-panel wb-panel-center" data-status={task?.status ?? 'idle'}>
       <div className="wb-field-head">
         <Eyebrow index={2} tone="gold" as="h2">
           实时视窗
@@ -119,8 +121,11 @@ export function CenterPanel({
       return (
         <>
           <video className="wb-video" src={videoUrl} controls loop playsInline />
-          <span className="wb-done-mark" title="生成完成">
-            ✦
+          {/* V9 · B6：star-gather 提级到播放器中央。`key` 用 taskId 保证"换任务/重新出片即重播" */}
+          <span className="wb-done-wrap" key={task.taskId}>
+            <span className="wb-done-mark" title="生成完成" aria-hidden="true">
+              ✦
+            </span>
           </span>
         </>
       );

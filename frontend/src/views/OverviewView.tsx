@@ -3,6 +3,7 @@ import { logActionLabel } from '@astrmira/shared';
 import type { EventLogEntry, HistoryResponse, StorageUsage } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
 import { ApiError, fetchHistory, fetchLogs } from '../lib/api';
+import { staggerStyle } from '../lib/motion';
 import {
   buildActivityFeed,
   computeOverviewStats,
@@ -92,48 +93,55 @@ export function OverviewView() {
         </div>
       )}
 
+      {/* B6：数据未到位时先显示骨架，**不显示 0 / — 这类看起来像真实数据的占位值** */}
       <div className="ov-kpis">
-        <article className="ov-kpi">
-          <span className="ov-kpi-label">今日生成</span>
-          <span className="ov-kpi-value">
-            {stats.todayCount}
-            <small>条</small>
-          </span>
-          <span className="ov-kpi-foot">今日 0:00 起（本地时区）</span>
-        </article>
+        {history === null && loading ? (
+          Array.from({ length: 4 }, (_, index) => <div key={index} className="wb-skeleton" />)
+        ) : (
+          <>
+            <article className="ov-kpi" style={staggerStyle(0)}>
+              <span className="ov-kpi-label">今日生成</span>
+              <span className="ov-kpi-value">
+                {stats.todayCount}
+                <small>条</small>
+              </span>
+              <span className="ov-kpi-foot">今日 0:00 起（本地时区）</span>
+            </article>
 
-        <article className="ov-kpi">
-          <span className="ov-kpi-label">成功率</span>
-          <span className="ov-kpi-value">
-            {stats.successRate === null ? '—' : Math.round(stats.successRate * 100)}
-            {stats.successRate === null ? null : <small>%</small>}
-          </span>
-          <span className="ov-kpi-foot">
-            {stats.settledCount === 0
-              ? '还没有终态任务'
-              : `最近 50 条里的 ${stats.settledCount} 条终态任务`}
-          </span>
-        </article>
+            <article className="ov-kpi" style={staggerStyle(1)}>
+              <span className="ov-kpi-label">成功率</span>
+              <span className="ov-kpi-value">
+                {stats.successRate === null ? '—' : Math.round(stats.successRate * 100)}
+                {stats.successRate === null ? null : <small>%</small>}
+              </span>
+              <span className="ov-kpi-foot">
+                {stats.settledCount === 0
+                  ? '还没有终态任务'
+                  : `最近 50 条里的 ${stats.settledCount} 条终态任务`}
+              </span>
+            </article>
 
-        <article className="ov-kpi">
-          <span className="ov-kpi-label">队列中</span>
-          <span className="ov-kpi-value">
-            {stats.inFlight}
-            <small>条</small>
-          </span>
-          <span className="ov-kpi-foot">等待或生成中</span>
-        </article>
+            <article className="ov-kpi" style={staggerStyle(2)}>
+              <span className="ov-kpi-label">队列中</span>
+              <span className="ov-kpi-value">
+                {stats.inFlight}
+                <small>条</small>
+              </span>
+              <span className="ov-kpi-foot">等待或生成中</span>
+            </article>
 
-        <article className="ov-kpi">
-          <span className="ov-kpi-label">存储占用</span>
-          <span className="ov-kpi-value">{formatBytes(stats.storage.totalBytes)}</span>
-          <span className="ov-kpi-foot">
-            成片 {stats.storage.videoCount} 支 · 素材 {stats.storage.assetCount} 张
-            <a className="ov-kpi-link" href="#/library?sort=size">
-              去清理 →
-            </a>
-          </span>
-        </article>
+            <article className="ov-kpi" style={staggerStyle(3)}>
+              <span className="ov-kpi-label">存储占用</span>
+              <span className="ov-kpi-value">{formatBytes(stats.storage.totalBytes)}</span>
+              <span className="ov-kpi-foot">
+                成片 {stats.storage.videoCount} 支 · 素材 {stats.storage.assetCount} 张
+                <a className="ov-kpi-link" href="#/library?sort=size">
+                  去清理 →
+                </a>
+              </span>
+            </article>
+          </>
+        )}
       </div>
 
       <div className="ov-body">
@@ -144,18 +152,25 @@ export function OverviewView() {
               查看全部 →
             </a>
           </div>
-          {shots.length === 0 ? (
+          {history === null && loading ? (
+            <div className="ov-shots">
+              {Array.from({ length: 6 }, (_, index) => (
+                <div key={index} className="wb-skeleton" style={{ aspectRatio: '16 / 9' }} />
+              ))}
+            </div>
+          ) : shots.length === 0 ? (
             <p className="wb-note">
               还没有成片。到 <a href="#/workbench">生成工作台</a> 提交第一条任务吧。
             </p>
           ) : (
             <div className="ov-shots">
-              {shots.map((shot) => (
+              {shots.map((shot, index) => (
                 <a
                   key={shot.taskId}
                   className="ov-shot"
                   href={`#/library?task=${encodeURIComponent(shot.taskId)}`}
                   title={shot.taskId}
+                  style={staggerStyle(index)}
                 >
                   {shot.thumbnailUrl === undefined ? (
                     <span className="ov-shot-empty">无封面</span>

@@ -78,7 +78,8 @@
 - **AC**：过滤/分页/导出/删除在视图形态下全部可用；日志页自己的轮询**不产生日志**（噪声纪律，CONTRACT §10）。
 - **提交**：`feat(logs): promote the operation log from overlay to a first-class view`。
 
-### B6 · 界面级动效体系（PLAN §6-D35）
+### B6 · 界面级动效体系（PLAN §6-D35）【已完成 2026-09-23】
+> 7 项全部落功能位；新增 3 个 keyframes 显式登记（8 → 11）。冒烟新增 [7b] **reduced-motion 双 context 对照**（reduce `1e-05s` / normal `0.26s`）。破坏性验证命中（摘挂接 → 自检报孤置），并因此揪出并修掉自检的**注释漏检**缺陷（纯文本匹配会把注释里的 `animation:` 当挂接）。门禁 lint 0 / type 0 / 前端 96 / 后端 307 / 视觉自检 / UI 冒烟。
 - **改动**：`styles/workbench.css` + 各视图；7 项全部落功能位：侧栏收展过渡 / 视图切换 fade+slide / 卡片 40ms 级联入场 / 生成中呼吸+播放器微光晕 / `star-gather` 提级到播放器中央可重播 / 卡片 hover 2px 浮起+金描边 / 加载 shimmer 骨架。
 - **纪律**：只用 transform/opacity；`prefers-reduced-motion: reduce` 下**全部归零**；keyframes 零孤置。
 - **AC**：Step 6-AC3；UI 冒烟新增 reduced-motion 断言。
