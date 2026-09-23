@@ -1,6 +1,17 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.0 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.1 · 已冻结（变更需先改本文，再改代码）**
+> **V2.1 修订（2026-09-23）**：线上故障修复（模型被服务端 env 静默覆盖 → 上游 404）+ 操作日志上线。
+>   ① **§1**：`options` 的语义**收紧为白名单**并明确优先级——视频轨承认 `model` / `baseUrl` /
+>      `seedanceResolution` / `seedanceWatermark`；**请求里的 `model` / `baseUrl` 优先于服务端 env**。
+>      这是本次故障的根因修复：此前注册点只读 env，界面上"切模型"根本没有效果。
+>   ② **§5**：新增 `POST /api/providers/keys/verify`（原【规划·B2】，现实现，见 §9）；
+>      新增 `GET /api/logs` / `DELETE /api/logs/:id` / `DELETE /api/logs`（见 §10）。
+>   ③ **新增 §9**（凭据与模型校验）、**§10**（操作日志）。
+>   ④ 错误码字典不变（12 个码，无新增）：模型不存在仍归 `UPSTREAM_ERROR` + `terminal`，
+>      只是**消息里现在会带上"实际用了哪个模型、来源在哪"**。
+>   ⑤ 转发与日志的凭据纪律不变：`packages/shared/src/verify.ts` 的校验接口也**只从请求头取 Key**，
+>      响应与日志中的一切上游文本先过 `security/redact.ts`。
 > **V2.0 修订（2026-09-22）**：**§3 提示词扩写由【规划】转为已实现**（PLAN §6-D24 / 台账 B3，落地见 §5 的 V8.3 批次 4），并据此新增 **§2 的 `llm` 能力位**。
 >   ① **§2**：`ProviderStatus` 新增 `llm` 段（`available` / `acceptsClientKey` / `reason`）。
 >      口径与 `cloud` 一致：`available` 只说**服务端视角**（env 兜底 Key 是否存在），
@@ -85,6 +96,14 @@ export interface VideoGenerateRequest {
   // provider 私有参数。仅对声明支持该字段的 provider 生效，
   // 未识别的键必须被忽略而非报错（默认引擎不得因该字段而改变行为）。
   // 用途：承接可选实现项 OI-1（素材）/ OI-2（CI 夹具）的参数，避免污染公共字段。
+  //
+  // V2.1：**云端的模型与地址也走这里**（BYOK 的一部分），且**优先级高于服务端 env**：
+  //   model      —— 上游模型 / 接入点 id（优先级：请求 > VOLCANO_MODEL_NAME > 协议层默认）
+  //   baseUrl    —— 上游基址（优先级：请求 > VOLCANO_BASE_URL > 协议层默认）
+  //   seedanceResolution / seedanceWatermark —— 云端轨的高级参数
+  //   fixtureClip —— OI-2 夹具选片（开发期）
+  // 背景：2026-09-23 线上故障正是"请求里的 model 无人消费、被 env 覆盖"导致的 404，
+  // 因此"请求优先"这条是**契约级**要求，不是实现细节。
   options?: Record<string, unknown>;
 }
 ```
@@ -241,6 +260,10 @@ export interface VideoProvider {
 | `POST` | `/api/upload` | 上传参考图/视频（multipart，≤20MB × ≤4，**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目） |
 | `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[] }`**（最近 50 条） |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
+| `POST` | `/api/providers/keys/verify` | **V2.1 新增（原【规划·B2】）**：凭据与模型校验，**零费用**。请求头按轨取（视频 `X-Provider-Key` / 文本 `X-LLM-Key`）；**200 → `KeyVerifyResponse`（§9）**；未带 Key → **501 `KEY_MISSING`**；凭据被上游拒绝 → **401 `KEY_INVALID`**；上游不可达 → **502 `UPSTREAM_ERROR`** |
+| `GET` | `/api/logs` | **V2.1 新增**：操作日志查询（筛选 + 分页，见 §10）。**200 → `{ items, total }`** |
+| `DELETE` | `/api/logs/:id` | **V2.1 新增**：删单条日志。**200 → `{ ok, deleted }`**（删除不存在的条目**不是错误**：DELETE 幂等，`deleted: 0`） |
+| `DELETE` | `/api/logs` | **V2.1 新增**：按当前筛选清空日志（不带筛选即全清）。**200 → `{ ok, deleted }`** |
 
 **幂等键与「即将提交」标记（V1.3 新增）**：
 - `POST /api/generate` 必须接受幂等键（请求头 `Idempotency-Key`；缺省时服务端按 `provider + 请求指纹` 生成）。同一幂等键重复提交返回**同一 `taskId`**，不得产生第二次上游调用。
@@ -251,7 +274,7 @@ export interface VideoProvider {
 - **唯一载体是请求头**：视频轨 `X-Provider-Key`、文本轨 `X-LLM-Key`（**V2.0 起已启用**，两条轨的 Key **相互独立**，前端可一键复用但服务端始终分别读取）。**禁止**出现在 query、URL path、body 或 cookie 中。
 - **服务端零留存**：只用不存——不落 SQLite、不写日志（pino `redact` 必须覆盖相应请求头）、不回显明文；错误响应也必须保证不含 Key 片段。日志或响应中出现 Key 明文 = **发布级缺陷**。
 - **状态端点不表达客户端凭据**：`GET /api/providers/status` 无凭据上下文，其 `cloud.available` 只表示 env 兜底 Key 是否存在；"前端是否持有 Key"由前端自行合成（§2 的 `acceptsClientKey` + 本地存储）。
-- **写入 / 清除无服务端路由**：Key 存于浏览器，清除即清本地存储。凭据校验路由（`keys/verify`）与本地引擎运行时自检（`local/verify`）**均未实现**，属 PLAN §9 台账 **B2 / B4**；实现时必须先在本节登记。
+- **写入 / 清除无服务端路由**：Key 存于浏览器，清除即清本地存储。凭据校验路由（`keys/verify`）已于 **V2.1 实现**（见 §9）；本地引擎运行时自检（`local/verify`）**仍未实现**，属 PLAN §9 台账 **B4**；实现时必须先在本节登记。
 - `Idempotency-Key` 与上述两个凭据头一样，必须在 CORS `allowedHeaders` 中显式放行，否则浏览器预检直接失败（本地 curl 通、浏览器必失败）。
 - **访问鉴权（V1.8 补充口径，细则见 PLAN §7-4）**：公网部署时，除「**回环来源**（127.0.0.1 / ::1）的全部请求」与「**任何来源**的 `/api/health`」两层免鉴权外，**其余全部路径**（含 `/api/*`、`/media/*` 与前端产物 `/`）一律要求 `Authorization: Bearer <PUBLIC_API_TOKEN>`——钩子是全局 `onRequest`，线上由 Caddy 把站点登录凭据换成 Bearer。鉴权未通过返回 **401**。
 
@@ -324,3 +347,86 @@ export interface HealthResponse {
 ```
 
 > 该类型同样以 `packages/shared` 的 zod schema 为唯一事实源（`HealthResponseSchema`），本节代码块为文档投影。
+
+---
+
+## 9. 凭据与模型校验 `POST /api/providers/keys/verify`（V2.1 新增）
+
+**它解决什么**：2026-09-23 的线上故障里，用户是**花了一次真实提交**才拿到"模型不存在"（上游 404）。
+"Key 行不行 / 模型在不在 / 有没有开通"这三件事本可以在提交之前零成本回答。
+
+```ts
+export type KeyVerifyTrack = 'video' | 'text';
+
+export interface KeyVerifyRequest {
+  track: KeyVerifyTrack;
+  model?: string;    // 待校验的模型 / 接入点 id（缺省时只校验凭据本身）
+  baseUrl?: string;  // 覆盖端点（自建代理 / 兼容端点）
+  preset?: string;   // 文本轨预设 id（与 LLM_PRESETS 同一套）
+}
+
+export interface KeyVerifyResponse {
+  keyValid: boolean;
+  totalModels: number | null;    // 上游 /models 返回的模型总数；端点不提供时为 null
+  modelListed: boolean | null;   // 是否出现在该清单里（存在 ≠ 已开通）
+  modelAvailable: boolean | null; // **能不能用**：true 可用 / false 不存在或未开通 / null 未探测
+  message: string;               // 一句话结论（成功与失败都必须能直接照做）
+}
+```
+
+**两条探测路径（都要求"零费用"，这是硬约束）**：
+
+| 轨 | 探测 | 判据 |
+| :--- | :--- | :--- |
+| 视频 | ① `GET {baseUrl}/models`；② `POST {baseUrl}/contents/generations/tasks` 带**空 `content`** | ② 返回 **400**（参数校验先失败）= 模型存在且已开通；**404** = 不存在/未开通。**不会创建任务** |
+| 文本 | `POST {baseUrl}/chat/completions` 带 `max_tokens: 1` | **200** = 可用（费用近乎 0）；**404** = 模型未开通 |
+
+> **安全网（必须保留）**：视频轨的探测请求在协议未来变化时**有可能真的创建任务**。
+> 实现里对此的处理是：一旦响应里出现任务 id，**立刻 `DELETE` 取消**，并把
+> 「意外创建了任务 X，已立刻取消；请到控制台确认无残留计费」写进 `message` —— 不许静默留下一个计费任务。
+
+**凭据与红线**：与两条轨的实际调用完全一致 —— 只从请求头取（`X-Provider-Key` / `X-LLM-Key`），
+不回落 query / body；响应中的一切上游文本先过 `security/redact.ts`。
+
+---
+
+## 10. 操作日志（V2.1 新增）
+
+**定位**：开发者排错用的"**谁、何时、对什么、做了什么、结果如何**"。
+与另外两处严格分工 —— pino/stdout 给运维看技术细节，`tasks` 表给用户看单任务结果，本表给开发者看操作序列。
+
+**权限（用户 2026-09-23 拍板）**：**全员可见，不加额外权限**；公网仍由 Caddy 登录 + `PUBLIC_API_TOKEN` 两层保护（PLAN §7-4）。
+
+**写入规则（噪声纪律，见 `backend/src/server/requestLog.ts`）**：
+
+- **记**：所有 `/api/*` 的**写**请求（POST / PUT / PATCH / DELETE）与**任何失败**的请求（`status >= 400`，含读操作失败）；
+- **不记**：`/media/*`（一次播放几十条 Range）、`/api/health`（探活）、`/api/logs*`（日志页自身轮询，否则自我增殖）、`OPTIONS` 预检、以及**成功**的读请求（任务进度每 2s 轮询一次，记下来会把日志淹掉）。
+
+**字段**：
+
+```ts
+export interface EventLogEntry {
+  id: number;
+  ts: number;                 // 毫秒时间戳（前端按本机时区渲染）
+  requestId?: string;         // 服务端请求 id；同时回写在响应头 x-request-id，报错截图可直接搜
+  ip?: string;                // **明文**（用户拍板；仅存服务端 SQLite，随服务端备份一起走）
+  method: string;
+  path: string;
+  action?: string;            // 语义动作 id（清单见 packages/shared/src/logs.ts 的 LOG_ACTIONS）
+  statusCode?: number;
+  durationMs?: number;
+  taskId?: string;
+  provider?: string;
+  errorCode?: string;
+  disposition?: string;
+  userAgent?: string;
+  body?: string;              // 截断后的请求体（JSON 原文；multipart 只记大小与类型摘要）
+  detail?: Record<string, unknown>; // 白名单诊断字段：本次模型、上游 request id、上游报文截断
+}
+```
+
+**存储与生命周期**：落 `data/app.db` 的 `event_log` 表（`ts` 倒序索引）。
+
+- **全量保留，由用户手动删除**（用户拍板）；接口提供单条删除与按筛选清空；
+- **代价如实登记**：长期使用会持续增长（无自动淘汰），见 PLAN §9 台账 **B23**；
+- **凭据永不入库**：请求体与上游文本写入前一律过 `security/redact.ts`。

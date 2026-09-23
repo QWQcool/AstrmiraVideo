@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, enhancePrompt, fetchTask, resolveMediaUrl, submitGenerate } from './api';
+import {
+  ApiError,
+  clearLogs,
+  deleteLog,
+  enhancePrompt,
+  fetchLogs,
+  fetchTask,
+  resolveMediaUrl,
+  submitGenerate,
+  verifyTrackKey,
+} from './api';
 
 /**
  * F1：API 层的两条底线——
@@ -246,5 +256,84 @@ describe('taskId 参与 URL 时必须编码', () => {
 
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).toBe('/api/tasks/a%2Fb%20c');
+  });
+});
+
+/**
+ * 「测试连接」（CONTRACT §9，V2.1）与操作日志（§10）的客户端半边。
+ * 这里只钉"发了什么请求"—— 判定逻辑在服务端，前端不该复制一份。
+ */
+describe('凭据与模型校验 / 操作日志', () => {
+  it('测试连接：视频轨用 X-Provider-Key', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, { keyValid: true, totalModels: 135, modelListed: true, modelAvailable: true, message: 'ok' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await verifyTrackKey(
+      { track: 'video', model: 'doubao-seedance-2-0-mini-260615' },
+      { providerKey: 'sk-video-1' },
+    );
+
+    expect(result.modelAvailable).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/providers/keys/verify');
+    const headers = init.headers as Record<string, string>;
+    expect(headers['x-provider-key']).toBe('sk-video-1');
+    expect(headers['x-llm-key']).toBeUndefined();
+  });
+
+  it('测试连接：文本轨用 X-LLM-Key（两把 Key 不串台）', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, { keyValid: true, totalModels: null, modelListed: null, modelAvailable: true, message: 'ok' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await verifyTrackKey({ track: 'text', preset: 'volcano-ark' }, { llmKey: 'sk-llm-1' });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers['x-llm-key']).toBe('sk-llm-1');
+    expect(headers['x-provider-key']).toBeUndefined();
+  });
+
+  it('日志查询：空值与 undefined 不进 query（否则筛选会被空串污染）', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { items: [], total: 0 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchLogs({ limit: 50, offset: 0, ip: '', q: undefined });
+
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toBe('/api/logs?limit=50&offset=0');
+  });
+
+  it('日志查询：筛选值被编码（IP 里的特殊字符不会破坏 URL）', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { items: [], total: 0 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchLogs({ ip: '2001:db8::1', q: '雨夜 & 街头' });
+
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toContain('ip=2001%3Adb8%3A%3A1');
+    expect(url).toContain('q=%E9%9B%A8%E5%A4%9C+%26+%E8%A1%97%E5%A4%B4');
+  });
+
+  it('删单条与清空都走 DELETE，且清空会带上当前筛选', async () => {
+    // ⚠️ 必须每次返回**新的** Response：同一个 Response 的 body 只能读一次，
+    // 复用会让第二次调用抛 "Body is unusable"（这个坑刚踩过）
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(jsonResponse(200, { ok: true, deleted: 1 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await deleteLog(7);
+    await clearLogs({ ip: '203.0.113.7' });
+
+    const [firstUrl, firstInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [secondUrl, secondInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(firstUrl).toBe('/api/logs/7');
+    expect(firstInit.method).toBe('DELETE');
+    expect(secondUrl).toBe('/api/logs?ip=203.0.113.7');
+    expect(secondInit.method).toBe('DELETE');
   });
 });

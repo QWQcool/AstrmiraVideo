@@ -16,7 +16,10 @@
  * 4. **参考素材三槽与画廊封面**（V8.3 批次 3-④/⑤）：四种模式入口、按模式出现的槽、
  *    以及"造一条真实任务后封面由 `<img>` 渲染且被浏览器解码成功"
  *    —— 这条是本脚本里唯一需要真数据的一段（夹具 provider，零外网零配额）；
- * 5. **控制台零 error / 零未捕获异常**（这条曾经抓到生产 CSP 与外部字体的冲突）。
+ * 5. **操作日志留痕**（V2.1，CONTRACT §10）：界面上真的提交一条任务后，
+ *    日志页里必须能看到它（把"界面动作 → 服务端留痕"整条链钉住），
+ *    且日志页自身的轮询**不得**被记进日志（否则功能自我增殖）；
+ * 6. **控制台零 error / 零未捕获异常**（这条曾经抓到生产 CSP 与外部字体的冲突）。
  * 截图只作为 artifact 留档供人看，不参与判定。
  *
  * ## 为什么以 `NODE_ENV=production` 起后端
@@ -249,9 +252,10 @@ try {
     (await page.locator('.wb-drawer input[type="password"]').count()) === 2,
     '抽屉里有**两段**凭据输入（视频轨 + 文本轨，两把 Key 相互独立）',
   );
+  // V2.1 起抽屉里有**两个**下拉：视频轨模型档位（VIDEO_MODEL_PRESETS）+ 文本轨预设（LLM_PRESETS）
   assert(
-    (await page.locator('.wb-drawer select.wb-input').count()) === 1,
-    '文本轨提供预设下拉（清单来自 packages/shared 的 LLM_PRESETS，前端不写第二份）',
+    (await page.locator('.wb-drawer select.wb-input').count()) === 2,
+    '抽屉里有两个下拉：视频模型档位 + 文本轨预设（清单都来自 packages/shared，前端不写第二份）',
   );
 
   mkdirSync(SHOT_DIR, { recursive: true });
@@ -379,7 +383,44 @@ try {
   await page.screenshot({ path: path.join(SHOT_DIR, 'gallery.png'), fullPage: false });
   note('画廊截图留档：artifacts/ui-smoke/gallery.png');
 
-  console.log('\n[7] 控制台卫生');
+  console.log('\n[7] 操作日志（V2.1，CONTRACT §10）');
+  // 上面 [6] 段用界面真的提交过一条任务 → 它必须已经躺在操作日志里。
+  // 这条断言把"界面动作 → 服务端留痕"整条链钉住（也是这次故障排错最需要的能力）。
+  const submitRows = await page.evaluate(async () => {
+    const response = await fetch('/api/logs?action=generate.submit&limit=5');
+    const payload = await response.json();
+    return { total: payload.total, paths: (payload.items ?? []).map((item) => item.path) };
+  });
+  assert(submitRows.total > 0, `界面提交的生成任务已记入操作日志（action=generate.submit，${submitRows.total} 条）`);
+  assert(submitRows.paths.includes('/api/generate'), '日志里能看到 /api/generate 这条记录');
+
+  await page.getByRole('button', { name: '日志', exact: true }).click();
+  await page.locator('.wb-log-panel').waitFor({ timeout: 5_000 });
+  assert(true, '顶栏「日志」打开全屏日志页');
+  assert(
+    (await page.locator('.wb-log-filters select').count()) >= 2,
+    '筛选器含时间范围与动作下拉（按 IP / 错误码 / 关键词也能筛）',
+  );
+  // 列表是异步拉的：先等第一行出现，再断言（否则测的是"请求发出前"的 DOM）
+  await page.locator('.wb-log-row').first().waitFor({ timeout: 10_000 });
+  assert((await page.locator('.wb-log-row').count()) > 0, '日志列表渲染出了记录行');
+
+  // 展开一条看详情：requestId / 请求体 / 诊断字段是排错时唯一能靠的东西
+  await page.locator('.wb-log-row-main').first().click();
+  assert((await page.locator('.wb-log-detail').count()) === 1, '点击记录可展开详情（requestId 与请求体）');
+
+  // 噪声纪律：日志页自己每 3s 轮询一次 —— 如果把自己也记下来，这个功能等于白做
+  const selfRows = await page.evaluate(async () => {
+    const response = await fetch('/api/logs?limit=200');
+    const payload = await response.json();
+    return (payload.items ?? []).filter((item) => String(item.path).startsWith('/api/logs')).length;
+  });
+  assert(selfRows === 0, '日志页自身的轮询没有被记进日志（噪声纪律）');
+
+  await page.screenshot({ path: path.join(SHOT_DIR, 'logs.png'), fullPage: false });
+  note('日志截图留档：artifacts/ui-smoke/logs.png');
+
+  console.log('\n[8] 控制台卫生');
   const realConsoleErrors = consoleErrors.filter(
     (text) => !IGNORED_CONSOLE.some((pattern) => pattern.test(text)),
   );
@@ -430,5 +471,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-  '\n✓ UI 冒烟通过：三栏渲染 + 首屏连通 + 抽屉可交互 + 参数/主题联动 + 素材槽与画廊封面 + 控制台零 error\n',
+  '\n✓ UI 冒烟通过：三栏渲染 + 首屏连通 + 抽屉可交互 + 参数/主题联动 + 素材槽与画廊封面 + 操作日志留痕 + 控制台零 error\n',
 );

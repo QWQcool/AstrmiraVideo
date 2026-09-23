@@ -44,6 +44,31 @@ CREATE TABLE IF NOT EXISTS cooldowns (
   last_submit_at INTEGER NOT NULL,
   PRIMARY KEY (bucket, key)
 );
+
+-- 操作日志（V2.1，CONTRACT §10）：开发者排错用的"谁在什么时候做了什么、结果如何"。
+-- 与 pino（stdout，给运维）和 tasks（单任务诊断）职责分离，见 routes/logs.ts 的注释。
+-- 只增不删（用户可手动删），因此 ts 索引必须存在。
+CREATE TABLE IF NOT EXISTS event_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts          INTEGER NOT NULL,
+  request_id  TEXT,
+  ip          TEXT,
+  method      TEXT NOT NULL,
+  path        TEXT NOT NULL,
+  action      TEXT,
+  status_code INTEGER,
+  duration_ms INTEGER,
+  task_id     TEXT,
+  provider    TEXT,
+  error_code  TEXT,
+  disposition TEXT,
+  user_agent  TEXT,
+  body        TEXT,
+  detail      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_event_log_ts     ON event_log(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_event_log_ip     ON event_log(ip);
+CREATE INDEX IF NOT EXISTS idx_event_log_action ON event_log(action);
 `;
 
 /** 默认库路径：`<repo>/data/app.db`（可用 `DATA_DIR` 覆盖；`DATA_DIR=:memory:` 走内存库，测试用） */

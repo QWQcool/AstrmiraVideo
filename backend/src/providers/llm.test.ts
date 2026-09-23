@@ -1,12 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { LLM_PRESETS } from '@astrmira/shared';
 import { ProviderFailureError } from '../errors.js';
-import {
-  enhancePromptWithLlm,
-  extractJsonObject,
-  redactSecrets,
-  resolveLlmEndpoint,
-} from './llm.js';
+import { redactSecrets } from '../security/redact.js';
+import { enhancePromptWithLlm, extractJsonObject, resolveLlmEndpoint } from './llm.js';
 
 /**
  * 文本轨（V2.0，PLAN §6-D24 落地台账 B3）。

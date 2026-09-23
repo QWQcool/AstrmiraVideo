@@ -1,4 +1,10 @@
-import { LLM_PRESETS } from '@astrmira/shared';
+import {
+  LLM_PRESETS,
+  VIDEO_CUSTOM_MODEL_ID,
+  VIDEO_DEFAULT_MODEL,
+  VIDEO_MODEL_PRESETS,
+  videoModelSelection,
+} from '@astrmira/shared';
 import type { StorageAccess } from './storage';
 import {
   STORAGE_KEYS,
@@ -43,11 +49,14 @@ export interface ByokConfig {
   llmKey: string;
 }
 
-/** 火山方舟（方舟 v3）：默认值仅作**占位**，用户可改 */
+/**
+ * 火山方舟（方舟 v3）：地址默认已填，**模型默认取"已实测可用且最省钱的档"**
+ * （`VIDEO_DEFAULT_MODEL`，V2.1；此前是一个手打值，用户填错就是一次白花钱的提交）。
+ */
 export const DEFAULT_BYOK: ByokConfig = {
   baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
   key: '',
-  model: 'doubao-seedance-1-0-pro-250528',
+  model: VIDEO_DEFAULT_MODEL,
   llmPreset: LLM_PRESETS[0]?.id ?? 'openai',
   llmBaseUrl: LLM_PRESETS[0]?.baseUrl ?? '',
   llmModel: LLM_PRESETS[0]?.model ?? '',
@@ -171,6 +180,26 @@ export function resolveLlmConfig(config: ByokConfig): { preset: string; baseUrl?
     ...(baseUrl === '' ? {} : { baseUrl }),
     ...(model === '' ? {} : { model }),
   };
+}
+
+/**
+ * 当前 model 对应下拉里的哪一项（不在预设表里 → 自定义）。
+ * 直接复用 shared 的判定，避免"前端认一个名字、后端认另一个名字"。
+ */
+export function videoPresetSelection(config: ByokConfig): string {
+  return videoModelSelection(config.model);
+}
+
+/**
+ * 选视频档位：把该档的模型 id 写进 `model`。
+ *
+ * `custom` 刻意**不动** `model` —— 那一刻的值就是用户自己要填的控制台接入点
+ * （`ep-…`），抹掉等于让他重填（与文本轨 `applyLlmPreset` 同一口径）。
+ */
+export function applyVideoPreset(config: ByokConfig, presetId: string): ByokConfig {
+  if (presetId === VIDEO_CUSTOM_MODEL_ID) return { ...config, model: '' };
+  const preset = VIDEO_MODEL_PRESETS.find((item) => item.id === presetId);
+  return preset === undefined ? config : { ...config, model: preset.id };
 }
 
 /**

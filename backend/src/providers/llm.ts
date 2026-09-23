@@ -1,6 +1,7 @@
 import { LLM_CUSTOM_PRESET_ID, LLM_PRESETS, findLlmPreset } from '@astrmira/shared';
 import type { GenerationMode, LlmConfig, PromptEnhanceStyle } from '@astrmira/shared';
 import { ProviderFailureError } from '../errors.js';
+import { redactSecrets } from '../security/redact.js';
 
 /**
  * 文本轨：**单一 OpenAI 兼容实现**（PLAN §6-D24）。
@@ -99,20 +100,10 @@ export function resolveLlmEndpoint(llm?: LlmConfig): { baseUrl: string; model: s
 }
 
 /**
- * 把可能与凭据有关的片段抹掉。
- *
- * 上游的错误体经常回显 Key（`Invalid API key provided: sk-abc…`），
- * 而这条消息会被我们**原样回给前端** —— 不擦就等于把 Key 写进了响应与日志（发布级缺陷）。
+ * 凭据擦除已抽到 `security/redact.ts`（视频轨、"测试连接"也都要用同一份实现——
+ * 三处各写一份，迟早有一处漏擦）。
  */
-export function redactSecrets(text: string, apiKey?: string): string {
-  let output = text;
-  if (apiKey !== undefined && apiKey.trim() !== '') {
-    output = output.split(apiKey.trim()).join('<redacted>');
-  }
-  return output
-    .replace(/Bearer\s+[\w.-]{8,}/gi, 'Bearer <redacted>')
-    .replace(/\b(sk|api|key)[-_][\w.-]{8,}/gi, '<redacted>');
-}
+export { redactSecrets } from '../security/redact.js';
 
 /** 从模型回答里取出 JSON 对象；取不到返回 `null`（调用方按纯文本处理，并如实告知） */
 export function extractJsonObject(text: string): Record<string, unknown> | null {

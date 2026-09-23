@@ -41,6 +41,14 @@ export interface VolcanoSeedanceOptions {
   /** B 方案注入的凭据；`null` = 本次调用没有凭据 */
   providerKey: string | null;
   model?: string;
+  /**
+   * `model` 的来源（诊断用，由 registry 判定）：请求体 / 服务端 env / 内置默认。
+   * 2026-09-23 的线上故障就是"请求里填了 A、实际发出去的是 env 里的 B"，而原报文只报 B
+   * —— 出错时把来源一并说出来，才能让人一眼看出"我的配置被覆盖了"。
+   */
+  modelSource?: 'request' | 'env' | 'default';
+  /** 请求里**想用**的模型（与 `model` 不同即代表被覆盖） */
+  requestedModel?: string;
   baseUrl?: string;
   /** 资产 id → 上游可访问地址（公网 URL 或 data URL） */
   resolveAssetUrl?: (assetId: string) => Promise<string | null>;
@@ -50,7 +58,12 @@ export interface VolcanoSeedanceOptions {
   requestTimeoutMs?: number;
 }
 
-/** 上游模型名的兜底：env（部署者配置）→ 协议层常量。测试可显式传 `model` 覆盖。 */
+/**
+ * 上游模型名的兜底：env（部署者配置）→ 协议层常量。
+ *
+ * ⚠️ 这只是"用户没指定"时的兜底；**请求体里的模型优先级更高**（V2.1 起，
+ * 判定在 `providers/registry.ts`，那里才能同时看到请求与 env）。
+ */
 function resolveDefaultModel(): string {
   const fromEnv = process.env.VOLCANO_MODEL_NAME?.trim();
   return fromEnv === undefined || fromEnv === '' ? SEEDANCE_DEFAULT_MODEL : fromEnv;
@@ -63,6 +76,8 @@ export class VolcanoSeedanceProvider implements VideoProvider {
   private readonly taskId: string;
   private readonly providerKey: string | null;
   private readonly model: string;
+  private readonly modelSource: 'request' | 'env' | 'default' | undefined;
+  private readonly requestedModel: string | undefined;
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly outputDir: string;
@@ -76,6 +91,8 @@ export class VolcanoSeedanceProvider implements VideoProvider {
     this.taskId = options.taskId;
     this.providerKey = options.providerKey;
     this.model = (options.model ?? resolveDefaultModel()).trim();
+    this.modelSource = options.modelSource;
+    this.requestedModel = options.requestedModel;
     this.baseUrl = (options.baseUrl ?? SEEDANCE_DEFAULT_BASE_URL).replace(/\/+$/, '');
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.outputDir = options.outputDir ?? path.resolve(process.cwd(), 'outputs');
@@ -91,7 +108,12 @@ export class VolcanoSeedanceProvider implements VideoProvider {
    */
   async checkHealth(): Promise<{ available: boolean; reason?: string }> {
     if (this.model === '') {
-      return { available: false, reason: '未配置上游模型名（BYOK 抽屉或环境变量 SEEDANCE_MODEL）' };
+      // 提示里的变量名必须是**真实存在**的那个：此前写的是 `SEEDANCE_MODEL`，
+      // 而代码读的是 `VOLCANO_MODEL_NAME` —— 报错让人去改一个不存在的配置项。
+      return {
+        available: false,
+        reason: '未配置上游模型名（请在「凭据设置（BYOK）」里选/填模型，或配置服务端 VOLCANO_MODEL_NAME）',
+      };
     }
     return { available: true };
   }
@@ -246,7 +268,11 @@ export class VolcanoSeedanceProvider implements VideoProvider {
 
     if (!response.ok) {
       const payload = await this.readJsonQuietly(response);
-      const classified = classifyHttpFailure(response.status, payload);
+      const classified = classifyHttpFailure(response.status, payload, {
+        effectiveModel: this.model,
+        ...(this.modelSource === undefined ? {} : { modelSource: this.modelSource }),
+        ...(this.requestedModel === undefined ? {} : { requestedModel: this.requestedModel }),
+      });
       throw new ProviderFailureError(classified.code, classified.message, classified.dispositionOverride);
     }
 

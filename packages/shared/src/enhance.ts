@@ -52,8 +52,10 @@ export const LLM_PRESETS: readonly LlmPreset[] = [
     id: 'volcano-ark',
     label: '火山方舟',
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-    model: 'doubao-seed-1-6-250615',
-    note: '与视频轨同一家的文本端点；方舟的模型名通常是 endpoint id，务必按控制台填写',
+    // 2026-09-23 实测修正：原值 `doubao-seed-1-6-250615` 虽然出现在 `/api/v3/models` 列表里，
+    // 但**该账号未开通**（chat/completions → 404）。这里换成实测可用的较新 lite 档（也是最便宜的之一）。
+    model: 'doubao-seed-2-1-lite-260915',
+    note: '与视频轨同一家的文本端点；方舟文本模型需在控制台「开通管理」里开通，模型名务必按控制台填写',
   },
 ] as const;
 

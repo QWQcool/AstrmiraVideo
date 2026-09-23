@@ -21,11 +21,15 @@ pnpm install
 pnpm dev               # 并行拉起 backend + frontend
 ```
 
-> 当前进度：Step 1 骨架【已验证】、Step 1.5 地基整改【已验证】、**Step 3 前端工作台【已验证】**均已完成；**Step 2 剩两项**——AC2 的真实出片冒烟（待一把可用 Key）与 **host 本地轨 `LocalH3Provider` 未实现**（选择本地引擎会如实返回 `PROVIDER_UNAVAILABLE`；OI-1 素材 provider 是非目标，见台账 B7）；**Step 4 端到端验收阻塞于同一把 Key**；**Step 5 已上线，且 CI → CD 全自动**（push 到 main → CI 全绿 → 自动发布到服务器；主机 / 端口 / 凭据只存在于服务器本地 `.env.deploy` 与 GitHub Secrets，不入仓库）；**V8.3 体验与功能补强批次 0~4 已完成**（生成参数与布局 / 主题体系 / 取消与清理 / 画廊封面与首尾帧·视频参考入口 / 提示词扩写），仅剩批次 5 = 等 Key ——进度唯一权威为 PLAN §5。
+> 当前进度：Step 1 骨架【已验证】、Step 1.5 地基整改【已验证】、**Step 3 前端工作台【已验证】**均已完成；**Step 2 剩两项**——AC2 的真实出片冒烟（待一把可用 Key）与 **host 本地轨 `LocalH3Provider` 未实现**（选择本地引擎会如实返回 `PROVIDER_UNAVAILABLE`；OI-1 素材 provider 是非目标，见台账 B7）；**Step 4 端到端验收阻塞于同一把 Key**；**Step 5 已上线，且 CI → CD 全自动**（push 到 main → CI 全绿 → 自动发布到服务器；主机 / 端口 / 凭据只存在于服务器本地 `.env.deploy` 与 GitHub Secrets，不入仓库）；**V8.3 体验与功能补强批次 0~4 与批次 6 已完成**（生成参数与布局 / 主题体系 / 取消与清理 / 画廊封面与首尾帧·视频参考入口 / 提示词扩写 / **线上故障修复 + 操作日志**），仅剩批次 5 = 真实出片冒烟 ——进度唯一权威为 PLAN §5。
 
 填入自己的火山方舟 Key 即可出片（Key 存在**你的浏览器**，服务端过手不留存）；本地轨由**部署者显式启用**（`EXPOSE_HOST_LOCAL_TRACK`），未启用时选择本地引擎会返回 `PROVIDER_UNAVAILABLE`。推荐档位与引擎接入详见 [docs/GUIDE.md](docs/GUIDE.md)。
 
 > **提示词扩写（✨）另需一把文本 Key**：它与视频 Key 是**两套**凭据（可一键复用），在同一个「凭据设置（BYOK）」抽屉里填；服务端**不设文本侧兜底 Key**（纯 BYOK），没填时按钮置灰并写明原因。配置口径见 [docs/GUIDE.md](docs/GUIDE.md) §四，接口与错误码见 [docs/CONTRACT.md](docs/CONTRACT.md) §3。
+>
+> **提交前先用「测试连接」**（凭据抽屉，**零费用**）：它会回答"Key 行不行 / 模型在不在 / 有没有开通"，免得花一次真实生成换一条报错。视频模型从**档位下拉**里选（默认 `doubao-seedance-2-0-mini-260615`，省钱档）。
+>
+> **排错入口是顶栏「日志」**：记录"谁、何时、做了什么、结果如何"（明文 IP、可按动作/错误码/关键词筛选、可手动删）。报错时把那条记录的 `requestId` 发给开发者即可一条命中。细则见 [docs/GUIDE.md](docs/GUIDE.md) §七与 [docs/CONTRACT.md](docs/CONTRACT.md) §10。
 
 ## 文档地图（每个知识点只有唯一所有者，其他地方只准链接）
 

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -10,7 +11,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { cleanupTaskTemp } from './pipeline/cleanup.js';
 import { createTaskThumbnail } from './pipeline/thumbnail.js';
-import { getProvider } from './providers/registry.js';
+import { getEnvModelWarning, getProvider } from './providers/registry.js';
 import { runLocalEngineSelfCheck } from './providers/statusProbe.js';
 import { JobDispatcher } from './queue/dispatcher.js';
 import { SqliteJobQueue } from './queue/SqliteJobQueue.js';
@@ -18,6 +19,8 @@ import { createEnhanceRoutes } from './routes/enhance.js';
 import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
 import { createHistoryRoutes } from './routes/history.js';
+import { createKeyVerifyRoutes } from './routes/keysVerify.js';
+import { createLogRoutes } from './routes/logs.js';
 import { providerRoutes, setLocalEngineSelfCheck } from './routes/providers.js';
 import { createTaskRoutes } from './routes/tasks.js';
 import { createUploadRoutes, MAX_FILE_BYTES } from './routes/upload.js';
@@ -29,11 +32,13 @@ import {
 import { LLM_KEY_HEADER, LOG_REDACT_PATHS, PROVIDER_KEY_HEADER } from './security/credential.js';
 import { createKeyVault } from './security/keyVault.js';
 import { CooldownStore } from './security/rateLimit.js';
+import { registerRequestLog } from './server/requestLog.js';
 import { registerSecurityHeaders } from './server/securityHeaders.js';
 import { registerSpa } from './server/spa.js';
 import { registerStaticOutputs, resolveOutputsDir } from './server/staticOutputs.js';
 import { createAssetUrlResolver } from './store/assets.js';
 import { openDatabase } from './store/db.js';
+import { EventLogStore } from './store/eventLog.js';
 import { reconcileOrphanTasks } from './store/reconciliation.js';
 import { TaskStore } from './store/taskStore.js';
 
@@ -63,6 +68,12 @@ export async function buildApp() {
   const app = Fastify({
     // R2：反代后 req.ip 的正确性 —— 未开启时所有请求同 IP，防线 5 的冷却会退化成全局锁
     trustProxy: process.env.TRUST_PROXY === '1',
+    /**
+     * 请求 id：默认是自增整数，做排错标识太"飘"（用户截图里看到 `7` 无法定位）。
+     * 这里用 8 位随机串，并回写在响应头 `x-request-id`（见 server/requestLog.ts）——
+     * 「把界面上那串发我」就能在日志里一条命中。
+     */
+    genReqId: () => randomUUID().slice(0, 8),
     logger: isTestEnv
       ? false
       : {
@@ -119,16 +130,28 @@ export async function buildApp() {
   // 本地引擎**配置自检**：启动时一次、写内存缓存（不扫描硬件 —— CONTRACT §2 V1.8 / PLAN §6-D22）
   setLocalEngineSelfCheck(runLocalEngineSelfCheck());
 
-  // 路由目录惯例：backend/src/routes/<域>.ts（Step 2 的 6 条新路由沿用同一惯例）
-  await app.register(healthRoutes);
-  await app.register(providerRoutes);
+  // 已配置的兜底模型名必须在日志里看得见（含"这是模板占位符"的精确告警，见 registry.ts）
+  const envModelWarning = getEnvModelWarning();
+  if (envModelWarning !== null) app.log.warn(envModelWarning);
 
   // ── 公共链路（S2）：SQLite 存储 + 队列 + 双轨调度器 + 静态媒体（206 载体）─────────
   const db = openDatabase();
   const store = new TaskStore(db);
+  const eventLog = new EventLogStore(db);
   const queue = new SqliteJobQueue(store);
   // 防线 5：60s 防抖冷却（键的构成见 security/rateLimit.ts）
   const cooldown = new CooldownStore(db);
+
+  // 操作日志钩子必须**在路由注册之前**挂：Fastify 的 `register()` 子上下文在注册那一刻
+  // 继承父级已存在的钩子 —— 放后面挂，前面注册的路由就一条都记不到（实测踩点）。
+  registerRequestLog(app, {
+    store: eventLog,
+    onError: (err) => app.log.warn({ err }, '写入操作日志失败（不影响请求）'),
+  });
+
+  // 路由目录惯例：backend/src/routes/<域>.ts（Step 2 的 6 条新路由沿用同一惯例）
+  await app.register(healthRoutes);
+  await app.register(providerRoutes);
 
   // B 方案（PLAN §6-D23）：BYOK 凭据的**进程内**暂存。不落库、终态即清、重启即空
   // （重启后仍在途的任务由下面的启动调解如实归档，绝不猜、绝不自动重提）。
@@ -186,8 +209,10 @@ export async function buildApp() {
   );
   await app.register(createUploadRoutes());
   await app.register(createEnhanceRoutes());
+  await app.register(createKeyVerifyRoutes());
   await app.register(createTaskRoutes({ store }));
   await app.register(createHistoryRoutes({ store }));
+  await app.register(createLogRoutes({ store: eventLog }));
   await registerStaticOutputs(app);
 
   // 单进程形态（施工单 §9-3）：进程同时托管 /api、/media 与前端产物。

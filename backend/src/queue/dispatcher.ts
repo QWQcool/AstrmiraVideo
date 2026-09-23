@@ -120,6 +120,9 @@ export class JobDispatcher {
       const provider = this.options.resolveProvider(job.request.provider, {
         taskId: job.taskId,
         ...(providerKey === undefined ? {} : { providerKey }),
+        // 请求里的 `options.model` / `options.baseUrl` 必须传下去：它们是 BYOK 的一部分，
+        // 优先级高于服务端 env（V2.1 修，见 providers/registry.ts 的注释）
+        ...(job.request.options === undefined ? {} : { requestOptions: job.request.options }),
         ...(this.options.resolveAssetUrl === undefined
           ? {}
           : { resolveAssetUrl: this.options.resolveAssetUrl }),

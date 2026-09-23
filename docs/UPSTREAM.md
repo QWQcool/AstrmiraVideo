@@ -44,3 +44,41 @@ ffmpeg -version | head -1
 
 # ③ CI：`ci.yml` 的「安装 ffmpeg / ffprobe」步骤已打印 `ffmpeg -version | head -n 1`，查 run 日志即可
 ```
+
+---
+
+## 上游模型的 id 台账（云端轨）
+
+> 模型 id **带日期后缀、随时上新**，且**可用性按账号**（方舟需先开通模型服务）。
+> 所以这张表只记"我们已经在代码/文档里引用了哪些 id"以及**它们是怎么被验证的**，
+> 而不是"方舟有哪些模型"（那会立刻过期）。
+
+**验证方法（2026-09-23 实测，零费用）**：
+
+```bash
+# ① 列出该账号可见的全部模型（实测返回 135 项）
+curl -s https://ark.cn-beijing.volces.com/api/v3/models -H "Authorization: Bearer $ARK_API_KEY"
+
+# ② 判断某个模型是否**已开通可用**：空 content 探针
+#    400 InvalidParameter（content 不能为空）= 模型存在且已开通
+#    404 InvalidEndpointOrModel.NotFound        = 不存在或未开通
+#    ⚠️ 这是"探测"不是"生成"：不会创建任务；若协议变化导致意外建任务，必须立刻 DELETE 取消
+curl -s -X POST https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks \
+  -H "Authorization: Bearer $ARK_API_KEY" -H 'content-type: application/json' \
+  -d '{"model":"doubao-seedance-2-0-mini-260615","content":[]}'
+
+# ③ 文本模型：max_tokens=1 的最小对话请求（200 = 可用）
+curl -s -X POST https://ark.cn-beijing.volces.com/api/v3/chat/completions \
+  -H "Authorization: Bearer $ARK_API_KEY" -H 'content-type: application/json' \
+  -d '{"model":"doubao-seed-2-1-lite-260915","messages":[{"role":"user","content":"hi"}],"max_tokens":1}'
+```
+
+> 同一套逻辑已产品化为 `POST /api/providers/keys/verify`（CONTRACT §9）与凭据抽屉的「测试连接」——
+> **不要在文档里写死可用性结论**，让用户点一下按钮拿到属于他账号的答案。
+
+| 引用位置 | 值 | 验证状态 |
+|---|---|---|
+| `SEEDANCE_DEFAULT_MODEL`（协议层兜底） | `doubao-seedance-2-0-mini-260615` | **【已验证】**该账号已开通（400 探针）+ 2.0 最便宜档 |
+| `VIDEO_MODEL_PRESETS`（抽屉下拉，6 档） | `doubao-seedance-2-0-mini-260615` / `1-0-pro-fast-251015` / `1-0-pro-250528` / `2-0-fast-260128` / `2-0-260128` / `2-5-260628` | **【已验证】**六档均通过空 content 探针（2026-09-23）；**价格说明仅为【待验证】**（官方活动页与公开报道，未经我方计费账单核对） |
+| `LLM_PRESETS.volcano-ark.model`（文本轨） | `doubao-seed-2-1-lite-260915` | **【已验证】**`max_tokens:1` 返回 200（同账号另可用：`doubao-seed-2-0-mini-260215` / `deepseek-v4-flash-ga-260731` / `glm-5-3-flash-260828`） |
+| 已淘汰的错值 | `doubao-seedance-video`（模板占位符，**非真实 id**） | **【已验证不可用】**404；曾导致线上故障，见 PLAN §5「V8.3 批次 6」 |

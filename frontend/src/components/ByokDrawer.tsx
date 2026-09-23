@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
-import { LLM_CUSTOM_PRESET_ID, LLM_PRESETS } from '@astrmira/shared';
+import {
+  LLM_CUSTOM_PRESET_ID,
+  LLM_PRESETS,
+  VIDEO_CUSTOM_MODEL_ID,
+  VIDEO_MODEL_PRESETS,
+} from '@astrmira/shared';
 import { Eyebrow } from './Eyebrow';
 import type { ByokConfig } from '../lib/byok';
-import { applyLlmPreset, keyInputNotice } from '../lib/byok';
+import { applyLlmPreset, applyVideoPreset, keyInputNotice, videoPresetSelection } from '../lib/byok';
 
 /**
  * BYOK 抽屉（CONTRACT §5 / 施工单 §7）。
@@ -22,6 +27,11 @@ export interface ByokDrawerProps {
   onSave: (config: ByokConfig, persist: boolean) => void;
   onClear: () => void;
   onClose: () => void;
+  /**
+   * 「测试连接」（V2.1，CONTRACT §9）：提交前零费用核对 Key 与模型。
+   * 校验用的是**当前草稿**（未保存的值也测），否则用户得"先存再测"两步走。
+   */
+  onVerify: (track: 'video' | 'text', draft: ByokConfig) => Promise<string>;
 }
 
 export function ByokDrawer({
@@ -31,11 +41,29 @@ export function ByokDrawer({
   onSave,
   onClear,
   onClose,
+  onVerify,
 }: ByokDrawerProps) {
   const [draft, setDraft] = useState<ByokConfig>(config);
   const [persistDraft, setPersistDraft] = useState<boolean>(persist);
   const [reveal, setReveal] = useState(false);
   const [revealLlm, setRevealLlm] = useState(false);
+  /** 两条轨各自的"测试连接"结果（null = 还没测过） */
+  const [verifyResult, setVerifyResult] = useState<{ video: string | null; text: string | null }>({
+    video: null,
+    text: null,
+  });
+  const [verifying, setVerifying] = useState<'video' | 'text' | null>(null);
+
+  async function runVerify(track: 'video' | 'text'): Promise<void> {
+    setVerifying(track);
+    setVerifyResult((previous) => ({ ...previous, [track]: '校验中…' }));
+    try {
+      const message = await onVerify(track, draft);
+      setVerifyResult((previous) => ({ ...previous, [track]: message }));
+    } finally {
+      setVerifying(null);
+    }
+  }
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent): void {
@@ -102,14 +130,48 @@ export function ByokDrawer({
             </span>
           </div>
 
+          {/* 模型档位（V2.1）：手打模型 id 曾直接导致一次线上 404，故改为"下拉选档 + 自定义填写" */}
           <div className="wb-field">
-            <span className="wb-label">模型名</span>
+            <span className="wb-label">模型档位</span>
+            <select
+              className="wb-input"
+              value={videoPresetSelection(draft)}
+              onChange={(event) => setDraft(applyVideoPreset(draft, event.target.value))}
+            >
+              {VIDEO_MODEL_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
+              ))}
+              <option value={VIDEO_CUSTOM_MODEL_ID}>自定义（填控制台里的模型 / 接入点 id）</option>
+            </select>
+            <span className="wb-note">
+              {VIDEO_MODEL_PRESETS.find((preset) => preset.id === draft.model)?.note ??
+                '自定义：请填方舟控制台里真实可用的模型 id 或接入点 id（ep-…）'}
+            </span>
             <input
               className="wb-input wb-input-mono"
               value={draft.model}
               onChange={(event) => setDraft({ ...draft, model: event.target.value })}
               spellCheck={false}
+              placeholder="doubao-seedance-… / ep-…"
             />
+            <div className="wb-field-head">
+              <button
+                type="button"
+                className="wb-btn"
+                onClick={() => void runVerify('video')}
+                disabled={verifying !== null}
+              >
+                {verifying === 'video' ? '校验中…' : '测试连接'}
+              </button>
+              <span className="wb-note">
+                零费用：先查模型列表，再用「空 content 探针」判断**是否已开通**（不会创建任务）
+              </span>
+            </div>
+            {verifyResult.video === null ? null : (
+              <span className="wb-note wb-verify-result">{verifyResult.video}</span>
+            )}
           </div>
 
           {/* ── 文本轨（V2.0 扩写）────────────────────────────────────
@@ -181,6 +243,21 @@ export function ByokDrawer({
               autoComplete="off"
               placeholder={keyInputDisabled ? '当前环境禁止填写' : '粘贴你的 Key（可不填，那时 ✨ 会置灰）'}
             />
+            <div className="wb-field-head">
+              <button
+                type="button"
+                className="wb-btn"
+                onClick={() => void runVerify('text')}
+                disabled={verifying !== null}
+              >
+                {verifying === 'text' ? '校验中…' : '测试连接'}
+              </button>
+              <span className="wb-note">零费用：发一次 `max_tokens: 1` 的最小对话请求</span>
+            </div>
+            {verifyResult.text === null ? null : (
+              <span className="wb-note wb-verify-result">{verifyResult.text}</span>
+            )}
+
             <span className="wb-note">
               仅经请求头 <code>X-LLM-Key</code> 传输。本服务**不提供文本侧兜底 Key**（纯 BYOK）：
               没填就是"没配"，不会静默降级成规则改写。

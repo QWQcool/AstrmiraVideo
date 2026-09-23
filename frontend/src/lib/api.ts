@@ -3,6 +3,9 @@ import {
   GenerateResponseSchema,
   HealthResponseSchema,
   HistoryResponseSchema,
+  KeyVerifyResponseSchema,
+  LogDeleteResponseSchema,
+  LogListResponseSchema,
   OperationResultSchema,
   PromptEnhanceResponseSchema,
   ProviderStatusSchema,
@@ -15,6 +18,11 @@ import type {
   GenerateResponse,
   HealthResponse,
   HistoryResponse,
+  KeyVerifyRequest,
+  KeyVerifyResponse,
+  LogDeleteResponse,
+  LogListResponse,
+  LogQuery,
   OperationResult,
   PromptEnhanceRequest,
   PromptEnhanceResponse,
@@ -214,6 +222,47 @@ export function enhancePrompt(
     body,
     ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),
   });
+}
+
+/**
+ * 凭据与模型校验（CONTRACT §9 V2.1）：提交**之前**零费用地回答
+ * "Key 行不行 / 模型在不在 / 有没有开通"，避免再花一次真实生成换一条报错。
+ */
+export function verifyTrackKey(
+  body: KeyVerifyRequest,
+  options: { providerKey?: string; llmKey?: string } = {},
+): Promise<KeyVerifyResponse> {
+  return request('/api/providers/keys/verify', KeyVerifyResponseSchema, {
+    method: 'POST',
+    body,
+    ...(options.providerKey === undefined ? {} : { providerKey: options.providerKey }),
+    ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),
+  });
+}
+
+/** 操作日志：查询（CONTRACT §10） */
+export function fetchLogs(query: LogQuery = {}): Promise<LogListResponse> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== '') params.set(key, String(value));
+  }
+  const suffix = params.toString() === '' ? '' : `?${params.toString()}`;
+  return request(`/api/logs${suffix}`, LogListResponseSchema);
+}
+
+/** 操作日志：删单条（幂等；删不存在的条目返回 `deleted: 0`） */
+export function deleteLog(id: number): Promise<LogDeleteResponse> {
+  return request(`/api/logs/${id}`, LogDeleteResponseSchema, { method: 'DELETE' });
+}
+
+/** 操作日志：按当前筛选清空（不带筛选即全清） */
+export function clearLogs(query: LogQuery = {}): Promise<LogDeleteResponse> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== '') params.set(key, String(value));
+  }
+  const suffix = params.toString() === '' ? '' : `?${params.toString()}`;
+  return request(`/api/logs${suffix}`, LogDeleteResponseSchema, { method: 'DELETE' });
 }
 
 export function fetchHistory(): Promise<HistoryResponse> {

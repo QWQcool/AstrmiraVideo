@@ -23,8 +23,21 @@ export const SEEDANCE_DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/
 /** 【已确认】任务集合路径 */
 export const SEEDANCE_TASKS_PATH = '/contents/generations/tasks';
 
-/** 【待验证】方舟模型 id 的默认值；实际以用户 BYOK 抽屉里填的为准 */
-export const SEEDANCE_DEFAULT_MODEL = 'doubao-seedance-1-0-pro-250528';
+/**
+ * 【已验证】OpenAI 兼容的模型列表端点（2026-09-23 实测 `GET /api/v3/models` 返回 135 项）。
+ * 它是"测试连接"能**零费用**判断凭据与模型存在性的依据（CONTRACT §9）。
+ */
+export const SEEDANCE_MODELS_PATH = '/models';
+
+/**
+ * 兜底模型 id：**仅在"用户/请求都没给模型"时**使用（请求 > env > 本常量）。
+ *
+ * 2026-09-23 实测：`doubao-seedance-2-0-mini-260615` 在用户账号**已开通可用**，
+ * 且是 2.0 代最便宜的档位（用户明确要求"尽量用最省钱的模型"）。
+ * ⚠️ 可用性是**按账号**的：别的部署者账号若未开通该模型，会在提交时收到 404 ——
+ * 界面上的「测试连接」会直接给出这个结论，不必花一次生成的钱去试。
+ */
+export const SEEDANCE_DEFAULT_MODEL = 'doubao-seedance-2-0-mini-260615';
 
 export type SeedanceImageRole = 'first_frame' | 'last_frame' | 'reference_image';
 
@@ -242,6 +255,58 @@ export function parseSeedanceTask(payload: unknown): ParsedTaskState {
   return { status, progressPercent, message: status === 'queued' ? '上游排队中' : '上游生成中' };
 }
 
+/** 模型/接入点相关的上下文（用于把"模型名不对"翻译成可执行指引） */
+export interface ModelContext {
+  /** 本次**实际**发出去的模型 */
+  effectiveModel?: string;
+  /** 它的来源：请求体 / 服务端 env / 协议层默认 */
+  modelSource?: 'request' | 'env' | 'default';
+  /** 用户/请求**想用**的模型（与 effectiveModel 不同即为"被覆盖"） */
+  requestedModel?: string;
+}
+
+/** 上游"模型或接入点不存在/无权限"的判定（方舟两种 code 与通用文案都覆盖） */
+function looksLikeModelNotFound(upstreamCode: string | undefined, message: string | undefined): boolean {
+  const haystack = `${upstreamCode ?? ''} ${message ?? ''}`.toLowerCase();
+  return (
+    haystack.includes('invalidendpointormodel') ||
+    haystack.includes('modelnotfound') ||
+    haystack.includes('does not exist or you do not have access')
+  );
+}
+
+/**
+ * 把"模型不存在/未开通"翻译成**可直接照做**的诊断句。
+ *
+ * 2026-09-23 的线上故障里，用户拿到的原始报文只有
+ * `The model or endpoint doubao-seedance-video does not exist`，
+ * 而界面上他填的是另一个模型 —— 这中间发生了什么，**原报文一个字都没说**。
+ * 这正是本函数存在的理由：把"实际用了什么、来源在哪、下一步做什么"讲清楚。
+ */
+function buildModelNotFoundHint(context: ModelContext | undefined): string {
+  if (context?.effectiveModel === undefined) {
+    return '请确认模型/接入点 id 与它在方舟控制台里的开通状态（可用「测试连接」零费用核对）。';
+  }
+
+  const sourceLabel =
+    context.modelSource === 'request'
+      ? '请求里填的（BYOK 抽屉 / options.model）'
+      : context.modelSource === 'env'
+        ? '服务端环境变量 VOLCANO_MODEL_NAME'
+        : '服务端内置默认值';
+
+  const overridden =
+    context.requestedModel !== undefined && context.requestedModel !== context.effectiveModel
+      ? `；你在界面上填的是 \`${context.requestedModel}\`，**被 ${sourceLabel} 覆盖了**（请让部署者清掉该环境变量）`
+      : '';
+
+  return (
+    `本次实际请求的模型是 \`${context.effectiveModel}\`（来源：${sourceLabel}）${overridden}。` +
+    '请在方舟控制台确认该模型 id 是否正确、是否已开通（模型广场 → 开通管理），' +
+    '或改用「凭据设置（BYOK）」里已实测可用的档位；界面上的「测试连接」可零费用核对。'
+  );
+}
+
 /**
  * HTTP 失败 → 错误码归类（**这是"明确返回"与"结果不明"的分界线**）。
  *
@@ -254,10 +319,13 @@ export function parseSeedanceTask(payload: unknown): ParsedTaskState {
  *
  * 反面情形（**不属于本函数**）：网络中断、超时、响应不可解析 —— 那些由调用方抛出异常，
  * 交给 `resolveTaskError` 在"已提交上游"的前提下归 `UNCERTAIN_RESULT`。
+ *
+ * `context` 是可选参数（不传时行为与 V1.9 完全一致），只在"模型不存在"这一类里加诊断句。
  */
 export function classifyHttpFailure(
   httpStatus: number,
   payload: unknown,
+  context?: ModelContext,
 ): { code: ErrorCode; message: string; dispositionOverride?: 'terminal' } {
   const upstream = readUpstreamError(payload);
   const detail =
@@ -267,6 +335,15 @@ export function classifyHttpFailure(
 
   if (httpStatus === 401 || httpStatus === 403) {
     return { code: 'KEY_INVALID', message: `凭据被上游拒绝（${detail}）` };
+  }
+
+  // 模型/接入点不存在：这不是"等一下再试"的事，而是"去改配置"的事
+  if (looksLikeModelNotFound(upstream?.code, upstream?.message)) {
+    return {
+      code: 'UPSTREAM_ERROR',
+      message: `${detail}｜诊断：${buildModelNotFoundHint(context)}`,
+      dispositionOverride: 'terminal',
+    };
   }
 
   if (httpStatus === 429 || httpStatus >= 500) {

@@ -389,7 +389,7 @@ AC 逐条：AC-x → 命令 → 输出摘要（关键行原样粘贴）→ 判�
 
 ## §13 台账指针（不在本次范围，别顺手做）
 
-`B1` 用户本机 worker（S7）｜`B2` keys/verify 路由｜**`B3` LLM 扩写（纯 BYOK）——已落地（V8.3 批次 4：`providers/llm.ts` + `LLM_PRESETS` + `X-LLM-Key` + 前端门控）**｜`B4` local/verify 运行时自检 + 设置抽屉「测试连接」｜`B6` Tier 文案单一事实源（**文案第二次修改前必须收口**）｜`B7` OI-1 素材 provider｜**`B8` 复合限流键（上线前必须做：NAT 共享出口下 IP 单键会互相误伤）——已落地**｜`B10` SSE｜`B11/B12/B14` 与 B1 同步｜`B13` Tier 数值实测｜`B15` CSP + 零 innerHTML 断言（Step 5 内落地）｜`B21` 让 `.heic` 真正可用｜`B22` 画廊容量淘汰（**暂缓**：初期存储需求不大）。
+`B1` 用户本机 worker（S7）｜**`B2` keys/verify 路由 —— 已落地（V8.3 批次 6，CONTRACT §9：`GET /models` + 空 content 探针 + 文本 `max_tokens:1`）**｜**`B3` LLM 扩写（纯 BYOK）——已落地（V8.3 批次 4：`providers/llm.ts` + `LLM_PRESETS` + `X-LLM-Key` + 前端门控）**｜`B4` local/verify 运行时自检 + 设置抽屉「测试连接」｜`B6` Tier 文案单一事实源（**文案第二次修改前必须收口**）｜`B7` OI-1 素材 provider｜**`B8` 复合限流键（上线前必须做：NAT 共享出口下 IP 单键会互相误伤）——已落地**｜`B10` SSE｜`B11/B12/B14` 与 B1 同步｜`B13` Tier 数值实测｜`B15` CSP + 零 innerHTML 断言（Step 5 内落地）｜`B21` 让 `.heic` 真正可用｜`B22` 画廊容量淘汰（**暂缓**：初期存储需求不大）。
 
 > 完整台账（含每项「何时必须做」）的**权威位置 = `PLAN.md` §9**（由 D 段迁入）。D 段合入前暂存于本机 `.tmp/ARCH-DECISIONS.md` §11-5（`.tmp/` 已 gitignore，不进仓库）。
 

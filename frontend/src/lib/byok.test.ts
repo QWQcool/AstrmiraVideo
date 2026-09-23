@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { LLM_PRESETS } from '@astrmira/shared';
+import { LLM_PRESETS, VIDEO_DEFAULT_MODEL, VIDEO_MODEL_PRESETS } from '@astrmira/shared';
 import {
   DEFAULT_BYOK,
   applyLlmPreset,
+  applyVideoPreset,
+  videoPresetSelection,
   clearByok,
   isKeyInputAllowed,
   isLoopbackHost,
@@ -149,6 +151,30 @@ describe('凭据取值：空白视为未填', () => {
     expect(resolveProviderKey({ ...DEFAULT_BYOK, key: '' })).toBeUndefined();
     expect(resolveProviderKey({ ...DEFAULT_BYOK, key: '   ' })).toBeUndefined();
     expect(resolveProviderKey({ ...DEFAULT_BYOK, key: '  abc  ' })).toBe('abc');
+  });
+});
+
+/**
+ * 视频轨模型档位（V2.1）：**手打模型 id 曾直接导致一次线上 404**，
+ * 所以默认值、下拉映射、"自定义"的语义都值得单独钉住。
+ */
+describe('视频轨模型档位（V2.1）', () => {
+  it('默认模型 = 已实测可用且最省钱的档（不是手写字符串，取自 shared 预设表）', () => {
+    expect(DEFAULT_BYOK.model).toBe(VIDEO_DEFAULT_MODEL);
+    expect(VIDEO_MODEL_PRESETS.some((preset) => preset.id === VIDEO_DEFAULT_MODEL)).toBe(true);
+  });
+
+  it('下拉选中项由 model 反查（在表里 → 该项；不在表里 → 自定义）', () => {
+    expect(videoPresetSelection({ ...DEFAULT_BYOK, model: VIDEO_DEFAULT_MODEL })).toBe(VIDEO_DEFAULT_MODEL);
+    expect(videoPresetSelection({ ...DEFAULT_BYOK, model: 'ep-2026xxxx' })).toBe('custom');
+  });
+
+  it('选档位写进 model；选「自定义」清空 model（让用户填接入点，不残留旧档）', () => {
+    expect(applyVideoPreset({ ...DEFAULT_BYOK, model: '' }, VIDEO_DEFAULT_MODEL).model).toBe(VIDEO_DEFAULT_MODEL);
+
+    const custom = applyVideoPreset({ ...DEFAULT_BYOK, model: VIDEO_DEFAULT_MODEL }, 'custom');
+    expect(custom.model).toBe('');
+    expect(videoPresetSelection(custom)).toBe('custom');
   });
 });
 

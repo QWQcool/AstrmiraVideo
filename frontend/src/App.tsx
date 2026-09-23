@@ -11,6 +11,7 @@ import { ByokDrawer } from './components/ByokDrawer';
 import { CenterPanel } from './components/CenterPanel';
 import { Eyebrow } from './components/Eyebrow';
 import { LeftPanel } from './components/LeftPanel';
+import { LogPanel } from './components/LogPanel';
 import { RightPanel } from './components/RightPanel';
 import { useTaskPolling } from './hooks/useTaskPolling';
 import {
@@ -22,6 +23,7 @@ import {
   fetchProviderStatus,
   submitGenerate,
   uploadAssets,
+  verifyTrackKey,
 } from './lib/api';
 import type { AssetSlotKey, AssetSlots } from './lib/assets';
 import {
@@ -136,6 +138,8 @@ export default function App() {
   const [byokPersist, setByokPersist] = useState(() => isPersistEnabled(storage));
   const [byokOpen, setByokOpen] = useState(false);
   const [enhancing, setEnhancing] = useState(false);
+  /** 操作日志全屏页（CONTRACT §10） */
+  const [logsOpen, setLogsOpen] = useState(false);
 
   // ── 冷却与计时（冷却时间戳持久化，刷新后仍置灰） ──
   const [cooldownUntil, setCooldownUntil] = useState(() =>
@@ -356,6 +360,44 @@ export default function App() {
   }
 
   /**
+   * 「测试连接」（V2.1，CONTRACT §9）：提交**之前**零费用核对凭据与模型。
+   *
+   * 为什么必须有：2026-09-23 的线上故障里，用户是花了一次真实提交才拿到"模型不存在"
+   * —— 而这件事本可以零成本提前问清楚。
+   *
+   * 返回值是"给人看的一句话"，出错也不抛（抽屉里就地显示，不打断填写）。
+   */
+  async function handleVerify(track: 'video' | 'text', draft: ByokConfig): Promise<string> {
+    const videoKey = resolveProviderKey(draft);
+    const textKey = resolveLlmKey(draft);
+
+    if (track === 'video' && videoKey === undefined) return '未填写视频轨 Key：无法校验';
+    if (track === 'text' && textKey === undefined) return '未填写文本轨 Key：无法校验';
+
+    try {
+      const result = await verifyTrackKey(
+        {
+          track,
+          ...(track === 'video'
+            ? {
+                ...(draft.model.trim() === '' ? {} : { model: draft.model.trim() }),
+                ...(draft.baseUrl.trim() === '' ? {} : { baseUrl: draft.baseUrl.trim() }),
+              }
+            : {
+                preset: draft.llmPreset,
+                ...(draft.llmModel.trim() === '' ? {} : { model: draft.llmModel.trim() }),
+                ...(draft.llmBaseUrl.trim() === '' ? {} : { baseUrl: draft.llmBaseUrl.trim() }),
+              }),
+        },
+        track === 'video' ? { providerKey: videoKey } : { llmKey: textKey },
+      );
+      return result.message;
+    } catch (caught) {
+      return `校验失败：${describeError(caught)}`;
+    }
+  }
+
+  /**
    * 扩写（V2.0，纯 BYOK）。
    *
    * 三条口径：
@@ -546,6 +588,11 @@ export default function App() {
         </div>
 
         <div className="wb-header-right">
+          {/* 操作日志入口（V2.1）：出错时先看这里 —— 谁、何时、做了什么、结果如何 */}
+          <button type="button" className="wb-btn" onClick={() => setLogsOpen(true)}>
+            日志
+          </button>
+
           {/* 主题切换（默认跟随系统；覆盖后存本机） */}
           <div className="wb-segmented wb-segmented-compact" role="group" aria-label="主题">
             {THEME_PREFS.map((pref) => (
@@ -691,8 +738,11 @@ export default function App() {
           onSave={handleSaveByok}
           onClear={handleClearByok}
           onClose={() => setByokOpen(false)}
+          onVerify={handleVerify}
         />
       ) : null}
+
+      {logsOpen ? <LogPanel onClose={() => setLogsOpen(false)} /> : null}
     </div>
   );
 }

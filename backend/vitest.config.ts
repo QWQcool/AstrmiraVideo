@@ -65,6 +65,11 @@ export default defineConfig({
         'src/providers/llm.ts': { statements: 90, branches: 75, functions: 100, lines: 95 },
         // 扩写路由：四条错误分支（501/400/401/502）各自必须有产生点
         'src/routes/enhance.ts': { statements: 90, branches: 80, functions: 100, lines: 95 },
+        // V2.1 操作日志：筛选/清空/截断/擦除这几条如果没测，日志本身就会成为新的信息泄漏面
+        'src/store/eventLog.ts': { statements: 90, branches: 80, functions: 100, lines: 90 },
+        'src/server/requestLog.ts': { statements: 85, branches: 70, functions: 100, lines: 85 },
+        // 云端 provider 的"请求配置优先于 env"是本次线上故障的根因，用假上游在 CI 里反复钉
+        'src/providers/registry.ts': { statements: 85, branches: 70, functions: 90, lines: 85 },
       },
     },
   },

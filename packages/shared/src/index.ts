@@ -7,6 +7,8 @@
  * - progress.ts → §4 任务进度与统一 Provider 接口、§6 错误码字典
  * - health.ts   → §8 辅助响应类型
  * - enhance.ts  → §3 提示词扩写接口契约
+ * - verify.ts   → §9 凭据与模型校验接口
+ * - videoModels.ts → 视频轨模型档位预设（非契约，但前后端共用一份清单）
  */
 export * from './request.js';
 export * from './status.js';
@@ -14,3 +16,6 @@ export * from './progress.js';
 export * from './health.js';
 export * from './enhance.js';
 export * from './api.js';
+export * from './verify.js';
+export * from './videoModels.js';
+export * from './logs.js';

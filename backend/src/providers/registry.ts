@@ -1,6 +1,7 @@
 import type { ProviderType, VideoProvider } from '@astrmira/shared';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
 import { FixtureLocalProvider } from './fixture/FixtureLocalProvider.js';
+import { readOptionString } from './providerOptions.js';
 import { VolcanoSeedanceProvider } from './VolcanoSeedanceProvider.js';
 import { SEEDANCE_DEFAULT_BASE_URL, SEEDANCE_DEFAULT_MODEL } from './seedanceProtocol.js';
 import { createFaultInjectedProvider, resolveFaultPlanFromEnv } from './withFaultInjection.js';
@@ -60,6 +61,14 @@ export interface ProviderResolutionContext {
   taskId: string;
   /** B 方案：由 `security/keyVault` 按任务取出的凭据；`undefined` = 无凭据 */
   providerKey?: string;
+  /**
+   * 本次请求的 `request.options`（CONTRACT §1）。
+   *
+   * 为什么必须传进来：`options.model` / `options.baseUrl` 是 **BYOK 的一部分** ——
+   * 用户在自己的抽屉里选的那一档，才应该是真正发出去的模型。
+   * 2026-09-23 线上故障正是"注册点只读 env、请求里的模型无人消费"造成的。
+   */
+  requestOptions?: Record<string, unknown>;
   /** 资产 id → 上游可访问地址（云端 provider 需要） */
   resolveAssetUrl?: (assetId: string) => Promise<string | null>;
 }
@@ -80,17 +89,67 @@ function resolveProviderKey(ctx: ProviderResolutionContext): string | null {
   return envKey === undefined || envKey === '' ? null : envKey;
 }
 
+/**
+ * 模型名的解析：**请求体 > env > 协议层默认**（V2.1 修）。
+ *
+ * 顺序不可颠倒：请求体里的值是**用户在自己抽屉里选的**（BYOK 的一部分），
+ * 让服务端 env 覆盖它，就等于"用户以为在用自己的配置，实际用着部署者的默认值"——
+ * 比 `KEY_MISSING` 那类错误难查得多，因为**界面上一切正常**。
+ * （2026-09-23 线上故障：用户的 `doubao-seedance-2-0-mini-260615` 被 env 的
+ *  `doubao-seedance-video` 覆盖，报 404 且报文里只提后者。）
+ */
+function resolveEffectiveModel(requested: string | undefined): {
+  model: string;
+  source: 'request' | 'env' | 'default';
+} {
+  if (requested !== undefined) return { model: requested, source: 'request' };
+
+  const fromEnv = process.env.VOLCANO_MODEL_NAME?.trim();
+  if (fromEnv !== undefined && fromEnv !== '') return { model: fromEnv, source: 'env' };
+
+  return { model: SEEDANCE_DEFAULT_MODEL, source: 'default' };
+}
+
 function createCloudProvider(ctx: ProviderResolutionContext): VideoProvider {
-  const baseUrl = process.env.VOLCANO_BASE_URL?.trim();
+  const requestedModel = readOptionString(ctx.requestOptions, 'model');
+  const requestedBaseUrl = readOptionString(ctx.requestOptions, 'baseUrl');
+  const envBaseUrl = process.env.VOLCANO_BASE_URL?.trim();
+  const { model, source } = resolveEffectiveModel(requestedModel);
 
   return new VolcanoSeedanceProvider({
     taskId: ctx.taskId,
     providerKey: resolveProviderKey(ctx),
-    model: process.env.VOLCANO_MODEL_NAME ?? SEEDANCE_DEFAULT_MODEL,
-    baseUrl: baseUrl === undefined || baseUrl === '' ? SEEDANCE_DEFAULT_BASE_URL : baseUrl,
+    model,
+    modelSource: source,
+    ...(requestedModel === undefined ? {} : { requestedModel }),
+    baseUrl:
+      requestedBaseUrl ??
+      (envBaseUrl === undefined || envBaseUrl === '' ? SEEDANCE_DEFAULT_BASE_URL : envBaseUrl),
     outputDir: resolveOutputsDir(),
     ...(ctx.resolveAssetUrl === undefined ? {} : { resolveAssetUrl: ctx.resolveAssetUrl }),
   });
+}
+
+/**
+ * 模板里的占位符曾被部署者当成真值抄进 `.env`（`VOLCANO_MODEL_NAME=doubao-seedance-video`），
+ * 于是**所有**提交都在上游 404。模板已经改成注释态，但线上 `.env` 不会自动更新，
+ * 所以启动时对"已知的坑值"告一次警 —— 让人在日志里一眼看见，而不是等用户来报错。
+ */
+const KNOWN_PLACEHOLDER_MODEL_VALUES = ['doubao-seedance-video'];
+
+export function getEnvModelWarning(): string | null {
+  const configured = process.env.VOLCANO_MODEL_NAME?.trim();
+  if (configured === undefined || configured === '') return null;
+
+  if (KNOWN_PLACEHOLDER_MODEL_VALUES.includes(configured)) {
+    return (
+      `VOLCANO_MODEL_NAME=${configured} 是文档模板里的**占位符**，不是真实模型 id：` +
+      '任何"没带模型"的提交都会在上游 404。请在方舟控制台复制真实 id（或接入点 ep-…），' +
+      '或删除该环境变量让内置默认/界面选择生效。'
+    );
+  }
+
+  return `VOLCANO_MODEL_NAME=${configured}：仅作为"请求未指定模型"时的兜底值（请求里的模型优先级更高）`;
 }
 
 const REGISTRY: Record<ProviderType, ProviderFactory> = {
@@ -140,9 +199,10 @@ export function __clearProviderTestOverrides(): void {
   testOverrides.clear();
 }
 
-/** 当前真正可用（已实现且未被门控关闭）的 provider 列表 —— 供能力位下发使用 */
-export function listAvailableProviders(): VideoProvider[] {
-  return (Object.keys(REGISTRY) as ProviderType[])
-    .map((id) => getProvider(id))
-    .filter((provider): provider is VideoProvider => provider !== null);
-}
+/*
+ * 已删除：`listAvailableProviders()`。
+ *
+ * 它是 S5 之前的"能力位下发"占位实现，`providers.ts` 落地后**再无调用方**
+ * —— 是覆盖率门限把这段死代码找出来的（覆盖率不是为了数字好看，而是为了逼出这种东西：
+ * 一个"看起来能用"的导出，下一个人照着它写就会绕开真正的状态端点）。
+ */
