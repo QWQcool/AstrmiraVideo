@@ -6,7 +6,7 @@
 >   ② **§5**：`GET /api/history` 的响应由 `{ items }` 扩为 `{ items, storage }`，`storage` 是 `outputs/` 的**目录级聚合**（成片 / 缩略图 / 参考资产）——老数据同样准确，不依赖逐条累加；`StorageUsage` 形状见 §4 末尾。
 >   为什么加：V9 总览页四卡（今日生成 / 成功率 / 队列中 / 存储占用）与视频库"按时间 / 大小排序"此前**算不出来**（history 既无时间戳也无体积）——这是 Step 6-AC2「不许出现算不出来的指标」的落地前提。
 >   纪律：只暴露**已有列**、只做**只读聚合**；不新增表、不新增路由、不引入后台任务。
-> **V2.2 修订（2026-09-23）**：**V9 前端改版的接口规划**（PLAN §4 Step 6，决策 D33~D38）。本节内容均为**【规划】**，实现前不得当作事实引用。
+> **V2.2 修订（2026-09-23）**：**V9 前端改版的接口规划**（PLAN §4 Step 6，决策 D33~D38）。本节内容当时均为**【规划】**；**现状（2026-09-23 追加）**：§3 的 `recipeId` 与 §11-1 配方库已由 **V9 · B8 实现**，§5 的 `POST /api/edits` 与 §11-2 剪辑台仍为【规划】（B9）。
 >   ① **§3**：`PromptEnhanceRequest` 新增可选 `recipeId`（配方库作为扩写的风格上下文）；
 >   ② **§5**：路由表新增 `POST /api/edits`（轻剪辑台，本地 ffmpeg，**零上游调用**）；
 >   ③ **新增 §11**「配方库与轻剪辑台」：`RecipeCard` 与 `EditScript` 的完整形状、`/api/edits` 的状态映射、剪辑产物与 EDL 的生命周期。
@@ -195,7 +195,7 @@ export interface PromptEnhanceRequest {
   style?: 'cinematic' | 'anime' | 'commercial' | 'realistic';
   mode?: GenerationMode;
   llm?: LlmConfig;   // V2.0：**凭据绝不在此字段**
-  recipeId?: string; // V2.2【V9 规划】：配方 id（见 §11）；服务端把该配方的运镜/光线/节奏要点注入 system prompt；未知 id → 400 PROMPT_REJECTED
+  recipeId?: string; // V2.2【规划】→ **V9 · B8 已实现**：配方 id（见 §11-1）；服务端把该卡的 `skeleton + pitfalls` 注入 system prompt；**未知 id → 400 PROMPT_REJECTED**（不静默按普通扩写跑）
 }
 
 export interface PromptEnhanceResponse {
@@ -468,7 +468,7 @@ export interface EventLogEntry {
 
 ---
 
-## 11. 配方库与轻剪辑台（**V2.2 新增 · V9【规划】**——实现前不得当作事实引用）
+## 11. 配方库与轻剪辑台（V2.2 新增；**§11-1 配方库 = V9 · B8 已实现**、§11-2 剪辑台 = 【规划·B9】——后者实现前不得当作事实引用）
 
 > 背景与决策：PLAN §4 Step 6、§6-D36（配方库双入口）/ D37（剪辑台 MVP、剪映导出砍掉）/ D38（抽帧→生成闭环）。
 > **零 API 成本红线**：本节的一切都是本地 ffmpeg 或静态数据，**不产生任何上游调用**。
@@ -495,7 +495,7 @@ export const RecipeCardSchema = z.object({
 });
 ```
 
-- **双入口**：① 插入骨架 = 把 `skeleton` **原样**追加/替换进提示词框（用户看得见）；② ✨ 扩写 = 请求带 `recipeId`，服务端把该卡的 `skeleton + pitfalls` 注入 system prompt（§3）。
+- **双入口**（B8 实现时把口径钉死）：① 插入骨架 = 把 `skeleton` **原样追加**到提示词框**末尾**（框为空则直接写入；**刻意不做替换** —— 覆盖用户已写的主体描述属数据丢失，比"插不进去"更糟）；② ✨ 扩写 = 请求带 `recipeId`，服务端把该卡的 `skeleton + pitfalls` 注入 system prompt（§3），**用户原文仍原样作为 user message**。
 - **诚实标记**：配方是"经验骨架"，**不得**在 UI 上承诺"用了就出大片"；`pitfalls` 为空时不得编造。
 
 ### 11-2 剪辑操作 `EditScript` 与 `POST /api/edits`

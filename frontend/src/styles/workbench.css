@@ -1609,6 +1609,93 @@
   }
 }
 
+/* ── V9 配方库（B8）── */
+.recipe-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.recipe-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  background: var(--panel);
+  /* 与视频库/总览同一套动效语言（B6）：hover 浮起 + 级联入场 */
+  transition: transform 160ms var(--ease-ui), border-color 160ms var(--ease-ui);
+  animation: card-rise 260ms var(--ease-ui) both;
+  animation-delay: calc(var(--stagger, 0) * 40ms);
+}
+
+.recipe-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--line-gold);
+}
+
+.recipe-card-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.recipe-card-title {
+  font-family: var(--serif);
+  font-size: var(--fs-title);
+  color: var(--text);
+}
+
+.recipe-tag {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.recipe-tag--gold {
+  border-color: var(--line-gold);
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.recipe-card-skeleton {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--line-gold);
+  border-radius: 4px;
+  background: var(--gold-tint);
+  font-size: var(--fs-note);
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.recipe-card-pitfalls {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--fs-micro);
+  color: var(--faint);
+}
+
+.recipe-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+
+.recipe-card-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
 /* ── V9 视频库（B4）── */
 .lib-toolbar {
   display: flex;

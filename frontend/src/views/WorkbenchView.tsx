@@ -6,6 +6,7 @@ import type {
   TaskProgress,
   VideoGenerateRequest,
 } from '@astrmira/shared';
+import { findRecipe } from '@astrmira/shared';
 import { CenterPanel } from '../components/CenterPanel';
 import { LeftPanel } from '../components/LeftPanel';
 import { RightPanel } from '../components/RightPanel';
@@ -28,6 +29,7 @@ import {
   modeAfterSlotUpload,
 } from '../lib/assets';
 import { resolveLlmConfig, resolveLlmKey, resolveProviderKey } from '../lib/byok';
+import { appendSkeleton } from '../lib/recipeInsert';
 import { useHashRoute } from '../lib/router';
 import { useShell } from '../lib/shell';
 import {
@@ -112,6 +114,11 @@ export function WorkbenchView() {
 
   // ── 扩写 ──
   const [enhancing, setEnhancing] = useState(false);
+  /**
+   * 当前选用的配方（V9 · B8）：由配方库的跳转带入；✨ 扩写时随请求带上 `recipeId`。
+   * 为空 = 普通扩写（不带风格约束）。
+   */
+  const [activeRecipeId, setActiveRecipeId] = useState<string | null>(null);
 
   // ── 冷却与计时（冷却时间戳持久化，刷新后仍置灰） ──
   const [cooldownUntil, setCooldownUntil] = useState(() =>
@@ -206,6 +213,40 @@ export function WorkbenchView() {
     handledReuse.current = target;
     handleReuse(item);
   }, [route, history]);
+
+  /**
+   * 「配方库 → 工作台」的两个入口（V9 · B8；CONTRACT §11-1）：
+   * - `#/workbench?recipe=<id>`：把该卡的 `skeleton` **逐字追加**到提示词框，并记下它；
+   * - `#/workbench?recipe=<id>&insert=no`：**不动**提示词，只让 ✨ 扩写带上这个配方。
+   *
+   * 未知 id（例如别人分享了一条已被改名的配方链接）**不静默**：什么都不做，
+   * 服务端侧同样会对未知 `recipeId` 返回 400（见 routes/enhance.ts）。
+   */
+  const handledRecipe = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (route.path !== '#/workbench') {
+      handledRecipe.current = null;
+      return;
+    }
+
+    const recipeId = route.query.get('recipe');
+    if (recipeId === null || handledRecipe.current === recipeId) return;
+
+    const card = findRecipe(recipeId);
+    if (card === undefined) return;
+
+    handledRecipe.current = recipeId;
+    setActiveRecipeId(card.id);
+
+    if (route.query.get('insert') === 'no') {
+      setNotice(`已选用配方「${card.title}」作为扩写上下文（提示词未改动）。`);
+      return;
+    }
+
+    setPrompt((prev) => appendSkeleton(prev, card.skeleton));
+    setNotice(`已把配方「${card.title}」的骨架插入提示词末尾；扩写时也会带上它。`);
+  }, [route]);
 
   function startCooldown(): void {
     const until = Date.now() + COOLDOWN_MS;
@@ -352,6 +393,8 @@ export function WorkbenchView() {
           originalPrompt: prompt,
           style: 'cinematic',
           mode,
+          // V9 · B8：带了配方就把它作为风格上下文（服务端注入骨架 + 已知坑）
+          ...(activeRecipeId === null ? {} : { recipeId: activeRecipeId }),
           llm: resolveLlmConfig(byok),
         },
         { llmKey },

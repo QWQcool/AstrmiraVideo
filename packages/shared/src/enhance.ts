@@ -78,6 +78,12 @@ export const PromptEnhanceRequestSchema = z.object({
   originalPrompt: z.string(),
   style: PromptEnhanceStyleSchema.optional(),
   mode: GenerationModeSchema.optional(),
+  /**
+   * V2.2【规划】→ **V9 · B8 已实现**（CONTRACT §3 / §11-1）：
+   * 配方卡 id。服务端据此把该卡的 `skeleton + pitfalls` 注入 system prompt，
+   * 让"扩写"这件事带上配方的风格约束；**未知 id 一律 400 `PROMPT_REJECTED`**（不静默忽略）。
+   */
+  recipeId: z.string().optional(),
   /** V2.0：端点与模型（`baseUrl` / `model` 覆盖预设值）；凭据**绝不**出现在这里 */
   llm: LlmConfigSchema.optional(),
 });

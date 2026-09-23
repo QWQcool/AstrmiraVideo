@@ -3,8 +3,15 @@ import {
   ErrorResponseSchema,
   PromptEnhanceRequestSchema,
   PromptEnhanceResponseSchema,
+  findRecipe,
 } from '@astrmira/shared';
-import type { ErrorCode, GenerationMode, LlmConfig, PromptEnhanceStyle } from '@astrmira/shared';
+import type {
+  ErrorCode,
+  GenerationMode,
+  LlmConfig,
+  PromptEnhanceStyle,
+  RecipeCard,
+} from '@astrmira/shared';
 import { createErrorResponse, dispositionOf, ProviderFailureError } from '../errors.js';
 import { enhancePromptWithLlm, type EnhancePromptResult } from '../providers/llm.js';
 import { resolveLlmKey } from '../security/credential.js';
@@ -34,6 +41,8 @@ export interface EnhanceRoutesDeps {
     originalPrompt: string;
     style?: PromptEnhanceStyle;
     mode?: GenerationMode;
+    /** V9 · B8：命中配方时把整张卡传下去（由执行者注入 system prompt） */
+    recipe?: RecipeCard;
     llm?: LlmConfig;
   }) => Promise<EnhancePromptResult>;
 }
@@ -90,6 +99,21 @@ export const createEnhanceRoutes =
           );
         }
 
+        /**
+         * V9 · B8（CONTRACT §3 / §11-1）：配方 id 在这里**解析成卡片**，未知 id 直接 400。
+         *
+         * 为什么在路由层查而不是丢给 llm.ts：这样"未知配方"是一条**可测的 400**，
+         * 而不是"悄悄按普通扩写跑一遍"——后者会让用户以为配方生效了（静默降级，PLAN §3 铁律 4）。
+         */
+        const recipe = findRecipe(body.recipeId);
+        if (body.recipeId !== undefined && recipe === undefined) {
+          return reply
+            .code(400)
+            .send(
+              createErrorResponse('PROMPT_REJECTED', `未知的配方 id：${body.recipeId}`),
+            );
+        }
+
         const apiKey = resolveLlmKey(request);
         if (apiKey === null) {
           return reply
@@ -108,6 +132,7 @@ export const createEnhanceRoutes =
             originalPrompt,
             ...(body.style === undefined ? {} : { style: body.style }),
             ...(body.mode === undefined ? {} : { mode: body.mode }),
+            ...(recipe === undefined ? {} : { recipe }),
             ...(body.llm === undefined ? {} : { llm: body.llm }),
           });
 

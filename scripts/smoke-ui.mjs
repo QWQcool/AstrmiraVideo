@@ -638,6 +638,42 @@ try {
   await page.screenshot({ path: path.join(SHOT_DIR, 'library.png'), fullPage: false });
   note('视频库截图留档：artifacts/ui-smoke/library.png');
 
+  console.log('\n[6d] 配方库（V9 · B8：≥20 张 + 插入骨架逐字 + 分类筛选）');
+  await page.evaluate(() => { location.hash = '#/recipes'; });
+  await page.locator('.recipe-card').first().waitFor({ timeout: 10_000 });
+  const recipeCount = await page.locator('.recipe-card').count();
+  assert(recipeCount >= 20, `配方卡 ≥20 张（实际 ${recipeCount}）`);
+
+  await page.getByRole('button', { name: '运镜', exact: true }).click();
+  const cameraCount = await page.locator('.recipe-card').count();
+  assert(
+    cameraCount >= 5 && cameraCount < recipeCount,
+    `分类筛选生效（运镜 ${cameraCount} 张 / 全部 ${recipeCount} 张）`,
+  );
+  await page.getByRole('button', { name: '全部', exact: true }).click();
+
+  // AC5 的硬断言：插入的骨架必须**逐字**出现在提示词框里
+  const firstSkeleton = await page.locator('.recipe-card-skeleton').first().innerText();
+  await page
+    .locator('.recipe-card')
+    .first()
+    .getByRole('button', { name: '插入骨架到提示词' })
+    .click();
+  // ⚠️ hash 变化是同步的、React 的重渲染是异步的 —— 这里必须**等条件成立**，
+  // 而不是"改完 hash 立刻读 textarea"（那样拿到的是旧值，实测踩到过一次）。
+  await page.waitForFunction(
+    (expected) => (document.querySelector('.wb-main textarea')?.value ?? '').includes(expected),
+    firstSkeleton,
+    { timeout: 10_000 },
+  );
+  const promptAfterInsert = await page.evaluate(
+    () => document.querySelector('.wb-main textarea')?.value ?? '',
+  );
+  assert(
+    promptAfterInsert.includes(firstSkeleton),
+    `插入骨架：配方文本**逐字**出现在提示词框里（框长 ${promptAfterInsert.length} 字）`,
+  );
+
   console.log('\n[7] 操作日志（V2.1，CONTRACT §10）');
   // 上面 [6] 段用界面真的提交过一条任务 → 它必须已经躺在操作日志里。
   // 这条断言把"界面动作 → 服务端留痕"整条链钉住（也是这次故障排错最需要的能力）。

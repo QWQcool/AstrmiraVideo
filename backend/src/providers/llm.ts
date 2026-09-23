@@ -1,5 +1,15 @@
-import { LLM_CUSTOM_PRESET_ID, LLM_PRESETS, findLlmPreset } from '@astrmira/shared';
-import type { GenerationMode, LlmConfig, PromptEnhanceStyle } from '@astrmira/shared';
+import {
+  LLM_CUSTOM_PRESET_ID,
+  LLM_PRESETS,
+  RECIPE_CATEGORY_LABELS,
+  findLlmPreset,
+} from '@astrmira/shared';
+import type {
+  GenerationMode,
+  LlmConfig,
+  PromptEnhanceStyle,
+  RecipeCard,
+} from '@astrmira/shared';
 import { ProviderFailureError } from '../errors.js';
 import { redactSecrets } from '../security/redact.js';
 
@@ -25,6 +35,12 @@ export interface EnhancePromptOptions {
   originalPrompt: string;
   style?: PromptEnhanceStyle;
   mode?: GenerationMode;
+  /**
+   * V9 · B8（CONTRACT §11-1）：用户选用的配方卡。
+   * 它只影响 **system prompt**——`skeleton` 作为"该怎么写"的正例、`pitfalls` 作为"别踩什么"，
+   * 而不是去改用户的原文（用户的 `originalPrompt` 始终原样作为 user message 发出去）。
+   */
+  recipe?: RecipeCard;
   /** 请求体里的端点覆盖（缺省回落到预设） */
   llm?: LlmConfig;
   /** 测试注入 */
@@ -166,7 +182,11 @@ function stringField(source: Record<string, unknown>, key: string): string | und
   return trimmed === '' ? undefined : trimmed;
 }
 
-function buildSystemPrompt(style: PromptEnhanceStyle | undefined, mode: GenerationMode | undefined): string {
+function buildSystemPrompt(
+  style: PromptEnhanceStyle | undefined,
+  mode: GenerationMode | undefined,
+  recipe: RecipeCard | undefined,
+): string {
   const lines = [
     '你是短视频分镜与提示词助手。把用户的一句话改写成可直接喂给视频生成模型的提示词。',
     '要求：',
@@ -179,6 +199,20 @@ function buildSystemPrompt(style: PromptEnhanceStyle | undefined, mode: Generati
   ];
   if (style !== undefined) lines.push(`风格：${STYLE_LABELS[style]}。`);
   if (mode !== undefined) lines.push(`生成模式：${MODE_HINTS[mode]}`);
+
+  // V9 · B8：配方作为**风格上下文**注入（骨架 = 该怎么写，已知坑 = 别踩什么）。
+  // 注意：注入的是提示词的"写法约束"，不是让模型复读骨架 —— 用户的主体描述仍然是主角。
+  if (recipe !== undefined) {
+    lines.push(
+      '',
+      `用户选用了配方「${recipe.title}」（${RECIPE_CATEGORY_LABELS[recipe.category]}）。改写结果请遵循这个骨架的写法：`,
+      recipe.skeleton,
+    );
+    if (recipe.pitfalls !== undefined && recipe.pitfalls.length > 0) {
+      lines.push(`已知坑（务必规避）：${recipe.pitfalls.join('；')}`);
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -194,7 +228,7 @@ export async function enhancePromptWithLlm(options: EnhancePromptOptions): Promi
     model,
     temperature: 0.7,
     messages: [
-      { role: 'system', content: buildSystemPrompt(options.style, options.mode) },
+      { role: 'system', content: buildSystemPrompt(options.style, options.mode, options.recipe) },
       { role: 'user', content: options.originalPrompt },
     ],
   };
