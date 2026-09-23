@@ -47,11 +47,12 @@
 - **产出**：`docs/ui-proto/index.html`（单文件，可直接 `file://` 打开或任意静态服务预览；**不进 bundle、不被前端构建引用**）。
 - **必含**：左侧栏（展开/收起两态切换按钮）、顶栏精简形态（logo + 服务状态点）、四个一级视图位（总览/生成工作台/视频库/操作日志）、侧栏底部区（凭据设置/主题切换/折叠）。
 - **AC**：用户在浏览器里看过并**明确确认**；确认项含「默认视图是 `#/overview` 还是 `#/workbench`」。**用户确认前禁止进 B2。**
-- **提交**：`docs(proto): high-fidelity V9 prototype with real tokens`。
+- **闸门结果（2026-09-23 已确认，四处拍板）**：① 配方库为**第 5 个一级视图** `#/recipes`（不做工作台内的面板）；② 剪辑台为**更彻底的独立视图** `#/edit`（源片经 hash 查询参数 `?task=<id>`，**不是**路径参数，故**不触发**台账 B28；不进侧栏，空态引导）；③ 默认视图 = `#/workbench`；④ 总览四卡按**方案 A** 落地（最小契约增量 → CONTRACT V2.3：暴露 `TaskProgress.createdAt`（`tasks.created_at` 列本就存在，零迁移）+ `outputSizeBytes`（后端 stat）+ `/api/history` 的 `storage` 目录级聚合——在 B3 内做）。
+- **提交**：`docs(proto): high-fidelity V9 prototype with real tokens`（cf466dc；闸门确认后的增补改动见同一片后续提交）。
 
 ### B2 · 应用壳：侧栏 + 自写 hash 路由 + 视图注册表
-- **改动**：新增 `frontend/src/lib/router.ts`（hash 解析 + `hashchange` 监听 + `navigate()`，约 40 行，**参数路由 `#/library/:taskId` 不做**——那是台账 B28 的迁移触发条件）；新增 `frontend/src/views/registry.ts`（**数据化**：`[{ path, title, icon, component }]`）；新增 `components/Sidebar.tsx`（展开 240px / 收起 56px 图标栏，状态存 `localStorage`，移动端行为在 B7）；`App.tsx` 重构为「顶栏（logo + 服务状态）+ Sidebar + 内容区按路由渲染」；现有三栏**原样**搬进 `views/WorkbenchView.tsx`；顶栏的 日志/主题/凭据 入口移到侧栏底部区。
-- **AC**：PLAN §4 Step 6-AC1（四路由可切、刷新保持、前进后退可用）。
+- **改动**：新增 `frontend/src/lib/router.ts`（hash 解析 + `hashchange` 监听 + `navigate()`，约 40 行；**hash 查询参数（`#/edit?task=<id>`）由视图自己读**，**路径参数 `#/library/:taskId` 不做**——那是台账 B28 的迁移触发条件）；新增 `frontend/src/views/registry.ts`（**数据化**：`[{ path, title, icon, component, hidden? }]`——剪辑台 `hidden:true` 不进侧栏）；新增 `components/Sidebar.tsx`（展开 240px / 收起 56px 图标栏，状态存 `localStorage`，移动端行为在 B7）；`App.tsx` 重构为「顶栏（logo + 服务状态）+ Sidebar + 内容区按路由渲染」；现有三栏**原样**搬进 `views/WorkbenchView.tsx`；顶栏的 日志/主题/凭据 入口移到侧栏底部区。
+- **AC**：PLAN §4 Step 6-AC1（五视图 + 剪辑台可切、刷新保持、前进后退可用）。
 - **破坏性验证**：临时把 `#/library` 从注册表删掉 → 访问该 hash 必须落到"未知视图"兜底（不许白屏）。
 - **提交**：`feat(shell): sidebar + hand-rolled hash router with a data-driven view registry`。
 
@@ -92,6 +93,7 @@
 - **提交**：`feat(recipes): prompt recipe library with skeleton insert and enhance context`。
 
 ### B9 · 轻剪辑台 MVP（CONTRACT §11-2 / PLAN §6-D37、D38）
+- **形态（闸门已定 2026-09-23）**：**独立视图 `#/edit`**，源片经 hash 查询参数 `?task=<id>` 传入；**不进侧栏**；`#/edit` 无 task 时显示空态引导（"去视频库选一条成片"）。视频库卡片与详情抽屉的 ✂ 入口跳转到这里。
 - **改动（后端）**：`packages/shared` 增 `EditScript`/`EditOperation` schema（**先改契约包并重建**）；`backend/src/routes/edits.ts`（`POST /api/edits`，挂 zod schema）；`backend/src/pipeline/editExecutor.ts`（ffmpeg 按 operations 顺序执行：trim→`concat`→`xfade`→`volume`→`speed`，`extractFrame` 产物落 `outputs/assets/`）；`store/db.ts` 加 `edit_script` 列（**走既有 `COLUMN_MIGRATIONS` 机制**，不许只改 CREATE TABLE）；`TaskProgress` 增 `origin` 与 `extractedAssetIds?`；剪辑任务复用现有队列（**本地互斥 1**）与 `GET /api/tasks/:taskId` 轮询。
 - **改动（前端）**：视频库卡片 ✂ 入口 → 详情抽屉内「剪辑」面板（操作序列编辑器：裁剪区间 / 追加拼接片 / 转场 / 音量 / 变速 / 抽帧时间点）；EDL 历史列表。
 - **AC**：Step 6-AC6（含**硬断言：全程零上游调用**——云轨 fetch 桩调用数 = 0）。
