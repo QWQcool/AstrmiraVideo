@@ -5,7 +5,7 @@ import fastifyStatic from '@fastify/static';
 import type { FastifyInstance } from 'fastify';
 
 /**
- * 前端产物托管（施工单 §9-3「单进程形态」）。
+ * 前端产物托管（PLAN §7-9「单进程形态」）。
  *
  * 生产形态只有**一个进程**：Caddy 反代 → 这个 Fastify 同时提供
  * `/api/*`（接口）、`/media/*`（成片 Range）与 `frontend/dist`（SPA）。

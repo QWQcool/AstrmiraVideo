@@ -5,7 +5,7 @@ import { cleanupTaskTemp, taskTmpDir } from './cleanup.js';
 
 /**
  * 防线 3：中间帧目录「合成结束立即物理删除」。
- * 断言口径 = **目录不存在**（施工单 §12-7：日志不是事实）。
+ * 断言口径 = **目录不存在**（PLAN §8 施工避坑第 5 条：日志不是事实）。
  */
 
 const TEST_TMP_ROOT = path.join(process.cwd(), '.tmp', 'cleanup-test-root');

@@ -40,7 +40,7 @@ pnpm dev               # 并行拉起 backend + frontend
 | [docs/CONTRACT.md](docs/CONTRACT.md) | 接口唯一权威 | TS 类型、**路由表**、错误码字典、存储与资产生命周期 |
 | [docs/GUIDE.md](docs/GUIDE.md) | 上手指南 | **Tier 0~3 算力矩阵**、双轨引擎接入、四种生成工作流、FAQ |
 | [docs/UPSTREAM.md](docs/UPSTREAM.md) | 上游台账 | 参考/复刻项目与版本追溯（含 ffmpeg 等外部工具的来源 / 版本 / 许可证登记） |
-| [docs/EXEC-STEP2-5.md](docs/EXEC-STEP2-5.md) | 施工手册（一次性） | Step 2 ~ Step 5 的**唯一施工权威**：分段施工卡、片内改动清单、破坏性验证、证据格式；Step 5 验收后归档删除 |
+| ~~docs/EXEC-STEP2-5.md~~ | ~~施工手册（一次性）~~ | **已归档删除**（2026-09-23）：Step 2 ~ Step 5 已完工，其仍有效的口径逐处迁入 PLAN（§3 铁律 → 本文协作规范、§7-9 部署硬要求、§8 施工避坑、§9 台账、§4 各 Step 的 AC）。历史从 git 取回即可，**不再建第二份施工手册** |
 | [NEXT_SESSION_PROMPT.md](NEXT_SESSION_PROMPT.md) | 跨会话接力 | 纯指针，不含任何独家信息 |
 
 ## 协作与文档规范（所有贡献者与 AI 会话必须遵守）
@@ -51,6 +51,15 @@ pnpm dev               # 并行拉起 backend + frontend
 4. **一致性自检**：修改方向性结论后，必须全仓检索相关关键词并同步所有受影响文档；
 5. **三级标记**：**【已验证】**实测确认 / **【待验证】**未经实测 / **【规划】**尚不存在——未标注的事实性数字视为【待验证】；
 6. **进度回检**：任何 Step 状态变更（开工 / 完工 / 阻塞）必须在**同一提交**内回检三处指针——README 徽章与「快速开始」段、PLAN §5 进度日志、NEXT_SESSION_PROMPT 指针段。三处只准链接 PLAN §5，禁止出现第二份状态描述。
+
+> 以下四条**原施工手册 §3「铁律」的存档**（2026-09-23 迁入；违反即返工）。
+
+7. **契约先行**：`docs/CONTRACT.md` 是接口唯一权威，**变更需先改文档再改代码**（类型 / 路由 / 错误码 / 存储契约都只在那一处详写）；
+8. **探针不替访客下结论**：`/api/providers/status` 不得返回任何未经显式配置的硬件信息，不得硬编码型号，`reason` 文案不得出现"你的设备 / 你没有显卡"这类对访问者的判断（细则见 PLAN §4 Step 2-AC6 与 §6-D22 / D27）；
+9. **Key 零留存**：凭据只走请求头（`X-Provider-Key` / `X-LLM-Key`），**不落库、不写日志、不回显明文**；pino `redact` 与 CORS `allowedHeaders` 必须就位（漏任一项，云端轨在真实浏览器上直接不可用或明文泄露）；
+10. **不静默降级**：能力未实现就返回明确错误码（如 `LLM_NOT_CONFIGURED`、`PROVIDER_UNAVAILABLE`），**不许假装可用、不许规则引擎冒充 AI**，也不许"用户填了配置却不生效"（见 PLAN §6-D30 / D31）。
+
+> 另外两条**施工流程纪律**（原手册 §10 / §11 的存档）：**每片完工必交证据**（AC 逐条 → 命令 → 输出摘录 → 判定；做了什么破坏 → 哪条断言失败 → 还原后复跑；不许用"应该/大概"描述结果）；**提交粒度**为"一片一提交、不合并跨片提交"，消息用 conventional commits，提交前自检 `pnpm lint && pnpm type && pnpm test:contract && pnpm test:coverage` 全绿 + `pnpm build` + `pnpm smoke:ui`。
 
 ## License
 

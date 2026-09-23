@@ -5,7 +5,7 @@
 #   2. 宿主 80 可从公网访问（HTTP-01 挑战，见 compose.yaml 的 HTTP_PORT）。
 
 {$DEPLOY_HOST} {
-	# ① 请求体上限：必须 ≥ 上传上限（施工单 §9-3 要求 ≥20M）。
+	# ① 请求体上限：必须 ≥ 上传上限（PLAN §7-9 要求 ≥20M）。
 	#    nginx 默认只有 1M，参考图会被**静默拦掉**（客户端只看到失败，看不出原因）。
 	request_body {
 		max_size 20MB

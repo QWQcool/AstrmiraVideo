@@ -10,7 +10,7 @@ import type { ByokConfig } from '../lib/byok';
 import { applyLlmPreset, applyVideoPreset, keyInputNotice, videoPresetSelection } from '../lib/byok';
 
 /**
- * BYOK 抽屉（CONTRACT §5 / 施工单 §7）。
+ * BYOK 抽屉（CONTRACT §5 / PLAN §4 Step 3）。
  *
  * 要贴在用户脸上的事实：
  * 1. Key **只**经请求头传给本服务，服务端**只用不存**（不落库、不写日志、不回显）；

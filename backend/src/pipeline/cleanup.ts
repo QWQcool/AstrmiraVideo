@@ -6,7 +6,7 @@ import path from 'node:path';
  * 在合成结束后**立即物理删除**。
  *
  * 注意：断言口径必须用「目录不存在」，不能用"日志里打印了已清理"——日志不是事实
- * （施工单 §12-7）。
+ * （PLAN §8 施工避坑第 5 条）。
  */
 
 export function resolveTmpRoot(): string {

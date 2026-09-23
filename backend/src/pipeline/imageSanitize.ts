@@ -2,7 +2,7 @@ import sharp, { type Metadata } from 'sharp';
 import { SIZE_ALIGNMENT, snapSize } from './smartCrop.js';
 
 /**
- * 防线 4：图像格式清洗网关（施工手册 **S6**）。
+ * 防线 4：图像格式清洗网关（PLAN §5 的 **S6** 条目）。
  *
  * ## 职责（只做这四件事，不多做）
  * 1. **解码 + EXIF 方向矫正**：手机直出的图带 orientation，不矫正的话"人看着是竖的、像素是横的"；

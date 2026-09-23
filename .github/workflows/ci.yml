@@ -1,9 +1,9 @@
 name: CI
 
-# CI 三件套（PLAN §6-D14 / 施工单 S7）：lint / type / test，外加契约层专项。
+# CI 三件套（PLAN §6-D14 / PLAN §4 Step 2-AC8）：lint / type / test，外加契约层专项。
 #
 # ⚠️ 关于 ffmpeg 与夹具片段（这两个都**不在仓库里**，必须由 runner 现场准备）：
-# 1. ffmpeg 走系统安装（D10 / 施工单 §2 P0-2）：仓库与镜像都不内置二进制；
+# 1. ffmpeg 走系统安装（PLAN §6-D10 / UPSTREAM.md）：仓库与镜像都不内置二进制；
 # 2. **夹具片段（tests/fixtures/clips/*.mp4）是 .gitignore 的** —— 二进制不入库，
 #    由 `scripts/make-fixture-clips.mjs` 用 ffmpeg 现场合成。
 #    漏掉第 2 步时，CI 会报 `ENOENT: copyfile .../tests/fixtures/clips/...`，

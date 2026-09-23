@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ═══════════════════════════════════════════════════════════════════════════
-# AstrmiraVideo 生产镜像（施工单 §9-3）
+# AstrmiraVideo 生产镜像（PLAN §7-9）
 #
 # 形态：**单进程**。运行层只有 Fastify 一个进程，它同时提供
 #   /api/*     接口
@@ -46,7 +46,7 @@ ENV PATH=/pnpm:$PATH
 RUN corepack enable
 
 # 换 apt 源 + 装 ffmpeg（真实产物链路的硬依赖：探测 / 裁切 / 时长对齐）
-# 来源与许可证登记见 docs/UPSTREAM.md（施工单 §9-3 第 1 条）。
+# 来源与许可证登记见 docs/UPSTREAM.md（`docs/UPSTREAM.md` 的 ffmpeg 登记）。
 # 若部署到海外，把 mirrors.aliyun.com 换回 deb.debian.org 即可。
 RUN set -eux; \
     sed -i 's|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org|mirrors.aliyun.com|g' \

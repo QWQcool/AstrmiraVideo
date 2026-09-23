@@ -10,7 +10,7 @@ import {
 import { SIZE_ALIGNMENT, isAlignedTo32, snapTo32 } from './smartCrop.js';
 
 /**
- * 防线 4 图像清洗网关（施工手册 **S6** / PLAN §4 Step 4-AC2）。
+ * 防线 4 图像清洗网关（PLAN §5 的 **S6** 条目 / PLAN §4 Step 4-AC2）。
  *
  * 断言口径说明：
  * - 尺寸一律**钉死具体数字**（不是 ≤ 某值），因为规整规则是纯函数（`snapSize` = 向下取 32 倍数），

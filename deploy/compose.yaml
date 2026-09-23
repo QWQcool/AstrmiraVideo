@@ -1,4 +1,4 @@
-# AstrmiraVideo 生产编排（施工单 §9-3）
+# AstrmiraVideo 生产编排（PLAN §7-9）
 #
 # 两个容器，职责严格分离：
 #   app    —— 单进程 Fastify（/api + /media + 前端产物），**不映射任何宿主端口**：

@@ -4,7 +4,7 @@ import { GalleryCard } from './GalleryCard';
 import { statusLabel } from '../lib/format';
 
 /**
- * 右栏：任务队列 + 历史画廊（施工单 §7）。
+ * 右栏：任务队列 + 历史画廊（PLAN §4 Step 3）。
  * 队列只显示"当前这个"（后端本身也是拒绝并发/排队语义），画廊是已完成任务的沉淀与回填入口。
  */
 export interface RightPanelProps {

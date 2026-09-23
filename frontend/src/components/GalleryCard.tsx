@@ -4,7 +4,7 @@ import { resolveMediaUrl } from '../lib/api';
 import { formatIndex, statusLabel } from '../lib/format';
 
 /**
- * 画廊卡片（施工单 §7 右栏）。
+ * 画廊卡片（PLAN §4 Step 3 右栏）。
  *
  * `outputVideoUrl` 经 `resolveMediaUrl` 收口：只认同源 `/media/...`，
  * 拒绝绝对地址与 `..` —— 卡片缩略图同样是 `<video src>`，这也是注入面。

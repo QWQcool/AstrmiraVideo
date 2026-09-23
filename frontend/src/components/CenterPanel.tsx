@@ -12,7 +12,7 @@ import {
 } from '../lib/format';
 
 /**
- * 中栏视窗（施工单 §7）。
+ * 中栏视窗（PLAN §4 Step 3）。
  *
  * 状态 → 画面必须一一对应，不允许出现"转圈但没有百分比"或"失败但界面还在转"：
  * queued/running→进度环（带流光，`flow` keyframe）、succeeded→播放器 + 下载、

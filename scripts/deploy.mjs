@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 一键部署（施工单 §9-3）。
+ * 一键部署（PLAN §7-9）。
  *
  * 职责边界很清楚：**只做校验与拼装**，不代替 Docker 做任何事。
  * 它存在的理由是"少一次手工出错的机会"：
@@ -215,7 +215,7 @@ const probe = spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' });
 if (probe.status !== 0) {
   fail(
     '未检测到可用的 `docker compose`。\n' +
-      '  服务器需要预装 Docker + Docker Compose（施工单 §9-1）。',
+      '  服务器需要预装 Docker + Docker Compose（PLAN §7-9）。',
   );
 }
 

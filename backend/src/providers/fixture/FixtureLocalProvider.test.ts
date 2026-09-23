@@ -9,7 +9,7 @@ import { isAlignedTo32 } from '../../pipeline/smartCrop.js';
 import { FixtureLocalProvider } from './FixtureLocalProvider.js';
 
 /**
- * OI-2 夹具 provider 验收（施工单 S1 / AC5）。
+ * OI-2 夹具 provider 验收（PLAN §5 的 S1 条目 / AC5）。
  * 9 条边界用例一条不少（PLAN §4 表）；全部零外网、零配额、确定性。
  */
 

@@ -215,7 +215,7 @@ export async function buildApp() {
   await app.register(createLogRoutes({ store: eventLog }));
   await registerStaticOutputs(app);
 
-  // 单进程形态（施工单 §9-3）：进程同时托管 /api、/media 与前端产物。
+  // 单进程形态（PLAN §7-9）：进程同时托管 /api、/media 与前端产物。
   // 刻意放在**所有路由之后**——`setNotFoundHandler` 是全局的，顺序反了会把 API 的 404 变成 index.html。
   await registerSpa(app);
 

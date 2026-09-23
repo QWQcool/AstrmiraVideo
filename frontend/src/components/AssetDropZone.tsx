@@ -5,7 +5,7 @@ import type { AssetState } from '../lib/assets';
 import { formatBytes, resolveTargetSize, toCssAspectRatio } from '../lib/format';
 
 /**
- * 参考资产上传槽（施工单 §7：拖拽槽 + **32 倍数裁切预览**）。
+ * 参考资产上传槽（PLAN §4 Step 3：拖拽槽 + **32 倍数裁切预览**）。
  *
  * 预览的语义要说清：容器比例 = **目标画幅**、图片 `object-fit: cover`，
  * 因此看到的就是"服务端即将裁出来的那一块"，用户不必自己算 832×480 会不会切掉脸。

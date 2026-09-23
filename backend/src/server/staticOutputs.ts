@@ -8,7 +8,7 @@ import type { FastifyInstance } from 'fastify';
  *
  * 它是 **206 Range 的载体**：播放器拖动进度、断点续播都依赖它。
  * `@fastify/static` 底层是 `send`，原生支持 Range —— 但仍必须实测
- * （反向代理压缩会破坏 Range，见施工单 §9-3）。
+ * （反向代理压缩会破坏 Range，见PLAN §7-9）。
  */
 export function resolveOutputsDir(): string {
   const override = process.env.OUTPUT_DIR;

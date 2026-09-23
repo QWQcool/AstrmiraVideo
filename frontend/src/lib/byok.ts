@@ -19,7 +19,7 @@ import {
 } from './storage';
 
 /**
- * BYOK 前端半边（CONTRACT §5「凭据传递约定」/ 施工单 §7「BYOK 抽屉」）。
+ * BYOK 前端半边（CONTRACT §5「凭据传递约定」/ PLAN §4 Step 3「BYOK 抽屉」）。
  *
  * 四条硬约束：
  * 1. Key **只**放进请求头 `X-Provider-Key`，**永不**进 URL / body / 日志；
