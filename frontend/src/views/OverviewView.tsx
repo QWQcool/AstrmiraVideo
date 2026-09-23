@@ -151,7 +151,12 @@ export function OverviewView() {
           ) : (
             <div className="ov-shots">
               {shots.map((shot) => (
-                <a key={shot.taskId} className="ov-shot" href="#/library" title={shot.taskId}>
+                <a
+                  key={shot.taskId}
+                  className="ov-shot"
+                  href={`#/library?task=${encodeURIComponent(shot.taskId)}`}
+                  title={shot.taskId}
+                >
                   {shot.thumbnailUrl === undefined ? (
                     <span className="ov-shot-empty">无封面</span>
                   ) : (

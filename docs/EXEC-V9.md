@@ -65,7 +65,8 @@
 - **测试**：聚合逻辑是纯函数（`lib/overviewStats.ts`），单测覆盖"空列表 / 全失败 / 进行中"三态。
 - **提交**：`feat(overview): dashboard view aggregating existing history and logs APIs`。
 
-### B4 · 视频库升级
+### B4 · 视频库升级【已完成 2026-09-23】
+> 实测：过滤/排序纯函数 10 条单测；冒烟 [6c] 对账全绿（搜索空态 / 筛选对账 / 时间正序对账 / 复用参数完整回填）；门禁 lint 0 / type 0 / 前端 96 / 后端 307 / 视觉自检 / UI 冒烟。跨视图回填走 `#/workbench?reuse=<taskId>`（零共享状态）。
 - **改动**：`views/LibraryView.tsx`（现 `RightPanel`/`GalleryCard` 的画廊部分迁入）；工具条（搜索=提示词模糊 / 筛选=状态+模式 / 排序=时间+大小）；**详情抽屉**（完整参数快照 + 复用参数/下载/删除；`origin.kind==='edit'` 时显示"剪辑自 xxx"徽标与 EDL 历史位——B9 才填数据，本批先留位）；卡片上预留 ✂ 入口位（B9 才接线，本批不显示）。
 - **AC**：Step 6-AC4。
 - **破坏性验证**：搜索词改成「不存在词」→ 必须出现空态而非全部卡片。

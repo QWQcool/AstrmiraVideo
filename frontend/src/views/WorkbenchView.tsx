@@ -28,6 +28,7 @@ import {
   modeAfterSlotUpload,
 } from '../lib/assets';
 import { resolveLlmConfig, resolveLlmKey, resolveProviderKey } from '../lib/byok';
+import { useHashRoute } from '../lib/router';
 import { useShell } from '../lib/shell';
 import {
   STORAGE_KEYS,
@@ -176,6 +177,35 @@ export function WorkbenchView() {
 
     return () => clearInterval(timer);
   }, [taskActive, elapsedKey]);
+
+  /**
+   * 「复用参数」的跨视图入口（V9 · B4 / Step 6-AC4）：
+   * 视频库点 ⟲ 后跳 `#/workbench?reuse=<taskId>`，在这里读出来并回填。
+   *
+   * 三个细节：
+   * 1. 用 **hash 参数**而不是共享 React 状态：两个视图之间零耦合，刷新/前进后退都成立；
+   * 2. `handledReuse` 保证同一次跳转只回填一次（否则 history 每次刷新都会重新覆盖用户的手改）；
+   * 3. 离开工作台就**重置**标记 —— 这样"再点一次同一条"仍然有效（hash 相同也要能触发）。
+   */
+  const route = useHashRoute();
+  const handledReuse = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (route.path !== '#/workbench') {
+      handledReuse.current = null;
+      return;
+    }
+
+    const target = route.query.get('reuse');
+    if (target === null || handledReuse.current === target) return;
+
+    // history 可能还没到位（首屏竞态）：等它更新后本 effect 会再跑一次
+    const item = history.find((entry) => entry.taskId === target);
+    if (item === undefined) return;
+
+    handledReuse.current = target;
+    handleReuse(item);
+  }, [route, history]);
 
   function startCooldown(): void {
     const until = Date.now() + COOLDOWN_MS;

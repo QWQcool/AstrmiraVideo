@@ -557,6 +557,87 @@ try {
   await page.screenshot({ path: path.join(SHOT_DIR, 'overview.png'), fullPage: false });
   note('总览截图留档：artifacts/ui-smoke/overview.png');
 
+  console.log('\n[6c] 视频库（V9 · B4：搜索 / 筛选 / 排序 + 详情抽屉 + 复用参数回填）');
+  await page.evaluate(() => { location.hash = '#/library'; });
+  await page.locator('.lib-card').first().waitFor({ timeout: 10_000 });
+  const totalCards = await page.locator('.lib-card').count();
+  assert(totalCards > 0, `视频库列出成片（${totalCards} 张卡片）`);
+
+  // 破坏性验证（固化）：搜一个不存在的词 → 必须是空态，而不是"原样显示全部卡片"
+  await page.getByLabel('搜索提示词').fill('这个词一定不存在-zzz');
+  await page.waitForFunction(() => document.querySelectorAll('.lib-card').length === 0, {
+    timeout: 5_000,
+  });
+  assert(
+    await page.getByText('没有匹配的成片').isVisible(),
+    '搜索不存在的词 → 空态文案（而不是原样显示全部）',
+  );
+  await page.getByLabel('搜索提示词').fill('');
+  await page.waitForFunction(
+    (expected) => document.querySelectorAll('.lib-card').length === expected,
+    totalCards,
+    { timeout: 5_000 },
+  );
+  assert(true, '清空搜索后恢复全部卡片');
+
+  // 状态筛选与 API 现算对账（"失败"含 cancelled）
+  await page.getByRole('button', { name: '失败', exact: true }).click();
+  const failedCards = await page.locator('.lib-card').count();
+  const expectedFailed = await page.evaluate(async () => {
+    const data = await (await fetch('/api/history')).json();
+    return (data.items ?? []).filter((item) => item.status === 'failed' || item.status === 'cancelled')
+      .length;
+  });
+  if (expectedFailed === 0) {
+    assert(
+      failedCards === 0 && (await page.getByText('没有匹配的成片').isVisible()),
+      '「失败」筛选生效（当前确无失败任务 → 空态）',
+    );
+  } else {
+    assert(
+      failedCards === expectedFailed,
+      `「失败」筛选对账：界面 ${failedCards} = API 现算 ${expectedFailed}`,
+    );
+  }
+  await page.getByRole('button', { name: '全部', exact: true }).click();
+
+  // 排序对账：切到"旧→新"，DOM 首条必须等于 API 现算的最旧一条
+  await page.getByLabel('排序方式').selectOption('time-asc');
+  const orderCheck = await page.evaluate(async () => {
+    const data = await (await fetch('/api/history')).json();
+    const items = [...(data.items ?? [])].sort((a, b) => a.createdAt - b.createdAt);
+    return {
+      expectedFirst: items[0]?.taskId,
+      domFirst: document.querySelector('.lib-card')?.getAttribute('data-task'),
+    };
+  });
+  assert(
+    orderCheck.expectedFirst === orderCheck.domFirst,
+    `时间正序对账：DOM 首条 ${orderCheck.domFirst} = API 现算最旧 ${orderCheck.expectedFirst}`,
+  );
+
+  // AC4 硬断言：详情抽屉「复用参数」把提示词**完整回填**到生成工作台
+  await page.locator('.lib-card .lib-thumb').first().click();
+  await page.locator('.lib-drawer').waitFor({ timeout: 5_000 });
+  assert(true, '点卡片打开详情抽屉');
+  const drawerPrompt = await page.locator('.lib-kv dd').first().innerText();
+  await page.locator('.lib-drawer').getByRole('button', { name: '复用参数' }).click();
+  await page.waitForFunction(() => location.hash.startsWith('#/workbench?reuse='), {
+    timeout: 5_000,
+  });
+  await page.waitForFunction(
+    (expected) => {
+      const box = document.querySelector('.wb-main textarea');
+      return box !== null && box.value === expected;
+    },
+    drawerPrompt,
+    { timeout: 5_000 },
+  );
+  assert(true, '详情抽屉「复用参数」把提示词完整回填到工作台（hash 参数通道）');
+
+  await page.screenshot({ path: path.join(SHOT_DIR, 'library.png'), fullPage: false });
+  note('视频库截图留档：artifacts/ui-smoke/library.png');
+
   console.log('\n[7] 操作日志（V2.1，CONTRACT §10）');
   // 上面 [6] 段用界面真的提交过一条任务 → 它必须已经躺在操作日志里。
   // 这条断言把"界面动作 → 服务端留痕"整条链钉住（也是这次故障排错最需要的能力）。
