@@ -193,7 +193,9 @@ ffprobe <该资产落盘文件> → 800,448
 | 契约层 | `pnpm test:contract` | **11 passed**（1 file） |
 | 真实 TCP e2e（OI-2 夹具） | `pnpm test:e2e` | **1 passed**（提交 → 轮询 → `/media` 206 → ffprobe 可播 → 画廊 → 删除释放磁盘） |
 | 静态门禁 | `pnpm lint && pnpm type` | lint **0 warning / 0 error**（107 files）；tsc 三包 **0 error** |
-| 全量后端测试 + 覆盖率门限 | `pnpm test:coverage` | **31 文件 / 301 用例**（基线）→ 加入本片 6 例后见 §5 复跑记录 |
+| 全量后端测试 + 覆盖率门限 | `pnpm test:coverage` | **32 文件 / 307 用例全绿**（基线为 31 / 301，本片 +6）；覆盖率总 **90.89%**（语句），文件级门限全过 |
+| 前端测试 | `pnpm test:frontend` | **5 文件 / 74 用例全绿** |
+| 生产形态 UI 冒烟 | `pnpm smoke:ui`（须先 `pnpm build`） | 通过（三栏 + 连通 + 抽屉 + 参数/主题 + 素材槽与封面 + 操作日志 + 控制台零 error） |
 
 **判定**：✓ 通过。
 
