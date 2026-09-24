@@ -68,6 +68,8 @@ jobs:
             "cd /root/astrmira && \
              CONTAINER=\$(docker compose --env-file .env.deploy -f deploy/compose.yaml ps -q app) && \
              echo \"容器: \$CONTAINER\" && \
-             docker cp /tmp/cleanup-edits.cjs \"\$CONTAINER:/tmp/cleanup-edits.cjs\" && \
-             docker compose --env-file .env.deploy -f deploy/compose.yaml exec -T -w /app/backend app \
-               node /tmp/cleanup-edits.cjs $CONFIRM_FLAG"
+             docker cp /tmp/cleanup-edits.cjs \"\$CONTAINER:/app/backend/cleanup-edits.cjs\" && \
+             docker compose --env-file .env.deploy -f deploy/compose.yaml exec -T app \
+               node backend/cleanup-edits.cjs $CONFIRM_FLAG; \
+             docker compose --env-file .env.deploy -f deploy/compose.yaml exec -T app \
+               rm -f backend/cleanup-edits.cjs"
