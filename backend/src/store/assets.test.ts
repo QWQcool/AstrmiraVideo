@@ -1,0 +1,89 @@
+import { describe, expect, it } from 'vitest';
+import { parseTaskRef, TASK_REF_PREFIX } from '@astrmira/shared';
+import { createTaskVideoUrlResolver, type TaskVideoResolverOptions } from './assets.js';
+import type { TaskRecord } from './taskStore.js';
+
+/**
+ * `task:<taskId>` 引用解析（V2.6 / 台账 B37：成片与剪辑产物直接当 V2V 参考）。
+ *
+ * 三个失败态必须分开（错误码与文案都不同）：
+ * - `not_found` / `no_output` → provider 层归 `TASK_NOT_FOUND`；
+ * - `no_public_base` → provider 层归 `INVALID_ASSET` + PUBLIC_BASE_URL 指引
+ *   （视频没有 data URL 退路 —— 上游明文拒绝，见 CONTRACT §1）。
+ */
+
+function makeStore(record: TaskRecord | null): TaskVideoResolverOptions['store'] {
+  return { get: () => record };
+}
+
+function succeededRecord(outputVideoUrl?: string): TaskRecord {
+  return {
+    taskId: 'task-ref-1',
+    track: 'local',
+    provider: 'browser-remotion',
+    status: 'succeeded',
+    progressPercent: 100,
+    requestSnapshot: {
+      prompt: '源片',
+      mode: 't2v',
+      aspectRatio: '16:9',
+      provider: 'cloud-volcano-seedance',
+    },
+    ...(outputVideoUrl === undefined ? {} : { outputVideoUrl }),
+    warnings: [],
+    submitting: false,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+describe('parseTaskRef（shared 常量形态）', () => {
+  it('`task:` 前缀解析出 taskId；普通资产 id 与空前缀返回 null', () => {
+    expect(parseTaskRef(`${TASK_REF_PREFIX}abc-123`)).toBe('abc-123');
+    expect(parseTaskRef('a-asset-id')).toBeNull();
+    expect(parseTaskRef(TASK_REF_PREFIX)).toBeNull();
+  });
+});
+
+describe('createTaskVideoUrlResolver', () => {
+  it('成功：已出片任务 + 公网基址 → 拼出 /media 直链', async () => {
+    const resolve = createTaskVideoUrlResolver({
+      store: makeStore(succeededRecord('/media/task-ref-1.mp4')),
+      publicBaseUrl: 'https://video.example.com/',
+    });
+    // 基址尾斜杠要被剥掉（与 createAssetUrlResolver 同口径）
+    await expect(resolve('task-ref-1')).resolves.toEqual({
+      ok: true,
+      url: 'https://video.example.com/media/task-ref-1.mp4',
+    });
+  });
+
+  it('任务不存在 → not_found', async () => {
+    const resolve = createTaskVideoUrlResolver({
+      store: makeStore(null),
+      publicBaseUrl: 'https://video.example.com',
+    });
+    await expect(resolve('ghost')).resolves.toEqual({ ok: false, reason: 'not_found' });
+  });
+
+  it('任务未出片（无成片 / 未成功）→ no_output', async () => {
+    const resolve = createTaskVideoUrlResolver({
+      store: makeStore(succeededRecord()),
+      publicBaseUrl: 'https://video.example.com',
+    });
+    await expect(resolve('task-ref-1')).resolves.toEqual({ ok: false, reason: 'no_output' });
+
+    const running = createTaskVideoUrlResolver({
+      store: makeStore({ ...succeededRecord('/media/x.mp4'), status: 'running' }),
+      publicBaseUrl: 'https://video.example.com',
+    });
+    await expect(running('task-ref-1')).resolves.toEqual({ ok: false, reason: 'no_output' });
+  });
+
+  it('未配 PUBLIC_BASE_URL → no_public_base（视频没有 data URL 退路）', async () => {
+    const resolve = createTaskVideoUrlResolver({
+      store: makeStore(succeededRecord('/media/task-ref-1.mp4')),
+    });
+    await expect(resolve('task-ref-1')).resolves.toEqual({ ok: false, reason: 'no_public_base' });
+  });
+});

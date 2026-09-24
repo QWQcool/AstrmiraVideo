@@ -506,6 +506,23 @@ try {
   );
   assert(await card.locator('.wb-card-play').isVisible(), '封面角标可见（静帧不会被误读成图片素材）');
 
+  // ── B37：V2V「从成片库选择」（V2.6 `task:` 引用入口）──────────────────────
+  // 此刻画廊里已有一条夹具成片 → 候选必然非空；选中后槽里应是 `task:` 引用
+  await page.getByRole('button', { name: '视频参考', exact: true }).click();
+  const trefPick = page.locator('.wb-tref-pick');
+  await trefPick.waitFor({ timeout: 5_000 });
+  const trefOptions = await trefPick.locator('option').count();
+  assert(trefOptions >= 2, `「从成片库选择」出现且有候选（${trefOptions - 1} 条）`);
+  await trefPick.selectOption({ index: 1 });
+  await page.waitForFunction(
+    // 已填态的预览渲染在 .wb-preview 里（AssetDropZone 源码事实），不是 .wb-dropzone
+    () => document.querySelector('.wb-preview video') !== null,
+    { timeout: 5_000 },
+  );
+  assert(true, '选中成片后参考视频槽就绪（/media 直链预览已挂载，槽值 = task: 引用）');
+  // 不留状态残留：切回文生（`assetsForMode` 只发该模式用得到的槽，槽本身留着也无害）
+  await page.getByRole('button', { name: '文生视频', exact: true }).click();
+
   // ── 点封面 → 中栏播放（V8.3 批次 7 / 台账 B26）────────────────────────────
   // 用户报障："其它人跑的历史成片我无法预览" —— 原因不是文件缺失（服务端 206 正常），
   // 而是画廊**根本没有播放入口**（封面上的 ▶ 曾是装饰角标）。这里钉住"点了真的能播"。

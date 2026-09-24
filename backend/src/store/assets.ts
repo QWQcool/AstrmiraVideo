@@ -1,5 +1,6 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
+import type { TaskStore } from './taskStore.js';
 
 /**
  * 资产 id → 上游可访问地址。
@@ -82,5 +83,46 @@ export function createAssetUrlResolver(
 
     const buffer = await readFile(filePath);
     return `data:${mime};base64,${buffer.toString('base64')}`;
+  };
+}
+
+/**
+ * `task:<taskId>` 引用 → 上游可访问地址（V2.6 / 台账 B37：剪辑产物与成片可直接当 V2V 参考）。
+ *
+ * 与资产解析的三点不同：
+ * 1. **没有 data URL 退路** —— 上游明文拒绝视频 data URL（`reference_video must be provided
+ *    as a web url`），且成片体积远超 `MAX_DATA_URL_BYTES`。所以未配 `PUBLIC_BASE_URL` 时
+ *    如实报 `no_public_base`，由 provider 层转成"去配公网基址"的可读错误；
+ * 2. **不碰文件系统** —— 成片地址就是任务记录里的 `outputVideoUrl`（`/media/<taskId>.mp4`），
+ *    直接拼公网基址；文件缺失由静态服务 404 兜住（与成片播放同一口径）；
+ * 3. 判别式结果把「任务不存在 / 无成片 / 未配公网基址」分开 —— 三者的错误码与文案不同
+ *    （前两者 → `TASK_NOT_FOUND`，后者 → `INVALID_ASSET` + 配置指引）。
+ */
+export type TaskVideoResolution =
+  | { ok: true; url: string }
+  | { ok: false; reason: 'not_found' | 'no_output' | 'no_public_base' };
+
+export interface TaskVideoResolverOptions {
+  /** 只用到 `get`（查询任务记录），刻意不拿整个 store */
+  store: Pick<TaskStore, 'get'>;
+  /** 公网基址（同 `createAssetUrlResolver` 的口径） */
+  publicBaseUrl?: string;
+}
+
+export function createTaskVideoUrlResolver(
+  options: TaskVideoResolverOptions,
+): (taskId: string) => Promise<TaskVideoResolution> {
+  const base = options.publicBaseUrl?.replace(/\/+$/, '');
+
+  return (taskId: string): Promise<TaskVideoResolution> => {
+    const record = options.store.get(taskId);
+    if (record === null) return Promise.resolve({ ok: false, reason: 'not_found' });
+    if (record.status !== 'succeeded' || record.outputVideoUrl === undefined || record.outputVideoUrl === '') {
+      return Promise.resolve({ ok: false, reason: 'no_output' });
+    }
+    if (base === undefined || base === '') {
+      return Promise.resolve({ ok: false, reason: 'no_public_base' });
+    }
+    return Promise.resolve({ ok: true, url: `${base}${record.outputVideoUrl}` });
   };
 }

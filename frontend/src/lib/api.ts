@@ -280,10 +280,15 @@ export function clearLogs(query: LogQuery = {}): Promise<LogDeleteResponse> {
   return request(`/api/logs${suffix}`, LogDeleteResponseSchema, { method: 'DELETE' });
 }
 
-export function fetchHistory(filter?: { kind: 'edit'; source: string }): Promise<HistoryResponse> {
-  // V9 修复：剪辑产物默认不进历史成片；剪辑台用 `?kind=edit&source=<id>` 查某源片的剪辑历史
+export function fetchHistory(filter?: { kind: 'edit'; source?: string }): Promise<HistoryResponse> {
+  // V9 修复：剪辑产物默认不进历史成片；剪辑台用 `?kind=edit&source=<id>` 查某源片的剪辑历史。
+  // V2.6（B37）：`kind:'edit'` 不带 source → 全部剪辑产物（时间轴素材候选合并用）。
   const suffix =
-    filter === undefined ? '' : `?kind=edit&source=${encodeURIComponent(filter.source)}`;
+    filter === undefined
+      ? ''
+      : filter.source === undefined
+        ? '?kind=edit'
+        : `?kind=edit&source=${encodeURIComponent(filter.source)}`;
   return request(`/api/history${suffix}`, HistoryResponseSchema);
 }
 
@@ -332,8 +337,8 @@ export async function uploadAssets(files: File[]): Promise<UploadResponse> {
  * 浏览器端渲染产物**入库**（CONTRACT §11-2，V2.5 / B34 · P4）。
  *
  * 与 `uploadAssets` 同一个 multipart 套路（boundary 交给浏览器），但走**专用路由**：
- * 服务端不做渲染，只校验（工程 JSON 过 `EditProjectSchema`、源片可引用、魔数必须是 MP4、≤20MB）并归档。
- * 超时给 120s：成片可能几 MB ~ 20MB，普通上传的 30s 在慢网络下会误伤。
+ * 服务端不做渲染，只校验（工程 JSON 过 `EditProjectSchema`、源片可引用、魔数必须是 MP4、≤100MB）并归档。
+ * 超时给 120s：成片可能几 MB ~ 几十 MB，普通上传的 30s 在慢网络下会误伤。
  */
 export async function submitEditRender(input: {
   file: Blob;

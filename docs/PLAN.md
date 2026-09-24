@@ -1,4 +1,9 @@
-# AstrmiraVideo · 产品与开发规划（PLAN V8.5）
+# AstrmiraVideo · 产品与开发规划（PLAN V8.6）
+
+> **修订说明（V8.6，2026-09-24）**
+> 1. **补记 Step 7（剪辑台改版 / B34）**：P1~P5 已于 2026-09-24 收官（证据 [edit-desk-acceptance.md](edit-desk-acceptance.md)），契约 V2.5；本条为补登的修订说明（当时只更新了 §5 指针与 §9 台账）。
+> 2. **新一轮立项（用户 2026-09-24 拍板）= Step 8**：台账 **B36**（入库体积上限 20MB → **100MB**）与 **B37**（剪辑产物作为其它工程素材）触发条件达成、转入施工；新增 **B41**（one-for-all 创作入口：意图输入框 + @ 提及 + 配方 chips + 拖图入口，工作台退为"专业模式"）与 **B42**（L2 只读血缘画布：React Flow 可视化 `origin` 派生链，组件选型早已登记 UPSTREAM #5）。
+> 3. §7-6 / §7-9 的请求体与上传上限口径由 20MB 同步为 **100MB**（CONTRACT **V2.6** 先行；历史 AC 记录（Step 2-AC10、Step 7-AC5）保留当时数字，不改写证据）。
 
 > **修订说明（V8.5，2026-09-23）**
 > 1. **Step 4 端到端验收【已完成】**：AC1（真实云端轨 T2V / I2V 复验）与 AC2（上传清洗网关的**落盘产物**断言，固化为集成测试）全部通过；产出 [walkthrough.md](walkthrough.md)（§4 Step 4 各 AC 与 §5 进度日志已按结果更新）。
@@ -245,6 +250,45 @@
 > **Step 7 状态（2026-09-24）**：**P1~P5 全部完成**，逐条证据见 [edit-desk-acceptance.md](edit-desk-acceptance.md)；
 > 提交 = `f6e608d`（P1）→ `bd12b42`（P2）→ `fc40ba6`（P3）→ `e980be5`（P4）→ 本文档提交（P5）。
 
+### Step 8：创作入口与素材网络（台账 B36 / B37 / B41 / B42）【进行中 2026-09-24】
+
+> 施工手册 = [EXEC-STEP8.md](EXEC-STEP8.md)（**一次性**，Step 8 验收后归档删除；设计定稿 D39/D40 见 §6）。
+
+> 背景：用户 2026-09-24 拍板四项 —— ① 入库体积上限 20MB → **100MB**（B36 触发：V2V 参考视频与
+> 长工程入库的真实诉求）；② **剪辑产物直接作为其它工程的素材**（B37 触发：多工程串剪 +
+> 剪辑产物当 V2V 参考——成片本就挂在 `/media/*`，配 `PUBLIC_BASE_URL` 后天然满足上游公网 URL 要求）；
+> ③ **one-for-all 创作入口**（B41 新增：意图输入框 + `@` 提及 + 配方 chips + 拖图入口，
+> 工作台退为"专业模式"切页；视觉要求对标即梦/Flova，允许联网参考优秀设计但**不抄视觉资产**）；
+> ④ **L2 只读血缘画布**立项（B42 新增：React Flow 可视化 `origin` 派生链，组件选型早已登记 UPSTREAM #5，
+> 规划源头 = §6-D9 的"L1 优先"分层）。契约 = **CONTRACT V2.6**（先行）。
+
+- **任务**（按 P1~P4 顺序实施，每片门禁全绿后提交）：
+  1. **P1 体积上限 100MB（B36）【已完成 2026-09-24】**：`MAX_FILE_BYTES` / `MAX_RENDER_BYTES` /
+     两份 Caddyfile `request_body.max_size` 四处同步 + 报错文案常量驱动 + GUIDE/前端文案；
+  2. **P2 产物即素材（B37）【已完成 2026-09-24】**：(a) `GET /api/history?kind=edit` 的 `source`
+     改可选（全量剪辑产物）+ 剪辑台素材候选合并（✂ 标识）+ 剪辑产物可再剪；(b) `assets.referenceVideo`
+     接受 `task:<taskId>` 引用 —— shared `TASK_REF_PREFIX`/`parseTaskRef` + `store/assets.ts`
+     判别式解析器（not_found / no_output / no_public_base 三分开）+ provider/registry/dispatcher
+     透传 + generate 路由**同步 404** + 工作台 V2V 槽「从成片库选择」；
+  3. **P3 one-for-all 创作入口（B41）**：新默认首页 = 意图输入框（`@` 提及资产与成片、配方 chips
+     即"技能"、拖图/粘贴即 I2V 入口）+ 画幅/时长/档位/双轨收进"更多设置"抽屉；模式推断复用
+     `lib/assets.ts` 纯函数（素材决定模式）；现三栏工作台保留为专业模式（Step 6 证据链不动）；
+  4. **P4 L2 只读血缘画布（B42）**：`@xyflow/react` 渲染全部任务的派生 DAG（节点 = 成片/资产，
+     边 = `origin` / 抽帧来源），点节点回填参数或跳剪辑台；**只读**，零契约变更。
+- **AC1【已达成】**：>100MB 的上传与渲染入库被 **413** 拒绝（两路由各一测），≤100MB 正常；
+  反代与路由常量同口径（PLAN §7-9 同步）。
+- **AC2【已达成】**：`?kind=edit` 不带 `source` 返回全部剪辑产物（store + 路由测试）；剪辑台候选
+  合并剪辑产物并有 ✂ 标识；剪辑产物可作为新工程的源片（串剪）。
+- **AC3【已达成】**：`task:` 引用三分支各有测试钉住 —— 不存在/无成片 → 路由层**同步** 404
+  `TASK_NOT_FOUND`（不入队、不消耗冷却、不触达上游）；已出片 → provider 解析为
+  `${PUBLIC_BASE_URL}/media/*` 进上游 `video_url`；未配 `PUBLIC_BASE_URL` → `INVALID_ASSET` + 配置指引。
+- **AC4**：门禁全绿（lint / type / test:contract / test:coverage / test:frontend / build / smoke:ui）。
+- **AC5**（P3）：one-for-all 首页可完成「一句话 + @ 成片 → 提交生成」全链路（冒烟断言）；高级控件
+  默认收起；`@` 提及的素材解析与三槽纯函数结果**逐例一致**（复用 `lib/assets` 单测矩阵）。
+- **AC6**（P4）：画布覆盖全部历史任务与剪辑产物的派生链；只读（无编辑操作入口）；空态有文案；
+  `prefers-reduced-motion` 下动效归零（冒烟断言）。
+- **验证方式**：门禁七件套 + 冒烟新增断言（P3/P4 各自界面行为）+ P3 视觉走查截图归档 `artifacts/`。
+
 ---
 
 ### Step 2 补充 · 可选实现项（OI，可整块删除）
@@ -325,7 +369,7 @@
 
 ## 5. 进度日志（唯一进度权威，其他文档只准链接本节）
 
-**截至 2026-09-24 · 当前指针：Step 2 仅剩 host 本地轨 `LocalH3Provider` 未实现（AC2 已在真机跑通 T2V / I2V / FL2V / V2V 四种模式，均走 `X-Provider-Key` 通道，证据见 §4 Step 2-AC2）；Step 1 / 1.5 / 3 / 4 / 5 / 6 / **7 已完成**；Step 6（V9 前端改版）AC1~AC8 达成（证据 [`v9-acceptance.md`](v9-acceptance.md)），**唯一待办 = 用户线上验收**；**Step 7（剪辑台改版 / B34）P1~P5 已收官**（证据 [`edit-desk-acceptance.md`](edit-desk-acceptance.md)），等用户验收**
+**截至 2026-09-24 · 当前指针：Step 2 仅剩 host 本地轨 `LocalH3Provider` 未实现（AC2 已在真机跑通 T2V / I2V / FL2V / V2V 四种模式，均走 `X-Provider-Key` 通道，证据见 §4 Step 2-AC2）；Step 1 / 1.5 / 3 / 4 / 5 / 6 / **7 已完成**；Step 6（V9 前端改版）AC1~AC8 达成（证据 [`v9-acceptance.md`](v9-acceptance.md)），**唯一待办 = 用户线上验收**；**Step 7（剪辑台改版 / B34）P1~P5 已收官**（证据 [`edit-desk-acceptance.md`](edit-desk-acceptance.md)），等用户验收；**Step 8 已立项**（2026-09-24 用户拍板：B36 体积上限 100MB + B37 产物即素材 → B41 one-for-all 入口 → B42 L2 只读血缘画布，契约 V2.6 先行，见 §9）**
 
 - [x] 架构纠偏：淘汰素材拼贴路线，确立【描述 + 参考图/视频 → 双轨生成】多模态管线（见 §6-D1）；
 - [x] 本地算力验证【已验证】：MiniMax H3 NF4 在 Tier 2 机器（16GB 显存）全量缓存并跑通 T2V / I2V / 双引号立体声台词；
@@ -488,6 +532,12 @@
       - **P4**（`e980be5`）**契约先行**：CONTRACT 升 **V2.5**（§11-2 重写为多轨工程契约、旧 EDL 降为 §11-3 API-only、§5 新增 `POST /api/edits/renders`、§7/§10 补登），随后模型提升 `packages/shared`（前后端同源校验）+ 渲染产物入库（四道校验 + 同步终态 + 服务端抽封面；`tasks.edit_origin` 列 + 两代剪辑产物并存查询）+ **抽帧 → I2V 闭环**（`renderStillOnWeb` → `/api/upload` → `#/workbench?frameAsset=`，不新增路由）。冒烟新增 [6h]（入库 206/4 片段/封面 + 抽帧资产可读 19216B + 自动切 I2V）。
       - **P5**（本次提交）文档同步：PLAN §4 Step 7 + §5 本条目 + §9 台账（B34 收口、编号勘误、新增 B35~B40）+ GUIDE §五/§六 + README 徽章与文档地图 + `edit-desk-acceptance.md`。
       - 门禁终态：lint 0 / type 0 / 契约 11 / 后端 **335** / 前端 **162** / 构建（Remotion 全部在懒 chunk）/ UI 冒烟全绿（[6e]~[6h]）。
+- [x] **Step 8 · P1+P2（台账 B36 体积上限 100MB / B37 产物即素材）【已完成 2026-09-24】**（契约 **V2.6** 先行；任务与 AC 见 §4 Step 8）：
+      - **P1（B36）**：`MAX_FILE_BYTES` / `MAX_RENDER_BYTES` / 两份 Caddyfile `request_body.max_size` 同步 100MB；upload 的硬编码 "20MB" 报错文案改为常量驱动；GUIDE 与前端上传槽文案同步。
+      - **P2（B37）**：(a) `GET /api/history?kind=edit` 的 `source` 改可选（store 新增全量分支 + 路由 + 前端 `fetchHistory`）；剪辑台候选合并剪辑产物（✂ 标识）、剪辑产物可再剪（串剪）。(b) `assets.referenceVideo` 接受 `task:<taskId>`：shared `TASK_REF_PREFIX`/`parseTaskRef` → `store/assets.ts` 判别式解析器（not_found/no_output/no_public_base 三分开）→ provider/registry/dispatcher 透传 → **generate 路由同步 404**（契约承诺不落异步失败）→ 工作台 V2V 槽「从成片库选择」（选中即切 V2V，预览走 `/media` 直链）。
+      - 新增测试 10 项：`taskStore.test.ts` 三档口径 3 / `assets.test.ts` 解析器 4 / provider task 引用 3 / generate 路由 taskRef 4（含防线 5 冷却互伤的真实踩点：同 IP 用例被 429，改独立 IP）。冒烟 [6] 新增「从成片库选择」断言。
+      - 门禁终态：lint 0 / type 0 / 契约 11 / 后端 **350** / 前端 **162** / 构建 / UI 冒烟全绿。
+      - **P3（B41 one-for-all 入口）/ P4（B42 L2 只读血缘画布）待开工**，顺序与 AC 见 §4 Step 8。
 
 ---
 
@@ -533,6 +583,8 @@
 | D36 | **提示词配方库 = `packages/shared` 静态数据 + 双入口**：主入口「插入骨架到提示词」（透明可见），次入口「✨ 扩写带 `recipeId` 作为风格上下文」（契约 §3）；首批 ≥20 张（运镜/光线/氛围/节奏），行业维暂不做（台账 B30） | 借鉴 video-shotcraft 的镜头配方卡的**结构**（用途/时长/参数/已知坑），内容自写（它是 Remotion 参数导向，我们是生成提示词导向）；只做骨架对小白不友好，只做扩写则配方变黑盒（违背"不静默"），同一份数据两个入口两全 | 2026-09-23 |
 | D37 | **轻剪辑台 MVP = 时间轴上的确定性操作**（trim / concat / xfade / 音量 / 变速 / 抽帧），本地 ffmpeg 执行，EDL（编辑决策清单）落 SQLite；**「剪映草稿导出」明确砍掉**（不入台账） | 生成式 MP4 拆帧只是位图，做不了语义编辑（"把灯换个形状"只能重新生成）；剪辑台的价值在时间轴操作与抽帧闭环。剪映导出砍掉的原因：草稿格式无官方文档、版本升级即破坏兼容、转场库不对应需降级映射——维护成本持续而收益对当前用户群不明 | 2026-09-23 |
 | D38 | **抽帧 → 生成 的闭环是一等产品动作**：剪辑台/播放器里抽出的帧可直接落为参考资产，作为下一次 I2V/FL2V 的首帧/尾帧 | "想改内容"的唯一正确路径是重新生成（用抽帧锁形），这把剪辑台与生成工作台接成闭环，而不是两个孤岛功能 | 2026-09-23 |
+| D39 | **默认视图改为 `#/create`（one-for-all 创作入口），`#/workbench` 退为「专业模式」**（Step 6-AC1 的"默认 = `#/workbench`"就此被本条取代）；`@` 提及是**结构化 chip**（不做裸文本解析当真相），模式推断复用 `lib/assets.ts` 纯函数语义 | 用户 2026-09-24："工作台控件太多/太丑"，授权"按你的想法来"。控件不删而**分层**（默认值与抽屉吸收高级项），专业模式保留全部能力与 Step 6 证据链；裸文本 `@` 解析有截断/重名歧义，chip 提交制没有 | 2026-09-24 |
+| D40 | **L2 血缘画布只读**：节点/边全部从既有字段（`origin` / `extractedAssetIds` / `requestSnapshot.assets`）推导，**零契约变更**；布局自写分层（不引 dagre）；`@xyflow/react` 钉死版本（选型 = UPSTREAM #5）；节点可拖摆位但不持久化、不可连线改结构 | 画布的价值在"看清血缘"，编辑能力（L3 = OI-3 多镜头编排的 UI 形态）等 L2 被真用过再拍；只读 + 推导式数据意味着它永远不可能把库写脏 | 2026-09-24 |
 
 ---
 
@@ -543,14 +595,14 @@
 3. **公网部署形态**：默认路由云端轨，不开放任何本地 Shell 执行面；**不向访客开放 host 本地轨**（`EXPOSE_HOST_LOCAL_TRACK` 默认 `0`，见 §6-D26）；单任务时长上限 5~10s，防任务堆叠。
 4. **公网最小鉴权（V8.1 新增，Step 5 前必须落地）**：公网部署时**除下面两层白名单外的全部路径**都要求 `Authorization: Bearer <PUBLIC_API_TOKEN>`（值在 `.env`）——鉴权钩子是**全局 `onRequest`**，因此 `/api/*`、`/media/*` 与前端产物 `/` 一并受保护（线上由 Caddy 把站点登录凭据换成 Bearer，见 `deploy/Caddyfile.*`）。**免鉴权名单（两层，口径唯一）**：① **回环来源**（127.0.0.1 / ::1）的全部请求免鉴权——保证单机开发零摩擦；② **任何来源**的 `/api/health` 免鉴权——存活探针。除这两层外一律要求 Bearer；无鉴权公网裸奔视为验收不通过。
 5. **限流键定义（V8.1 新增）**：防线 5 的 60s 防抖按「来源 IP + BYOK Key 指纹（Key SHA-256 前 8 位；无 Key 时仅用 IP）」复合计数；本地部署无 Key 场景退化为 IP 单键。防抖状态存 SQLite，重启不丢失冷却窗口。**落地时点（已修正，2026-09-22）**：复合键**已落地**——限流器早先预留的 `keyFingerprint?` 参数已按 §9 台账 B8 接线（`generate.ts` 传 `fingerprintKey(providerKey)`），即"随 §6-D25 的最小鉴权在 Step 5 前置落地"这条已经兑现，文档此前仍写着"Step 2 先 IP 单键"，属文字陈旧。
-6. **上传与静态面加固（V8.1 新增；V8.2 起含防线 4 清洗）**：`/api/upload` 限制单文件 ≤ 20MB、总数 ≤ 4，MIME 以魔数嗅探为准（不信任 Content-Type 头），白名单：jpg/png/webp/heic/mp4/mov；**图像必须过防线 4 清洗网关**（`pipeline/imageSanitize.ts`：EXIF 方向矫正、CMYK→sRGB、超大图下采样到长边 ≤ 2048、32 倍数规整、剥离元数据；透明通道保 PNG、其余统一 JPEG）——因此响应的 `mime` / `size` 是**清洗后的产物事实**而非客户端声明；`.heic`（HEVC）按实测能力**诚实拒绝**（415 `INVALID_ASSET` + 转格式指引，见台账 B21），视频原样落盘；`outputs/` 直链路径只含服务端生成的随机 ID，禁止任何用户输入拼入文件路径（防路径穿越）；CORS 由 `origin: true` 收紧为 `.env` 白名单（`CORS_ORIGINS`，本地开发默认 `http://localhost:5173`）；安全响应头（`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`）统一挂载。
+6. **上传与静态面加固（V8.1 新增；V8.2 起含防线 4 清洗；V8.6 起上限 100MB）**：`/api/upload` 限制单文件 ≤ 100MB、总数 ≤ 4，MIME 以魔数嗅探为准（不信任 Content-Type 头），白名单：jpg/png/webp/heic/mp4/mov；**图像必须过防线 4 清洗网关**（`pipeline/imageSanitize.ts`：EXIF 方向矫正、CMYK→sRGB、超大图下采样到长边 ≤ 2048、32 倍数规整、剥离元数据；透明通道保 PNG、其余统一 JPEG）——因此响应的 `mime` / `size` 是**清洗后的产物事实**而非客户端声明；`.heic`（HEVC）按实测能力**诚实拒绝**（415 `INVALID_ASSET` + 转格式指引，见台账 B21），视频原样落盘；`outputs/` 直链路径只含服务端生成的随机 ID，禁止任何用户输入拼入文件路径（防路径穿越）；CORS 由 `origin: true` 收紧为 `.env` 白名单（`CORS_ORIGINS`，本地开发默认 `http://localhost:5173`）；安全响应头（`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`）统一挂载。
 7. **文档卫生**：IP / 绝对路径 / 凭证永不入 md（占位符化），真实值只存本地 `.env`；`.env`、`data/`、`outputs/`、媒体文件已入 `.gitignore`。
 8. **视觉版权**：UI 视觉语言参考 Astrmira 的公开设计风格，**已获其作者许可**（来源登记见 UPSTREAM 第 10 条）；README 不再单列免责段。
 9. **部署形态与三条硬要求（V8.3：原一次性施工手册 §9 的存档，此后以此节为准）**
-   - **形态**：**单 Node 进程**同时托管 `/api/*`、`/media/*`（`outputs/` 的 Range 静态服务）与前端产物（SPA fallback）；**反向代理只做 TLS 终止、登录、20MB 请求体放行与凭据形态转换** —— 不引入 nginx 的配置复杂度。两个容器：`app`（不映射宿主端口，必须经代理访问）与 `caddy`。
+   - **形态**：**单 Node 进程**同时托管 `/api/*`、`/media/*`（`outputs/` 的 Range 静态服务）与前端产物（SPA fallback）；**反向代理只做 TLS 终止、登录、100MB 请求体放行与凭据形态转换**（V8.6 起，原 20MB；B36）—— 不引入 nginx 的配置复杂度。两个容器：`app`（不映射宿主端口，必须经代理访问）与 `caddy`。
    - **部署者只需提供三项**：服务器地址、对外端口、Basic 登录密码（外加可选的服务端兜底 `VOLCANO_API_KEY`）。**其余全部由仓库自带默认值**（`scripts/deploy.mjs` 负责校验与推导 `TLS_MODE` / `PUBLIC_BASE_URL` / `CORS_ORIGINS` / `DEPLOY_SNI` / Basic Auth 哈希）。
    - **反代必须处理的三件事**（漏任一项都会出问题，细节在各配置文件注释里）：
-     1. **请求体上限 ≥ 20MB**（nginx 默认 1M）→ 否则参考图上传被**静默拦掉**；
+     1. **请求体上限 ≥ 100MB**（V8.6 起，原 20MB；nginx 默认仅 1M）→ 否则参考图/参考视频上传被**静默拦掉**；
      2. **不得压缩媒体响应**（Caddy 侧表现为"不写 `encode`"）→ 否则 **206 Range 被破坏**，播放器拖不动进度；
      3. **真实 IP 透传**（`X-Forwarded-For` + 后端 `TRUST_PROXY=1`）→ 否则防线 5 的 IP 冷却退化成**全局锁**（所有人互相误伤）。
    - **镜像要求**：运行层装 ffmpeg（来源/版本/许可证登记在 `UPSTREAM.md`）；`.env` / `data/` / `outputs/` **不入镜像、不入 git**（用卷挂载）；生产必填 `PUBLIC_API_TOKEN`。
@@ -645,8 +697,10 @@
 | B33 | **host 本地轨的形态（一个 provider 还是两个可选后端）**：`LocalH3Provider` 至今未实现（选本地引擎如实返回 `PROVIDER_UNAVAILABLE`，见 §4 Step 2 与 GUIDE §三）。**用户 2026-09-23 决策：先搁置，待换机后再议**。届时要定的是"本地引擎"到底指什么 —— 本机已有 ComfyUI，而配置自检（`COMFYUI_BASE_URL` / `H3_WORKDIR`）**本来就同时认这两种**，所以"可选后端"在配置层已有一半基础；但两者的能力位与档位语义（Tier、时长上限、是否原生音频 / 双引号台词）并不相同，须先定契约再实现 | 用户 2026-09-23 决策（换机后再探）；现状见 §4 Step 2 / GUIDE §三 | 换机后由用户主动提出时。**在此之前不得用"标【待验证】的猜测实现"去占位**（没有 H3 环境就无法实测） |
 | B34 | ~~剪辑台的执行引擎：ffmpeg 与 Remotion 的混合架构~~ → **已完成（Step 7 / P1~P5 收官，2026-09-24）**：落地方案与原型结论的**差异如实记录** —— ① 原型报告曾建议"预览用 `<video>`+CSS overlay 近似、导出才走 Remotion"，实际采用**`@remotion/player` 实时预览 + 浏览器端 `@remotion/web-renderer` 导出**（同一套 composition，逐帧一致，且 P0 实测浏览器导出**比服务端 ffmpeg 还快**：3s 片 1.0s vs 1.83s）；② 渲染从"服务端离线批处理"改为"**用户浏览器端**"（线上服务器 4 核 Xeon 跑不动 headless Chrome；浏览器渲染把 CPU 成本转嫁访客，服务器零 CPU）；③ ffmpeg 基础剪辑保留为 **API-only**（`POST /api/edits`，UI 入口撤掉）。证据 = [edit-desk-acceptance.md](edit-desk-acceptance.md) | 2026-09-24 原型实测 + Step 7 实施（`experiments/remotion-proto/REPORT.md`） | — |
 | B35 | **预览与导出的像素级一致性断言**：两者的同一性目前由"同一套 composition + 同一 `durationInFrames`"在**结构上**保证，冒烟只断言产物客观事实（时长/帧率/音轨/非空白）。真正的像素比对 = 播放器逐帧截图 vs 导出帧对拍（容忍编码差异的阈值需先定） | Step 7 验收的如实说明（[edit-desk-acceptance.md](edit-desk-acceptance.md) §4） | 出现"预览看着对、导出不对"的报障时立即做（在那之前保持结构保证 + 客观事实断言） |
-| B36 | **入库体积上限 20MB**：`POST /api/edits/renders` 与反代请求体上限同口径；超限的长工程当前只能"下载到本机、不入库"。放宽需**同时**改反代（Caddyfile）与路由常量，并考虑分片上传 | Step 7 · P4（同上） | 出现"导出 1 分钟以上的工程要入库"的真实诉求时 |
-| B37 | **剪辑产物作为其它工程的素材**：素材候选列表只含生成产物（`?kind=edit` 的产物不出现在候选里），"把 A 片剪出的成片拼进 B 片"目前要先走一次生成/上传 | Step 7 · P4（同上） | 出现"多工程串剪"诉求时（实现面不大：候选列表并入 `?kind=edit` 结果 + 素材来源标记） |
+| B36 | ~~入库体积上限 20MB~~ → **Step 8 施工中（用户 2026-09-24 拍板提到 100MB）**：`MAX_FILE_BYTES` / `MAX_RENDER_BYTES` / 两份 Caddyfile `request_body.max_size` / 前端上传文案四处同步；>100MB 才考虑分片上传（当前不值当） | Step 7 · P4；2026-09-24 触发（V2V 参考视频与长工程入库的真实诉求） | ~~出现诉求时~~ → **已触发** |
+| B37 | ~~剪辑产物作为其它工程的素材~~ → **Step 8 施工中（2026-09-24 拍板）**：(a) `GET /api/history?kind=edit`（不带 `source`）返回全部剪辑产物 → 时间轴素材候选合并；(b) `assets.referenceVideo` 接受 `task:<taskId>` 引用（成片本就挂在 `/media/*`，配了 `PUBLIC_BASE_URL` 后天然满足上游"公网 URL"要求） | Step 7 · P4；2026-09-24 触发（多工程串剪 + 剪辑产物当 V2V 参考） | ~~出现诉求时~~ → **已触发**（它还是 B41 的 "@成片" 与 B42 的 "边" 的共同地基） |
+| B41 | **one-for-all 创作入口**（参考即梦 / Flova 形态）：新默认首页 = 意图输入框（`@` 提及资产与历史成片、配方 chips 即"技能"、拖图/粘贴即 I2V 入口），画幅/时长/档位/双轨收进"更多设置"抽屉；现三栏工作台退为**专业模式**切页（不取代，Step 6 证据链不动）。模式推断复用 `lib/assets.ts` 纯函数（`modeAfterSlotUpload` 等"素材决定模式"纪律）；基础版零新路由（`/api/upload` + `/api/generate` 编排层），"@成片当参考"依赖 B37-(b) | 用户 2026-09-24 拍板（"工作台控件太多"的体验批评 + 即梦/Flova 截图参考）；视觉要求"尽量好看"，允许联网参考优秀设计 | Step 8 内，B36/B37 之后 |
+| B42 | **L2 只读血缘画布**：React Flow（`@xyflow/react`，组件选型已登记 UPSTREAM #5）把 `origin` 派生链可视化为 DAG（成片/资产 = 节点，抽帧/剪辑/再生成 = 边），点节点回填参数或跳剪辑台；**只读**，零契约风险。血缘数据已存在（`tasks.origin` + 抽帧资产来源），只需 `kind=all` 查询。L3（可操作画布 = 多镜头编排 OI-3 的 UI 形态）等 L2 用过后再拍 | 用户 2026-09-24 拍板立项；PLAN §6-D9 的"L1 优先"分层与 UPSTREAM #5 是本项的规划源头 | Step 8 内，B41 之后 |
 | B38 | **独立音效素材**：`/api/upload` 白名单不含 mp3/wav，音频轨只能取视频文件的音轨。要做"音效库"需先扩白名单 + 决定时长/码率清洗口径 | Step 7 · P3/P4（同上） | 出现"配背景音乐 / 音效"的真实诉求时 |
 | B39 | **legacy EDL 与浏览器导出的路径收敛**：`POST /api/edits`（服务端 ffmpeg，API-only）与浏览器端导出语义重叠。保留它是因为"纯服务端基础剪辑"对脚本化使用仍有价值；若长期无人调用可整体删除（删除动作 = 路由 + executor + 测试 + CONTRACT §11-3） | Step 7 · P4（同上） | 决定"是否维护两条剪辑路径"时（先看 `/api/edits` 的真实调用量） |
 | B40 | **`step2.integration.test.ts` 的"服务重启后任务可恢复"（防线 2）用例时序敏感**：2026-09-23 跑 V9 · B8 门禁时实测失败过一次（`expected 'failed' to be 'succeeded'`，同轮耗时从 ~50s 涨到 215s），**单独跑与该文件下一轮全量均通过**。判断：桩 provider 的完成时机与"重启"步骤赛跑（机器负载高时任务尚未到终态就被重启 → 启动调解按防线 2 如实归 `failed`）。**不是产品缺陷**（防线 2 的行为恰恰是正确的），而是**测试写法的脆弱点**。⚠️ **编号勘误（2026-09-24）**：本条此前误用了 **B34**（与"剪辑台执行引擎"撞号，两条 B34 并存）—— 现按时间顺序改为 B40，B34 归剪辑台改版专用 | 2026-09-23 实测观察（V9 · B8 门禁）；2026-09-24 Step 7 · P5 编号勘误 | 该用例在 CI 上再失败一次时（届时改成"先轮询到终态、再重启"的确定性写法） |

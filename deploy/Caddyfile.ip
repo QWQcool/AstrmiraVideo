@@ -22,8 +22,9 @@
 	# 使用内部 CA 签发的证书（IP 无法申请公信证书）
 	tls internal
 
+	# 请求体上限 ≥ 上传上限（PLAN §7-9；V2.6 / 台账 B36 起 100MB，与 Caddyfile.domain 同口径）
 	request_body {
-		max_size 20MB
+		max_size 100MB
 	}
 
 	# ① 存活探针豁免登录：与后端 `ALWAYS_PUBLIC_PATHS`（/api/health）的口径保持一致。

@@ -193,8 +193,8 @@ export function AssetDropZone({
             {uploading
               ? '上传中…'
               : isVideo
-                ? '点击选择或拖拽视频到这里（mp4 / mov，≤20MB）'
-                : '点击选择或拖拽图片到这里（≤20MB）'}
+                ? '点击选择或拖拽视频到这里（mp4 / mov，≤100MB）'
+                : '点击选择或拖拽图片到这里（≤100MB）'}
           </span>
           <span className="wb-note">服务端按魔数嗅探真实类型，不信任文件名与 Content-Type</span>
         </div>

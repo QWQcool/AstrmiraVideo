@@ -20,7 +20,7 @@ import type { TaskStore } from '../store/taskStore.js';
  * 1. **形状**：`project` 字段必须能过 `EditProjectSchema`（shared 里与 CONTRACT §11-2 同源的 schema）；
  * 2. **引用完整性**：`sourceTaskId` 必须存在且成功出片（剪辑历史按它归档，"本片剪辑历史"用它查）；
  * 3. **类型**：`file` 必须**按魔数嗅探**为 `video/mp4`（不信任 Content-Type，与 /api/upload 同规矩）；
- * 4. **体积**：≤ `MAX_RENDER_BYTES`（与反代请求体上限 20MB 同口径 —— 超出会被反代**先**拦，
+ * 4. **体积**：≤ `MAX_RENDER_BYTES`（与反代请求体上限 100MB 同口径 —— 超出会被反代**先**拦，
  *    所以这里也必须挡，否则本地直连与线上行为不一致）。
  *
  * 入库形态：一条 `status:'succeeded'` 的普通任务（复用 §4 轮询/画廊/删除路径），
@@ -28,7 +28,8 @@ import type { TaskStore } from '../store/taskStore.js';
  * 封面（`thumbnailUrl`）在这里同步抽 —— 失败不影响入库（与生成链路同一口径：封面是尽力而为）。
  */
 
-export const MAX_RENDER_BYTES = 20 * 1024 * 1024;
+// V2.6（台账 B36）：20MB → 100MB。与 MAX_FILE_BYTES、反代 `request_body.max_size` 同口径，三处同改。
+export const MAX_RENDER_BYTES = 100 * 1024 * 1024;
 
 export interface EditRenderRoutesDeps {
   store: TaskStore;

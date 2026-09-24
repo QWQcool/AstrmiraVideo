@@ -19,7 +19,8 @@ const TaskIdParamsSchema = z.object({ taskId: z.string() });
 /**
  * `GET /api/history` 的可选查询参数（V9 修复：剪辑产物默认不进历史成片）。
  * - 缺省：只返回**生成产物**；
- * - `?kind=edit&source=<taskId>`：返回某源片的剪辑产物（剪辑台的「本片剪辑历史」用它）。
+ * - `?kind=edit&source=<taskId>`：返回某源片的剪辑产物（剪辑台的「本片剪辑历史」用它）；
+ * - `?kind=edit`（V2.6 / B37，不带 `source`）：返回**全部**剪辑产物（剪辑台素材候选用）。
  */
 const HistoryQuerySchema = z.object({
   kind: z.literal('edit').optional(),
@@ -74,11 +75,15 @@ export const createHistoryRoutes =
       },
       async (request) => {
         const outputsDir = deps.outputsDir ?? resolveOutputsDir();
-        // V9 修复：`?kind=edit&source=<id>` 查剪辑产物（剪辑台用）；缺省只返回生成产物。
+        // V9 修复：`?kind=edit` 查剪辑产物（剪辑台用）；缺省只返回生成产物。
+        // V2.6（B37）：`source` 可选 —— 不带时返回全部剪辑产物（素材候选 / L2 画布用）。
         const { kind, source } = request.query;
         const records = (
-          kind === 'edit' && source !== undefined
-            ? deps.store.listRecent(50, { kind: 'edit', sourceTaskId: source })
+          kind === 'edit'
+            ? deps.store.listRecent(
+                50,
+                source === undefined ? { kind: 'edit' } : { kind: 'edit', sourceTaskId: source },
+              )
             : deps.store.listRecent(50)
         ).map(toTaskProgress);
 

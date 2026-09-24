@@ -26,11 +26,25 @@ export const ProviderTypeSchema = z.enum([
 /** 成片时长上限 10s（公网部署防线，PLAN §7-3） */
 export const DurationSecSchema = z.number().int().positive().max(10);
 
-/** 参考资产：服务端分配的资产 ID（生命周期见 CONTRACT §7） */
+/**
+ * V2.6（台账 B37）：`assets.referenceVideo` 引用一条已出片任务的前缀 ——
+ * 值为 `task:<taskId>` 时表示"用该任务（含剪辑产物）的成片当 V2V 参考"。
+ * 服务端解析为 `/media/*` 公网地址；前缀是契约的一部分（CONTRACT §1），前后端共用此常量。
+ */
+export const TASK_REF_PREFIX = 'task:';
+
+/** 解析 `task:<taskId>` 引用；非该形态返回 null */
+export function parseTaskRef(value: string): string | null {
+  if (!value.startsWith(TASK_REF_PREFIX)) return null;
+  const taskId = value.slice(TASK_REF_PREFIX.length);
+  return taskId === '' ? null : taskId;
+}
+
+/** 参考资产：服务端分配的资产 ID（生命周期见 CONTRACT §7）；V2.6 起 referenceVideo 也可为 `task:<taskId>` */
 export const GenerationAssetsSchema = z.object({
   firstFrameImage: z.string().optional(), // i2v 和 fl2v 必需
   lastFrameImage: z.string().optional(), // fl2v 专用尾帧
-  referenceVideo: z.string().optional(), // v2v 风格/动作迁移参考
+  referenceVideo: z.string().optional(), // v2v 风格/动作迁移参考（资产 ID 或 `task:<taskId>`，V2.6）
 });
 
 /** 推理参数 */

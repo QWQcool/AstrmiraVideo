@@ -212,6 +212,58 @@ describe('提交', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('V2.6 / B37：`task:` 引用已出片任务 → video_url 用解析出的 /media 公网地址', async () => {
+    const { fetchImpl, calls } = stubFetch(() => jsonResponse(200, { id: 'cgt-1' }));
+    const provider = makeProvider({
+      fetchImpl,
+      resolveTaskVideoUrl: async () => ({
+        ok: true,
+        url: 'https://video.example.com/media/src-task.mp4',
+      }),
+    });
+
+    await provider.submit({ ...request, mode: 'v2v', assets: { referenceVideo: 'task:src-task' } });
+
+    const body = JSON.parse(String(calls[0].init.body)) as {
+      content: Array<{ type: string; role?: string; video_url?: { url: string } }>;
+    };
+    const videoElement = body.content.find((item) => item.type === 'video_url');
+    expect(videoElement?.role).toBe('reference_video');
+    expect(videoElement?.video_url?.url).toBe('https://video.example.com/media/src-task.mp4');
+  });
+
+  it('V2.6 / B37：`task:` 引用不存在 / 无成片 → TASK_NOT_FOUND，一个请求都不许发', async () => {
+    const { fetchImpl, calls } = stubFetch(() => jsonResponse(200, { id: 'cgt-1' }));
+    const provider = makeProvider({
+      fetchImpl,
+      resolveTaskVideoUrl: async () => ({ ok: false, reason: 'not_found' }),
+    });
+
+    const err = (await provider
+      .submit({ ...request, mode: 'v2v', assets: { referenceVideo: 'task:ghost' } })
+      .catch((e: unknown) => e)) as ProviderFailureError;
+
+    expect(err).toBeInstanceOf(ProviderFailureError);
+    expect(err.code).toBe('TASK_NOT_FOUND');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('V2.6 / B37：`task:` 引用但未配 PUBLIC_BASE_URL → 与 data URL 同一条 INVALID_ASSET 指引', async () => {
+    const { fetchImpl, calls } = stubFetch(() => jsonResponse(200, { id: 'cgt-1' }));
+    const provider = makeProvider({
+      fetchImpl,
+      resolveTaskVideoUrl: async () => ({ ok: false, reason: 'no_public_base' }),
+    });
+
+    const err = (await provider
+      .submit({ ...request, mode: 'v2v', assets: { referenceVideo: 'task:src-task' } })
+      .catch((e: unknown) => e)) as ProviderFailureError;
+
+    expect(err.code).toBe('INVALID_ASSET');
+    expect(err.message).toContain('PUBLIC_BASE_URL');
+    expect(calls).toHaveLength(0);
+  });
+
   it('图片参考不受此限制：data URL 仍然可以（只有视频要求公网 URL）', async () => {
     const { fetchImpl, calls } = stubFetch(() => jsonResponse(200, { id: 'cgt-1' }));
     const provider = makeProvider({

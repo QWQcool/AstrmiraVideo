@@ -5,7 +5,9 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { TaskProgress, VideoGenerateRequest, VideoProvider } from '@astrmira/shared';
+import { parseTaskRef } from '@astrmira/shared';
 import { ProviderFailureError } from '../errors.js';
+import type { TaskVideoResolution } from '../store/assets.js';
 import {
   SEEDANCE_DEFAULT_BASE_URL,
   SEEDANCE_DEFAULT_MODEL,
@@ -52,6 +54,8 @@ export interface VolcanoSeedanceOptions {
   baseUrl?: string;
   /** 资产 id → 上游可访问地址（公网 URL 或 data URL） */
   resolveAssetUrl?: (assetId: string) => Promise<string | null>;
+  /** V2.6（B37）：`task:<taskId>` 引用 → 上游可访问地址（成片/剪辑产物直接当 V2V 参考） */
+  resolveTaskVideoUrl?: (taskId: string) => Promise<TaskVideoResolution>;
   fetchImpl?: typeof fetch;
   outputDir?: string;
   /** 单次 HTTP 请求超时（默认 30s）；轮询间隔由调度器控制，不在这里 */
@@ -92,6 +96,7 @@ export class VolcanoSeedanceProvider implements VideoProvider {
   private readonly outputDir: string;
   private readonly requestTimeoutMs: number;
   private readonly resolveAssetUrl: (assetId: string) => Promise<string | null>;
+  private readonly resolveTaskVideoUrl: (taskId: string) => Promise<TaskVideoResolution>;
 
   /** 上游 taskId → 请求快照（用于把 `TaskProgress.requestSnapshot` 填成真值，而不是编一个） */
   private readonly requests = new Map<string, VideoGenerateRequest>();
@@ -108,6 +113,9 @@ export class VolcanoSeedanceProvider implements VideoProvider {
     this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
     this.resolveAssetUrl =
       options.resolveAssetUrl ?? (async () => null);
+    // 缺省 = 全部 not_found：未注入时 `task:` 引用会得到如实错误而不是静默丢失
+    this.resolveTaskVideoUrl =
+      options.resolveTaskVideoUrl ?? (async () => ({ ok: false, reason: 'not_found' }));
   }
 
   /**
@@ -271,18 +279,41 @@ export class VolcanoSeedanceProvider implements VideoProvider {
    * 这是"配置缺失"，不是"上游故障"，`INVALID_ASSET`（terminal）语义正好。
    */
   private async collectReferenceVideoUrl(request: VideoGenerateRequest): Promise<string | undefined> {
-    const assetId = request.assets?.referenceVideo;
-    if (assetId === undefined) return undefined;
+    const reference = request.assets?.referenceVideo;
+    if (reference === undefined) return undefined;
 
-    const url = await this.resolveAssetUrl(assetId);
-    if (url === null) {
-      throw new ProviderFailureError(
-        'INVALID_ASSET',
-        `参考视频资产 ${assetId} 无法解析为上游可访问地址（资产可能已被清理）`,
-      );
+    // V2.6（B37）：`task:<taskId>` —— 直接引用一条已出片任务（含剪辑产物）的成片。
+    // 成片本就挂在 `/media/*`，配了 PUBLIC_BASE_URL 后天然满足上游"公网 URL"要求。
+    const taskRef = parseTaskRef(reference);
+    let url: string | null;
+    if (taskRef !== null) {
+      const resolution = await this.resolveTaskVideoUrl(taskRef);
+      if (!resolution.ok) {
+        if (resolution.reason === 'no_public_base') {
+          url = null; // 落到下面统一的 PUBLIC_BASE_URL 守卫（同一条可读指引）
+        } else {
+          throw new ProviderFailureError(
+            'TASK_NOT_FOUND',
+            resolution.reason === 'not_found'
+              ? `参考成片任务不存在：${taskRef}`
+              : `参考成片任务没有可用成片：${taskRef}（任务须已成功出片）`,
+          );
+        }
+      } else {
+        url = resolution.url;
+      }
+    } else {
+      url = await this.resolveAssetUrl(reference);
+      if (url === null) {
+        throw new ProviderFailureError(
+          'INVALID_ASSET',
+          `参考视频资产 ${reference} 无法解析为上游可访问地址（资产可能已被清理）`,
+        );
+      }
     }
 
-    if (!/^https?:\/\//i.test(url)) {
+    // `url === null` 只来自 task 引用的 `no_public_base` —— 与 data URL 情形共用同一条守卫文案
+    if (url === null || !/^https?:\/\//i.test(url)) {
       throw new ProviderFailureError(
         'INVALID_ASSET',
         '参考视频需要上游能直接抓取的公网地址，而本服务未配置 PUBLIC_BASE_URL（当前只能给出内联 data URL，上游明确拒绝）。' +

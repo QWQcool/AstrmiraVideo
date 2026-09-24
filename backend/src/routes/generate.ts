@@ -5,6 +5,7 @@ import {
   ErrorResponseSchema,
   GenerateResponseSchema,
   VideoGenerateRequestSchema,
+  parseTaskRef,
 } from '@astrmira/shared';
 import type { ProviderType, VideoGenerateRequest, VideoProvider } from '@astrmira/shared';
 import { createErrorResponse } from '../errors.js';
@@ -90,6 +91,7 @@ export const createGenerateRoutes =
           response: {
             200: GenerateResponseSchema,
             400: ErrorResponseSchema,
+            404: ErrorResponseSchema,
             429: ErrorResponseSchema,
             503: ErrorResponseSchema,
           },
@@ -114,6 +116,32 @@ export const createGenerateRoutes =
                 `提示词过长：上限 ${MAX_PROMPT_CHARS} 字符，当前 ${prompt.length} 字符`,
               ),
             );
+        }
+
+        // V2.6（B37）：`task:` 引用**同步**校验 —— 契约承诺"任务不存在 / 无成片 → 404"。
+        // 不能拖到异步 provider 才失败（那会给用户留一条 failed 任务，而不是干净的 404）。
+        // provider 侧仍保留自己的解析（提交发生在未来，任务可能在此期间被删 —— 纵深防御）。
+        const taskRef =
+          body.assets?.referenceVideo === undefined
+            ? null
+            : parseTaskRef(body.assets.referenceVideo);
+        if (taskRef !== null) {
+          const refTask = deps.store.get(taskRef);
+          if (refTask === null) {
+            return reply
+              .code(404)
+              .send(createErrorResponse('TASK_NOT_FOUND', `参考成片任务不存在：${taskRef}`));
+          }
+          if (refTask.status !== 'succeeded' || refTask.outputVideoUrl === undefined) {
+            return reply
+              .code(404)
+              .send(
+                createErrorResponse(
+                  'TASK_NOT_FOUND',
+                  `参考成片任务没有可用成片：${taskRef}（当前状态 ${refTask.status}）`,
+                ),
+              );
+          }
         }
 
         const provider = deps.resolveProvider(body.provider);

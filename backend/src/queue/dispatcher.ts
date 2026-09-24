@@ -3,6 +3,7 @@ import type { ProviderType, VideoProvider } from '@astrmira/shared';
 import { ProviderFailureError, resolveTaskError } from '../errors.js';
 import type { ProviderResolutionContext } from '../providers/registry.js';
 import type { KeyVault } from '../security/keyVault.js';
+import type { TaskVideoResolution } from '../store/assets.js';
 import type { TrackId } from '../store/taskStore.js';
 import type { JobQueue, QueueJob, TaskProgressUpdate } from './JobQueue.js';
 
@@ -38,6 +39,8 @@ export interface JobDispatcherOptions {
   runEditJob?: (job: QueueJob) => Promise<void>;
   /** 资产 id → 上游可访问地址（透传给 provider） */
   resolveAssetUrl?: (assetId: string) => Promise<string | null>;
+  /** V2.6（B37）：`task:<taskId>` 引用 → 上游可访问地址（透传给 provider） */
+  resolveTaskVideoUrl?: (taskId: string) => Promise<TaskVideoResolution>;
   cleanup?: (taskId: string) => Promise<void>;
   /**
    * 抽首帧缩略图（V1.9）：`(taskId, 成片同源直链) → 缩略图直链`。
@@ -161,6 +164,9 @@ export class JobDispatcher {
         ...(this.options.resolveAssetUrl === undefined
           ? {}
           : { resolveAssetUrl: this.options.resolveAssetUrl }),
+        ...(this.options.resolveTaskVideoUrl === undefined
+          ? {}
+          : { resolveTaskVideoUrl: this.options.resolveTaskVideoUrl }),
       });
       if (provider === null) {
         await this.options.queue.fail(job.taskId, {

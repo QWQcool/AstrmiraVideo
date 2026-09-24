@@ -356,6 +356,12 @@
   animation: origin-orbit-sway 7s infinite ease-in-out;
 }
 
+/* B37：V2V 槽下的「从成片库选择」（`task:` 引用入口，V2.6） */
+.wb-tref-pick {
+  margin-top: 8px;
+  width: 100%;
+}
+
 .wb-preview {
   display: flex;
   gap: 12px;

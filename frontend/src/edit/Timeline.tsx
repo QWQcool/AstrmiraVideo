@@ -173,6 +173,7 @@ export const Timeline: React.FC<{
           <option value="">选择素材…</option>
           {candidates.map((item) => (
             <option key={item.taskId} value={item.taskId}>
+              {item.origin?.kind === 'edit' ? '✂ ' : ''}
               {item.taskId.slice(0, 8)} · {item.requestSnapshot.prompt.slice(0, 16)}
             </option>
           ))}

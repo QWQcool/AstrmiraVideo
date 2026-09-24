@@ -1,5 +1,6 @@
 import type { ProviderType, VideoProvider } from '@astrmira/shared';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
+import type { TaskVideoResolution } from '../store/assets.js';
 import { FixtureLocalProvider } from './fixture/FixtureLocalProvider.js';
 import { readOptionString } from './providerOptions.js';
 import { VolcanoSeedanceProvider } from './VolcanoSeedanceProvider.js';
@@ -71,6 +72,8 @@ export interface ProviderResolutionContext {
   requestOptions?: Record<string, unknown>;
   /** 资产 id → 上游可访问地址（云端 provider 需要） */
   resolveAssetUrl?: (assetId: string) => Promise<string | null>;
+  /** V2.6（B37）：`task:<taskId>` 引用 → 上游可访问地址（云端 provider 需要） */
+  resolveTaskVideoUrl?: (taskId: string) => Promise<TaskVideoResolution>;
 }
 
 type ProviderFactory = (ctx: ProviderResolutionContext) => VideoProvider | null;
@@ -127,6 +130,9 @@ function createCloudProvider(ctx: ProviderResolutionContext): VideoProvider {
       (envBaseUrl === undefined || envBaseUrl === '' ? SEEDANCE_DEFAULT_BASE_URL : envBaseUrl),
     outputDir: resolveOutputsDir(),
     ...(ctx.resolveAssetUrl === undefined ? {} : { resolveAssetUrl: ctx.resolveAssetUrl }),
+    ...(ctx.resolveTaskVideoUrl === undefined
+      ? {}
+      : { resolveTaskVideoUrl: ctx.resolveTaskVideoUrl }),
   });
 }
 

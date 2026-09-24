@@ -244,13 +244,25 @@ export class TaskStore {
    *
    * - 默认（无 filter）：只返回**生成产物**（既无 EDL 也无工程）；
    * - `filter = { kind: 'edit', sourceTaskId }`：返回某源片的剪辑产物（剪辑台的
-   *   「本片剪辑历史」用它 —— 剪辑产物仍然可查可删，只是不混在生成历史里）。
+   *   「本片剪辑历史」用它 —— 剪辑产物仍然可查可删，只是不混在生成历史里）；
+   * - `filter = { kind: 'edit' }`（V2.6 / B37：`sourceTaskId` 可选）：返回**全部**剪辑产物
+   *   （剪辑台素材候选与 L2 血缘画布用）。
    *
    * V2.5：剪辑产物有两代 —— 旧记录 `edit_script`、新记录 `edit_origin`（浏览器端渲染入库），
    * 两条判据都要算（`coalesce` 取 sourceTaskId，两代各自的 JSON 结构不同但字段名一致）。
    */
-  listRecent(limit = 50, filter?: { kind: 'edit'; sourceTaskId: string }): TaskRecord[] {
+  listRecent(limit = 50, filter?: { kind: 'edit'; sourceTaskId?: string }): TaskRecord[] {
     if (filter !== undefined) {
+      if (filter.sourceTaskId === undefined) {
+        const rows = this.db
+          .prepare(
+            `SELECT * FROM tasks
+              WHERE (edit_script IS NOT NULL OR edit_origin IS NOT NULL)
+              ORDER BY created_at DESC LIMIT ?`,
+          )
+          .all(limit) as TaskRow[];
+        return rows.map(rowToRecord);
+      }
       const rows = this.db
         .prepare(
           `SELECT * FROM tasks

@@ -3,6 +3,7 @@ import type {
   GenerationMode,
   ProviderStatus,
   ProviderType,
+  TaskProgress,
 } from '@astrmira/shared';
 import { AssetDropZone } from './AssetDropZone';
 import { Eyebrow } from './Eyebrow';
@@ -60,6 +61,12 @@ export interface LeftPanelProps {
   uploadError: string | null;
   onAssetSelect: (slot: AssetSlotKey, file: File) => void;
   onAssetClear: (slot: AssetSlotKey) => void;
+  /**
+   * V2.6 / B37：可直接当 V2V 参考的候选（已出片的生成产物 + 剪辑产物）。
+   * 选中即把该任务以 `task:<taskId>` 引用放进参考视频槽 —— 不再要求"先下载再上传"。
+   */
+  videoRefCandidates: TaskProgress[];
+  onVideoRefTaskSelect: (taskId: string) => void;
   /** 当前模式缺少必需素材时的说明（非 null = 提交会被挡住，必须讲清缺哪一格） */
   assetRequirementHint: string | null;
 
@@ -136,6 +143,8 @@ export function LeftPanel(props: LeftPanelProps) {
     uploadError,
     onAssetSelect,
     onAssetClear,
+    videoRefCandidates,
+    onVideoRefTaskSelect,
     assetRequirementHint,
     seed,
     onSeedChange,
@@ -226,17 +235,37 @@ export function LeftPanel(props: LeftPanelProps) {
       ) : null}
 
       {mode === 'v2v' ? (
-        <AssetDropZone
-          label="参考视频"
-          hint="必需：作为风格 / 动作迁移的参考（mp4 / mov）"
-          kind="video"
-          aspectRatio={aspectRatio}
-          asset={assets.referenceVideo}
-          uploading={uploadingSlot === 'referenceVideo'}
-          error={uploadingSlot === null ? uploadError : null}
-          onSelect={(file) => onAssetSelect('referenceVideo', file)}
-          onClear={() => onAssetClear('referenceVideo')}
-        />
+        <>
+          <AssetDropZone
+            label="参考视频"
+            hint="必需：作为风格 / 动作迁移的参考（mp4 / mov）"
+            kind="video"
+            aspectRatio={aspectRatio}
+            asset={assets.referenceVideo}
+            uploading={uploadingSlot === 'referenceVideo'}
+            error={uploadingSlot === null ? uploadError : null}
+            onSelect={(file) => onAssetSelect('referenceVideo', file)}
+            onClear={() => onAssetClear('referenceVideo')}
+          />
+          {videoRefCandidates.length === 0 ? null : (
+            <select
+              className="wb-input wb-tref-pick"
+              value=""
+              aria-label="从成片库选择参考视频"
+              onChange={(event) => {
+                if (event.target.value !== '') onVideoRefTaskSelect(event.target.value);
+              }}
+            >
+              <option value="">或直接从已有成片 / 剪辑产物选…</option>
+              {videoRefCandidates.map((item) => (
+                <option key={item.taskId} value={item.taskId}>
+                  {item.origin?.kind === 'edit' ? '✂ 剪辑产物 · ' : ''}
+                  {item.taskId.slice(0, 8)} · {item.requestSnapshot.prompt.slice(0, 16)}
+                </option>
+              ))}
+            </select>
+          )}
+        </>
       ) : null}
 
       <div className="wb-field">

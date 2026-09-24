@@ -40,7 +40,7 @@ import { registerRequestLog } from './server/requestLog.js';
 import { registerSecurityHeaders } from './server/securityHeaders.js';
 import { registerSpa } from './server/spa.js';
 import { registerStaticOutputs, resolveOutputsDir } from './server/staticOutputs.js';
-import { createAssetUrlResolver } from './store/assets.js';
+import { createAssetUrlResolver, createTaskVideoUrlResolver } from './store/assets.js';
 import { openDatabase } from './store/db.js';
 import { EventLogStore } from './store/eventLog.js';
 import { reconcileOrphanTasks } from './store/reconciliation.js';
@@ -205,6 +205,11 @@ export async function buildApp() {
     assetsDir: path.join(resolveOutputsDir(), 'assets'),
     ...(publicBaseUrl === undefined || publicBaseUrl === '' ? {} : { publicBaseUrl }),
   });
+  // V2.6（B37）：`task:<taskId>` 引用 → 成片公网地址（无 data URL 退路，见 store/assets.ts）
+  const resolveTaskVideoUrl = createTaskVideoUrlResolver({
+    store,
+    ...(publicBaseUrl === undefined || publicBaseUrl === '' ? {} : { publicBaseUrl }),
+  });
 
   // 启动调解：上次进程退出时留下的 running 任务必须归档 ——
   // 否则界面上它们会永远停在 40%，而持有上游 id 的那批其实已经可能计费了。
@@ -226,6 +231,8 @@ export async function buildApp() {
     keyVault,
     // 参考资产 → 上游可访问地址（公网基址未配时退回 data URL）
     resolveAssetUrl,
+    // V2.6（B37）：`task:` 引用 → 成片公网地址
+    resolveTaskVideoUrl,
     // 防线 3：合成结束即清中间帧目录（成败都清）
     cleanup: (taskId) => cleanupTaskTemp(taskId),
     // V9 · B9：剪辑任务（本地 ffmpeg，**零上游调用**）——

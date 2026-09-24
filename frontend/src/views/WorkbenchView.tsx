@@ -6,7 +6,7 @@ import type {
   TaskProgress,
   VideoGenerateRequest,
 } from '@astrmira/shared';
-import { findRecipe } from '@astrmira/shared';
+import { findRecipe, TASK_REF_PREFIX } from '@astrmira/shared';
 import { CenterPanel } from '../components/CenterPanel';
 import { LeftPanel } from '../components/LeftPanel';
 import { RightPanel } from '../components/RightPanel';
@@ -108,6 +108,8 @@ export function WorkbenchView() {
 
   // ── 画廊 ──
   const [history, setHistory] = useState<TaskProgress[]>([]);
+  // B37：剪辑产物（不进画廊，只进"参考视频候选"——V2.6 `task:` 引用的素材池）
+  const [editProducts, setEditProducts] = useState<TaskProgress[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -129,8 +131,11 @@ export function WorkbenchView() {
   const refreshHistory = useCallback(async (): Promise<void> => {
     setLoadingHistory(true);
     try {
-      const data = await fetchHistory();
-      setHistory(data.items);
+      // B37：剪辑产物一并拉取（V2.6 `?kind=edit` 全量）——只喂给"参考视频候选"，
+      // 画廊仍只展示生成产物（V2.4 口径不动）
+      const [main, edits] = await Promise.all([fetchHistory(), fetchHistory({ kind: 'edit' })]);
+      setHistory(main.items);
+      setEditProducts(edits.items);
       setHistoryError(null);
     } catch (caught) {
       setHistoryError(describeError(caught));
@@ -325,6 +330,39 @@ export function WorkbenchView() {
         setSlot(slot, null);
       })
       .finally(() => setUploadingSlot(null));
+  }
+
+  /**
+   * B37：可直接当 V2V 参考的候选 —— 生成产物 + 剪辑产物（都已出片），新的在前。
+   */
+  const videoRefCandidates = useMemo(
+    () =>
+      [...history, ...editProducts]
+        .filter((item) => item.status === 'succeeded' && item.outputVideoUrl !== undefined)
+        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)),
+    [history, editProducts],
+  );
+
+  /**
+   * 把一条已出片任务（含剪辑产物）直接放进参考视频槽（V2.6 `task:` 引用）。
+   * 与「上传即切模式」同一条纪律（`lib/assets` 纯函数）：选成片即切 V2V；
+   * 预览用既有 `/media/*` 同源直链，不占 objectURL（无需 revoke）。
+   */
+  function handleVideoRefTaskSelect(selectedTaskId: string): void {
+    const selected = videoRefCandidates.find((item) => item.taskId === selectedTaskId);
+    if (selected === undefined || selected.outputVideoUrl === undefined) return;
+    replacePreview('referenceVideo', null);
+    setSlot('referenceVideo', {
+      assetId: `${TASK_REF_PREFIX}${selected.taskId}`,
+      meta: null,
+      previewUrl: selected.outputVideoUrl,
+    });
+    setUploadError(null);
+    setMode((prev) => modeAfterSlotUpload(prev, 'referenceVideo'));
+    setNotice(
+      `已把${selected.origin?.kind === 'edit' ? '剪辑产物' : '成片'} ${selected.taskId.slice(0, 8)} 设为参考视频（V2V）；` +
+        '线上部署（已配 PUBLIC_BASE_URL）可直接提交。',
+    );
   }
 
   /**
@@ -600,6 +638,8 @@ export function WorkbenchView() {
           uploadError={uploadError}
           onAssetSelect={handleAssetSelect}
           onAssetClear={handleAssetClear}
+          videoRefCandidates={videoRefCandidates}
+          onVideoRefTaskSelect={handleVideoRefTaskSelect}
           assetRequirementHint={assetRequirementHint}
           seed={seed}
           onSeedChange={handleSeedChange}

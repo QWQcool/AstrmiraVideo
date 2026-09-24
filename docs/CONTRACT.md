@@ -1,6 +1,10 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.5 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.6 · 已冻结（变更需先改本文，再改代码）**
+> **V2.6 修订（2026-09-24）**：**Step 8 立项批（台账 B36 / B37，用户拍板）** —— 均为**向后兼容**的扩展。
+>   ① **§5**：`/api/upload` 与 `/api/edits/renders` 的体积上限由 20MB 提到 **100MB**（反代 `request_body.max_size` 同步；PLAN §7-9 口径同步）；
+>   ② **§5**：`GET /api/history?kind=edit` 的 `source` 参数改为**可选** —— 不带时返回**全部剪辑产物**（剪辑台素材候选与 L2 画布用；带 `source` 仍只回某源片的剪辑历史）；
+>   ③ **§1**：`assets.referenceVideo` 除上传资产 ID 外，新增接受 **`task:<taskId>`** 引用（直接引用一条已出片任务——含剪辑产物——的成片作为 V2V 参考；服务端解析为 `/media/*` 公网地址，复用既有"公网 URL"守卫）。
 > **V2.5 修订（2026-09-24）**：**剪辑台改版（台账 B34）的契约迁移** —— 剪辑从「EDL 操作序列」升级为「**多轨工程 `EditProject`**」，渲染**搬到用户浏览器**（`@remotion/web-renderer`，WebCodecs 硬件编码；服务器零 CPU）。
 >   ① **§4 / §11-2**：`TaskProgress.origin` 的 `edit` 分支新增**可选** `project`（多轨工程）；`script` 同步改为**可选** —— 两者**至少有一个**（旧记录只有 `script`，新记录只有 `project`，都要能读）；
 >   ② **§5**：新增 `POST /api/edits/renders` —— 浏览器端渲染产物**入库**（multipart：MP4 + 工程 JSON；服务端**只归档不渲染**）；
@@ -95,6 +99,11 @@ export interface VideoGenerateRequest {
     // （原文：`reference_video must be provided as a web url`）。
     // 因此未配置 `PUBLIC_BASE_URL` 的部署（本地/内网）必须**在提交前**报
     // `INVALID_ASSET`（terminal）并说明去哪配，不得发一个注定 400 的请求。
+    //
+    // V2.6：取值两种形态 —— ① 上传资产 ID（`/api/upload` 返回的 assetId，原口径）；
+    // ② `task:<taskId>` —— 直接引用一条已出片任务（**含剪辑产物**，台账 B37）的成片作为参考。
+    // 服务端解析 `task:` 引用：任务不存在 / 无成片 → 404 `TASK_NOT_FOUND`；
+    // 解析出的 `/media/<taskId>.mp4` 与上传资产走**同一条**公网 URL 守卫（无 `PUBLIC_BASE_URL` → 提交前 400）。
     referenceVideo?: string;
   };
 
@@ -301,15 +310,15 @@ export interface StorageUsage {
 | `GET` | `/api/tasks/:taskId` | 轮询任务状态与结果。**200 → `TaskProgress`（§4）**；不存在或已清理 → **404 `TASK_NOT_FOUND`** |
 | `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消；已在终态 → `{ ok: false }`）。**200 → `{ ok, taskId }`**。语义是**尽力而为**：服务端把任务置 `cancelled`（此后调度器**不再推进**、也不会被 heartbeat 覆盖），并**通知上游停止**；上游是否真的停止、是否已产生费用，本服务无法代上游保证 —— 前端文案必须如实说明并指向服务商后台核对 |
 | `POST` | `/api/prompt/enhance` | 提示词扩写助手（**V2.0 已实现**，凭据经 `X-LLM-Key`，见下方注记段）。**200 → `PromptEnhanceResponse`（§3，含必填 `engine`）**；无 Key → **501 `LLM_NOT_CONFIGURED`**；空 / 超长提示词 → **400 `PROMPT_REJECTED`**；上游拒绝凭据 → **401 `KEY_INVALID`**；其余上游故障（含超时）→ **502 `UPSTREAM_ERROR`**。状态映射的完整口径见 §3 |
-| `POST` | `/api/upload` | 上传参考图/视频（multipart，≤20MB × ≤4，**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目） |
-| `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage }`**（`items` 最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾）。**V2.4 起**：默认只返回**生成产物**（剪辑产物不进历史，避免提示词与源片相同造成的"重复"观感）；可选查询参数 `?kind=edit&source=<taskId>` 返回某源片的剪辑产物（剪辑台用） |
+| `POST` | `/api/upload` | 上传参考图/视频（multipart，**V2.6 起** ≤100MB × ≤4，**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目） |
+| `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage }`**（`items` 最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾）。**V2.4 起**：默认只返回**生成产物**（剪辑产物不进历史，避免提示词与源片相同造成的"重复"观感）；查询参数 `?kind=edit`：**V2.6 起 `source` 可选** —— 带 `source=<taskId>` 返回某源片的剪辑产物（剪辑台"本片剪辑历史"用）；**不带 `source` 返回全部剪辑产物**（剪辑台素材候选 / L2 血缘画布用，同样受最近 50 条上限约束） |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
 | `POST` | `/api/providers/keys/verify` | **V2.1 新增（原【规划·B2】）**：凭据与模型校验，**零费用**。请求头按轨取（视频 `X-Provider-Key` / 文本 `X-LLM-Key`）；**200 → `KeyVerifyResponse`（§9）**；未带 Key → **501 `KEY_MISSING`**；凭据被上游拒绝 → **401 `KEY_INVALID`**；上游不可达 → **502 `UPSTREAM_ERROR`** |
 | `GET` | `/api/logs` | **V2.1 新增**：操作日志查询（筛选 + 分页，见 §10）。**200 → `{ items, total }`** |
 | `DELETE` | `/api/logs/:id` | **V2.1 新增**：删单条日志。**200 → `{ ok, deleted }`**（删除不存在的条目**不是错误**：DELETE 幂等，`deleted: 0`） |
 | `DELETE` | `/api/logs` | **V2.1 新增**：按当前筛选清空日志（不带筛选即全清）。**200 → `{ ok, deleted }`** |
 | `POST` | `/api/edits` | **V2.2【规划】→ V9 · B9 已实现（V2.5 起降为 API-only，UI 不再暴露）**：基础剪辑 EDL（本地 ffmpeg，**零上游调用**、**不走防线 5 冷却**）。**200 → `{ taskId }`**（复用 §4 的 `GET /api/tasks/:taskId` 轮询与画廊；任务走 `local` 轨 = 本地互斥 1）；操作序列非法（含 `endSec ≤ startSec`、连续两次拼接、转场未跟在拼接之后）→ **400 `INVALID_REQUEST`**；源任务不存在 / 无成片 / 拼接素材不可用 → **404 `TASK_NOT_FOUND`**；ffmpeg 缺失 → **503 `PROVIDER_UNAVAILABLE`**。完整契约见 §11-3 |
-| `POST` | `/api/edits/renders` | **V2.5 新增**：**浏览器端渲染产物入库**（B34 剪辑台改版）。multipart 字段：`file` = 渲染出的 MP4、`sourceTaskId` = 本次剪辑的源片、`project` = 多轨工程 JSON。服务端**不做任何渲染**（渲染在用户浏览器完成），只做校验与归档：产物落 `outputs/<taskId>.mp4` → 成为一条 `status:'succeeded'` 的剪辑任务（`origin.kind='edit'` + `origin.project`）并抽封面。**200 → `{ taskId }`**；工程 JSON / 字段不合法 → **400 `INVALID_REQUEST`**；源任务不存在或无成片 → **404 `TASK_NOT_FOUND`**；文件非 MP4（魔数嗅探）→ **415 `INVALID_ASSET`**；**> 20MB** → **413**（与 `/api/upload` 同口径，也受反代请求体上限约束，见 §11-2） |
+| `POST` | `/api/edits/renders` | **V2.5 新增**：**浏览器端渲染产物入库**（B34 剪辑台改版）。multipart 字段：`file` = 渲染出的 MP4、`sourceTaskId` = 本次剪辑的源片、`project` = 多轨工程 JSON。服务端**不做任何渲染**（渲染在用户浏览器完成），只做校验与归档：产物落 `outputs/<taskId>.mp4` → 成为一条 `status:'succeeded'` 的剪辑任务（`origin.kind='edit'` + `origin.project`）并抽封面。**200 → `{ taskId }`**；工程 JSON / 字段不合法 → **400 `INVALID_REQUEST`**；源任务不存在或无成片 → **404 `TASK_NOT_FOUND`**；文件非 MP4（魔数嗅探）→ **415 `INVALID_ASSET`**；**> 100MB（V2.6 起，原 20MB）** → **413**（与 `/api/upload` 同口径，也受反代请求体上限约束，见 §11-2） |
 
 **幂等键与「即将提交」标记（V1.3 新增）**：
 - `POST /api/generate` 必须接受幂等键（请求头 `Idempotency-Key`；缺省时服务端按 `provider + 请求指纹` 生成）。同一幂等键重复提交返回**同一 `taskId`**，不得产生第二次上游调用。
@@ -577,7 +586,7 @@ export interface AudioClip {
 
 | 字段 | 说明 |
 |---|---|
-| `file` | 浏览器渲染出的 MP4；**魔数嗅探**必须为 `video/mp4`；≤ 20MB（与 `/api/upload` 同口径；反代请求体上限同样是 20MB，超出会被反代先拦） |
+| `file` | 浏览器渲染出的 MP4；**魔数嗅探**必须为 `video/mp4`；≤ 100MB（V2.6 起，与 `/api/upload` 同口径；反代请求体上限同样是 100MB，超出会被反代先拦） |
 | `sourceTaskId` | 本次剪辑的**源片**（剪辑历史按它归档——「本片剪辑历史」用它查） |
 | `project` | 多轨工程 JSON（服务端用 `EditProjectSchema` 校验；**只存不改**） |
 

@@ -62,6 +62,7 @@ export function EditView() {
   const sourceId = route.query.get('task');
 
   const [history, setHistory] = useState<TaskProgress[]>([]);
+  const [allEdits, setAllEdits] = useState<TaskProgress[]>([]);
   const [edlHistory, setEdlHistory] = useState<TaskProgress[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -70,13 +71,16 @@ export function EditView() {
 
   const reload = useCallback(async (): Promise<void> => {
     try {
-      // 生成产物（源片 + 候选素材）与剪辑历史分开查（剪辑产物不进主历史，V2.4 口径）
-      const [main, edits] = await Promise.all([
+      // 三路并发：生成产物（源片 + 候选素材）、全部剪辑产物（B37：素材候选合并）、
+      // 本片剪辑历史（V2.4 口径，剪辑产物不进主历史）
+      const [main, edits, sourceEdits] = await Promise.all([
         fetchHistory(),
+        fetchHistory({ kind: 'edit' }),
         sourceId === null ? Promise.resolve(null) : fetchHistory({ kind: 'edit', source: sourceId }),
       ]);
       setHistory(main.items);
-      setEdlHistory(edits === null ? [] : edits.items);
+      setAllEdits(edits.items);
+      setEdlHistory(sourceEdits === null ? [] : sourceEdits.items);
       setLoadError(null);
     } catch (caught) {
       setLoadError(describeError(caught));
@@ -87,18 +91,23 @@ export function EditView() {
     void reload();
   }, [reload]);
 
+  // 源片查找覆盖生成产物与剪辑产物（B37：剪辑产物本身也可以再剪 —— 串剪是一等手法）
   const source = useMemo(
-    () => history.find((item) => item.taskId === sourceId) ?? null,
-    [history, sourceId],
+    () =>
+      history.find((item) => item.taskId === sourceId) ??
+      allEdits.find((item) => item.taskId === sourceId) ??
+      null,
+    [history, allEdits, sourceId],
   );
 
-  /** 可作为素材的成片（已成功且有产物；含源片自己 —— 同一片多次入场是合法剪辑手法） */
+  /** 可作为素材的成片（已成功且有产物；含源片自己 —— 同一片多次入场是合法剪辑手法；
+   *  B37：剪辑产物与生成产物同列候选，新的在前） */
   const candidates = useMemo(
     () =>
-      history.filter(
-        (item) => item.status === 'succeeded' && item.outputVideoUrl !== undefined,
-      ),
-    [history],
+      [...history, ...allEdits]
+        .filter((item) => item.status === 'succeeded' && item.outputVideoUrl !== undefined)
+        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)),
+    [history, allEdits],
   );
 
   const sourceUrl = resolveMediaUrl(source?.outputVideoUrl);

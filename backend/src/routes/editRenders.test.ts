@@ -243,9 +243,9 @@ describe('POST /api/edits/renders', () => {
     expect((response.json() as { code: string }).code).toBe('INVALID_ASSET');
   });
 
-  it('拒绝：超过 20MB（与反代请求体上限同口径）→ 413', async () => {
-    // 21MB 的"MP4"：体积闸门必须在嗅探之前就拦下（否则要白读一遍内存）
-    const huge = Buffer.alloc(21 * 1024 * 1024, 0x41);
+  it('拒绝：超过 100MB（V2.6 起，与反代请求体上限同口径）→ 413', async () => {
+    // 101MB 的"MP4"：体积闸门必须在嗅探之前就拦下（否则要白读一遍内存）
+    const huge = Buffer.alloc(101 * 1024 * 1024, 0x41);
     const response = await postRender(
       { filename: 'huge.mp4', contentType: 'video/mp4', content: huge },
       { sourceTaskId: 'seed-source', project: JSON.stringify(validProject()) },

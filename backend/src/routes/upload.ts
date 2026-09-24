@@ -17,7 +17,7 @@ import { resolveOutputsDir } from '../server/staticOutputs.js';
  * `POST /api/upload`（CONTRACT §5 + PLAN §7-6 上传加固 + 防线 4）。
  *
  * 五条（缺一即公网裸奔 / 上游被喂脏数据）：
- * 1. 体积 ≤ 20MB × 数量 ≤ 4（超限**显式拒绝**，不静默截断）；
+ * 1. 体积 ≤ 100MB（V2.6 起，原 20MB；台账 B36）× 数量 ≤ 4（超限**显式拒绝**，不静默截断）；
  * 2. **魔数嗅探**（`file-type`）决定类型 —— **不信任** `Content-Type`；
  * 3. 类型白名单：jpg / png / webp / heic / mp4 / mov；
  * 4. **图像走防线 4 清洗网关**（`pipeline/imageSanitize.ts`：EXIF 方向矫正、CMYK→sRGB、
@@ -26,7 +26,9 @@ import { resolveOutputsDir } from '../server/staticOutputs.js';
  * 5. 产物路径**只含服务端生成的随机 ID**（用户提供的文件名一律不参与路径构造）。
  */
 
-export const MAX_FILE_BYTES = 20 * 1024 * 1024;
+// V2.6（台账 B36）：20MB → 100MB。与 MAX_RENDER_BYTES、反代 `request_body.max_size` 同口径，
+// 三处必须同改（PLAN §7-9）；再大就该走分片上传，不在本常量上继续加。
+export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 export const MAX_FILES = 4;
 
 /** 魔数嗅探后的白名单 */
@@ -149,7 +151,7 @@ export const createUploadRoutes =
           if (code === 'FST_REQ_FILE_TOO_LARGE') {
             return reply
               .code(413)
-              .send(createErrorResponse('INVALID_ASSET', '文件超过 20MB 体积上限'));
+              .send(createErrorResponse('INVALID_ASSET', `文件超过 ${MAX_FILE_BYTES / 1024 / 1024}MB 体积上限`));
           }
           if (code === 'FST_FILES_LIMIT' || code === 'FST_PARTS_LIMIT') {
             return reply
