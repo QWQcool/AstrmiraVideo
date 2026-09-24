@@ -264,10 +264,10 @@ try {
   await page.waitForSelector('.wb-shell', { timeout: 10_000 });
   assert(page.url().includes('#/library'), `刷新后保持当前视图（期望 #/library，实际 ${page.url()}）`);
 
-  // 剪辑台（hidden 视图）可直达；无 task 时是空态引导（B9 才填实现）
+  // 剪辑台（hidden 视图）可直达；无 task 时是空态引导
   await page.evaluate(() => { location.hash = '#/edit'; });
   await page.waitForSelector('.wb-placeholder', { timeout: 5_000 });
-  assert(true, '剪辑台 #/edit 可直达（B9 前是占位视图；不进侧栏）');
+  assert(true, '剪辑台 #/edit 可直达（无源片时空态引导；不进侧栏）');
 
   // 未知 hash 落兜底（不白屏、不静默重定向）—— 这也是 B2 破坏性验证的固化
   await page.evaluate(() => { location.hash = '#/definitely-not-a-view'; });
@@ -674,7 +674,7 @@ try {
     `插入骨架：配方文本**逐字**出现在提示词框里（框长 ${promptAfterInsert.length} 字）`,
   );
 
-  console.log('\n[6e] 剪辑台（V9 · B9：独立视图 + 真跑一次本地剪辑）');
+  console.log('\n[6e] 剪辑台（B34 · P1：Remotion 时间轴 UI + ffmpeg 链路 API 级证据）');
   await page.evaluate(() => { location.hash = '#/edit'; });
   await page.waitForSelector('.wb-placeholder', { timeout: 10_000 });
   assert(true, '无 task 参数时显示空态引导（剪辑台不进侧栏）');
@@ -688,42 +688,128 @@ try {
   });
   assert(sourceTask !== null, `找到可用源片（${sourceTask}）`);
 
+  // ── 新版时间轴 UI（Remotion 预览 + clip 拖动/裁剪/选中）──
   await page.evaluate((id) => { location.hash = `#/edit?task=${id}`; }, sourceTask);
-  await page.locator('.edit-wrap').waitFor({ timeout: 10_000 });
-  assert(true, '剪辑台加载源片并渲染 EDL 编辑器');
+  await page.waitForSelector('.ed-timeline .ed-clip', { timeout: 15_000 });
+  assert(true, '剪辑台加载源片并渲染时间轴（源片 clip 已上轨）');
 
-  await page.getByRole('button', { name: '＋ 裁剪' }).click();
-  await page.getByRole('button', { name: '＋ 抽帧' }).click();
-  assert((await page.locator('.edit-row').count()) === 2, '操作序列有两步（裁剪 + 抽帧）');
+  // 预览舞台挂载 Remotion Player：@remotion/media 的 <Video> 在预览里渲染 canvas
+  // （WebCodecs 抽帧），不是 <video> 元素 —— 断言形态以源码事实为准
+  await page.waitForSelector('.ed-stage canvas', { timeout: 15_000 });
+  assert(true, '预览舞台挂载 Remotion Player（canvas 在位，预览即所得链路成立）');
 
-  await page.getByRole('button', { name: '执行剪辑' }).click();
-  // ⚠️ 等待口径要精确：提交后任务**立刻**以 queued 出现在 /api/history，
-  // 所以不能等"存在一条 edit 任务"（那会立刻为真）。这里等**组件自己的产物播放器**出现
-  // （源码里 activeTask.status === 'succeeded' 才渲染第二个 .lib-preview video）——
-  // 它同时证明了"任务跑完 + 页面拿到终态"。
-  await page.waitForFunction(
-    () => document.querySelectorAll('.edit-wrap .lib-preview video').length >= 2,
-    { timeout: 60_000 },
+  // 选中：点击 clip → selected（此刻轨上只有源片一个 clip，拖动/裁剪不受邻居约束）
+  const firstClip = page.locator('.ed-timeline .ed-clip').first();
+  await firstClip.click();
+  assert(
+    (await page.locator('.ed-clip.selected').count()) === 1,
+    'clip 点击后进入选中态（金描边）',
   );
-  assert(true, '剪辑产物已在剪辑台里可播放（源片 + 产物两个播放器）');
 
+  // 拖动：body 向右拖 → startFrame 变大（data-* 是渲染事实，不是内部状态）
+  const startBefore = Number(await firstClip.getAttribute('data-start-frame'));
+  const box = await firstClip.boundingBox();
+  assert(box !== null, 'clip 有可视几何');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2, { steps: 6 });
+  await page.mouse.up();
+  const startAfter = Number(await firstClip.getAttribute('data-start-frame'));
+  assert(
+    startAfter > startBefore,
+    `clip 可拖动（startFrame ${startBefore} → ${startAfter}）`,
+  );
+  // 裁剪：右缘手柄向左拖 → durationFrames 变小
+  // ⚠️ 两个实测坑（2026-09-24 排查）：
+  //  ① 原始 mouse.* 不走 Playwright 的 actionability 稳定等待 —— 拖拽 mouse.up 后立刻读
+  //     boundingBox()/属性可能拿到「提交中途」的旧值；先用双 rAF 等 clip 几何稳定再算手柄坐标。
+  //  ② 坐标用 evaluate + getBoundingClientRect（同步布局读取），不用 boundingBox() 快照。
+  await page.waitForFunction(
+    () =>
+      new Promise((resolve) => {
+        const clip = document.querySelector('.ed-timeline .ed-clip');
+        if (clip === null) return resolve(false);
+        const first = clip.getBoundingClientRect().x;
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => resolve(Math.abs(clip.getBoundingClientRect().x - first) < 0.5)),
+        );
+      }),
+    null,
+    { timeout: 5_000 },
+  );
+
+  const durBefore = Number(await firstClip.getAttribute('data-duration-frames'));
+  const clipRect = await page.evaluate(() => {
+    const clip = document.querySelector('.ed-timeline .ed-clip');
+    if (clip === null) return null;
+    const rect = clip.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  });
+  assert(clipRect !== null, '拖动后 clip 有可视几何');
+  const trimStartX = clipRect.x + clipRect.width - 4;
+  const trimStartY = clipRect.y + clipRect.height / 2;
+  await page.mouse.move(trimStartX, trimStartY);
+  await page.mouse.down();
+  await page.mouse.move(trimStartX - 80, trimStartY, { steps: 4 });
+  await page.mouse.up();
+  const durAfter = Number(await firstClip.getAttribute('data-duration-frames'));
+  assert(
+    durAfter < durBefore && durAfter >= 2,
+    `clip 可裁剪（durationFrames ${durBefore} → ${durAfter}，最短 2 帧）`,
+  );
+
+  // 添加素材：把同一源片再入轨一次（验证「探测时长 → 追加到轨尾」链路）
+  await page.locator('.ed-tl-pick').selectOption(sourceTask);
+  await page.getByRole('button', { name: '＋ 添加到时间轴' }).click();
+  await page.waitForFunction(
+    () => document.querySelectorAll('.ed-timeline .ed-clip').length === 2,
+    { timeout: 15_000 },
+  );
+  assert(true, '添加素材后时间轴有 2 个 clip（追加到轨尾）');
+
+  // Delete 删除选中片段（添加素材后新 clip 处于选中态）→ 回到 1 个 clip
+  await page.keyboard.press('Delete');
+  await page.waitForFunction(
+    () => document.querySelectorAll('.ed-timeline .ed-clip').length === 1,
+    { timeout: 5_000 },
+  );
+  assert(true, 'Delete 删除选中片段（时间轴回到 1 个 clip）');
+
+  // ── ffmpeg 基础剪辑链路（决策：保留为纯后端能力，UI 入口已撤 → 走 API 级验证）──
   const editResult = await page.evaluate(async (srcTask) => {
-    // V9 修复：剪辑产物默认不进 /api/history（edit_script IS NULL），
-    // 要走 `?kind=edit&source=<id>` 查某源片的剪辑产物
-    const data = await (
-      await fetch(`/api/history?kind=edit&source=${encodeURIComponent(srcTask)}`)
-    ).json();
-    // 取**最新**一条剪辑任务（不依赖列表顺序；该接口只返回剪辑产物，不用再 filter）
-    const item = (data.items ?? []).sort((a, b) => b.createdAt - a.createdAt)[0];
-    if (item === undefined) return null;
+    const submit = await fetch('/api/edits', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sourceTaskId: srcTask,
+        operations: [
+          { type: 'trim', startSec: 0, endSec: 3 },
+          { type: 'extractFrame', atSec: 1 },
+        ],
+      }),
+    });
+    if (!submit.ok) return { submitStatus: submit.status };
+    const { taskId } = await submit.json();
 
-    const target = item.outputVideoUrl ?? '/api/health';
-    const response = await fetch(target, { headers: { range: 'bytes=0-1023' } });
+    // 轮询到终态（本地 ffmpeg，5s 片的 trim+抽帧实测秒级，给足 60s 余量）
+    const deadline = Date.now() + 60_000;
+    let item = null;
+    while (Date.now() < deadline) {
+      const progress = await (await fetch(`/api/tasks/${taskId}`)).json();
+      if (['succeeded', 'failed', 'cancelled'].includes(progress.status)) {
+        item = progress;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    if (item === null) return { timeout: true };
+
+    const response = await fetch(item.outputVideoUrl ?? '/api/health', {
+      headers: { range: 'bytes=0-1023' },
+    });
     return {
-      taskId: item.taskId,
       status: item.status,
       error: item.error ?? null,
-      sourceTaskId: item.origin?.sourceTaskId ?? null,
       outputVideoUrl: item.outputVideoUrl ?? null,
       extracted: item.extractedAssetIds ?? [],
       rangeStatus: response.status,
@@ -732,17 +818,23 @@ try {
 
   note(`剪辑诊断：${JSON.stringify(editResult)}`);
   assert(
-    editResult !== null && editResult.outputVideoUrl !== null,
-    `剪辑产物有 outputVideoUrl（${editResult?.outputVideoUrl ?? 'null'}）`,
+    editResult.status === 'succeeded' && editResult.outputVideoUrl !== null,
+    `ffmpeg 剪辑链路（API 级）产物成功（status=${editResult.status}，error=${JSON.stringify(editResult.error ?? null)}）`,
   );
   assert(
-    editResult?.extracted.length === 1,
-    `抽帧资产已落账（${editResult?.extracted.length ?? 0} 个，期望 1）`,
+    editResult.extracted?.length === 1,
+    `抽帧资产已落账（${editResult.extracted?.length ?? 0} 个，期望 1）`,
   );
   assert(
-    editResult !== null && editResult.rangeStatus === 206,
-    `剪辑产物支持 Range（HTTP ${editResult?.rangeStatus}）`,
+    editResult.rangeStatus === 206,
+    `剪辑产物支持 Range（HTTP ${editResult.rangeStatus}）`,
   );
+
+  // 剪辑历史（新版右栏保留位）：刷新后能看到刚才那条 API 级剪辑记录
+  await page.reload();
+  await page.waitForSelector('.ed-timeline .ed-clip', { timeout: 15_000 });
+  const historyCount = await page.locator('.edit-history li').count();
+  assert(historyCount >= 1, `本片剪辑历史可见（${historyCount} 条）`);
 
   console.log('\n[7] 操作日志（V2.1，CONTRACT §10）');
   // 上面 [6] 段用界面真的提交过一条任务 → 它必须已经躺在操作日志里。

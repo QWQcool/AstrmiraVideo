@@ -1609,63 +1609,8 @@
   }
 }
 
-/* ── V9 剪辑台（B9）── */
-.edit-wrap {
-  display: grid;
-  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
-}
-
-.edit-edl {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.edit-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 9px 11px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel2);
-  font-size: var(--fs-label);
-}
-
-.edit-order {
-  font-family: var(--mono);
-  font-size: var(--fs-note);
-  color: var(--gold);
-}
-
-.edit-kind {
-  color: var(--text);
-}
-
-.edit-params {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.edit-num {
-  width: 76px;
-}
-
-.edit-summary {
-  margin-left: auto;
-}
-
-.edit-add {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-top: 12px;
-}
-
+/* ── V9 剪辑台：B9 的 EDL 编辑器样式已随 B34 Remotion 改版移除（时间轴样式在 edit.css），
+   只保留「本片剪辑历史」列表（剪辑台与视频库详情抽屉共用） ── */
 .edit-history {
   margin: 0;
   padding: 0;
@@ -1679,12 +1624,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-@media (max-width: 1180px) {
-  .edit-wrap {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 /* ── V9 配方库（B8）── */

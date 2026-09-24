@@ -116,6 +116,9 @@
   /* V9 B3 追加：总览 KPI 的"大数字"档。此前没有这一档，想比 --fs-display(20px) 更大
      就只能写字面量 —— 而 AC6 明令禁止（F6 静态检查会拦）。 */
   --fs-metric: 30px;
+  /* 剪辑台（B34 Remotion 改版）：成片字幕的字号 —— 它是「合成内容」（会被渲染进导出的 MP4），
+     不是界面 chrome，但同样不许在 TSX/CSS 里写字面量，故登记为 token。 */
+  --fs-caption: 44px;
   --track-tight: -0.01em;
 }
 

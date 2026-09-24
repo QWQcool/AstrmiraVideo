@@ -1,81 +1,29 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  EDIT_OPERATION_LABELS,
-  MAX_EDIT_OPERATIONS,
-  type EditOperation,
-  type EditScript,
-  type TaskProgress,
-} from '@astrmira/shared';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import type { TaskProgress } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
-import { useTaskPolling } from '../hooks/useTaskPolling';
-import { ApiError, fetchHistory, resolveMediaUrl, submitEdit } from '../lib/api';
+import { ApiError, fetchHistory, resolveMediaUrl } from '../lib/api';
 import { navigate, useHashRoute } from '../lib/router';
 import { formatBytes, formatRelativeTime } from '../lib/overviewStats';
+import { DEFAULT_PROJECT_FPS, createProjectFromSource } from '../edit/model';
+import { probeVideoMeta } from '../edit/mediaProbe';
+import { togglePlayback } from '../edit/playerRef';
+import { EditStore } from '../edit/store';
+import { Timeline } from '../edit/Timeline';
 
 /**
- * 剪辑台（V9 · B9；CONTRACT §11-2）。
+ * 剪辑台（B34 · Remotion 多轨改版 · P1）。
  *
- * 形态由 B1 闸门拍板：**独立视图 `#/edit?task=<id>`**（不是视频库里的子面板）——
- * 它的体量值得一整块屏幕。无 `task` 参数时显示空态引导（"去视频库选一条"）。
+ * 形态：独立视图 `#/edit?task=<id>`（B1 闸门拍板，不进侧栏；无 task 时空态引导）。
+ * P1 交付 = 多轨数据模型 + @remotion/player 预览 + 单轨时间轴（clip 可拖动/裁剪/选中）：
+ * - **预览即所得**：预览组件 `EditComposition` 与 P2 的浏览器端导出（web-renderer）共用；
+ * - 导出、字幕/转场/音效轨、属性面板分别在 P2 / P3 开放（P1 界面不出假按钮）；
+ * - 本地 ffmpeg 基础剪辑链路（`POST /api/edits`）按决策保留为**纯 API 能力**，
+ *   UI 入口随本次改版撤掉；「本片剪辑历史」保留（P4 契约迁移继续用）。
  *
- * 两件事各自单一来源：
- * - **操作序列**（EDL）在本地 state 里编辑，提交时整体发给 `POST /api/edits`；
- * - **执行状态**复用 `useTaskPolling`（与生成任务同一条轮询链路）—— 剪辑产物就是一条普通任务。
- *
- * "本片剪辑历史"从 `/api/history` 里按 `origin.sourceTaskId` 过滤得到（不新增后端路由）。
+ * Remotion 的加载边界：`PlayerStage` 用 React.lazy 懒加载（主 bundle 不含 Remotion）。
  */
 
-const OPERATION_TYPES: EditOperation['type'][] = [
-  'trim',
-  'concat',
-  'xfade',
-  'volume',
-  'speed',
-  'extractFrame',
-];
-
-/** 每种操作的默认参数（点了"添加"就能直接用，不用先填一堆空） */
-function defaultOperation(type: EditOperation['type']): EditOperation {
-  switch (type) {
-    case 'trim':
-      return { type: 'trim', startSec: 0, endSec: 3 };
-    case 'concat':
-      return { type: 'concat', taskIds: [''] };
-    case 'xfade':
-      return { type: 'xfade', transition: 'fade', durationSec: 0.4 };
-    case 'volume':
-      return { type: 'volume', gain: 1 };
-    case 'speed':
-      return { type: 'speed', factor: 1.25 };
-    case 'extractFrame':
-      return { type: 'extractFrame', atSec: 1 };
-  }
-}
-
-function describeOperation(operation: EditOperation): string {
-  switch (operation.type) {
-    case 'trim':
-      return `${operation.startSec}s → ${operation.endSec}s`;
-    case 'concat':
-      return operation.taskIds.map((id) => id.slice(0, 8)).join(' + ');
-    case 'xfade':
-      return `${operation.transition} · ${operation.durationSec}s`;
-    case 'volume':
-      return operation.gain === 0 ? '静音' : `×${operation.gain}`;
-    case 'speed':
-      return `×${operation.factor}`;
-    case 'extractFrame':
-      return `at ${operation.atSec}s → 参考资产`;
-  }
-}
-
-function describeError(caught: unknown): string {
-  if (caught instanceof ApiError) {
-    const code = caught.failure.code === undefined ? '' : `【${caught.failure.code}】`;
-    return `${code}${caught.failure.message}`;
-  }
-  return caught instanceof Error ? caught.message : String(caught);
-}
+const PlayerStage = lazy(() => import('../edit/PlayerStage'));
 
 const STATUS_TEXT: Record<TaskProgress['status'], string> = {
   queued: '排队中',
@@ -85,29 +33,37 @@ const STATUS_TEXT: Record<TaskProgress['status'], string> = {
   cancelled: '已取消',
 };
 
+function describeError(caught: unknown): string {
+  if (caught instanceof ApiError) {
+    const code = caught.failure.code === undefined ? '' : `【${caught.failure.code}】`;
+    return `${code}${caught.failure.message}`;
+  }
+  return caught instanceof Error ? caught.message : String(caught);
+}
+
 export function EditView() {
   const route = useHashRoute();
   const sourceId = route.query.get('task');
 
   const [history, setHistory] = useState<TaskProgress[]>([]);
   const [edlHistory, setEdlHistory] = useState<TaskProgress[]>([]);
-  const [operations, setOperations] = useState<EditOperation[]>([]);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [store, setStore] = useState<EditStore | null>(null);
+  const [probeError, setProbeError] = useState<string | null>(null);
 
   const reload = useCallback(async (): Promise<void> => {
     try {
-      // V9 修复：剪辑产物不进历史成片 —— 生成产物（源片 + 拼接素材）与剪辑历史分开查
+      // 生成产物（源片 + 候选素材）与剪辑历史分开查（剪辑产物不进主历史，V2.4 口径）
       const [main, edits] = await Promise.all([
         fetchHistory(),
         sourceId === null ? Promise.resolve(null) : fetchHistory({ kind: 'edit', source: sourceId }),
       ]);
       setHistory(main.items);
       setEdlHistory(edits === null ? [] : edits.items);
+      setLoadError(null);
     } catch (caught) {
-      setError(describeError(caught));
+      setLoadError(describeError(caught));
     }
   }, [sourceId]);
 
@@ -115,61 +71,77 @@ export function EditView() {
     void reload();
   }, [reload]);
 
-  const { task: activeTask } = useTaskPolling(activeTaskId, {
-    onSettled: () => {
-      void reload();
-    },
-  });
-
   const source = useMemo(
     () => history.find((item) => item.taskId === sourceId) ?? null,
     [history, sourceId],
   );
 
-  /** 可作为拼接素材的其它成片 */
+  /** 可作为素材的成片（已成功且有产物；含源片自己 —— 同一片多次入场是合法剪辑手法） */
   const candidates = useMemo(
     () =>
       history.filter(
-        (item) => item.status === 'succeeded' && item.outputVideoUrl !== undefined && item.taskId !== sourceId,
+        (item) => item.status === 'succeeded' && item.outputVideoUrl !== undefined,
       ),
-    [history, sourceId],
+    [history],
   );
 
-  async function handleRun(): Promise<void> {
-    if (sourceId === null || source === null) return;
+  const sourceUrl = resolveMediaUrl(source?.outputVideoUrl);
 
-    setError(null);
-    setNotice(null);
-
-    if (operations.length === 0) {
-      setError('请先添加至少一个操作');
+  // 源片 → 探测真实时长/尺寸（裁剪上限的唯一依据）→ 建工程与 store
+  useEffect(() => {
+    if (sourceId === null || sourceUrl === null) {
+      setStore(null);
       return;
     }
-    if (operations.length > MAX_EDIT_OPERATIONS) {
-      setError(`操作数上限 ${MAX_EDIT_OPERATIONS}（当前 ${operations.length}）`);
-      return;
-    }
-    const incomplete = operations.findIndex((op) =>
-      op.type === 'concat' ? op.taskIds.some((id) => id.trim() === '') : false,
-    );
-    if (incomplete !== -1) {
-      setError(`第 ${incomplete + 1} 个「拼接」还没选素材`);
-      return;
-    }
+    let cancelled = false;
+    setProbeError(null);
+    probeVideoMeta(sourceUrl, DEFAULT_PROJECT_FPS)
+      .then((meta) => {
+        if (cancelled) return;
+        const project = createProjectFromSource(
+          { taskId: sourceId, url: sourceUrl, durationFrames: meta.durationFrames },
+          { fps: DEFAULT_PROJECT_FPS, width: meta.width, height: meta.height, label: '源片' },
+        );
+        setStore(new EditStore(project));
+      })
+      .catch((caught: unknown) => {
+        if (cancelled) return;
+        setStore(null);
+        setProbeError(caught instanceof Error ? caught.message : String(caught));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceId, sourceUrl]);
 
-    const script: EditScript = { sourceTaskId: source.taskId, operations };
-
-    setSubmitting(true);
-    try {
-      const created = await submitEdit(script);
-      setActiveTaskId(created.taskId);
-      setNotice('已提交剪辑（本地 ffmpeg · 零上游调用 · 不占冷却）');
-    } catch (caught) {
-      setError(describeError(caught));
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  // 快捷键：Delete 删除选中片段；空格播放/暂停（输入控件内不抢）
+  useEffect(() => {
+    if (store === null) return;
+    const onKey = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target !== null &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        const selected = store.getState().selectedClipId;
+        if (selected !== null) {
+          store.removeClip(selected);
+          event.preventDefault();
+        }
+      } else if (event.key === ' ') {
+        togglePlayback();
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [store]);
 
   // ── 无源片：空态 ──
   if (sourceId === null) {
@@ -190,7 +162,7 @@ export function EditView() {
   }
 
   return (
-    <section className="wb-page">
+    <section className="wb-page ed-page">
       <div className="wb-page-head wb-page-head-row">
         <div>
           <h1 className="wb-page-title">剪辑 · {sourceId.slice(0, 8)}</h1>
@@ -201,309 +173,53 @@ export function EditView() {
         </a>
       </div>
 
-      {error === null ? null : (
+      {loadError === null ? null : (
         <div className="wb-uncertain" style={{ marginBottom: 14 }}>
-          <span className="wb-uncertain-title">无法执行</span>
-          <span className="wb-uncertain-body">{error}</span>
+          <span className="wb-uncertain-title">历史加载失败</span>
+          <span className="wb-uncertain-body">{loadError}</span>
         </div>
       )}
-      {notice === null ? null : (
-        <div className="wb-queue-item" style={{ marginBottom: 14 }}>
-          <span className="wb-dot" />
-          <span className="wb-note">{notice}</span>
+      {probeError === null ? null : (
+        <div className="wb-uncertain" style={{ marginBottom: 14 }}>
+          <span className="wb-uncertain-title">源片不可剪辑</span>
+          <span className="wb-uncertain-body">{probeError}</span>
         </div>
       )}
 
-      <div className="edit-wrap">
-        <section className="wb-panel">
-          <div className="wb-field-head">
-            <Eyebrow index={1} tone="gold" as="h2">
-              操作序列（EDL）
-            </Eyebrow>
-            <span className="wb-note">
-              {operations.length} / {MAX_EDIT_OPERATIONS} 步
-            </span>
-          </div>
-
-          {operations.length === 0 ? (
-            <p className="wb-note">还没有操作。从下面选一个加进来：裁剪 → 拼接 → 转场是最常见的组合。</p>
+      <div className="ed-body">
+        <div className="ed-stage-col">
+          {store === null ? (
+            <div className="wb-skeleton ed-stage-skeleton" />
           ) : (
-            <div className="edit-edl">
-              {operations.map((operation, index) => (
-                <div className="edit-row" key={`${operation.type}-${index}`}>
-                  <span className="edit-order">{String(index + 1).padStart(2, '0')}</span>
-                  <span className="edit-kind">{EDIT_OPERATION_LABELS[operation.type]}</span>
-
-                  {operation.type === 'trim' ? (
-                    <span className="edit-params">
-                      <input
-                        className="wb-input edit-num"
-                        type="number"
-                        min={0}
-                        step={0.1}
-                        value={operation.startSec}
-                        aria-label="裁剪起点"
-                        onChange={(event) =>
-                          setOperations((prev) =>
-                            prev.map((item, position) =>
-                              position === index && item.type === 'trim'
-                                ? { ...item, startSec: Number(event.target.value) }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                      <span className="wb-note">→</span>
-                      <input
-                        className="wb-input edit-num"
-                        type="number"
-                        min={0}
-                        step={0.1}
-                        value={operation.endSec}
-                        aria-label="裁剪终点"
-                        onChange={(event) =>
-                          setOperations((prev) =>
-                            prev.map((item, position) =>
-                              position === index && item.type === 'trim'
-                                ? { ...item, endSec: Number(event.target.value) }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                      <span className="wb-note">秒</span>
-                    </span>
-                  ) : null}
-
-                  {operation.type === 'concat' ? (
-                    <span className="edit-params">
-                      <select
-                        className="wb-input"
-                        value={operation.taskIds[0] ?? ''}
-                        aria-label="拼接素材"
-                        onChange={(event) =>
-                          setOperations((prev) =>
-                            prev.map((item, position) =>
-                              position === index && item.type === 'concat'
-                                ? { ...item, taskIds: [event.target.value] }
-                                : item,
-                            ),
-                          )
-                        }
-                      >
-                        <option value="">选择素材…</option>
-                        {candidates.map((item) => (
-                          <option key={item.taskId} value={item.taskId}>
-                            {item.taskId.slice(0, 8)} · {item.requestSnapshot.prompt.slice(0, 16)}
-                          </option>
-                        ))}
-                      </select>
-                    </span>
-                  ) : null}
-
-                  {operation.type === 'xfade' ? (
-                    <span className="edit-params">
-                      <select
-                        className="wb-input"
-                        value={operation.transition}
-                        aria-label="转场类型"
-                        onChange={(event) =>
-                          setOperations((prev) =>
-                            prev.map((item, position) =>
-                              position === index && item.type === 'xfade'
-                                ? { ...item, transition: event.target.value as 'fade' | 'wipeleft' | 'slideright' }
-                                : item,
-                            ),
-                          )
-                        }
-                      >
-                        <option value="fade">淡入淡出</option>
-                        <option value="wipeleft">左擦除</option>
-                        <option value="slideright">右滑入</option>
-                      </select>
-                      <input
-                        className="wb-input edit-num"
-                        type="number"
-                        min={0.1}
-                        max={2}
-                        step={0.1}
-                        value={operation.durationSec}
-                        aria-label="转场时长"
-                        onChange={(event) =>
-                          setOperations((prev) =>
-                            prev.map((item, position) =>
-                              position === index && item.type === 'xfade'
-                                ? { ...item, durationSec: Number(event.target.value) }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                      <span className="wb-note">秒</span>
-                    </span>
-                  ) : null}
-
-                  {operation.type === 'volume' ? (
-                    <span className="edit-params">
-                      <input
-                        className="wb-input edit-num"
-                        type="number"
-                        min={0}
-                        max={2}
-                        step={0.1}
-                        value={operation.gain}
-                        aria-label="音量倍数"
-                        onChange={(event) =>
-                          setOperations((prev) =>
-                            prev.map((item, position) =>
-                              position === index && item.type === 'volume'
-                                ? { ...item, gain: Number(event.target.value) }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                      <span className="wb-note">倍（0 = 静音）</span>
-                    </span>
-                  ) : null}
-
-                  {operation.type === 'speed' ? (
-                    <span className="edit-params">
-                      <input
-                        className="wb-input edit-num"
-                        type="number"
-                        min={0.25}
-                        max={4}
-                        step={0.05}
-                        value={operation.factor}
-                        aria-label="速度倍数"
-                        onChange={(event) =>
-                          setOperations((prev) =>
-                            prev.map((item, position) =>
-                              position === index && item.type === 'speed'
-                                ? { ...item, factor: Number(event.target.value) }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                      <span className="wb-note">倍</span>
-                    </span>
-                  ) : null}
-
-                  {operation.type === 'extractFrame' ? (
-                    <span className="edit-params">
-                      <input
-                        className="wb-input edit-num"
-                        type="number"
-                        min={0}
-                        step={0.1}
-                        value={operation.atSec}
-                        aria-label="抽帧时间点"
-                        onChange={(event) =>
-                          setOperations((prev) =>
-                            prev.map((item, position) =>
-                              position === index && item.type === 'extractFrame'
-                                ? { ...item, atSec: Number(event.target.value) }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                      <span className="wb-note">秒 → 参考资产</span>
-                    </span>
-                  ) : null}
-
-                  <span className="edit-summary wb-note">{describeOperation(operation)}</span>
-
-                  <button
-                    type="button"
-                    className="wb-btn lib-icon"
-                    title="移除这一步"
-                    onClick={() => setOperations((prev) => prev.filter((_, position) => position !== index))}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
+            <Suspense fallback={<div className="wb-skeleton ed-stage-skeleton" />}>
+              <PlayerStage store={store} />
+            </Suspense>
           )}
+        </div>
 
-          <div className="edit-add">
-            {OPERATION_TYPES.map((type) => (
-              <button
-                key={type}
-                type="button"
-                className="wb-btn"
-                onClick={() => setOperations((prev) => [...prev, defaultOperation(type)])}
-              >
-                ＋ {EDIT_OPERATION_LABELS[type]}
-              </button>
-            ))}
-          </div>
-
-          <p className="wb-note" style={{ marginTop: 10 }}>
-            顺序执行、最多 {MAX_EDIT_OPERATIONS} 步。「转场」必须紧跟在「拼接」之后（它的语义属于两段之间的接缝）。
-          </p>
-        </section>
-
-        <section className="wb-panel">
-          <div className="wb-field-head">
-            <Eyebrow index={2} tone="gold" as="h2">
-              源片与产物
-            </Eyebrow>
-            <span className="wb-note">
-              {source === null
-                ? '读取中…'
-                : `源片 ${source.status} · ${formatBytes(source.outputSizeBytes ?? 0)}`}
-            </span>
-          </div>
-
-          <div className="lib-preview">
-            {source?.outputVideoUrl === undefined ? (
-              <span className="wb-note">源片不可播放（可能已被清理）</span>
-            ) : (
-              <video src={resolveMediaUrl(source.outputVideoUrl) ?? undefined} controls preload="metadata" />
-            )}
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-            <button
-              type="button"
-              className="wb-btn wb-btn-gold"
-              disabled={submitting || source === null}
-              onClick={() => void handleRun()}
-            >
-              {submitting ? '提交中…' : '执行剪辑'}
-            </button>
-            <span className="wb-note">本地 ffmpeg · 并发 1 · 零上游调用（不花钱、不占冷却）</span>
-          </div>
-
-          {activeTask === null ? null : (
-            <div className="wb-queue-item" style={{ marginTop: 12 }}>
-              <span className={`wb-dot ${activeTask.status === 'succeeded' ? 'wb-dot-ok' : ''}`} />
+        <aside className="ed-side">
+          <section className="wb-panel ed-side-panel">
+            <div className="wb-field-head">
+              <Eyebrow index={1} tone="gold" as="h2">
+                源片
+              </Eyebrow>
               <span className="wb-note">
-                {STATUS_TEXT[activeTask.status]}
-                {activeTask.status === 'running' ? ` · ${activeTask.progressPercent}%` : ''}
-                {activeTask.error === undefined ? '' : ` · ${activeTask.error.code}`}
+                {source === null
+                  ? '读取中…'
+                  : `${STATUS_TEXT[source.status]} · ${formatBytes(source.outputSizeBytes ?? 0)}`}
               </span>
             </div>
-          )}
+            {source === null ? null : (
+              <p className="wb-note ed-source-prompt">{source.requestSnapshot.prompt}</p>
+            )}
+          </section>
 
-          {activeTask?.status === 'succeeded' && activeTask.outputVideoUrl !== undefined ? (
-            <div className="lib-preview" style={{ marginTop: 12 }}>
-              <video src={resolveMediaUrl(activeTask.outputVideoUrl) ?? undefined} controls preload="metadata" />
+          <section className="wb-panel ed-side-panel">
+            <div className="wb-field-head">
+              <Eyebrow index={2} tone="gold" as="h2">
+                本片剪辑历史
+              </Eyebrow>
             </div>
-          ) : null}
-
-          {activeTask?.extractedAssetIds === undefined || activeTask.extractedAssetIds.length === 0 ? null : (
-            <p className="wb-note" style={{ marginTop: 8 }}>
-              已抽出 {activeTask.extractedAssetIds.length} 张参考资产（在视频库详情里可用作首帧/尾帧）。
-            </p>
-          )}
-
-          <div className="lib-edl-slot" style={{ marginTop: 14 }}>
-            <Eyebrow>本片剪辑历史</Eyebrow>
             {edlHistory.length === 0 ? (
               <p className="wb-note">这条还没有剪辑记录。</p>
             ) : (
@@ -512,7 +228,7 @@ export function EditView() {
                   <li key={item.taskId}>
                     <span className="wb-note">
                       {formatRelativeTime(item.createdAt, Date.now())} · {STATUS_TEXT[item.status]} ·{' '}
-                      {(item.origin?.kind === 'edit' ? item.origin.script.operations.length : 0)} 步
+                      {item.origin?.kind === 'edit' ? `${item.origin.script.operations.length} 步` : '—'}
                     </span>
                     {item.outputVideoUrl === undefined ? null : (
                       <button
@@ -528,9 +244,16 @@ export function EditView() {
                 ))}
               </ul>
             )}
-          </div>
-        </section>
+          </section>
+        </aside>
       </div>
+
+      {store === null ? null : <Timeline store={store} candidates={candidates} />}
+
+      <p className="wb-note ed-footnote">
+        多轨时间轴（Remotion 预览，所见即所得）：拖动移动片段、左右缘拖拽裁剪、Delete 删除、空格播放/暂停。
+        导出在下一批接入（浏览器端渲染，不占服务器算力）；字幕 / 转场 / 音效轨随后开放。
+      </p>
     </section>
   );
 }
