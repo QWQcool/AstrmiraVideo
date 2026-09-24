@@ -1,6 +1,9 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.3 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.4 · 已冻结（变更需先改本文，再改代码）**
+> **V2.4 修订（2026-09-24）**：**用户验收发现的两个缺陷修复**（均为**向后兼容**的扩展，无破坏性变更）。
+>   ① **§5**：`GET /api/history` 新增**可选**查询参数 `?kind=edit&source=<taskId>` —— 默认（不带参数）只返回**生成产物**（剪辑产物因复用源片提示词，混在画廊里像"重复记录"）；带参数则返回某源片的**剪辑产物**（剪辑台"本片剪辑历史"用）。剪辑产物的删除仍走 `DELETE /api/history/:taskId`（不按类别过滤）。
+>   ② **§10**：`LOG_ACTIONS` 新增 4 个语义动作 —— `edit.submit`（`POST /api/edits`）与**任务终态三态** `task.complete` / `task.fail` / `task.uncertain`。为什么加：`POST /api/edits` 返回 200 只代表"入队成功"，执行是异步的，**终态失败原本不产生任何 HTTP 请求、操作日志里无迹可查**（用户在剪辑台看到失败、翻日志却全是 200）。现在 `SqliteJobQueue` 的终态会写一条 `method: 'TASK'` 的日志（剪辑任务带 `detail.kind: 'edit'`）。**对生成任务同样生效**。
 > **V2.3 修订（2026-09-23）**：**V9 B3 的最小数据增量**（方案 A；用户 2026-09-23 在 B1 闸门确认"确认做吧"）。
 >   ① **§4**：`TaskProgress` 新增 `createdAt`（epoch ms —— 直接暴露 `tasks.created_at`，**列本就存在、零迁移**）与可选 `outputSizeBytes`（成片字节数，服务端 `stat` 落盘文件得出）；
 >   ② **§5**：`GET /api/history` 的响应由 `{ items }` 扩为 `{ items, storage }`，`storage` 是 `outputs/` 的**目录级聚合**（成片 / 缩略图 / 参考资产）——老数据同样准确，不依赖逐条累加；`StorageUsage` 形状见 §4 末尾。
@@ -292,7 +295,7 @@ export interface StorageUsage {
 | `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消；已在终态 → `{ ok: false }`）。**200 → `{ ok, taskId }`**。语义是**尽力而为**：服务端把任务置 `cancelled`（此后调度器**不再推进**、也不会被 heartbeat 覆盖），并**通知上游停止**；上游是否真的停止、是否已产生费用，本服务无法代上游保证 —— 前端文案必须如实说明并指向服务商后台核对 |
 | `POST` | `/api/prompt/enhance` | 提示词扩写助手（**V2.0 已实现**，凭据经 `X-LLM-Key`，见下方注记段）。**200 → `PromptEnhanceResponse`（§3，含必填 `engine`）**；无 Key → **501 `LLM_NOT_CONFIGURED`**；空 / 超长提示词 → **400 `PROMPT_REJECTED`**；上游拒绝凭据 → **401 `KEY_INVALID`**；其余上游故障（含超时）→ **502 `UPSTREAM_ERROR`**。状态映射的完整口径见 §3 |
 | `POST` | `/api/upload` | 上传参考图/视频（multipart，≤20MB × ≤4，**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目） |
-| `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage }`**（`items` 最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾） |
+| `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage }`**（`items` 最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾）。**V2.4 起**：默认只返回**生成产物**（剪辑产物不进历史，避免提示词与源片相同造成的"重复"观感）；可选查询参数 `?kind=edit&source=<taskId>` 返回某源片的剪辑产物（剪辑台用） |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
 | `POST` | `/api/providers/keys/verify` | **V2.1 新增（原【规划·B2】）**：凭据与模型校验，**零费用**。请求头按轨取（视频 `X-Provider-Key` / 文本 `X-LLM-Key`）；**200 → `KeyVerifyResponse`（§9）**；未带 Key → **501 `KEY_MISSING`**；凭据被上游拒绝 → **401 `KEY_INVALID`**；上游不可达 → **502 `UPSTREAM_ERROR`** |
 | `GET` | `/api/logs` | **V2.1 新增**：操作日志查询（筛选 + 分页，见 §10）。**200 → `{ items, total }`** |
@@ -436,6 +439,7 @@ export interface KeyVerifyResponse {
 **写入规则（噪声纪律，见 `backend/src/server/requestLog.ts`）**：
 
 - **记**：所有 `/api/*` 的**写**请求（POST / PUT / PATCH / DELETE）与**任何失败**的请求（`status >= 400`，含读操作失败）；
+- **记（V2.4 新增）**：**任务终态**（`task.complete` / `task.fail` / `task.uncertain`）—— 它不是 HTTP 请求，而是 `SqliteJobQueue` 在任务到达终态时写入（`method: 'TASK'`、`path: /api/tasks/<taskId>`，剪辑任务带 `detail.kind: 'edit'`）。为什么：异步任务的失败原本不产生 HTTP 请求，日志里无迹可查（剪辑失败但日志全是 200 的缺口）；
 - **不记**：`/media/*`（一次播放几十条 Range）、`/api/health`（探活）、`/api/logs*`（日志页自身轮询，否则自我增殖）、`OPTIONS` 预检、以及**成功**的读请求（任务进度每 2s 轮询一次，记下来会把日志淹掉）。
 
 **字段**：
