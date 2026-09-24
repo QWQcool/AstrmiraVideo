@@ -201,7 +201,49 @@
 - **AC7**：390×844（手机）与 1440×900（桌面）两档 viewport 的 UI 冒烟均通过；移动端侧栏为 overlay 抽屉形态。
 - **AC8**：双主题在四个视图下均可用且对比度断言不回归（沿用 D29 的机器核对）。
 
-> **Step 6 状态（2026-09-23）**：**AC1~AC8 全部达成**，逐条证据见 [v9-acceptance.md](v9-acceptance.md)；门禁终态 = lint 0 / type 0 / 前端 103 / 后端 321 / 契约 13 码双向一致 / 视觉自检 / UI 冒烟（含 390×844 档与动效双 context 对照）。**唯一待办 = 用户线上验收**；`docs/EXEC-V9.md` 等验收通过后再归档删除（沿用 EXEC.md 与 EXEC-STEP2-5.md 的惯例）。
+> **Step 6 状态（2026-09-23）**：**AC1~AC8 全部达成**，逐条证据见 [v9-acceptance.md](v9-acceptance.md)；门禁终态 = lint 0 / type 0 / 前端 103 / 后端 321 / 契约 13 码双向一致 / 视觉自检 / UI 冒烟（含 390×844 档与动效双 context 对照）。
+
+### Step 7：剪辑台改版（Remotion 多轨时间轴，台账 B34）【已完成 2026-09-24】
+
+> 背景：V9 的剪辑台是「ffmpeg EDL（顺序操作序列）」，加不了字卡 / 字幕轨 / 复杂转场 / 动画
+> （决定性证据：ffmpeg `drawtext` 渲染中文是豆腐块）。用户 2026-09-24 拍板数据模型大改，
+> P0 原型实测后确定**混合架构**：基础剪辑保留 ffmpeg（API-only），高级效果与新界面走 Remotion。
+> **渲染归属的关键决策**：渲染放到**用户浏览器**（`@remotion/web-renderer`，WebCodecs 硬件编码）——
+> 线上服务器实测只有 4 核 Xeon E5-2673 v3 / 7.7GB，跑不动 headless Chrome 逐帧渲染；
+> 浏览器端渲染把 CPU 成本转嫁给访客，且 P0 实测**比服务端 ffmpeg 还快**（3s 片 1.0s vs 1.83s）。
+> 接口契约 = **CONTRACT V2.5**（§11-2 重写、§11-3 降级）；逐条证据 = [edit-desk-acceptance.md](edit-desk-acceptance.md)。
+
+- **任务**（按 P1~P5 顺序实施，每片门禁全绿后提交）：
+  1. **P1 模型 + 预览 + 单轨时间轴**：多轨数据模型（Project→Track→Clip，帧单位，四类轨道一次定型）+
+     `@remotion/player` 预览 + clip 可拖动/裁剪/选中的时间轴；
+  2. **P2 浏览器端导出**：`@remotion/web-renderer` 接入 + 进度/取消/下载 +
+     遥测短路（pnpm `patchedDependencies` + 守卫测试）+ CSP `worker-src blob:`；
+  3. **P3 多轨 + 属性面板 + 动效**：转场（fade/wipeleft/slideright）/ 字幕轨（含动效预设，
+     技法借鉴 video-shotcraft）/ 音效轨 + schema 驱动的属性面板 + 草稿持久化；
+  4. **P4 契约迁移 + 入库 + 闭环**：CONTRACT V2.5 先行 → 模型提升 `packages/shared` →
+     `POST /api/edits/renders` 归档浏览器渲染产物（`origin.project`）→ 抽帧 → I2V 闭环；
+  5. **P5 文档同步与验收**：本文 + GUIDE + README + 验收记录 + 台账收口。
+- **AC1**：多轨模型以 zod schema 落在 `packages/shared`（CONTRACT §11-2），**前后端共用同一份校验**
+  （服务端用它校验上传的工程 JSON；`{version:1,fps:30}` 这类残缺工程被 400 拒绝）。
+- **AC2**：时间轴四轨（镜头/转场/字幕/音效，空轨可见可加）；clip 可拖动/裁剪/选中；
+  **同轨防重叠**（磁吸撞墙）；转场语义 = 后继片段左移 d（时间轴与渲染逐帧一致），
+  **破坏相邻性的编辑移除转场并还原布局**且界面给提示（不静默）。
+- **AC3**：预览与导出**共用同一套 composition**；导出为浏览器端 WebCodecs 渲染（服务器零 CPU），
+  **导出时长 = 内容精确结束帧**（不含预览的 1s 编辑余量）；冒烟以 ffprobe 断言产物事实
+  （视频流 / 帧率 = 工程帧率 / 时长 ±0.2s / 音轨与源片一致 / 画面非空白）。
+- **AC4**：web-renderer 遥测被 pnpm 补丁短路，**补丁失效有测试变红**（合规边界 = UPSTREAM #13）。
+- **AC5**：`POST /api/edits/renders` 四道校验（工程 schema / 源片引用 / MP4 魔数 / 20MB 上限）+
+  同步终态入库 + 服务端抽封面；历史查询**兼容两代剪辑产物**（`origin.script` 与 `origin.project` 并存）。
+- **AC6**：抽帧走 `renderStillOnWeb`（与预览同构图）→ `/api/upload` → `#/workbench?frameAsset=`
+  （两个 hash 参数严格校验）→ 模式切 I2V + 首帧槽，**不新增服务端路由**（D38 闭环）。
+- **AC7**：草稿持久化按源片存 localStorage（脏数据自愈；防抖 + `pagehide`/`beforeunload` flush，
+  "刚编辑完就刷新"不丢最后一笔）。
+- **AC8**：门禁全绿（lint 0 / type 0 / 契约 11 / 后端 335 / 前端 162 / 构建 / UI 冒烟含 [6f][6g][6h]）。
+- **验证方式**：`pnpm lint && pnpm type && pnpm test:contract && pnpm test:coverage && pnpm test:frontend && pnpm build && pnpm smoke:ui`；
+  另附浏览器端导出的 **ffprobe 事实断言**与 **Playwright 下载**（[edit-desk-acceptance.md](edit-desk-acceptance.md) §2）。
+
+> **Step 7 状态（2026-09-24）**：**P1~P5 全部完成**，逐条证据见 [edit-desk-acceptance.md](edit-desk-acceptance.md)；
+> 提交 = `f6e608d`（P1）→ `bd12b42`（P2）→ `fc40ba6`（P3）→ `e980be5`（P4）→ 本文档提交（P5）。
 
 ---
 
@@ -283,7 +325,7 @@
 
 ## 5. 进度日志（唯一进度权威，其他文档只准链接本节）
 
-**截至 2026-09-23 · 当前指针：Step 2 仅剩 host 本地轨 `LocalH3Provider` 未实现（AC2 已在真机跑通 T2V / I2V / FL2V / V2V 四种模式，均走 `X-Provider-Key` 通道，证据见 §4 Step 2-AC2）；Step 1 / 1.5 / 3 已完成；**Step 4 端到端验收【已完成】**（AC1 / AC2 于 2026-09-23 完成复验与固化，证据见 [walkthrough.md](walkthrough.md)）；Step 5 已上线且 CI → CD 全自动；Step 6（V9 前端改版）已立项【规划】，执行手册 = `docs/EXEC-V9.md`**
+**截至 2026-09-24 · 当前指针：Step 2 仅剩 host 本地轨 `LocalH3Provider` 未实现（AC2 已在真机跑通 T2V / I2V / FL2V / V2V 四种模式，均走 `X-Provider-Key` 通道，证据见 §4 Step 2-AC2）；Step 1 / 1.5 / 3 / 4 / 5 / 6 / **7 已完成**；Step 6（V9 前端改版）AC1~AC8 达成（证据 [`v9-acceptance.md`](v9-acceptance.md)），**唯一待办 = 用户线上验收**；**Step 7（剪辑台改版 / B34）P1~P5 已收官**（证据 [`edit-desk-acceptance.md`](edit-desk-acceptance.md)），等用户验收**
 
 - [x] 架构纠偏：淘汰素材拼贴路线，确立【描述 + 参考图/视频 → 双轨生成】多模态管线（见 §6-D1）；
 - [x] 本地算力验证【已验证】：MiniMax H3 NF4 在 Tier 2 机器（16GB 显存）全量缓存并跑通 T2V / I2V / 双引号立体声台词；
@@ -439,6 +481,13 @@
       - **AC6 证据**：① 后端集成测试**真 ffmpeg** 跑 `trim(0→3) → concat(另一段 5s) → xfade(fade 0.5s)`，产物 ffprobe **7.5s ±0.2s**（3+5−0.5）、视频与音轨齐备；② 抽帧落 `outputs/assets/` 并写回 `extractedAssetIds`；③ 破坏性验证命中三条 —— `endSec ≤ startSec` → **400**（不是 500）、抽帧超片长 → **如实报错且不产空文件**、源片/素材缺失 → **404 且不落空产物**；④ **零上游调用**：executor 与路由**不 import 任何 provider、不碰凭据**（测试里有一条**源码级结构断言**盯着）；⑤ 冒烟 [6e] 真跑一次剪辑：产物可播、抽帧落账 1 个、`/media` **206**。
       - ⚠️ **实现期抓到两个真缺陷（都值得记）**：① **剪辑找不到源片** —— executor 起初拼 `<taskId>.mp4`，而 provider 落盘用的是**它自己的上游 id**，两者并不相同；修法是走任务记录的 `outputVideoUrl`（集成测试的种子文件名起初"恰好一致"，替身过于理想 → 已改成文件名与 taskId **故意不同**）；② **冒烟的等待条件太弱** —— 提交后任务**立刻**以 `queued` 出现在历史里，"存在一条 edit 任务"会立即为真，于是断言在调度器领取之前就跑完了；改为等**页面上的产物播放器出现**（组件自己的轮询结果），并取**最新**一条而非第一条。
       - 门禁：lint 0 / type 0 / 前端 103 / 后端 321 / 契约（13 码双向一致） / 视觉自检 / UI 冒烟。
+- [x] **Step 7 · 剪辑台改版（Remotion 多轨时间轴，台账 B34）【已完成 2026-09-24】**（AC1~AC8 见 §4 Step 7；逐条证据 = [edit-desk-acceptance.md](edit-desk-acceptance.md)）。P1~P4 一片一提交（`f6e608d` → `bd12b42` → `fc40ba6` → `e980be5`），P5 为本文档同步：
+      - **P1**（`f6e608d`）多轨模型（Project→Track→Clip、帧单位、四类轨道）+ `@remotion/player` 预览（React.lazy 懒加载，主包零 Remotion）+ 单轨时间轴（拖动/裁剪/选中/吸附/**同轨防重叠**）；模型 24 项单测；冒烟 [6e] 改造（旧 ffmpeg 链路降为 API 级断言）。**修掉 1 个真缺陷**：同轨 clip 重叠（画面两路叠加）→ `neighborBounds` 磁吸撞墙。
+      - **P2**（`bd12b42`）浏览器端导出（`@remotion/web-renderer`，动态 import 边界）+ 进度/取消/下载 + **遥测短路补丁**（pnpm `patchedDependencies` + 守卫测试）+ 导出时长 = 内容精确结束帧。**修掉 2 个真缺陷**：① 生产 CSP 拦 blob worker → `worker-src 'self' blob:`（+2 项后端断言）；② Player 共享 audio 标签在 headless 下刷 console error → `numberOfSharedAudioTags={0}`。冒烟新增 [6f]：Playwright 真实下载 + **ffprobe 断言**（h264 1280×704 / 帧率=工程帧率 / 时长 2.347s vs 2.333s / 音轨与源片一致 / 中点帧亮度标准差 55.5）。
+      - **P3**（`fc40ba6`）四轨（转场/字幕/音效）+ 转场语义（后继片段左移 d，时间轴=渲染；破坏相邻性的编辑移除转场并还原 + 界面提示）+ 字幕动效预设（逐词入场/打字机，技法借鉴 video-shotcraft demos/typography）+ **schema 驱动属性面板**（`CLIP_FIELD_SCHEMA` + `applyProperty`，值域收口在模型）+ **草稿持久化**。**修掉 2 个真缺陷**：① 拖拽基准过期（`mapClip(project)` 漏改 `clean`）→ 测试当场抓出；② 草稿在"刚编辑完立刻刷新"丢最后一笔 → `pagehide`/`beforeunload` 同步 flush。冒烟新增 [6g]（字幕/转场/面板/草稿 + 多轨工程二次导出 3.669s vs 3.667s）。
+      - **P4**（`e980be5`）**契约先行**：CONTRACT 升 **V2.5**（§11-2 重写为多轨工程契约、旧 EDL 降为 §11-3 API-only、§5 新增 `POST /api/edits/renders`、§7/§10 补登），随后模型提升 `packages/shared`（前后端同源校验）+ 渲染产物入库（四道校验 + 同步终态 + 服务端抽封面；`tasks.edit_origin` 列 + 两代剪辑产物并存查询）+ **抽帧 → I2V 闭环**（`renderStillOnWeb` → `/api/upload` → `#/workbench?frameAsset=`，不新增路由）。冒烟新增 [6h]（入库 206/4 片段/封面 + 抽帧资产可读 19216B + 自动切 I2V）。
+      - **P5**（本次提交）文档同步：PLAN §4 Step 7 + §5 本条目 + §9 台账（B34 收口、编号勘误、新增 B35~B40）+ GUIDE §五/§六 + README 徽章与文档地图 + `edit-desk-acceptance.md`。
+      - 门禁终态：lint 0 / type 0 / 契约 11 / 后端 **335** / 前端 **162** / 构建（Remotion 全部在懒 chunk）/ UI 冒烟全绿（[6e]~[6h]）。
 
 ---
 
@@ -594,5 +643,10 @@
 | B31 | **图片生成入口**（可灵式"图片生成"一级能力位）：上游其实支持文生图，但我们当前只做视频 | 用户 2026-09-23 的讨论记录 | 产品明确要扩到图片生成时；届时它应有独立的能力位与计价口径，不蹭视频轨的契约 |
 | B32 | **I2V / FL2V 真人输入的体验收敛**：上游会对输入图做隐私检测（含拟真人脸 → 400 `InputImageSensitiveContentDetected.PrivacyInformation`），当前姿态是**如实透传上游报文 + `terminal`**（归类正确、无静默降级）。候选改进：① 前端对"疑似真人照片"给前置提示（本项目无本地人脸检测能力，只能做文案引导）；② 把这一类上游拒绝映射成更可读的中文说明 + 建议动作（换非真人素材 / 改用 T2V / 用生成图而非实拍） | 2026-09-23 Step 4 验收的真实发现（[walkthrough.md](walkthrough.md) §1-3a） | 真人素材成为常见路径时，或出现第二次用户报障时（在此之前保持"如实透传"） |
 | B33 | **host 本地轨的形态（一个 provider 还是两个可选后端）**：`LocalH3Provider` 至今未实现（选本地引擎如实返回 `PROVIDER_UNAVAILABLE`，见 §4 Step 2 与 GUIDE §三）。**用户 2026-09-23 决策：先搁置，待换机后再议**。届时要定的是"本地引擎"到底指什么 —— 本机已有 ComfyUI，而配置自检（`COMFYUI_BASE_URL` / `H3_WORKDIR`）**本来就同时认这两种**，所以"可选后端"在配置层已有一半基础；但两者的能力位与档位语义（Tier、时长上限、是否原生音频 / 双引号台词）并不相同，须先定契约再实现 | 用户 2026-09-23 决策（换机后再探）；现状见 §4 Step 2 / GUIDE §三 | 换机后由用户主动提出时。**在此之前不得用"标【待验证】的猜测实现"去占位**（没有 H3 环境就无法实测） |
-| B34 | **剪辑台的执行引擎：ffmpeg 与 Remotion 的混合架构（已实测定案）** —— 用户 2026-09-24 提出"未来要加字卡 / 字幕轨 / 复杂转场 / 动画"，并探讨"放弃 ffmpeg 改 Remotion 逐帧渲染"。**原型实测结论（`experiments/remotion-proto/REPORT.md`）**：① 基础剪辑（裁剪/拼接/音量/变速/抽帧）**留 ffmpeg**（5s 全段 1.83s vs Remotion 10.3s，PSNR 33.8 vs 31.4，体积 1.24MB vs 3.41MB —— ffmpeg 快 5.6 倍、画质好、体积小、零中间存储）；② 字卡/字幕/复杂动画**必须走 Remotion** —— 决定性证据：ffmpeg `drawtext` 渲染中文是**豆腐块**（容器无中文字体 + 排版极弱），Remotion 用 CSS 渲染中文清晰排版。**混合架构**：ffmpeg 出基础剪辑产物 → Remotion 叠加高级效果。**不**做"MP4 抽帧→Remotion 逐帧→导出"的全替代链路 | 2026-09-24 原型实测（`experiments/remotion-proto/`，含可复跑源码与完整数据） | 剪辑台要加字卡/字幕轨/复杂转场时启动；届时注意 ① Remotion 渲染是离线批处理（预览用 `<video>`+CSS overlay 近似，导出才走渲染）；② Remotion 许可证（公司可能需付费）；③ 首次渲染要预装 chrome-headless-shell |
-| B34 | **`step2.integration.test.ts` 的"服务重启后任务可恢复"（防线 2）用例时序敏感**：2026-09-23 跑 V9 · B8 门禁时实测失败一次（`expected 'failed' to be 'succeeded'`，同轮耗时从 ~50s 涨到 215s），**单独与该文件下一轮全量均通过**。判断：桩 provider 的完成时机与"重启"步骤赛跑（机器负载高时任务尚未到终态就被重启 → 启动调解按防线 2 如实归 `failed`）。**不是产品缺陷**（防线 2 的行为恰恰是正确的），而是**测试写法的脆弱点** | 2026-09-23 实测观察（V9 · B8 门禁） | 该用例在 CI 上再失败一次时（届时改成"先轮询到终态、再重启"的确定性写法） |
+| B34 | ~~剪辑台的执行引擎：ffmpeg 与 Remotion 的混合架构~~ → **已完成（Step 7 / P1~P5 收官，2026-09-24）**：落地方案与原型结论的**差异如实记录** —— ① 原型报告曾建议"预览用 `<video>`+CSS overlay 近似、导出才走 Remotion"，实际采用**`@remotion/player` 实时预览 + 浏览器端 `@remotion/web-renderer` 导出**（同一套 composition，逐帧一致，且 P0 实测浏览器导出**比服务端 ffmpeg 还快**：3s 片 1.0s vs 1.83s）；② 渲染从"服务端离线批处理"改为"**用户浏览器端**"（线上服务器 4 核 Xeon 跑不动 headless Chrome；浏览器渲染把 CPU 成本转嫁访客，服务器零 CPU）；③ ffmpeg 基础剪辑保留为 **API-only**（`POST /api/edits`，UI 入口撤掉）。证据 = [edit-desk-acceptance.md](edit-desk-acceptance.md) | 2026-09-24 原型实测 + Step 7 实施（`experiments/remotion-proto/REPORT.md`） | — |
+| B35 | **预览与导出的像素级一致性断言**：两者的同一性目前由"同一套 composition + 同一 `durationInFrames`"在**结构上**保证，冒烟只断言产物客观事实（时长/帧率/音轨/非空白）。真正的像素比对 = 播放器逐帧截图 vs 导出帧对拍（容忍编码差异的阈值需先定） | Step 7 验收的如实说明（[edit-desk-acceptance.md](edit-desk-acceptance.md) §4） | 出现"预览看着对、导出不对"的报障时立即做（在那之前保持结构保证 + 客观事实断言） |
+| B36 | **入库体积上限 20MB**：`POST /api/edits/renders` 与反代请求体上限同口径；超限的长工程当前只能"下载到本机、不入库"。放宽需**同时**改反代（Caddyfile）与路由常量，并考虑分片上传 | Step 7 · P4（同上） | 出现"导出 1 分钟以上的工程要入库"的真实诉求时 |
+| B37 | **剪辑产物作为其它工程的素材**：素材候选列表只含生成产物（`?kind=edit` 的产物不出现在候选里），"把 A 片剪出的成片拼进 B 片"目前要先走一次生成/上传 | Step 7 · P4（同上） | 出现"多工程串剪"诉求时（实现面不大：候选列表并入 `?kind=edit` 结果 + 素材来源标记） |
+| B38 | **独立音效素材**：`/api/upload` 白名单不含 mp3/wav，音频轨只能取视频文件的音轨。要做"音效库"需先扩白名单 + 决定时长/码率清洗口径 | Step 7 · P3/P4（同上） | 出现"配背景音乐 / 音效"的真实诉求时 |
+| B39 | **legacy EDL 与浏览器导出的路径收敛**：`POST /api/edits`（服务端 ffmpeg，API-only）与浏览器端导出语义重叠。保留它是因为"纯服务端基础剪辑"对脚本化使用仍有价值；若长期无人调用可整体删除（删除动作 = 路由 + executor + 测试 + CONTRACT §11-3） | Step 7 · P4（同上） | 决定"是否维护两条剪辑路径"时（先看 `/api/edits` 的真实调用量） |
+| B40 | **`step2.integration.test.ts` 的"服务重启后任务可恢复"（防线 2）用例时序敏感**：2026-09-23 跑 V9 · B8 门禁时实测失败过一次（`expected 'failed' to be 'succeeded'`，同轮耗时从 ~50s 涨到 215s），**单独跑与该文件下一轮全量均通过**。判断：桩 provider 的完成时机与"重启"步骤赛跑（机器负载高时任务尚未到终态就被重启 → 启动调解按防线 2 如实归 `failed`）。**不是产品缺陷**（防线 2 的行为恰恰是正确的），而是**测试写法的脆弱点**。⚠️ **编号勘误（2026-09-24）**：本条此前误用了 **B34**（与"剪辑台执行引擎"撞号，两条 B34 并存）—— 现按时间顺序改为 B40，B34 归剪辑台改版专用 | 2026-09-23 实测观察（V9 · B8 门禁）；2026-09-24 Step 7 · P5 编号勘误 | 该用例在 CI 上再失败一次时（届时改成"先轮询到终态、再重启"的确定性写法） |
