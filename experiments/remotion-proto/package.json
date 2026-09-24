@@ -1,0 +1,20 @@
+{
+  "name": "remotion-proto",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Remotion 逐帧渲染可行性原型（V9 剪辑台的架构决策用；不进主 bundle，独立依赖）",
+  "scripts": {
+    "render": "remotion render src/index.ts Proto out/proto.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.484",
+    "@remotion/player": "4.0.484",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "remotion": "4.0.484"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "typescript": "~5.9.0"
+  }
+}

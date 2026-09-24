@@ -1,0 +1,11 @@
+# 产物与依赖不进 git（原型只保留源码 + 报告作为决策证据）
+node_modules/
+public/frames/
+public/audio.aac
+audio.aac
+out/
+*.mp4
+*.bat
+render-log*.txt
+pnpm-lock.yaml
+input.mp4
