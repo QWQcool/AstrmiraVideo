@@ -66,6 +66,25 @@
 
 **结论修正**：剪辑台接入 Remotion 应走 `<OffthreadVideo>`（不抽帧）。**注意**：OffthreadVideo **不省渲染时间**（内部仍要逐帧解码 + Chrome 渲染，~130ms/帧），它省的是**存储与抽帧步骤**。外推耗时：5s@24fps≈16s，30s@30fps≈2min —— 导出应是**异步任务**（复用 JobQueue），不能让用户在界面干等。
 
+## 五-c、P0 实测：`@remotion/web-renderer` 浏览器端导出（**最优路径**，2026-09-24）
+
+在 Playwright 真实浏览器里跑通 `renderMediaOnWeb`（WebCodecs 硬件编码 + Mediabunny 封装，**全程浏览器、服务器零 CPU**）：
+
+| 验证点 | 结果 |
+|---|---|
+| 纯字幕 composition（无视频轨） | ✅ 72 帧 → MP4（h264+aac，0.16MB），**0.3s**；中文字幕清晰渲染 |
+| **读成片 + 裁剪 + 中文字幕** | ✅ input.mp4 裁剪 1~4s（`<Video trimBefore=24 trimAfter=96>`）+ 字幕 → 3.008s/1280×720/h264+aac，**1.0s / 0.46MB** |
+| 逐帧确定性 | ✅ 字幕在 1.5s 处精确显示（帧驱动，非实时录制，无掉帧漂移） |
+| 音轨 | ✅ 源片 AAC 随 `<Video>` 自带 |
+
+**两个实测踩到的坑**：
+1. web-renderer **不支持 `<OffthreadVideo>`**，要改用 `@remotion/media` 的 `<Video>`（`trimBefore`/`trimAfter` 是**帧数**）。
+2. `<Video src>` 在 web-renderer 内部渲染上下文里**用绝对 URL + CORS**（相对路径 / `staticFile` 的 origin 不确定）。
+
+**遥测实测**：`licenseKey: null` 也发出 `POST https://www.remotion.pro/api/track/register-usage-point`（**1 次**，含 host=域名）。**patch 验证**：短路 `sendUsageEvent`（dist/esm/index.mjs 第 1340 行，5 个调用点全是 fire-and-forget、返回值不被用）→ **遥测请求归零**，导出照常（0.46MB/1.0s）、渲染零影响。正式引入主项目时用 pnpm `patchedDependencies` 落地为可逆补丁。
+
+**性能排序（72 帧 / 3s 视频）**：web-renderer 浏览器导出 **1.0s** < ffmpeg 服务端 1.83s < Remotion 服务端 OffthreadVideo 9.4s。web-renderer 最快（WebCodecs 硬件加速），且**把 CPU 成本完全转嫁用户浏览器**。
+
 ## 六、复跑方式
 
 ```bash
@@ -78,3 +97,13 @@ pnpm exec remotion render src/index.ts Proto out/proto.mp4
 ```
 
 > 帧数与 fps 在 `src/Root.tsx`（`TOTAL_FRAMES` / `FPS`）按源片改。
+
+### web-renderer 浏览器导出（P0，推荐路径）
+
+```bash
+cd experiments/remotion-proto
+pnpm install --ignore-workspace
+pnpm exec esbuild web-export.tsx --bundle --outfile=public/web-export.js --jsx=automatic --format=esm --target=chrome100
+node serve-and-verify.mjs        # 起静态服务 + Playwright 真实浏览器跑导出
+# 产物在 out/web-export-result.mp4；脚本会打印遥测请求数（验证 patch 前后）
+```

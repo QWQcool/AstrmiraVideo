@@ -8,13 +8,16 @@
   },
   "dependencies": {
     "@remotion/cli": "4.0.484",
+    "@remotion/media": "4.0.484",
     "@remotion/player": "4.0.484",
+    "@remotion/web-renderer": "4.0.484",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "remotion": "4.0.484"
   },
   "devDependencies": {
     "@types/react": "19.2.17",
+    "esbuild": "^0.28.2",
     "typescript": "~5.9.0"
   }
 }

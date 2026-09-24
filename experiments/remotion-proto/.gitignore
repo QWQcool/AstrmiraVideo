@@ -9,3 +9,6 @@ out/
 render-log*.txt
 pnpm-lock.yaml
 input.mp4
+# 打包产物（esbuild 输出）与 pnpm patch 临时目录
+public/web-export.js
+.patch-tmp/

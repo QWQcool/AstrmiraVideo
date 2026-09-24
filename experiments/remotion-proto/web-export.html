@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <title>web-renderer P0 验证</title>
+  <style>
+    body { font-family: system-ui; background: #0b101a; color: #dde3ee; padding: 24px; }
+    button { padding: 10px 18px; font-size: 15px; cursor: pointer; }
+    #log { margin-top: 16px; font-family: monospace; font-size: 13px; white-space: pre-wrap; }
+    #out { margin-top: 16px; max-width: 480px; }
+  </style>
+</head>
+<body>
+  <h2>P0：读成片 + 中文字幕 + 浏览器导出 MP4（web-renderer）</h2>
+  <p>源片：input.mp4（5.09s / 1280×720 / 24fps）。导出：裁剪 1~4s + 叠中文字幕。</p>
+  <button id="go">开始浏览器导出</button>
+  <div id="log"></div>
+  <video id="out" controls style="display:none"></video>
+  <script type="module" src="./web-export.ts"></script>
+</body>
+</html>
