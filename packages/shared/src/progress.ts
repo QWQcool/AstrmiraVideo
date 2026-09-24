@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { EditScriptSchema } from './edit.js';
+import { EditProjectSchema } from './editProject.js';
 import { VideoGenerateRequestSchema } from './request.js';
 import type { ProviderType, VideoGenerateRequest } from './request.js';
 
@@ -67,15 +68,27 @@ export const TaskProgressSchema = z.object({
   // 用途：视频库"按大小排序"与详情抽屉的"文件大小"；**文件已清理时省略该字段**（不填 0）。
   outputSizeBytes: z.number().int().nonnegative().optional(),
   /**
-   * V9 · B9（CONTRACT §11-2）：这条任务是不是"剪辑产物"、以及它的 EDL。
+   * V9 · B9（CONTRACT §11-2）：这条任务是不是"剪辑产物"、以及它的剪辑来源。
    *
    * **可选**：缺省即"生成产物"（老记录同理），只有剪辑任务才会写。
-   * 画廊与详情抽屉据此显示"剪辑自 xxx"徽标、并列出本片的操作序列。
+   * 画廊与详情抽屉据此显示"剪辑自 xxx"徽标、并列出本片的操作序列 / 工程概要。
+   *
+   * V2.5（B34 改版）：`edit` 分支的 `script`（旧 EDL）与 `project`（多轨工程）**均可选、至少有一个** ——
+   * 旧记录只有 script，新记录只有 project，两种都要能读（向后兼容是硬要求：库里已有 B9 时代的记录）。
    */
   origin: z
     .discriminatedUnion('kind', [
       z.object({ kind: z.literal('generate') }),
-      z.object({ kind: z.literal('edit'), sourceTaskId: z.string(), script: EditScriptSchema }),
+      z
+        .object({
+          kind: z.literal('edit'),
+          sourceTaskId: z.string(),
+          script: EditScriptSchema.optional(),
+          project: EditProjectSchema.optional(),
+        })
+        .refine((value) => value.script !== undefined || value.project !== undefined, {
+          message: '剪辑来源至少要有 script（旧 EDL）或 project（多轨工程）之一',
+        }),
     ])
     .optional(),
   /**

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { EDIT_OPERATION_LABELS } from '@astrmira/shared';
+import { EDIT_OPERATION_LABELS, describeEditOrigin } from '@astrmira/shared';
 import type { HistoryResponse, TaskProgress } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
 import { ApiError, deleteHistory, fetchHistory, resolveMediaUrl } from '../lib/api';
@@ -342,22 +342,29 @@ export function LibraryView() {
                 </ul>
               )}
 
-              {/* B9 才产生 origin.kind='edit' 的数据；本批先留位（不假装有历史） */}
+              {/* 剪辑产物（V2.5 起两代：旧 EDL 记 script、多轨工程记 project） */}
               <div className="lib-edl-slot">
-                <Eyebrow>本片剪辑历史</Eyebrow>
+                <Eyebrow>剪辑来源</Eyebrow>
                 {selected.origin?.kind === 'edit' ? (
                   <>
                     <p className="wb-note">
-                      剪辑自 {selected.origin.sourceTaskId.slice(0, 8)} —— 操作序列：
+                      剪辑自 {selected.origin.sourceTaskId.slice(0, 8)} ——{' '}
+                      {describeEditOrigin(selected.origin)}
                     </p>
-                    <ol className="edit-history">
-                      {selected.origin.script.operations.map((operation, index) => (
-                        <li key={`${operation.type}-${index}`}>
-                          <span className="edit-order">{String(index + 1).padStart(2, '0')}</span>
-                          <span className="wb-note">{EDIT_OPERATION_LABELS[operation.type]}</span>
-                        </li>
-                      ))}
-                    </ol>
+                    {selected.origin.script === undefined ? (
+                      <p className="wb-note">
+                        多轨工程产物（工程随任务落库；点 ✂ 可载入继续编辑）。
+                      </p>
+                    ) : (
+                      <ol className="edit-history">
+                        {selected.origin.script.operations.map((operation, index) => (
+                          <li key={`${operation.type}-${index}`}>
+                            <span className="edit-order">{String(index + 1).padStart(2, '0')}</span>
+                            <span className="wb-note">{EDIT_OPERATION_LABELS[operation.type]}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
                   </>
                 ) : (
                   <p className="wb-note">这条还没有剪辑记录（在视频库里点它的 ✂ 就能开始剪）。</p>

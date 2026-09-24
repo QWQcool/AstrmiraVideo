@@ -9,6 +9,8 @@
  * - enhance.ts  → §3 提示词扩写接口契约
  * - verify.ts   → §9 凭据与模型校验接口
  * - videoModels.ts → 视频轨模型档位预设（非契约，但前后端共用一份清单）
+ * - editProject.ts → §11-2 剪辑台多轨工程（B34 改版；P4 契约迁移时自前端提升至此）
+ * - edit.ts     → §11-3 基础剪辑 EDL（API-only）
  */
 export * from './request.js';
 export * from './status.js';
@@ -20,4 +22,5 @@ export * from './verify.js';
 export * from './videoModels.js';
 export * from './logs.js';
 export * from './recipes.js';
+export * from './editProject.js';
 export * from './edit.js';

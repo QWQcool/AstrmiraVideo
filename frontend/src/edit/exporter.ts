@@ -1,5 +1,5 @@
 import { exportDurationFrames } from './exportMeta';
-import type { EditProject } from './model';
+import { contentEndFrame, type EditProject } from './model';
 import { EditComposition } from './Composition';
 
 /**
@@ -101,4 +101,49 @@ export async function renderEditProject(options: RenderEditOptions): Promise<Edi
 
   const blob = await result.getBlob();
   return { blob, elapsedMs: performance.now() - started, durationFrames };
+}
+
+export interface EditStillResult {
+  blob: Blob;
+  /** 实际渲染的帧（已被钳到 [0, 内容末帧-1]） */
+  frame: number;
+}
+
+/**
+ * 抽帧（D38 闭环的浏览器端实现）：把**工程在某一帧的画面**渲染成 PNG。
+ *
+ * 与预览同构图 —— 字幕 / 转场 / 变速都会体现在这张图里（这正是"所见即所得"的价值）。
+ * 产物交给调用方去 `POST /api/upload`（走既有清洗网关），因此这里不碰网络。
+ */
+export async function renderEditStill(options: {
+  project: EditProject;
+  mediaBaseUrl: string;
+  frame: number;
+  signal?: AbortSignal;
+}): Promise<EditStillResult> {
+  const { renderStillOnWeb } = await import('@remotion/web-renderer');
+  const { project, mediaBaseUrl } = options;
+  const durationFrames = Math.max(1, contentEndFrame(project));
+  const frame = Math.min(Math.max(0, Math.round(options.frame)), durationFrames - 1);
+  const inputProps = { project, mediaBaseUrl };
+
+  const result = await renderStillOnWeb({
+    composition: {
+      id: 'AstrmiraEditStill',
+      component: EditComposition,
+      width: project.width,
+      height: project.height,
+      fps: project.fps,
+      durationInFrames: durationFrames,
+      defaultProps: inputProps,
+    },
+    inputProps,
+    frame,
+    licenseKey: 'free-license', // 同 renderEditProject：遥测已被 pnpm 补丁短路
+    logLevel: 'warn',
+    signal: options.signal ?? null,
+  });
+
+  const blob = await result.blob({ format: 'png' });
+  return { blob, frame };
 }

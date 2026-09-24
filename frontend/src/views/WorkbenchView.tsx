@@ -215,6 +215,34 @@ export function WorkbenchView() {
   }, [route, history]);
 
   /**
+   * 「剪辑台 → 工作台」抽帧闭环（B34 · P4；PLAN §6-D38）：
+   * `#/workbench?frameAsset=<assetId>&frameExt=<png|jpg>` —— 剪辑台抽帧并上传后跳过来，
+   * 这里把它填进**首帧槽**并切到 I2V（与"上传即切模式"同一套规则）。
+   *
+   * 两个参数都**严格校验**后再拼 URL：assetId 必须是服务端 UUID 形状、ext 只接受 png/jpg ——
+   * 否则 hash 就成了路径注入点（预览 URL 会直接进 `<img src>`）。
+   */
+  const handledFrameAsset = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (route.path !== '#/workbench') {
+      handledFrameAsset.current = null;
+      return;
+    }
+
+    const assetId = route.query.get('frameAsset');
+    if (assetId === null || handledFrameAsset.current === assetId) return;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(assetId)) return;
+
+    const ext = route.query.get('frameExt') === 'png' ? 'png' : 'jpg';
+    handledFrameAsset.current = assetId;
+    clearAllSlots();
+    setSlot('firstFrame', { assetId, meta: null, previewUrl: `/media/assets/${assetId}.${ext}` });
+    setMode('i2v');
+    setNotice('已把剪辑台抽出的那一帧放进首帧（I2V）：补一句运动描述就能生成。');
+  }, [route]);
+
+  /**
    * 「配方库 → 工作台」的两个入口（V9 · B8；CONTRACT §11-1）：
    * - `#/workbench?recipe=<id>`：把该卡的 `skeleton` **逐字追加**到提示词框，并记下它；
    * - `#/workbench?recipe=<id>&insert=no`：**不动**提示词，只让 ✨ 扩写带上这个配方。

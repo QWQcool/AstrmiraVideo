@@ -1,6 +1,13 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.4 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.5 · 已冻结（变更需先改本文，再改代码）**
+> **V2.5 修订（2026-09-24）**：**剪辑台改版（台账 B34）的契约迁移** —— 剪辑从「EDL 操作序列」升级为「**多轨工程 `EditProject`**」，渲染**搬到用户浏览器**（`@remotion/web-renderer`，WebCodecs 硬件编码；服务器零 CPU）。
+>   ① **§4 / §11-2**：`TaskProgress.origin` 的 `edit` 分支新增**可选** `project`（多轨工程）；`script` 同步改为**可选** —— 两者**至少有一个**（旧记录只有 `script`，新记录只有 `project`，都要能读）；
+>   ② **§5**：新增 `POST /api/edits/renders` —— 浏览器端渲染产物**入库**（multipart：MP4 + 工程 JSON；服务端**只归档不渲染**）；
+>   ③ **§11-2 重写**为多轨工程契约（模型 / 转场语义 / 渲染归属 / 闭环），原 EDL 契约降为 **§11-3（API-only，UI 不再暴露）**；
+>   ④ **§7**：新增「浏览器端渲染产物」一行（落 `outputs/<taskId>.mp4`，与生成产物同生命周期）。
+>   ⑤ **§10**：`LOG_ACTIONS` 新增 `edit.render`（渲染入库）。
+> **V2.4 修订（2026-09-24）**：**用户验收发现的两个缺陷修复**（均为**向后兼容**的扩展，无破坏性变更）。
 > **V2.4 修订（2026-09-24）**：**用户验收发现的两个缺陷修复**（均为**向后兼容**的扩展，无破坏性变更）。
 >   ① **§5**：`GET /api/history` 新增**可选**查询参数 `?kind=edit&source=<taskId>` —— 默认（不带参数）只返回**生成产物**（剪辑产物因复用源片提示词，混在画廊里像"重复记录"）；带参数则返回某源片的**剪辑产物**（剪辑台"本片剪辑历史"用）。剪辑产物的删除仍走 `DELETE /api/history/:taskId`（不按类别过滤）。
 >   ② **§10**：`LOG_ACTIONS` 新增 4 个语义动作 —— `edit.submit`（`POST /api/edits`）与**任务终态三态** `task.complete` / `task.fail` / `task.uncertain`。为什么加：`POST /api/edits` 返回 200 只代表"入队成功"，执行是异步的，**终态失败原本不产生任何 HTTP 请求、操作日志里无迹可查**（用户在剪辑台看到失败、翻日志却全是 200）。现在 `SqliteJobQueue` 的终态会写一条 `method: 'TASK'` 的日志（剪辑任务带 `detail.kind: 'edit'`）。**对生成任务同样生效**。
@@ -301,7 +308,8 @@ export interface StorageUsage {
 | `GET` | `/api/logs` | **V2.1 新增**：操作日志查询（筛选 + 分页，见 §10）。**200 → `{ items, total }`** |
 | `DELETE` | `/api/logs/:id` | **V2.1 新增**：删单条日志。**200 → `{ ok, deleted }`**（删除不存在的条目**不是错误**：DELETE 幂等，`deleted: 0`） |
 | `DELETE` | `/api/logs` | **V2.1 新增**：按当前筛选清空日志（不带筛选即全清）。**200 → `{ ok, deleted }`** |
-| `POST` | `/api/edits` | **V2.2【规划】→ V9 · B9 已实现**：轻剪辑台（本地 ffmpeg，**零上游调用**、**不走防线 5 冷却**）。**200 → `{ taskId }`**（复用 §4 的 `GET /api/tasks/:taskId` 轮询与画廊；任务走 `local` 轨 = 本地互斥 1）；操作序列非法（含 `endSec ≤ startSec`、连续两次拼接、转场未跟在拼接之后）→ **400 `INVALID_REQUEST`**；源任务不存在 / 无成片 / 拼接素材不可用 → **404 `TASK_NOT_FOUND`**；ffmpeg 缺失 → **503 `PROVIDER_UNAVAILABLE`**。完整契约见 §11-2 |
+| `POST` | `/api/edits` | **V2.2【规划】→ V9 · B9 已实现（V2.5 起降为 API-only，UI 不再暴露）**：基础剪辑 EDL（本地 ffmpeg，**零上游调用**、**不走防线 5 冷却**）。**200 → `{ taskId }`**（复用 §4 的 `GET /api/tasks/:taskId` 轮询与画廊；任务走 `local` 轨 = 本地互斥 1）；操作序列非法（含 `endSec ≤ startSec`、连续两次拼接、转场未跟在拼接之后）→ **400 `INVALID_REQUEST`**；源任务不存在 / 无成片 / 拼接素材不可用 → **404 `TASK_NOT_FOUND`**；ffmpeg 缺失 → **503 `PROVIDER_UNAVAILABLE`**。完整契约见 §11-3 |
+| `POST` | `/api/edits/renders` | **V2.5 新增**：**浏览器端渲染产物入库**（B34 剪辑台改版）。multipart 字段：`file` = 渲染出的 MP4、`sourceTaskId` = 本次剪辑的源片、`project` = 多轨工程 JSON。服务端**不做任何渲染**（渲染在用户浏览器完成），只做校验与归档：产物落 `outputs/<taskId>.mp4` → 成为一条 `status:'succeeded'` 的剪辑任务（`origin.kind='edit'` + `origin.project`）并抽封面。**200 → `{ taskId }`**；工程 JSON / 字段不合法 → **400 `INVALID_REQUEST`**；源任务不存在或无成片 → **404 `TASK_NOT_FOUND`**；文件非 MP4（魔数嗅探）→ **415 `INVALID_ASSET`**；**> 20MB** → **413**（与 `/api/upload` 同口径，也受反代请求体上限约束，见 §11-2） |
 
 **幂等键与「即将提交」标记（V1.3 新增）**：
 - `POST /api/generate` 必须接受幂等键（请求头 `Idempotency-Key`；缺省时服务端按 `provider + 请求指纹` 生成）。同一幂等键重复提交返回**同一 `taskId`**，不得产生第二次上游调用。
@@ -364,6 +372,7 @@ export type ErrorDisposition =
 | 任务告警 `warnings[]` | SQLite（同上） | 随任务记录持久化，画廊 / 结果卡展示（V1.4 §4）；**仅写服务端日志不算告警** |
 | `submitting` 提交标记 | SQLite（同上） | 提交前写入、成功后写回上游 taskId；重启后据此判定是否已提交（§5，防线 7 前提） |
 | 成片 MP4 | `outputs/`（已入 .gitignore） | **前端一键删除释放磁盘**（`DELETE /api/history/:taskId`）；容量淘汰（LRU）**暂缓**，见 PLAN §9-B22 |
+| 浏览器端渲染产物（V2.5） | `outputs/<taskId>.mp4`（与生成成片同目录）+ 多轨工程 JSON 落 `tasks.edit_origin` 列 | 上传即终态（`status:'succeeded'`，无异步流程）；删除规则与生成成片**完全一致**（`DELETE /api/history/:taskId` 物理删除，工程 JSON 随记录一起删） |
 | 成片缩略图（V1.9） | `outputs/thumbs/<taskId>.jpg` | 成功出片后由调度器抽首帧生成（宽度 480，`/media/thumbs/...` 直链）；**尽力而为**：抽帧失败只记日志，任务仍为 `succeeded`；随任务删除一并物理删除 |
 | 上传的参考资产 | `outputs/assets/<assetId>.<jpg\|png>` | 关联任务删除时一并清理（`DELETE /api/history/:taskId`）；**保护规则**：若该 `assetId` 仍被其它任务引用（「参数一键回填」会复用资产），则只删任务、保留资产 —— 否则会毁掉另一条任务的参考图。扩展名由防线 4 的清洗结果决定，因此按 `<assetId>.` 前缀匹配删除 |
 | 中间帧 / 临时音频 | host 轨：`outputs/.tmp/<taskId>/`；client 轨（【规划】，PLAN §6-D26）：落在用户机器、由 worker 清理 | 合成结束立即物理删除（防线 3）；client 轨须回报 `tmpCleaned` 并写入 `warnings[]`，服务端无法强制验证该事实 |
@@ -441,6 +450,7 @@ export interface KeyVerifyResponse {
 - **记**：所有 `/api/*` 的**写**请求（POST / PUT / PATCH / DELETE）与**任何失败**的请求（`status >= 400`，含读操作失败）；
 - **记（V2.4 新增）**：**任务终态**（`task.complete` / `task.fail` / `task.uncertain`）—— 它不是 HTTP 请求，而是 `SqliteJobQueue` 在任务到达终态时写入（`method: 'TASK'`、`path: /api/tasks/<taskId>`，剪辑任务带 `detail.kind: 'edit'`）。为什么：异步任务的失败原本不产生 HTTP 请求，日志里无迹可查（剪辑失败但日志全是 200 的缺口）；
 - **不记**：`/media/*`（一次播放几十条 Range）、`/api/health`（探活）、`/api/logs*`（日志页自身轮询，否则自我增殖）、`OPTIONS` 预检、以及**成功**的读请求（任务进度每 2s 轮询一次，记下来会把日志淹掉）。
+- **动作清单补登（V2.5）**：`edit.render`（`POST /api/edits/renders` —— 浏览器端渲染产物入库；它是写操作，按上面的规则本来就会记，这里显式登记动作 id 以便日志页筛选）。
 
 **字段**：
 
@@ -473,7 +483,7 @@ export interface EventLogEntry {
 
 ---
 
-## 11. 配方库与轻剪辑台（V2.2 新增；**§11-1 配方库 = V9 · B8 已实现**、**§11-2 剪辑台 = V9 · B9 已实现**）
+## 11. 配方库与剪辑台（V2.2 新增；**§11-1 配方库 = V9 · B8 已实现**；**§11-2 多轨工程 = B34 剪辑台改版（V2.5 重写）**；**§11-3 基础剪辑 EDL = B9 遗留，API-only**）
 
 > 背景与决策：PLAN §4 Step 6、§6-D36（配方库双入口）/ D37（剪辑台 MVP、剪映导出砍掉）/ D38（抽帧→生成闭环）。
 > **零 API 成本红线**：本节的一切都是本地 ffmpeg 或静态数据，**不产生任何上游调用**。
@@ -503,13 +513,101 @@ export const RecipeCardSchema = z.object({
 - **双入口**（B8 实现时把口径钉死）：① 插入骨架 = 把 `skeleton` **原样追加**到提示词框**末尾**（框为空则直接写入；**刻意不做替换** —— 覆盖用户已写的主体描述属数据丢失，比"插不进去"更糟）；② ✨ 扩写 = 请求带 `recipeId`，服务端把该卡的 `skeleton + pitfalls` 注入 system prompt（§3），**用户原文仍原样作为 user message**。
 - **诚实标记**：配方是"经验骨架"，**不得**在 UI 上承诺"用了就出大片"；`pitfalls` 为空时不得编造。
 
-### 11-2 剪辑操作 `EditScript` 与 `POST /api/edits`
+### 11-2 多轨工程 `EditProject` 与浏览器端渲染入库（V2.5 重写；B34 剪辑台改版）
+
+**定位**：剪辑从"顺序 EDL"升级为**多轨时间轴工程**（项目 → 轨道 → 片段）；渲染在**用户浏览器**完成
+（`@remotion/web-renderer`：WebCodecs 硬件编码 + Mediabunny 封装 MP4，**服务器零 CPU**）。
+服务端只做两件事：**归档渲染产物**（`POST /api/edits/renders`）与**按源片查询剪辑历史**（`GET /api/history?kind=edit&source=`）。
+
+```ts
+// 工程 = 前端编辑态的唯一真相；zod schema 在 packages/shared/src/editProject.ts（本文为文档投影）。
+// 所有时间量的单位都是**工程帧**（fps 由工程给出，默认 30）。
+export interface EditProject {
+  version: 1;
+  fps: number;
+  width: number;
+  height: number;
+  /** 数组顺序 = UI 阅读顺序（镜头 / 转场 / 字幕 / 音效）；**渲染层级由轨道类型决定**（视频在下、字幕在上） */
+  tracks: EditTrack[];
+}
+export interface EditTrack {
+  id: string;
+  kind: 'video' | 'caption' | 'transition' | 'audio';
+  clips: EditClip[];
+  muted?: boolean;
+}
+export type EditClip = VideoClip | CaptionClip | TransitionClip | AudioClip;
+
+export interface VideoClip {
+  kind: 'video'; id: string; startFrame: number; durationFrames: number;
+  source: { taskId: string; url: string; durationFrames: number }; // url 恒为同源 /media/* 相对地址
+  trimStartFrames: number;   // 裁入点（对应 <Video trimBefore>，帧）
+  speed: number;             // 0.25~4；源片消耗 = durationFrames × speed
+  volume: number;            // 0~2（0 = 静音）
+  label?: string;
+}
+export interface CaptionClip {
+  kind: 'caption'; id: string; startFrame: number; durationFrames: number;
+  text: string;                                   // 1~200 字
+  position: 'bottom' | 'center' | 'top';
+  preset: 'plain' | 'fade' | 'wordSlide' | 'typewriter';  // 动效预设（技法借鉴 video-shotcraft，见 UPSTREAM #11）
+}
+export interface TransitionClip {
+  kind: 'transition'; id: string; startFrame: number; durationFrames: number;
+  transition: 'fade' | 'wipeleft' | 'slideright';
+  fromClipId: string; toClipId: string;           // 两端视频片段（同轨相邻）
+}
+export interface AudioClip {
+  kind: 'audio'; id: string; startFrame: number; durationFrames: number;
+  source: { taskId: string; url: string; durationFrames: number };
+  trimStartFrames: number; volume: number;
+}
+```
+
+**转场语义（与渲染严格一致，不许两套口径）**：
+- 转场坐在**两个同轨相邻视频片段**的接缝上（加转场前要求 `to.startFrame === from.endFrame`）；
+- 添加转场把 `to` 及其后片段**左移 d 帧**：重叠区 = 转场窗口 `[from.endFrame-d, from.endFrame]`，
+  窗口内两段同时在画面（`fade` 交叉淡化 / `wipeleft` 左揭幕 / `slideright` 右滑入），**总时长随之缩短 d** ——
+  时间轴显示与渲染结果**逐帧一致**（不是"时间轴不动、成片偷偷变短"）；
+- **任何破坏相邻性的编辑**（移动 / 裁剪 / 删除参与方）都会**移除该转场并把被左移的片段还原**
+  （界面给出提示，**不静默**）；`d` 上限 = `min(60 帧, fps×2, 两端片段时长-1)`。
+- 值与组合不合法 → **`400 INVALID_REQUEST`**（形如"两段之间有空隙，先把后一段拖到紧贴"）。
+
+**渲染入库 `POST /api/edits/renders`**（multipart 字段）：
+
+| 字段 | 说明 |
+|---|---|
+| `file` | 浏览器渲染出的 MP4；**魔数嗅探**必须为 `video/mp4`；≤ 20MB（与 `/api/upload` 同口径；反代请求体上限同样是 20MB，超出会被反代先拦） |
+| `sourceTaskId` | 本次剪辑的**源片**（剪辑历史按它归档——「本片剪辑历史」用它查） |
+| `project` | 多轨工程 JSON（服务端用 `EditProjectSchema` 校验；**只存不改**） |
+
+成功 → **200 `{ taskId }`**，并产生一条 `status:'succeeded'` 的剪辑任务：
+`outputVideoUrl=/media/<taskId>.mp4`、`thumbnailUrl`（服务端抽首帧）、
+`origin = { kind: 'edit', sourceTaskId, project }`、`requestSnapshot` 复用源片快照（画廊回填用）。
+
+**服务端不提供渲染**：没有"提交渲染任务"的异步流程，不需要队列与冷却；浏览器渲染失败时**不会产生任何服务端记录**（没有半成品）。
+**`TaskProgress.origin` 的 `edit` 分支**：`script` 与 `project` **均为可选、至少有一个** —— 旧记录（EDL）与
+新记录（工程）都能读；界面据此显示"剪辑自 xxx"徽标并渲染对应的历史条目。
+
+**闭环（PLAN §6-D38：抽帧 → 生成）**：抽帧走**浏览器端**（`renderStillOnWeb` 取播放头画面，与预览同构图）
++ 既有 `POST /api/upload` 落为参考资产 → `#/workbench?frameAsset=<assetId>` 直接把该资产填进"首帧"槽并切到 I2V。
+**不新增服务端路由**。
+
+**生命周期**：渲染产物与原片同规则（`outputs/`、`DELETE /api/history/:taskId` 物理删除、
+删任务连带工程 JSON 一起删）；「本片剪辑历史」= `GET /api/history?kind=edit&source=<taskId>`
+（EDL 与工程两类剪辑产物都会返回）。
+
+### 11-3 基础剪辑 EDL（B9 遗留；**API-only，界面不再暴露**）
+
+> 为什么保留：它是"纯服务端基础剪辑"的完整能力（本地 ffmpeg、零上游调用），
+> 且有独立的测试与冒烟覆盖；B34 改版后**界面入口撤掉**（导出统一走浏览器端），
+> 但作为 API 能力继续可用（外部脚本 / 二次开发）。契约不变，见下。
 
 ```ts
 // 编辑决策清单（EDL）：对**已有成片**的时间轴操作序列，按顺序应用
 export const EditOperationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('trim'),    startSec: z.number().min(0), endSec: z.number().min(0) }),
-  z.object({ type: z.literal('concat'),  taskIds: z.array(z.string()).min(1) }),      // 依次拼到当前时间轴之后（**不含**源片自身；B9 实现时把规划里的 min(2) 收紧为 min(1)）
+  z.object({ type: z.literal('concat'),  taskIds: z.array(z.string()).min(1) }),      // 依次拼到当前时间轴之后（**不含**源片自身）
   z.object({ type: z.literal('xfade'),   transition: z.enum(['fade','wipeleft','slideright']), durationSec: z.number().min(0.1).max(2) }),
   z.object({ type: z.literal('volume'),  gain: z.number().min(0).max(2) }),           // 0 = 静音
   z.object({ type: z.literal('speed'),   factor: z.number().min(0.25).max(4) }),
@@ -525,9 +623,9 @@ export interface EditScript {
 ```
 
 **语义与约束**：
-- 剪辑产物是一条**新的 `taskId`**，`TaskProgress` 增加 `origin: { kind: 'generate' } | { kind: 'edit', sourceTaskId: string, script: EditScript }`（§4/§7 同步）；画廊卡片据此显示"剪辑自 xxx"徽标。
-- 执行器是**本地 ffmpeg**（复用 `lib/ffmpeg.ts` 的探测与中文报错），**并发 = 1**（与本地轨同一把互斥锁），无上游调用、无凭据需求、**不走防线 5 的 60s 冷却**（它防的是付费上游，本地 CPU 不在其列）。
-- `extractFrame` 的产物落到 `outputs/assets/`（与上传资产同目录同规则），返回在任务的 `origin` 之外另记 `extractedAssetIds: string[]`；其余操作产物为 `outputs/<taskId>.mp4`（**重编码**，因为 trim/xfade 后帧边界与时间戳必须重建）。
-- **失败归类**：输入非法 → `400 INVALID_REQUEST`；源任务不存在/无成 → `404 TASK_NOT_FOUND`；ffmpeg 不存在 → `503 PROVIDER_UNAVAILABLE`（如实说"本服务未装 ffmpeg"）；执行失败 → `500 UPSTREAM_ERROR` 语义无歧义故用 `retryable`。**没有 `uncertain`**：本地操作没有"不知道结果"的状态。
+- 剪辑产物是一条**新的 `taskId`**；`origin = { kind: 'edit', sourceTaskId, script }`；画廊 / 剪辑台据此显示"剪辑自 xxx"。
+- 执行器是**本地 ffmpeg**（复用 `lib/ffmpeg.ts` 的探测与中文报错），**并发 = 1**（与本地轨同一把互斥锁），无上游调用、无凭据需求、**不走防线 5 的 60s 冷却**。
+- `extractFrame` 的产物落到 `outputs/assets/`（与上传资产同目录同规则），另记 `extractedAssetIds: string[]`；其余操作产物为 `outputs/<taskId>.mp4`（**重编码**）。
+- **失败归类**：输入非法 → `400 INVALID_REQUEST`；源任务不存在/无成 → `404 TASK_NOT_FOUND`；ffmpeg 不存在 → `503 PROVIDER_UNAVAILABLE`；执行失败 → `500 UPSTREAM_ERROR`。**没有 `uncertain`**：本地操作没有"不知道结果"的状态。
 
-**生命周期**：剪辑产物与原片同规则（`outputs/`、画廊可见、删除即物理删除）；**EDL 随任务落库**（`tasks.edit_script` 列，JSON），删任务连 EDL 一起删；"本片剪辑历史" = 查 `origin.sourceTaskId = 本片` 的全部任务。
+**生命周期**：剪辑产物与原片同规则（`outputs/`、画廊可见、删除即物理删除）；**EDL 随任务落库**（`tasks.edit_script` 列），删任务连 EDL 一起删。

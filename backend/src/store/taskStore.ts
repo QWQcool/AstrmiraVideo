@@ -1,4 +1,5 @@
 import type {
+  EditProject,
   EditScript,
   TaskError,
   TaskProgress,
@@ -30,11 +31,17 @@ export interface TaskRecord {
   submitting: boolean;
   message?: string;
   /**
-   * V9 · B9（CONTRACT §11-2）：剪辑任务的 EDL。
+   * V9 · B9（CONTRACT §11-2）：剪辑任务的 EDL（**旧**——B34 改版前的基础剪辑）。
    * **有值 = 这条任务由剪辑产生**（`TaskProgress.origin.kind === 'edit'` 由它派生）——
    * 一列两用，避免再加一个"是不是剪辑产物"的布尔列而两者可能不同步。
    */
   editScript?: EditScript;
+  /**
+   * V2.5（B34 · P4）：多轨工程产物（**新**——浏览器端渲染后入库）。
+   * 与 `editScript` 并列、**互斥**：旧记录用 script、新记录用 project，
+   * 两者都是"这是剪辑产物"的判据（`origin.kind === 'edit'`）。
+   */
+  editOrigin?: { sourceTaskId: string; project: EditProject };
   /** 抽帧产物的资产 id（可能多个） */
   extractedAssetIds?: string[];
   createdAt: number;
@@ -56,6 +63,7 @@ interface TaskRow {
   submitting: number;
   message: string | null;
   edit_script: string | null;
+  edit_origin: string | null;
   extracted_asset_ids: string | null;
   created_at: number;
   updated_at: number;
@@ -77,12 +85,41 @@ function rowToRecord(row: TaskRow): TaskRecord {
     submitting: row.submitting === 1,
     message: row.message ?? undefined,
     ...(row.edit_script === null ? {} : { editScript: JSON.parse(row.edit_script) as EditScript }),
+    ...(row.edit_origin === null
+      ? {}
+      : { editOrigin: JSON.parse(row.edit_origin) as { sourceTaskId: string; project: EditProject } }),
     ...(row.extracted_asset_ids === null
       ? {}
       : { extractedAssetIds: JSON.parse(row.extracted_asset_ids) as string[] }),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+/**
+ * 剪辑来源 → `TaskProgress.origin`（两代互斥；都没有就是生成产物，返回空对象由调用方展开）。
+ * 抽成独立函数是为了让"两种剪辑记录都能正确读"这件事只有一处实现。
+ */
+function originOf(record: TaskRecord): { origin?: TaskProgress['origin'] } {
+  if (record.editOrigin !== undefined) {
+    return {
+      origin: {
+        kind: 'edit',
+        sourceTaskId: record.editOrigin.sourceTaskId,
+        project: record.editOrigin.project,
+      },
+    };
+  }
+  if (record.editScript !== undefined) {
+    return {
+      origin: {
+        kind: 'edit',
+        sourceTaskId: record.editScript.sourceTaskId,
+        script: record.editScript,
+      },
+    };
+  }
+  return {};
 }
 
 /** 记录 → 契约响应形状（CONTRACT §4 `TaskProgress`） */
@@ -97,17 +134,10 @@ export function toTaskProgress(record: TaskRecord): TaskProgress {
     ...(record.warnings.length === 0 ? {} : { warnings: record.warnings }),
     ...(record.error === undefined ? {} : { error: record.error }),
     ...(record.message === undefined ? {} : { message: record.message }),
-    // V9 · B9（CONTRACT §11-2）：剪辑产物 —— 由 `edit_script` 列派生出 `origin`，
-    // 缺省（没有该列值）即"生成产物"，前端据此显示"剪辑自 xxx"徽标。
-    ...(record.editScript === undefined
-      ? {}
-      : {
-          origin: {
-            kind: 'edit' as const,
-            sourceTaskId: record.editScript.sourceTaskId,
-            script: record.editScript,
-          },
-        }),
+    // CONTRACT §11-2：剪辑产物 —— 两代来源都派生 `origin`（缺省即"生成产物"）：
+    // - 旧（B9）：`edit_script` 列 → origin.script
+    // - 新（V2.5）：`edit_origin` 列 → origin.project（浏览器端渲染入库，见 routes/editRenders.ts）
+    ...originOf(record),
     ...(record.extractedAssetIds === undefined
       ? {}
       : { extractedAssetIds: record.extractedAssetIds }),
@@ -128,11 +158,11 @@ export class TaskStore {
       .prepare(
         `INSERT INTO tasks (task_id, track, provider, status, progress_percent, request_snapshot,
                             output_video_url, thumbnail_url, warnings, error, upstream_task_id,
-                            submitting, message, edit_script, extracted_asset_ids,
+                            submitting, message, edit_script, edit_origin, extracted_asset_ids,
                             created_at, updated_at)
          VALUES (@taskId, @track, @provider, @status, @progressPercent, @requestSnapshot,
                  @outputVideoUrl, @thumbnailUrl, @warnings, @error, @upstreamTaskId, @submitting,
-                 @message, @editScript, @extractedAssetIds, @createdAt, @updatedAt)`,
+                 @message, @editScript, @editOrigin, @extractedAssetIds, @createdAt, @updatedAt)`,
       )
       .run({
         taskId: record.taskId,
@@ -149,6 +179,7 @@ export class TaskStore {
         submitting: record.submitting ? 1 : 0,
         message: record.message ?? null,
         editScript: record.editScript === undefined ? null : JSON.stringify(record.editScript),
+        editOrigin: record.editOrigin === undefined ? null : JSON.stringify(record.editOrigin),
         extractedAssetIds:
           record.extractedAssetIds === undefined ? null : JSON.stringify(record.extractedAssetIds),
         createdAt: now,
@@ -178,7 +209,8 @@ export class TaskStore {
                          warnings = @warnings, error = @error,
                          upstream_task_id = @upstreamTaskId, submitting = @submitting,
                          message = @message,
-                         edit_script = @editScript, extracted_asset_ids = @extractedAssetIds,
+                         edit_script = @editScript, edit_origin = @editOrigin,
+                         extracted_asset_ids = @extractedAssetIds,
                          updated_at = @updatedAt
          WHERE task_id = @taskId`,
       )
@@ -197,6 +229,7 @@ export class TaskStore {
         submitting: next.submitting ? 1 : 0,
         message: next.message ?? null,
         editScript: next.editScript === undefined ? null : JSON.stringify(next.editScript),
+        editOrigin: next.editOrigin === undefined ? null : JSON.stringify(next.editOrigin),
         extractedAssetIds:
           next.extractedAssetIds === undefined ? null : JSON.stringify(next.extractedAssetIds),
         updatedAt: Date.now(),
@@ -209,17 +242,21 @@ export class TaskStore {
    * V9 修复（用户 2026-09-24 拍板）：**剪辑产物默认不进历史成片** —— 它们复用源片的
    * requestSnapshot（提示词与源片相同），混在画廊里看起来像"重复记录"。
    *
-   * - 默认（无 filter）：只返回**生成产物**（`edit_script IS NULL`）；
+   * - 默认（无 filter）：只返回**生成产物**（既无 EDL 也无工程）；
    * - `filter = { kind: 'edit', sourceTaskId }`：返回某源片的剪辑产物（剪辑台的
    *   「本片剪辑历史」用它 —— 剪辑产物仍然可查可删，只是不混在生成历史里）。
+   *
+   * V2.5：剪辑产物有两代 —— 旧记录 `edit_script`、新记录 `edit_origin`（浏览器端渲染入库），
+   * 两条判据都要算（`coalesce` 取 sourceTaskId，两代各自的 JSON 结构不同但字段名一致）。
    */
   listRecent(limit = 50, filter?: { kind: 'edit'; sourceTaskId: string }): TaskRecord[] {
     if (filter !== undefined) {
       const rows = this.db
         .prepare(
           `SELECT * FROM tasks
-            WHERE edit_script IS NOT NULL
-              AND json_extract(edit_script, '$.sourceTaskId') = ?
+            WHERE (edit_script IS NOT NULL OR edit_origin IS NOT NULL)
+              AND coalesce(json_extract(edit_script, '$.sourceTaskId'),
+                           json_extract(edit_origin, '$.sourceTaskId')) = ?
             ORDER BY created_at DESC LIMIT ?`,
         )
         .all(filter.sourceTaskId, limit) as TaskRow[];
@@ -227,7 +264,9 @@ export class TaskStore {
     }
 
     const rows = this.db
-      .prepare('SELECT * FROM tasks WHERE edit_script IS NULL ORDER BY created_at DESC LIMIT ?')
+      .prepare(
+        'SELECT * FROM tasks WHERE edit_script IS NULL AND edit_origin IS NULL ORDER BY created_at DESC LIMIT ?',
+      )
       .all(limit) as TaskRow[];
     return rows.map(rowToRecord);
   }

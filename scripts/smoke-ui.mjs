@@ -1027,6 +1027,70 @@ try {
     '多轨导出画面非空白（字幕段有实际内容）',
   );
 
+  console.log('\n[6h] 剪辑台入库与抽帧闭环（B34 · P4：浏览器渲染入库 + 抽帧 → I2V）');
+  // 入库：把刚渲染的成片 + 工程 JSON 一起归档（服务端只校验 + 归档，不渲染）
+  await page.getByRole('button', { name: /入库/ }).click();
+  await page.waitForFunction(() => document.body.innerText.includes('已入库'), null, {
+    timeout: 60_000,
+    polling: 200,
+  });
+  assert(true, '📥 入库：面板报告已入库（请求 200）');
+
+  const archived = await page.evaluate(async (src) => {
+    const data = await (
+      await fetch(`/api/history?kind=edit&source=${encodeURIComponent(src)}`)
+    ).json();
+    const item = (data.items ?? []).find((entry) => entry.origin?.project !== undefined);
+    if (item === undefined) return null;
+    const response = await fetch(item.outputVideoUrl, { headers: { range: 'bytes=0-1023' } });
+    const clips = (item.origin.project.tracks ?? []).reduce(
+      (sum, track) => sum + (track.clips?.length ?? 0),
+      0,
+    );
+    return {
+      taskId: item.taskId,
+      status: item.status,
+      rangeStatus: response.status,
+      clips,
+      thumbnail: item.thumbnailUrl ?? null,
+    };
+  }, sourceTask);
+  note(`入库诊断：${JSON.stringify(archived)}`);
+  assert(archived !== null && archived.status === 'succeeded', '入库产物可查（status=succeeded）');
+  assert(archived?.rangeStatus === 206, `入库产物支持 Range（HTTP ${archived?.rangeStatus}）`);
+  assert((archived?.clips ?? 0) >= 3, `多轨工程随任务入库（${archived?.clips} 个片段）`);
+  assert(archived?.thumbnail !== null, `入库产物有封面（${archived?.thumbnail}）`);
+
+  // 抽帧 → 参考资产 → 自动切到 I2V 首帧（D38 闭环；抽帧与预览同构图）
+  await page.getByRole('button', { name: /抽帧为参考资产/ }).click();
+  await page.waitForFunction(() => location.hash.startsWith('#/workbench?frameAsset='), null, {
+    timeout: 60_000,
+    polling: 200,
+  });
+  const frameAsset = await page.evaluate(
+    () => new URLSearchParams(location.hash.split('?')[1] ?? '').get('frameAsset') ?? '',
+  );
+  assert(
+    /^[0-9a-f-]{36}$/i.test(frameAsset),
+    `抽帧上传得到资产（${frameAsset.slice(0, 8)}…）`,
+  );
+  await page.waitForSelector('img[src*="/media/assets/"]', { timeout: 10_000 });
+  assert(true, '首帧槽显示抽帧预览（同源 /media/assets/…）');
+  // 注意：页面上有多个分段控件（画幅/时长/清晰度/模式），必须点名"图生视频"这一个按钮
+  assert(
+    (await page.getByRole('button', { name: '图生视频', exact: true }).getAttribute('aria-pressed')) ===
+      'true',
+    '工作台已切到 I2V（首帧槽 + 图生视频模式）',
+  );
+  const frameLoaded = await page.evaluate(async () => {
+    const img = document.querySelector('img[src*="/media/assets/"]');
+    if (img === null) return 0;
+    const response = await fetch(img.getAttribute('src') ?? '');
+    const blob = await response.blob();
+    return response.ok ? blob.size : 0;
+  });
+  assert(frameLoaded > 0, `抽帧资产可读（${frameLoaded} 字节）`);
+
   console.log('\n[7] 操作日志（V2.1，CONTRACT §10）');
   // 上面 [6] 段用界面真的提交过一条任务 → 它必须已经躺在操作日志里。
   // 这条断言把"界面动作 → 服务端留痕"整条链钉住（也是这次故障排错最需要的能力）。

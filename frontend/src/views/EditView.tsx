@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { describeEditOrigin } from '@astrmira/shared';
 import type { TaskProgress } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
 import { ApiError, fetchHistory, resolveMediaUrl } from '../lib/api';
@@ -273,7 +274,7 @@ export function EditView() {
                   <li key={item.taskId}>
                     <span className="wb-note">
                       {formatRelativeTime(item.createdAt, Date.now())} · {STATUS_TEXT[item.status]} ·{' '}
-                      {item.origin?.kind === 'edit' ? `${item.origin.script.operations.length} 步` : '—'}
+                      {item.origin?.kind === 'edit' ? describeEditOrigin(item.origin) : '—'}
                     </span>
                     {item.outputVideoUrl === undefined ? null : (
                       <button

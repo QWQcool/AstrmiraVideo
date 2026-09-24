@@ -42,6 +42,8 @@ export function describeAction(method: string, path: string): string | undefined
   if (method === 'POST') {
     if (clean === '/api/generate') return 'generate.submit';
     if (clean === '/api/edits') return 'edit.submit';
+    // V2.5（B34 · P4）：浏览器端渲染产物入库（写操作；显式登记动作 id 便于日志页筛选）
+    if (clean === '/api/edits/renders') return 'edit.render';
     if (clean === '/api/upload') return 'upload';
     if (clean === '/api/prompt/enhance') return 'enhance';
     if (clean === '/api/providers/keys/verify') return 'keys.verify';

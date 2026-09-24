@@ -13,6 +13,7 @@ import {
   UploadResponseSchema,
 } from '@astrmira/shared';
 import type {
+  EditProject,
   EditScript,
   ErrorCode,
   ErrorDisposition,
@@ -328,9 +329,55 @@ export async function uploadAssets(files: File[]): Promise<UploadResponse> {
 }
 
 /**
+ * 浏览器端渲染产物**入库**（CONTRACT §11-2，V2.5 / B34 · P4）。
+ *
+ * 与 `uploadAssets` 同一个 multipart 套路（boundary 交给浏览器），但走**专用路由**：
+ * 服务端不做渲染，只校验（工程 JSON 过 `EditProjectSchema`、源片可引用、魔数必须是 MP4、≤20MB）并归档。
+ * 超时给 120s：成片可能几 MB ~ 20MB，普通上传的 30s 在慢网络下会误伤。
+ */
+export async function submitEditRender(input: {
+  file: Blob;
+  sourceTaskId: string;
+  project: EditProject;
+}): Promise<GenerateResponse> {
+  const form = new FormData();
+  form.append('file', input.file, 'render.mp4');
+  form.append('sourceTaskId', input.sourceTaskId);
+  form.append('project', JSON.stringify(input.project));
+
+  let response: Response;
+  try {
+    response = await fetch('/api/edits/renders', {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch (err) {
+    throw new ApiError({
+      kind: 'network',
+      status: 0,
+      message: `入库失败：${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
+
+  const payload = await parsePayload(response, '/api/edits/renders');
+  if (!response.ok) throw toContractError(response, payload, '/api/edits/renders');
+
+  const parsed = GenerateResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new ApiError({
+      kind: 'contract',
+      status: response.status,
+      message: '入库响应不符合契约',
+    });
+  }
+  return parsed.data;
+}
+
+/**
  * 成片直链：**只接受**同源相对路径 `/media/...`。
  * 拒绝绝对 URL 与含 `..` 的路径——服务端返回什么都不能直接塞进 `<video src>`
- * （否则一个被污染的响应就能让浏览器去加载外部地址）。
+ * （否则一个被污染的响应就能让浏览器加载外部地址）。
  */
 export function resolveMediaUrl(outputVideoUrl: string | undefined): string | null {
   if (outputVideoUrl === undefined) return null;

@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   upstream_task_id   TEXT,
   submitting         INTEGER NOT NULL DEFAULT 0,
   message            TEXT,
+  -- V2.5（B34 · P4）：多轨剪辑产物（浏览器端渲染入库）——JSON { sourceTaskId, project }
+  edit_origin        TEXT,
   created_at         INTEGER NOT NULL,
   updated_at         INTEGER NOT NULL
 );
@@ -101,6 +103,9 @@ const COLUMN_MIGRATIONS: ReadonlyArray<{ table: string; column: string; ddl: str
   { table: 'tasks', column: 'edit_script', ddl: 'TEXT' },
   // V9 · B9：抽帧落下的参考资产 id（JSON 数组），供画廊/详情展示与 D38 闭环复用
   { table: 'tasks', column: 'extracted_asset_ids', ddl: 'TEXT' },
+  // V2.5（B34 · P4）：多轨工程产物（CONTRACT §11-2）——JSON { sourceTaskId, project }。
+  // 与 edit_script 并列：旧记录用 script、新记录用 project，二者都是"这条是剪辑产物"的判据。
+  { table: 'tasks', column: 'edit_origin', ddl: 'TEXT' },
 ];
 
 function applyColumnMigrations(db: Db): void {

@@ -14,6 +14,7 @@ import { z } from 'zod';
 export const LOG_ACTIONS = [
   'generate.submit',
   'edit.submit',
+  'edit.render',
   'task.cancel',
   'task.complete',
   'task.fail',
@@ -34,6 +35,7 @@ export type LogAction = (typeof LOG_ACTIONS)[number];
 export const LOG_ACTION_LABELS: Record<string, string> = {
   'generate.submit': '提交生成',
   'edit.submit': '提交剪辑',
+  'edit.render': '渲染入库',
   'task.cancel': '取消任务',
   'task.complete': '任务完成',
   'task.fail': '任务失败',

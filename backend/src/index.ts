@@ -18,6 +18,7 @@ import { runLocalEngineSelfCheck } from './providers/statusProbe.js';
 import { JobDispatcher } from './queue/dispatcher.js';
 import { SqliteJobQueue } from './queue/SqliteJobQueue.js';
 import { createEditRoutes } from './routes/edits.js';
+import { createEditRenderRoutes } from './routes/editRenders.js';
 import { createEnhanceRoutes } from './routes/enhance.js';
 import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
@@ -253,8 +254,10 @@ export async function buildApp() {
   );
   await app.register(createUploadRoutes());
   await app.register(createEnhanceRoutes());
-  // V9 · B9：轻剪辑台（本地 ffmpeg；与生成任务共用队列与轮询）
+  // V9 · B9：基础剪辑 EDL（本地 ffmpeg；与生成任务共用队列与轮询）—— B34 后 UI 不再暴露，API 保留
   await app.register(createEditRoutes({ store, queue }));
+  // V2.5（B34 · P4）：浏览器端渲染产物入库（同步归档，服务端不渲染）
+  await app.register(createEditRenderRoutes({ store }));
   await app.register(createKeyVerifyRoutes());
   await app.register(createTaskRoutes({ store }));
   await app.register(createHistoryRoutes({ store }));
