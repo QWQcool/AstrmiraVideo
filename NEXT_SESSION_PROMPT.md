@@ -25,7 +25,7 @@
 
 ## 当前指针
 
-**Step 2 双轨 Provider（cloud 的 AC2 已全模式跑通：T2V / I2V / FL2V / V2V；host 本地轨 `LocalH3Provider` 仍未实现）＋ Step 3 前端工作台（已完成）＋ Step 4 端到端验收（**已完成 2026-09-23**，证据见 `docs/walkthrough.md`）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ V8.3 体验与功能补强（**批次 0~7 全部完成**）＋ Step 6 V9 前端改版（**已完成 2026-09-23：B1~B10 全部交付**，验收证据 = `docs/v9-acceptance.md`；契约升至 V2.3；**唯一待办 = 用户线上验收**，`docs/EXEC-V9.md` 待验收后归档）**——施工入口 = `docs/PLAN.md` **§4 的 Step+AC**（§5 进度日志是唯一进度权威、§6 是决策 D22~D38、§9 是台账 B1~B33）与 `docs/CONTRACT.md` **V2.2**（§11 是 V9 的配方/剪辑台规划）。以 §5 进度日志的实际状态为准，不要以本文件为准。
+**Step 2 双轨 Provider（cloud 的 AC2 已全模式跑通：T2V / I2V / FL2V / V2V；host 本地轨 `LocalH3Provider` 仍未实现）＋ Step 3 前端工作台（已完成）＋ Step 4 端到端验收（**已完成 2026-09-23**，证据见 `docs/walkthrough.md`）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ V8.3 体验与功能补强（**批次 0~7 全部完成**）＋ Step 6 V9 前端改版（**已完成 2026-09-23：B1~B10 全部交付**，验收证据 = `docs/v9-acceptance.md`；契约升至 V2.3；**唯一待办 = 用户线上验收**，`docs/EXEC-V9.md` 待验收后归档）**——施工入口 = `docs/PLAN.md` **§4 的 Step+AC**（§5 进度日志是唯一进度权威、§6 是决策 D22~D38、§9 是台账 B1~B34）与 `docs/CONTRACT.md` **V2.2**（§11 是 V9 的配方/剪辑台规划）。以 §5 进度日志的实际状态为准，不要以本文件为准。
 
 > ⚠️ **2026-09-23 线上故障与修复（批次 6，读一遍再动手）**：用户报 `invalidEndpointorModel.NotFound`。
 > 根因是三层叠加：① `options.model` / `options.baseUrl` **此前无人消费**（云端 provider 只读 env）；
