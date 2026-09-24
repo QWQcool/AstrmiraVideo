@@ -797,7 +797,7 @@ try {
 
   // 添加素材：把同一源片再入轨一次（验证「探测时长 → 追加到轨尾」链路）
   await page.locator('.ed-tl-pick').selectOption(sourceTask);
-  await page.getByRole('button', { name: '＋ 添加到时间轴' }).click();
+  await page.getByRole('button', { name: '＋镜头' }).click();
   await page.waitForFunction(
     () => document.querySelectorAll('.ed-timeline .ed-clip').length === 2,
     { timeout: 15_000 },
@@ -878,14 +878,20 @@ try {
   // （导出不含预览的 1s 编辑余量 —— 这是 exportDurationFrames 的刻意口径）
   const sizeText = await page.locator('.ed-transport-size').innerText();
   const projectFps = Number(sizeText.match(/(\d+)\s*fps/)?.[1] ?? 30);
-  const exportFrames = await page.evaluate(() => {
-    const clip = document.querySelector('.ed-timeline .ed-clip');
-    const start = Number(clip?.getAttribute('data-start-frame') ?? 0);
-    const dur = Number(clip?.getAttribute('data-duration-frames') ?? 0);
-    return { contentEnd: start + dur };
-  });
-  const expectedSec = exportFrames.contentEnd / projectFps;
-  note(`导出预期：${expectedSec.toFixed(3)}s（${exportFrames.contentEnd} 帧 @${projectFps}fps）`);
+  /** 内容结束帧 = 所有轨道上 clip 的最大结束（data-* 是渲染事实，与模型同源） */
+  const readContentEnd = () =>
+    page.evaluate(() => {
+      let end = 0;
+      for (const clip of document.querySelectorAll('.ed-timeline .ed-clip')) {
+        end = Math.max(
+          end,
+          Number(clip.getAttribute('data-start-frame')) + Number(clip.getAttribute('data-duration-frames')),
+        );
+      }
+      return end;
+    });
+  const expectedSec = (await readContentEnd()) / projectFps;
+  note(`导出预期：${expectedSec.toFixed(3)}s（@${projectFps}fps；含草稿恢复后的既有编辑）`);
 
   await page.getByRole('button', { name: /导出成片/ }).click();
   await page.waitForSelector('.ed-export-result a[download]', { timeout: 120_000 });
@@ -930,6 +936,96 @@ try {
   );
   const lumaStdDev = await frameLumaStdDev(exportPath, Math.max(0.1, expectedSec / 2));
   assert(lumaStdDev > 8, `导出画面非空白（中点帧亮度标准差 ${lumaStdDev.toFixed(1)}，纯色为 0）`);
+
+  console.log('\n[6g] 剪辑台多轨（B34 · P3：字幕 / 转场 / 属性面板 / 草稿）');
+  // 字幕：＋字幕在播放头处加一条（默认 2s），自动选中并出现在属性面板
+  await page.getByRole('button', { name: '＋字幕' }).click();
+  await page.waitForSelector('.ed-clip[data-clip-kind="caption"]', { timeout: 5_000 });
+  assert(true, '＋字幕：字幕轨出现 1 个字幕片段（自动选中）');
+
+  const inspector = page.locator('[data-testid="ed-inspector"]');
+  assert(
+    (await inspector.innerText()).includes('字幕文本'),
+    '属性面板识别选中片段为字幕（显示字幕专属字段）',
+  );
+  await inspector.locator('textarea').fill('雨停了，我们走吧。');
+  // 用定时轮询（rab 轮询在既有结论里与页面动画/播放器 rAF 混在一起时不可靠）
+  await page.waitForFunction(
+    () =>
+      document.querySelector('.ed-clip[data-clip-kind="caption"]')?.textContent?.includes('雨停了') ??
+      false,
+    null,
+    { timeout: 8_000, polling: 100 },
+  );
+  assert(true, '属性面板改文本 → 时间轴片段标签随动（写回模型）');
+  await inspector.locator('select').nth(1).selectOption('wordSlide');
+  assert(
+    (await page.locator('.ed-clip[data-clip-kind="caption"] .ed-badge').count()) >= 1,
+    '属性面板改动效预设 → 片段显示「动效」角标',
+  );
+
+  // 转场：加第二段镜头 → 选中第一段 → ＋转场（后继片段左移 = 重叠窗口）
+  await page.locator('.ed-tl-pick').selectOption(sourceTask);
+  await page.getByRole('button', { name: '＋镜头' }).click();
+  await page.waitForFunction(
+    () => document.querySelectorAll('.ed-lane-video .ed-clip').length === 2,
+    null,
+    { timeout: 15_000 },
+  );
+  const videoClips = page.locator('.ed-lane-video .ed-clip');
+  const firstStart = Number(await videoClips.nth(0).getAttribute('data-start-frame'));
+  const bStartBefore = Number(await videoClips.nth(1).getAttribute('data-start-frame'));
+  await videoClips.nth(0).click();
+  await page.getByRole('button', { name: '＋转场' }).click();
+  await page.waitForSelector('.ed-clip[data-clip-kind="transition"]', { timeout: 5_000 });
+  const bStartAfter = Number(await videoClips.nth(1).getAttribute('data-start-frame'));
+  assert(
+    bStartAfter === bStartBefore - 15,
+    `＋转场：后继片段左移 15 帧（${bStartBefore} → ${bStartAfter}），转场块落位`,
+  );
+
+  // 属性面板改转场时长 → 左移量同步变化（移除+重加）
+  await page.locator('.ed-clip[data-clip-kind="transition"]').click();
+  assert((await inspector.innerText()).includes('移除转场'), '属性面板识别选中片段为转场');
+  await inspector.locator('input[type="number"]').fill('20');
+  await page.waitForFunction(
+    (expected) =>
+      Number(
+        document.querySelectorAll('.ed-lane-video .ed-clip')[1]?.getAttribute('data-start-frame'),
+      ) === expected,
+    bStartBefore - 20,
+    { timeout: 8_000 },
+  );
+  assert(true, `转场时长改 20 帧 → 后继片段再左移 5 帧（净左移 20；起点 ${firstStart} 起算）`);
+
+  // 草稿：刷新后多轨工程仍在（P3 的 localStorage 草稿）
+  await page.reload();
+  await page.waitForSelector('.ed-clip[data-clip-kind="transition"]', { timeout: 15_000 });
+  assert(
+    (await page.locator('.ed-clip[data-clip-kind="caption"]').count()) === 1 &&
+      (await page.locator('.ed-clip[data-clip-kind="transition"]').count()) === 1,
+    '刷新后草稿恢复：字幕 + 转场都在（编辑成果不丢）',
+  );
+
+  // 含字幕与转场的工程再次导出：时长与内容一致、画面非空白（转场/字幕真的被渲染）
+  const expectedSec2 = (await readContentEnd()) / projectFps;
+  await page.getByRole('button', { name: /导出成片/ }).click();
+  await page.waitForSelector('.ed-export-result a[download]', { timeout: 120_000 });
+  const export2Promise = page.waitForEvent('download', { timeout: 30_000 });
+  await page.locator('.ed-export-result a[download]').click();
+  const export2 = await export2Promise;
+  const exportPath2 = path.join(EXPORT_DIR, 'browser-export-multitrack.mp4');
+  await export2.saveAs(exportPath2);
+  const probe2 = await ffprobeJson(exportPath2);
+  const duration2 = Number(probe2.format.duration);
+  assert(
+    Math.abs(duration2 - expectedSec2) <= 0.25,
+    `多轨工程导出时长 = 内容时长（${duration2.toFixed(3)}s vs ${expectedSec2.toFixed(3)}s，含转场缩短）`,
+  );
+  assert(
+    (await frameLumaStdDev(exportPath2, Math.max(0.1, expectedSec2 * 0.6))) > 8,
+    '多轨导出画面非空白（字幕段有实际内容）',
+  );
 
   console.log('\n[7] 操作日志（V2.1，CONTRACT §10）');
   // 上面 [6] 段用界面真的提交过一条任务 → 它必须已经躺在操作日志里。

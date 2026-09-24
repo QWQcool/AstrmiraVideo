@@ -2,7 +2,10 @@ import React, { useRef, useState } from 'react';
 import type { TaskProgress } from '@astrmira/shared';
 import { resolveMediaUrl } from '../lib/api';
 import {
+  DEFAULT_TRANSITION_FRAMES,
   TRACK_KIND_LABELS,
+  clipEndFrame,
+  findClip,
   previewDurationFrames,
   type EditClipSource,
 } from './model';
@@ -14,12 +17,12 @@ import { formatTimecode } from './time';
 import { TimelineClip } from './TimelineClip';
 
 /**
- * 时间轴（B34 · P1）：标尺 + 播放头 + 视频轨（clip 可拖动 / 可裁剪 / 可选中）。
+ * 时间轴（B34 · P1 建，P3 扩展到四轨）。
  *
- * 布局结构（对齐 shotcraft workbench 的 timeline，Apache-2.0 借鉴、样式重写为 Astrmira token 体系）：
+ * - 轨道行按模型顺序渲染（镜头 / 转场 / 字幕 / 音效），**空轨也显示**（否则不知道往哪加）；
  * - 轨道头固定 120px，右侧内容区宽度 = 时长 × 缩放（pxPerFrame），横向滚动；
- * - 播放头竖线是**唯一订阅 playheadFrame 的时间轴组件** —— 播放中每帧只重渲染它；
- * - P1 只渲染视频轨；字幕 / 转场 / 音效轨的 UI 在 P3 开放（模型已支持）。
+ * - 播放头竖线是**唯一订阅 playheadFrame 的时间轴组件**；
+ * - 工具栏：素材下拉（加镜头/音效）、＋字幕、＋转场（需选中视频片段）、删除、适配、缩放。
  */
 
 const HEADER_W = 120;
@@ -92,7 +95,7 @@ const PlayheadLine: React.FC<{ store: EditStore }> = ({ store }) => {
 
 export const Timeline: React.FC<{
   store: EditStore;
-  /** 可作为新素材的成片（已成功且有产物；含源片自己 —— 同一片多次入场是合法剪辑手法） */
+  /** 可作为素材的成片（已成功且有产物；含源片自己 —— 同一片多次入场是合法剪辑手法） */
   candidates: TaskProgress[];
 }> = ({ store, candidates }) => {
   const project = useEditStore(store, (s) => s.project);
@@ -107,7 +110,20 @@ export const Timeline: React.FC<{
   const duration = previewDurationFrames(project);
   const contentW = Math.ceil(duration * ppf) + 120;
 
-  const videoTracks = project.tracks.filter((track) => track.kind === 'video');
+  const clipCount = project.tracks.reduce((sum, track) => sum + track.clips.length, 0);
+
+  /** 选中视频片段且后面有紧贴的邻居 → 允许加转场 */
+  const transitionTarget = (() => {
+    if (selectedClipId === null) return null;
+    const found = findClip(project, selectedClipId);
+    if (found === null || found.clip.kind !== 'video' || found.track.kind !== 'video') return null;
+    const next = found.track.clips
+      .filter((clip) => clip.kind === 'video' && clip.id !== found.clip.id)
+      .sort((a, b) => a.startFrame - b.startFrame)
+      .find((clip) => clip.startFrame >= clipEndFrame(found.clip));
+    if (next === undefined || next.startFrame !== clipEndFrame(found.clip)) return null;
+    return found.clip.id;
+  })();
 
   const fit = (): void => {
     const width = scrollerRef.current?.clientWidth;
@@ -115,20 +131,29 @@ export const Timeline: React.FC<{
     store.setZoom((width - HEADER_W - 80) / duration);
   };
 
-  const handleAdd = async (): Promise<void> => {
-    const task = candidates.find((item) => item.taskId === pendingTaskId);
+  const resolveTask = (taskId: string): { task: TaskProgress; url: string } | null => {
+    const task = candidates.find((item) => item.taskId === taskId);
     const url = resolveMediaUrl(task?.outputVideoUrl);
-    if (task === undefined || url === null) return;
+    return task === undefined || url === null ? null : { task, url };
+  };
+
+  const addFromTask = async (mode: 'video' | 'audio'): Promise<void> => {
+    const resolved = resolveTask(pendingTaskId);
+    if (resolved === null) return;
     setAdding(true);
     setAddError(null);
     try {
-      const meta = await probeVideoMeta(url, project.fps);
+      const meta = await probeVideoMeta(resolved.url, project.fps);
       const source: EditClipSource = {
-        taskId: task.taskId,
-        url,
+        taskId: resolved.task.taskId,
+        url: resolved.url,
         durationFrames: meta.durationFrames,
       };
-      store.addClip(source);
+      if (mode === 'video') {
+        store.addClip(source);
+      } else {
+        store.addAudio(source);
+      }
     } catch (caught) {
       setAddError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -156,9 +181,40 @@ export const Timeline: React.FC<{
           type="button"
           className="wb-btn"
           disabled={pendingTaskId === '' || adding}
-          onClick={() => void handleAdd()}
+          onClick={() => void addFromTask('video')}
         >
-          {adding ? '读取素材…' : '＋ 添加到时间轴'}
+          {adding ? '读取素材…' : '＋镜头'}
+        </button>
+        <button
+          type="button"
+          className="wb-btn"
+          disabled={pendingTaskId === '' || adding}
+          title="把素材里的音频作为音效轨片段（不显示画面）"
+          onClick={() => void addFromTask('audio')}
+        >
+          ＋音效
+        </button>
+        <span className="ed-tl-sep" />
+        <button
+          type="button"
+          className="wb-btn"
+          title="在播放头处添加一条字幕（默认 2s）"
+          onClick={() => store.addCaption()}
+        >
+          ＋字幕
+        </button>
+        <button
+          type="button"
+          className="wb-btn"
+          disabled={transitionTarget === null}
+          title={
+            transitionTarget === null
+              ? '先选中一个视频片段（它后面要有首尾相接的下一段）'
+              : '在选中片段与下一段之间加转场（默认 0.5s，可在属性面板改类型与时长）'
+          }
+          onClick={() => store.addTransitionAfterSelected('fade', DEFAULT_TRANSITION_FRAMES)}
+        >
+          ＋转场
         </button>
         <button
           type="button"
@@ -171,8 +227,7 @@ export const Timeline: React.FC<{
         </button>
         <span className="ed-tl-sep" />
         <span className="ed-tl-note">
-          {project.tracks.reduce((sum, track) => sum + track.clips.length, 0)} 个片段 · 总长{' '}
-          {formatTimecode(duration, project.fps)}
+          {clipCount} 个片段 · 总长 {formatTimecode(duration, project.fps)}
         </span>
         <span style={{ marginLeft: 'auto' }} />
         <button type="button" className="wb-btn" onClick={fit} title="缩放到适配全部内容">
@@ -200,14 +255,14 @@ export const Timeline: React.FC<{
             <Ruler store={store} durationFrames={duration} />
           </div>
 
-          {videoTracks.map((track) => (
-            <div className="ed-track-row" key={track.id}>
+          {project.tracks.map((track) => (
+            <div className="ed-track-row" key={track.id} data-track-kind={track.kind}>
               <div className="ed-track-head" style={{ width: HEADER_W }}>
                 <span className="ed-track-name">{TRACK_KIND_LABELS[track.kind]}</span>
                 <span className="ed-track-count">{track.clips.length}</span>
               </div>
               <div
-                className="ed-lane"
+                className={`ed-lane ed-lane-${track.kind}`}
                 style={{ width: contentW }}
                 onPointerDown={() => store.select(null)}
               >

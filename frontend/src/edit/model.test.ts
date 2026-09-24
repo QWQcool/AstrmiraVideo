@@ -3,6 +3,9 @@ import {
   DEFAULT_PROJECT_FPS,
   EditProjectSchema,
   MIN_CLIP_FRAMES,
+  addAudioClip,
+  addCaptionClip,
+  addTransition,
   addVideoClip,
   applySnap,
   clipEndFrame,
@@ -13,7 +16,10 @@ import {
   moveClip,
   previewDurationFrames,
   removeClip,
+  removeTransition,
+  transitionWindow,
   trimClip,
+  updateClipFields,
   type EditClipSource,
 } from './model';
 import { formatTimecode, framesToSeconds, secondsToFrames } from './time';
@@ -51,10 +57,18 @@ describe('schema', () => {
 });
 
 describe('createProjectFromSource', () => {
-  it('一条视频轨 + 一个铺满源片全长的 clip，默认 30fps', () => {
+  it('四轨一次建齐（镜头 / 转场 / 字幕 / 音效）+ 一个铺满源片全长的 clip，默认 30fps', () => {
     const project = createProjectFromSource(makeSource());
     expect(project.fps).toBe(DEFAULT_PROJECT_FPS);
-    expect(project.tracks).toHaveLength(1);
+    expect(project.tracks.map((track) => track.kind)).toEqual([
+      'video',
+      'transition',
+      'caption',
+      'audio',
+    ]);
+    expect(project.tracks[1]!.clips).toHaveLength(0);
+    expect(project.tracks[2]!.clips).toHaveLength(0);
+    expect(project.tracks[3]!.clips).toHaveLength(0);
     expect(project.tracks[0]!.kind).toBe('video');
     const clip = project.tracks[0]!.clips[0]!;
     if (clip.kind !== 'video') throw new Error('初始 clip 应是视频片段');
@@ -278,5 +292,214 @@ describe('时间工具', () => {
     expect(formatTimecode(0, 30)).toBe('00:00.00');
     expect(formatTimecode(45, 30)).toBe('00:01.15');
     expect(formatTimecode(30 * 65 + 7, 30)).toBe('01:05.07');
+  });
+});
+
+// ── P3：转场 / 字幕 / 音效 / 属性更新 ──────────────────────────────────────
+
+/** A[0,150] + B（90 帧）紧贴追加 → [150,240] */
+function makeTwoClips() {
+  const project = createProjectFromSource(makeSource());
+  const { project: withTwo, clipId: bId } = addVideoClip(project, {
+    taskId: 'task-b',
+    url: '/media/b.mp4',
+    durationFrames: 90,
+  });
+  const aId = withTwo.tracks[0]!.clips[0]!.id;
+  return { project: withTwo, aId, bId };
+}
+
+function transitionClips(project: ReturnType<typeof makeTwoClips>['project']) {
+  const track = project.tracks.find((item) => item.kind === 'transition')!;
+  return track.clips.filter((clip) => clip.kind === 'transition');
+}
+
+describe('转场（P3：添加 / 移除 / 破损清理）', () => {
+  it('添加：后继片段左移 d，转场块坐在接缝窗口上（WYSIWYG，总时长缩短 d）', () => {
+    const { project, aId, bId } = makeTwoClips();
+    const result = addTransition(project, aId, 'fade', 15);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const b = findClip(result.project, bId)!.clip;
+    expect(b.startFrame).toBe(135); // 150 - 15
+    const transitions = transitionClips(result.project);
+    expect(transitions).toHaveLength(1);
+    expect(transitions[0]!.startFrame).toBe(135);
+    expect(transitions[0]!.durationFrames).toBe(15);
+    expect(contentEndFrame(result.project)).toBe(225); // 240 - 15
+    // 窗口查询：A 有 out、B 有 in
+    expect(transitionWindow(result.project, aId).out?.id).toBe(transitions[0]!.id);
+    expect(transitionWindow(result.project, bId).in?.id).toBe(transitions[0]!.id);
+    // 模型仍然合法（zod 全过）
+    expect(EditProjectSchema.safeParse(result.project).success).toBe(true);
+  });
+
+  it('拒绝：两段之间有空隙 / 后面没有片段 / 片段太短', () => {
+    const { project, aId, bId } = makeTwoClips();
+    const moved = moveClip(project, bId, 400); // 拉开空隙
+    const gap = addTransition(moved, aId, 'fade', 15);
+    expect(gap.ok).toBe(false);
+    if (!gap.ok) expect(gap.reason).toContain('空隙');
+
+    const onlyOne = createProjectFromSource(makeSource());
+    const noNext = addTransition(onlyOne, onlyOne.tracks[0]!.clips[0]!.id, 'fade', 15);
+    expect(noNext.ok).toBe(false);
+    if (!noNext.ok) expect(noNext.reason).toContain('没有相邻片段');
+
+    const tiny = addVideoClip(project, { taskId: 'c', url: '/media/c.mp4', durationFrames: 3 });
+    const tooShort = addTransition(tiny.project, bId, 'fade', 15);
+    expect(tooShort.ok).toBe(false);
+    if (!tooShort.ok) expect(tooShort.reason).toContain('太短');
+  });
+
+  it('时长被钳制在 [MIN, 上限]：转场不能吃掉整段', () => {
+    const { project, aId, bId } = makeTwoClips();
+    const huge = addTransition(project, aId, 'fade', 9999);
+    expect(huge.ok).toBe(true);
+    if (!huge.ok) return;
+    const d = transitionClips(huge.project)[0]!.durationFrames;
+    // 上限 = min(MAX_TRANSITION_FRAMES=60, fps*2=60, A.dur-1=149, B.dur-1=89)
+    expect(d).toBe(60);
+    expect(findClip(huge.project, bId)!.clip.startFrame).toBe(90);
+  });
+
+  it('显式移除：后继片段右移还原', () => {
+    const { project, aId, bId } = makeTwoClips();
+    const added = addTransition(project, aId, 'fade', 15);
+    if (!added.ok) throw new Error('前置转场失败');
+    const id = transitionClips(added.project)[0]!.id;
+    const removed = removeTransition(added.project, id);
+    expect(transitionClips(removed)).toHaveLength(0);
+    expect(findClip(removed, bId)!.clip.startFrame).toBe(150);
+  });
+
+  it('破坏相邻性的编辑会移除转场并还原布局（移动 / 删除两端都算）', () => {
+    const { project, aId, bId } = makeTwoClips();
+    const added = addTransition(project, aId, 'fade', 15);
+    if (!added.ok) throw new Error('前置转场失败');
+
+    // 移动 B：转场没了，且 B 落在拖动指定的位置（不做额外位移）
+    const moved = moveClip(added.project, bId, 200);
+    expect(transitionClips(moved)).toHaveLength(0);
+    expect(findClip(moved, bId)!.clip.startFrame).toBe(200);
+
+    // 移动后 prune 也已还原 A 的邻居关系：A[0,150] 与 B[200,290] 不重叠
+    const trimmed = trimClip(added.project, bId, 'right', -10); // 裁剪 B 同样破坏
+    expect(transitionClips(trimmed)).toHaveLength(0);
+    expect(findClip(trimmed, bId)!.clip.startFrame).toBe(150); // 还原到未左移位置
+
+    const deleted = removeClip(added.project, aId);
+    expect(transitionClips(deleted)).toHaveLength(0);
+    expect(findClip(deleted, bId)!.clip.startFrame).toBe(150);
+  });
+
+  it('同接缝重复添加 = 替换（不叠加）', () => {
+    const { project, aId } = makeTwoClips();
+    const first = addTransition(project, aId, 'fade', 15);
+    if (!first.ok) throw new Error('前置转场失败');
+    const second = addTransition(first.project, aId, 'wipeleft', 20);
+    if (!second.ok) throw new Error('替换失败');
+    const transitions = transitionClips(second.project);
+    expect(transitions).toHaveLength(1);
+    expect(transitions[0]!.transition).toBe('wipeleft');
+    expect(transitions[0]!.durationFrames).toBe(20);
+    expect(findClip(second.project, second.project.tracks[0]!.clips[1]!.id)!.clip.startFrame).toBe(130);
+  });
+});
+
+describe('字幕与音效（P3）', () => {
+  it('添加字幕：默认 2s、底部位、静态预设', () => {
+    const project = createProjectFromSource(makeSource());
+    const { project: withCaption, clipId } = addCaptionClip(project, { atFrame: 20 });
+    const clip = findClip(withCaption, clipId)!.clip;
+    expect(clip.kind).toBe('caption');
+    if (clip.kind !== 'caption') return;
+    expect(clip.startFrame).toBe(20);
+    expect(clip.durationFrames).toBe(60);
+    expect(clip.preset).toBe('plain');
+    expect(clip.position).toBe('bottom');
+    expect(EditProjectSchema.safeParse(withCaption).success).toBe(true);
+  });
+
+  it('字幕不与既有字幕重叠：重叠时右推到空位', () => {
+    const project = createProjectFromSource(makeSource());
+    const first = addCaptionClip(project, { atFrame: 0 });
+    const second = addCaptionClip(first.project, { atFrame: 30 }); // 与 [0,60] 重叠
+    expect(findClip(second.project, second.clipId)!.clip.startFrame).toBe(60);
+  });
+
+  it('添加音效：素材铺满源片、追加在音效轨末尾', () => {
+    const project = createProjectFromSource(makeSource());
+    const one = addAudioClip(project, { taskId: 'sfx', url: '/media/sfx.mp4', durationFrames: 45 });
+    const two = addAudioClip(one.project, {
+      taskId: 'sfx2',
+      url: '/media/sfx2.mp4',
+      durationFrames: 45,
+    });
+    expect(findClip(two.project, one.clipId)!.clip.startFrame).toBe(0);
+    expect(findClip(two.project, two.clipId)!.clip.startFrame).toBe(45);
+    expect(two.project.tracks.find((track) => track.kind === 'audio')!.clips).toHaveLength(2);
+  });
+});
+
+describe('属性面板字段更新（updateClipFields）', () => {
+  it('video：speed 受源片余量钳制、volume 钳在 0~2', () => {
+    const { project, aId } = makeTwoClips();
+    // A 铺满全片（150/150）→ 可提速空间为 0，speed=2 被钳回 1
+    expect(
+      findClip(updateClipFields(project, aId, { kind: 'video', speed: 2 }), aId)!.clip.kind ===
+        'video',
+    ).toBe(true);
+    const clipped = findClip(updateClipFields(project, aId, { kind: 'video', speed: 2 }), aId)!.clip;
+    if (clipped.kind !== 'video') return;
+    expect(clipped.speed).toBe(1);
+    const loud = findClip(updateClipFields(project, aId, { kind: 'video', volume: 9 }), aId)!.clip;
+    if (loud.kind !== 'video') return;
+    expect(loud.volume).toBe(2);
+  });
+
+  it('video：label 空串 = 清除标签', () => {
+    const { project, aId } = makeTwoClips();
+    const labelled = updateClipFields(project, aId, { kind: 'video', label: '开场' });
+    expect(findClip(labelled, aId)!.clip.kind === 'video' && (findClip(labelled, aId)!.clip as { label?: string }).label).toBe('开场');
+    const cleared = updateClipFields(labelled, aId, { kind: 'video', label: null });
+    expect(
+      findClip(cleared, aId)!.clip.kind === 'video' &&
+        (findClip(cleared, aId)!.clip as { label?: string }).label,
+    ).toBeUndefined();
+  });
+
+  it('caption：文本去空白、空文本保持原值；预设可切换', () => {
+    const project = createProjectFromSource(makeSource());
+    const { project: withCaption, clipId } = addCaptionClip(project, { atFrame: 0 });
+    const edited = findClip(
+      updateClipFields(withCaption, clipId, { kind: 'caption', text: '  雨停了  ', preset: 'wordSlide' }),
+      clipId,
+    )!.clip;
+    if (edited.kind !== 'caption') return;
+    expect(edited.text).toBe('雨停了');
+    expect(edited.preset).toBe('wordSlide');
+    const kept = findClip(updateClipFields(withCaption, clipId, { kind: 'caption', text: '   ' }), clipId)!.clip;
+    if (kept.kind !== 'caption') return;
+    expect(kept.text).toBe('字幕文本');
+  });
+
+  it('transition：改时长 = 移除+重加，后继片段的左移量随之变化', () => {
+    const { project, aId, bId } = makeTwoClips();
+    const added = addTransition(project, aId, 'fade', 15);
+    if (!added.ok) throw new Error('前置转场失败');
+    const id = transitionClips(added.project)[0]!.id;
+    const updated = updateClipFields(added.project, id, { kind: 'transition', durationFrames: 30 });
+    expect(findClip(updated, bId)!.clip.startFrame).toBe(120); // 150 - 30
+    const t = transitionClips(updated)[0]!;
+    expect(t.durationFrames).toBe(30);
+    expect(t.startFrame).toBe(120);
+  });
+
+  it('kind 不匹配 = 原样返回（调用方 bug 不该静默生效）', () => {
+    const project = createProjectFromSource(makeSource());
+    const { project: withCaption, clipId } = addCaptionClip(project, { atFrame: 0 });
+    const unchanged = updateClipFields(withCaption, clipId, { kind: 'video', speed: 2 });
+    expect(unchanged).toBe(withCaption);
   });
 });

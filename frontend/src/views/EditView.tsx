@@ -6,9 +6,11 @@ import { navigate, useHashRoute } from '../lib/router';
 import { formatBytes, formatRelativeTime } from '../lib/overviewStats';
 import { DEFAULT_PROJECT_FPS, createProjectFromSource } from '../edit/model';
 import { ExportPanel } from '../edit/ExportPanel';
+import { InspectorPanel } from '../edit/InspectorPanel';
+import { loadEditDraft, saveEditDraft } from '../edit/draft';
 import { probeVideoMeta } from '../edit/mediaProbe';
 import { togglePlayback } from '../edit/playerRef';
-import { EditStore } from '../edit/store';
+import { EditStore, useEditStore } from '../edit/store';
 import { Timeline } from '../edit/Timeline';
 
 /**
@@ -25,6 +27,18 @@ import { Timeline } from '../edit/Timeline';
  */
 
 const PlayerStage = lazy(() => import('../edit/PlayerStage'));
+
+/** 一次性提示条（store.notice）：模型替用户做的"破坏性修补"必须说出来，不静默 */
+const EditNotice: React.FC<{ store: EditStore }> = ({ store }) => {
+  const notice = useEditStore(store, (s) => s.notice);
+  if (notice === null) return null;
+  return (
+    <div className="wb-queue-item ed-notice" style={{ marginBottom: 14 }}>
+      <span className="wb-dot" />
+      <span className="wb-note">{notice}</span>
+    </div>
+  );
+};
 
 const STATUS_TEXT: Record<TaskProgress['status'], string> = {
   queued: '排队中',
@@ -88,7 +102,8 @@ export function EditView() {
 
   const sourceUrl = resolveMediaUrl(source?.outputVideoUrl);
 
-  // 源片 → 探测真实时长/尺寸（裁剪上限的唯一依据）→ 建工程与 store
+  // 源片 → 探测真实时长/尺寸（裁剪上限的唯一依据）→ 建工程与 store。
+  // 有草稿则恢复草稿（刷新不丢编辑成果，P3），草稿脏数据由 draft 模块自愈
   useEffect(() => {
     if (sourceId === null || sourceUrl === null) {
       setStore(null);
@@ -99,10 +114,13 @@ export function EditView() {
     probeVideoMeta(sourceUrl, DEFAULT_PROJECT_FPS)
       .then((meta) => {
         if (cancelled) return;
-        const project = createProjectFromSource(
-          { taskId: sourceId, url: sourceUrl, durationFrames: meta.durationFrames },
-          { fps: DEFAULT_PROJECT_FPS, width: meta.width, height: meta.height, label: '源片' },
-        );
+        const draft = loadEditDraft(sourceId);
+        const project =
+          draft ??
+          createProjectFromSource(
+            { taskId: sourceId, url: sourceUrl, durationFrames: meta.durationFrames },
+            { fps: DEFAULT_PROJECT_FPS, width: meta.width, height: meta.height, label: '源片' },
+          );
         setStore(new EditStore(project));
       })
       .catch((caught: unknown) => {
@@ -114,6 +132,28 @@ export function EditView() {
       cancelled = true;
     };
   }, [sourceId, sourceUrl]);
+
+  // 工程变化 → 防抖落草稿（500ms；切视图/刷新时即刻 flush）
+  useEffect(() => {
+    if (store === null || sourceId === null) return;
+    let timer: number | undefined;
+    const flush = (): void => saveEditDraft(sourceId, store.getState().project);
+    const unsubscribe = store.subscribe(() => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = window.setTimeout(flush, 500);
+    });
+    // ⚠️ 硬导航（刷新 / 关标签 / 跳外链）**不走 React 的 cleanup** ——
+    // 只靠防抖会丢掉"刚编辑完就刷新"的最后一笔；pagehide + beforeunload 兜底同步落一次。
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload', flush);
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      unsubscribe();
+      window.removeEventListener('pagehide', flush);
+      window.removeEventListener('beforeunload', flush);
+      flush();
+    };
+  }, [store, sourceId]);
 
   // 快捷键：Delete 删除选中片段；空格播放/暂停（输入控件内不抢）
   useEffect(() => {
@@ -186,6 +226,7 @@ export function EditView() {
           <span className="wb-uncertain-body">{probeError}</span>
         </div>
       )}
+      {store === null ? null : <EditNotice store={store} />}
 
       <div className="ed-body">
         <div className="ed-stage-col">
@@ -199,11 +240,12 @@ export function EditView() {
         </div>
 
         <aside className="ed-side">
+          {store === null ? null : <InspectorPanel store={store} />}
           {store === null ? null : <ExportPanel store={store} sourceTaskId={sourceId} />}
 
           <section className="wb-panel ed-side-panel">
             <div className="wb-field-head">
-              <Eyebrow index={2} tone="gold" as="h2">
+              <Eyebrow index={3} tone="gold" as="h2">
                 源片
               </Eyebrow>
               <span className="wb-note">
@@ -219,7 +261,7 @@ export function EditView() {
 
           <section className="wb-panel ed-side-panel">
             <div className="wb-field-head">
-              <Eyebrow index={3} tone="gold" as="h2">
+              <Eyebrow index={4} tone="gold" as="h2">
                 本片剪辑历史
               </Eyebrow>
             </div>

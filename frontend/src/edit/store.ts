@@ -1,13 +1,20 @@
 import { useSyncExternalStore } from 'react';
 import {
+  addAudioClip,
+  addCaptionClip,
+  addTransition,
   addVideoClip,
   moveClip,
   previewDurationFrames,
   removeClip,
+  removeTransition,
   trimClip,
+  updateClipFields,
   type ClipGeometry,
+  type ClipPatch,
   type EditClipSource,
   type EditProject,
+  type EditTransitionKind,
 } from './model';
 
 /**
@@ -30,6 +37,12 @@ export interface EditUiState {
   playing: boolean;
   /** 时间轴缩放：每帧多少像素 */
   pxPerFrame: number;
+  /**
+   * 一次性提示（如"移动已移除受影响的转场"）。
+   * 存在的意义 = **不静默**：模型会替用户做的"破坏性修补"必须说出来。
+   * 任何新的编辑动作开始时清掉（由 `set()` 自动处理见 `clearNoticeOnMutation`）。
+   */
+  notice: string | null;
 }
 
 export const MIN_PX_PER_FRAME = 0.5;
@@ -47,6 +60,7 @@ export class EditStore {
       playheadFrame: 0,
       playing: false,
       pxPerFrame: DEFAULT_PX_PER_FRAME,
+      notice: null,
     };
   }
 
@@ -89,31 +103,117 @@ export class EditStore {
     });
   };
 
+  setNotice = (notice: string | null): void => {
+    if (this.state.notice !== notice) this.set({ notice });
+  };
+
   // ── 工程编辑（约束全部收口在 model 纯函数里，这里只做派发与附带状态清理） ──
+
+  /** 编辑动作统一入口：清掉上一条提示（提示只描述"刚刚发生的那一下"） */
+  private mutate(project: EditProject, partial?: Partial<EditUiState>): void {
+    this.set({ project, notice: null, ...partial });
+  }
 
   addClip = (source: EditClipSource, atFrame?: number): string => {
     const { project, clipId } = addVideoClip(this.state.project, source, atFrame);
-    this.set({ project, selectedClipId: clipId });
+    this.mutate(project, { selectedClipId: clipId });
     return clipId;
   };
 
   moveClip = (clipId: string, toFrame: number): void => {
-    this.set({ project: moveClip(this.state.project, clipId, toFrame) });
+    const before = countTransitions(this.state.project);
+    const project = moveClip(this.state.project, clipId, toFrame);
+    this.mutateTransitionAware(project, before);
   };
 
   /** `base` = 拖拽起点处的 clip 几何（避免增量钳制累积误差，见 model.trimClip） */
   trimClip = (clipId: string, side: 'left' | 'right', deltaFrames: number, base?: ClipGeometry): void => {
-    this.set({ project: trimClip(this.state.project, clipId, side, deltaFrames, base) });
+    const before = countTransitions(this.state.project);
+    const project = trimClip(this.state.project, clipId, side, deltaFrames, base);
+    this.mutateTransitionAware(project, before);
   };
 
   removeClip = (clipId: string): void => {
+    const before = countTransitions(this.state.project);
     const project = removeClip(this.state.project, clipId);
     this.set({
       project,
+      notice: transitionNotice(before, project),
       selectedClipId: this.state.selectedClipId === clipId ? null : this.state.selectedClipId,
       playheadFrame: Math.min(this.state.playheadFrame, previewDurationFrames(project)),
     });
   };
+
+  // ── P3：字幕 / 音效 / 转场 / 属性 ──
+
+  /** 在播放头处添加一条字幕（默认 2s，自动避开已有字幕） */
+  addCaption = (): string => {
+    const { project, clipId } = addCaptionClip(this.state.project, {
+      atFrame: this.state.playheadFrame,
+    });
+    this.mutate(project, { selectedClipId: clipId });
+    return clipId;
+  };
+
+  addAudio = (source: EditClipSource): string => {
+    const { project, clipId } = addAudioClip(this.state.project, source);
+    this.mutate(project, { selectedClipId: clipId });
+    return clipId;
+  };
+
+  /** 在选中视频片段与其相邻后继之间加转场（失败给提示，不静默） */
+  addTransitionAfterSelected = (kind: EditTransitionKind, durationFrames: number): void => {
+    const selected = this.state.selectedClipId;
+    if (selected === null) {
+      this.setNotice('先在时间轴上选中一个视频片段');
+      return;
+    }
+    const result = addTransition(this.state.project, selected, kind, durationFrames);
+    if (!result.ok) {
+      this.setNotice(result.reason);
+      return;
+    }
+    this.mutate(result.project, { selectedClipId: result.clipId });
+  };
+
+  /** 移除选中转场（显式动作，布局随之还原） */
+  removeSelectedTransition = (): void => {
+    const selected = this.state.selectedClipId;
+    if (selected === null) return;
+    const project = removeTransition(this.state.project, selected);
+    this.set({
+      project,
+      notice: project === this.state.project ? '选中的不是转场片段' : null,
+      selectedClipId: null,
+    });
+  };
+
+  /** 属性面板写回（值域收口在 model.updateClipFields） */
+  updateSelectedClip = (patch: ClipPatch): void => {
+    const selected = this.state.selectedClipId;
+    if (selected === null) return;
+    const project = updateClipFields(this.state.project, selected, patch);
+    if (project === this.state.project) return; // 无变化（非法值 / 未命中）不制造新引用
+    this.set({ project });
+  };
+
+  private mutateTransitionAware(project: EditProject, transitionsBefore: number): void {
+    this.set({ project, notice: transitionNotice(transitionsBefore, project) });
+  }
+}
+
+function countTransitions(project: EditProject): number {
+  return (
+    project.tracks
+      .find((track) => track.kind === 'transition')
+      ?.clips.filter((clip) => clip.kind === 'transition').length ?? 0
+  );
+}
+
+/** 转场数量变少 = 这次编辑顺带移除了受影响转场 → 必须给用户一句实话（不静默） */
+function transitionNotice(before: number, project: EditProject): string | null {
+  const after = countTransitions(project);
+  return after < before ? '这次编辑已移除受影响的转场（转场要求两段首尾相接）' : null;
 }
 
 export function useEditStore<T>(store: EditStore, selector: (state: EditUiState) => T): T {

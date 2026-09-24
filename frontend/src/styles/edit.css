@@ -154,6 +154,66 @@
   margin-top: 8px;
 }
 
+/* ── 属性面板（P3，schema 驱动） ── */
+.ed-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-bottom: 8px;
+}
+
+.ed-fact {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--fs-note);
+}
+
+.ed-fact-label {
+  color: var(--faint);
+}
+
+.ed-fact-value {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.ed-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.ed-field-label {
+  font-size: var(--fs-label);
+  color: var(--muted);
+}
+
+.ed-field-unit {
+  color: var(--faint);
+}
+
+.ed-field-hint {
+  font-size: var(--fs-micro);
+  color: var(--faint);
+}
+
+.ed-field-number {
+  width: 120px;
+}
+
+.ed-field-textarea {
+  resize: vertical;
+  font-family: var(--sans);
+}
+
+/* 提示条（一次性；不静默） */
+.ed-notice {
+  border-color: var(--gold-line);
+  background: var(--gold-soft);
+}
+
 .ed-footnote {
   margin-top: 10px;
 }
@@ -304,6 +364,30 @@
   touch-action: none;
 }
 
+/* P3：四类片段各自的视觉身份（一眼看出轨道语义） */
+.ed-clip-transition {
+  background: var(--gold-soft);
+  border-color: var(--gold-line);
+  border-left-color: var(--gold);
+}
+
+.ed-clip-caption {
+  background: var(--panel2);
+  border: 1px dashed var(--line-strong);
+  border-left: 3px solid var(--blue);
+}
+
+.ed-clip-audio {
+  background: var(--panel2);
+  border-color: var(--line);
+  border-left: 3px solid var(--success);
+}
+
+/* 转场块不可拖动（位置由两端片段与时长决定） */
+.ed-clip-locked {
+  cursor: default;
+}
+
 .ed-clip:active {
   cursor: grabbing;
 }
@@ -414,20 +498,43 @@
 }
 
 .ed-comp-caption-layer {
-  justify-content: flex-end;
   align-items: center;
+  padding: 8% 6%;
   pointer-events: none;
 }
 
+/* 三档纵向位置（属性面板可改）：底部 / 居中 / 顶部 */
+.ed-comp-caption-bottom {
+  justify-content: flex-end;
+}
+
+.ed-comp-caption-center {
+  justify-content: center;
+}
+
+.ed-comp-caption-top {
+  justify-content: flex-start;
+}
+
 .ed-comp-caption {
-  margin-bottom: 8%;
-  padding: 0 6%;
   text-align: center;
   color: var(--canvas-text);
   font-size: var(--fs-caption);
   font-weight: 600;
   font-family: var(--sans);
   text-shadow: 0 2px 16px var(--canvas-veil);
+}
+
+/* 逐词入场：词与词横向排布（换行时保持居中） */
+.ed-comp-caption-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.32em;
+}
+
+.ed-comp-caret {
+  opacity: 0.85;
 }
 
 /* ── 移动端（≤768px）：上下堆叠，时间轴横滚 ── */

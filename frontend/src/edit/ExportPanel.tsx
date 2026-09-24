@@ -132,7 +132,7 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
   return (
     <section className="wb-panel ed-side-panel">
       <div className="wb-field-head">
-        <Eyebrow index={1} tone="gold" as="h2">
+        <Eyebrow index={2} tone="gold" as="h2">
           导出
         </Eyebrow>
         <span className="wb-note">

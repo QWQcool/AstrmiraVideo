@@ -26,6 +26,8 @@ export const STORAGE_KEYS = {
   themePref: 'astrmira.themePref',
   /** 侧栏收起态（V9 B2）：true = 收起为 56px 图标栏 */
   sidebarRail: 'astrmira.sidebarRail',
+  /** 剪辑台工程草稿前缀（B34 · P3）：实际键 = 前缀 + 源任务 id（每片一份草稿） */
+  editDraftPrefix: 'astrmira.editDraft.',
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
