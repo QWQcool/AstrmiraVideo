@@ -707,11 +707,14 @@ try {
   );
   assert(true, '剪辑产物已在剪辑台里可播放（源片 + 产物两个播放器）');
 
-  const editResult = await page.evaluate(async () => {
-    const data = await (await fetch('/api/history')).json();
-    // 取**最新**一条剪辑任务（不依赖列表顺序）
-    const edits = (data.items ?? []).filter((entry) => entry.origin?.kind === 'edit');
-    const item = edits.sort((a, b) => b.createdAt - a.createdAt)[0];
+  const editResult = await page.evaluate(async (srcTask) => {
+    // V9 修复：剪辑产物默认不进 /api/history（edit_script IS NULL），
+    // 要走 `?kind=edit&source=<id>` 查某源片的剪辑产物
+    const data = await (
+      await fetch(`/api/history?kind=edit&source=${encodeURIComponent(srcTask)}`)
+    ).json();
+    // 取**最新**一条剪辑任务（不依赖列表顺序；该接口只返回剪辑产物，不用再 filter）
+    const item = (data.items ?? []).sort((a, b) => b.createdAt - a.createdAt)[0];
     if (item === undefined) return null;
 
     const target = item.outputVideoUrl ?? '/api/health';
@@ -720,12 +723,12 @@ try {
       taskId: item.taskId,
       status: item.status,
       error: item.error ?? null,
-      sourceTaskId: item.origin.sourceTaskId,
+      sourceTaskId: item.origin?.sourceTaskId ?? null,
       outputVideoUrl: item.outputVideoUrl ?? null,
       extracted: item.extractedAssetIds ?? [],
       rangeStatus: response.status,
     };
-  });
+  }, sourceTask);
 
   note(`剪辑诊断：${JSON.stringify(editResult)}`);
   assert(
