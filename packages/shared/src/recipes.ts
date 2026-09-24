@@ -17,7 +17,14 @@ import { AspectRatioSchema, GenerationModeSchema } from './request.js';
  * **文本全部自写**（它是 Remotion 参数导向，我们是生成提示词导向，本就不通用）。
  */
 
-export const RecipeCategorySchema = z.enum(['camera', 'lighting', 'mood', 'rhythm']);
+export const RecipeCategorySchema = z.enum([
+  'camera',
+  'lighting',
+  'mood',
+  'rhythm',
+  'angle',
+  'focus',
+]);
 export type RecipeCategory = z.infer<typeof RecipeCategorySchema>;
 
 export const RECIPE_CATEGORY_LABELS: Record<RecipeCategory, string> = {
@@ -25,6 +32,8 @@ export const RECIPE_CATEGORY_LABELS: Record<RecipeCategory, string> = {
   lighting: '光线',
   mood: '氛围',
   rhythm: '节奏',
+  angle: '角度',
+  focus: '焦点',
 };
 
 export const RecipeCardSchema = z.object({
@@ -259,6 +268,318 @@ export const RECIPE_CARDS: readonly RecipeCard[] = [
     skeleton:
       '画面从某一构图开始，中途发生一次完整变化，结尾回到与开头几乎一致的构图。',
     pitfalls: ['要循环播放时务必让首尾构图足够接近，否则接缝会跳'],
+  },
+
+  // ── 运镜（camera）扩充（词库结构参考 seedance-prompt-skill，MIT）──────────
+  {
+    id: 'camera-handheld-follow',
+    title: '手持跟拍',
+    category: 'camera',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '手持镜头跟随主体移动，画面带轻微自然的呼吸感晃动，主体始终在画面中景，背景随之流动。',
+    pitfalls: ['晃动幅度要写"轻微"，否则会变成抖动废片'],
+  },
+  {
+    id: 'camera-aerial-rise',
+    title: '航拍拉升',
+    category: 'camera',
+    modes: ['t2v'],
+    durationHint: '5s',
+    skeleton:
+      '航拍视角从贴近主体的高度垂直拉升，主体逐渐变小，环境全貌在升高中展开，运动平稳上升。',
+    pitfalls: ['5s 只够拉升一小段，别写"升到万米高空"'],
+  },
+  {
+    id: 'camera-dolly-zoom',
+    title: '希区柯克变焦',
+    category: 'camera',
+    modes: ['t2v'],
+    durationHint: '3~5s',
+    skeleton:
+      '主体保持画面大小不变，背景向远处压缩拉伸，空间产生眩晕般的透视变化（推拉变焦）。',
+    pitfalls: ['这个效果对模型较难，提示词里要同时写"主体大小不变"和"背景透视变化"'],
+  },
+  {
+    id: 'camera-truck-reveal',
+    title: '横移展示',
+    category: 'camera',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '镜头沿水平方向匀速平移，逐一展示并排的多个主体或场景细节，像展柜一样掠过。',
+    pitfalls: ['主体间距要均匀，否则平移节奏会忽快忽慢'],
+  },
+  {
+    id: 'camera-whip-pan',
+    title: '甩镜转场',
+    category: 'camera',
+    modes: ['t2v'],
+    durationHint: '3s 以内',
+    skeleton:
+      '镜头快速向一个方向甩动，画面产生动态模糊，甩动结束后稳定在 new 场景上。',
+    pitfalls: ['单条生成里"甩镜"效果不稳定，重要场合建议用剪辑台做转场'],
+  },
+
+  // ── 光线（lighting）扩充 ────────────────────────────
+  {
+    id: 'lighting-golden-hour',
+    title: '黄金时段',
+    category: 'lighting',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '日落前的低角度阳光，暖金色斜射在主体上，拉出长长的影子，空气中有一层暖雾。',
+    pitfalls: ['色温别写太暖（过橙会假），补一句"保留自然肤色"'],
+  },
+  {
+    id: 'lighting-moonlight',
+    title: '月光冷调',
+    category: 'lighting',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '夜晚月光从一侧照亮主体，冷蓝白色调，暗部深邃但保留层次，远处有点点暖光对比。',
+    pitfalls: ['纯冷调容易显得阴森，留一点暖光平衡情绪'],
+  },
+  {
+    id: 'lighting-volumetric',
+    title: '体积光',
+    category: 'lighting',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '光线穿过窗户或缝隙形成可见的光柱，空气中有微尘在光柱里缓慢浮动，主体位于光柱边缘。',
+    pitfalls: ['需要空气介质（尘/雾）才能看见光柱，提示词里要点明'],
+  },
+  {
+    id: 'lighting-side-rim',
+    title: '侧逆光勾边',
+    category: 'lighting',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '光源在主体侧后方，主体的发丝与轮廓被一圈亮边勾勒，正面处于柔和的暗部，立体感强。',
+    pitfalls: ['正面要补一点反光，否则主体会变成剪影'],
+  },
+  {
+    id: 'lighting-product-softbox',
+    title: '产品柔光',
+    category: 'lighting',
+    modes: ['t2v', 'i2v'],
+    durationHint: '任意',
+    skeleton:
+      '产品摄影式的大面积柔光，主体受光均匀无硬阴影，背景纯净，材质细节与反光清晰。',
+    pitfalls: ['柔光容易拍平，靠产品自身反光与背景渐变撑层次'],
+  },
+
+  // ── 氛围（mood）扩充 ──────────────────────────────
+  {
+    id: 'mood-cyberpunk-neon',
+    title: '赛博朋克',
+    category: 'mood',
+    modes: ['t2v'],
+    durationHint: '5s',
+    skeleton:
+      '赛博朋克城市夜景，高饱和的青与品红霓虹交错，湿漉漉的地面反射灯光，空气中有薄雾与蒸汽。',
+    pitfalls: ['颜色别超过两种主色，多了会脏'],
+  },
+  {
+    id: 'mood-ink-wash',
+    title: '中国水墨',
+    category: 'mood',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '中国水墨画风格，黑白灰为主，大面积留白，主体以写意笔触呈现，边缘有墨色晕染。',
+    pitfalls: ['水墨风格对模型较难，提示词里要写"水墨画风格"而不是"黑白照片"'],
+  },
+  {
+    id: 'mood-film-vintage',
+    title: '复古胶片',
+    category: 'mood',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '复古胶片质感，画面有细微颗粒，色彩偏暖偏褪色，对比度柔和，像 90 年代的家庭录像。',
+    pitfalls: ['颗粒别太重，否则会显得画质差而不是"胶片感"'],
+  },
+  {
+    id: 'mood-morandi',
+    title: '莫兰迪灰调',
+    category: 'mood',
+    modes: ['t2v'],
+    durationHint: '任意',
+    skeleton:
+      '莫兰迪色系，低饱和度的灰调色彩，画面安静柔和，色彩之间过渡细腻，整体氛围克制内敛。',
+    pitfalls: ['低饱和不等于灰扑扑，要保留色彩的微妙差异'],
+  },
+  {
+    id: 'mood-vaporwave',
+    title: '蒸汽波',
+    category: 'mood',
+    modes: ['t2v'],
+    durationHint: '5s',
+    skeleton:
+      '蒸汽波美学，粉紫与青蓝的渐变天空，复古网格地面，80 年代的未来主义怀旧感。',
+    pitfalls: ['风格强烈，主体别太复杂，否则画面会很乱'],
+  },
+
+  // ── 节奏（rhythm）扩充 ─────────────────────────────
+  {
+    id: 'rhythm-slow-motion',
+    title: '慢动作',
+    category: 'rhythm',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '慢动作（升格拍摄），主体的动作被放慢数倍，细节（发丝 / 水滴 / 布料）在空中缓缓展开。',
+    pitfalls: ['慢动作需要有"快速动作"做对比才有张力'],
+  },
+  {
+    id: 'rhythm-timelapse',
+    title: '延时摄影',
+    category: 'rhythm',
+    modes: ['t2v'],
+    durationHint: '5s',
+    skeleton:
+      '延时摄影，时间被压缩加速，云影快速流动、光影在墙面移动、人来车往拉成虚影。',
+    pitfalls: ['延时摄影里主体要固定（建筑/桌面），否则画面会糊'],
+  },
+  {
+    id: 'rhythm-one-take',
+    title: '一镜到底',
+    category: 'rhythm',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '一镜到底，镜头连续不切换，跟随主体穿过多个场景，画面始终保持连贯的运动。',
+    pitfalls: ['一镜到底对模型较难，场景转换要明确写"镜头跟随进入"'],
+  },
+  {
+    id: 'rhythm-hard-cut',
+    title: '硬切',
+    category: 'rhythm',
+    modes: ['t2v'],
+    durationHint: '5s',
+    skeleton:
+      '两个场景之间直接硬切，没有过渡，画面在瞬间从 A 跳到 B，形成明确的节奏断点。',
+    pitfalls: ['硬切前后要有视觉关联（同主体/同色调），否则会显得是事故'],
+  },
+  {
+    id: 'rhythm-action-beat',
+    title: '动作节拍',
+    category: 'rhythm',
+    modes: ['t2v', 'v2v'],
+    durationHint: '5s',
+    skeleton:
+      '动作与节拍对齐，每一个动作转折都卡在节奏点上，画面有明确的律动感和张力。',
+    pitfalls: ['节拍点要靠动作设计，不是靠后期剪辑'],
+  },
+
+  // ── 角度（angle）新增类别 ───────────────────────────
+  {
+    id: 'angle-top-down',
+    title: '垂直俯拍',
+    category: 'angle',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '正上方垂直俯拍，主体平铺在画面中，构图呈平面化的几何感，像地图或摆拍。',
+    pitfalls: ['俯拍会弱化立体感，靠光影与色彩撑层次'],
+  },
+  {
+    id: 'angle-low-up',
+    title: '低角度仰拍',
+    category: 'angle',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '低角度仰拍，镜头贴近地面向上，主体显得高大有力量感，背景多为天空或天花板。',
+    pitfalls: ['仰拍容易让主体变形（头大脚小），提示词里写"保持自然比例"'],
+  },
+  {
+    id: 'angle-birds-eye',
+    title: '鸟瞰视角',
+    category: 'angle',
+    modes: ['t2v'],
+    durationHint: '5s',
+    skeleton:
+      '高空鸟瞰视角，地面景观尽收眼底，建筑与道路呈几何图案，主体在广阔环境中显得渺小。',
+    pitfalls: ['鸟瞰里主体太小会看不清，要点明"主体位于画面中心"'],
+  },
+  {
+    id: 'angle-fisheye',
+    title: '鱼眼畸变',
+    category: 'angle',
+    modes: ['t2v'],
+    durationHint: '3~5s',
+    skeleton:
+      '鱼眼镜头视角，画面边缘呈弧形畸变，中心主体夸张放大，有强烈的视觉冲击力。',
+    pitfalls: ['鱼眼畸变对模型较难，写实场景慎用'],
+  },
+  {
+    id: 'angle-pov-first',
+    title: '第一人称',
+    category: 'angle',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '第一人称主观视角，镜头就是"我"的眼睛，能看到自己的手部动作，画面随手部自然晃动。',
+    pitfalls: ['第一人称要看到"自己的手"才有代入感，提示词里点明'],
+  },
+
+  // ── 焦点（focus）新增类别 ───────────────────────────
+  {
+    id: 'focus-shallow-dof',
+    title: '浅景深',
+    category: 'focus',
+    modes: ['t2v', 'i2v'],
+    durationHint: '任意',
+    skeleton:
+      '浅景深，主体清晰锐利，背景大幅虚化成柔和的色块，画面有明显的虚实层次。',
+    pitfalls: ['浅景深里主体要够大，否则虚化会吃掉主体'],
+  },
+  {
+    id: 'focus-deep-dof',
+    title: '深景深',
+    category: 'focus',
+    modes: ['t2v'],
+    durationHint: '任意',
+    skeleton:
+      '深景深，前景到背景全部清晰，画面信息量大，每个层次的细节都可辨认。',
+    pitfalls: ['深景深容易显得"平"，靠构图与光影引导视线'],
+  },
+  {
+    id: 'focus-rack',
+    title: '焦点转移',
+    category: 'focus',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '焦点从前景主体平滑转移到背景主体，前景逐渐虚化、背景逐渐清晰，视线被引导到新的焦点上。',
+    pitfalls: ['两个主体要有明确的前后关系，否则焦点转移看不出方向'],
+  },
+  {
+    id: 'focus-bokeh',
+    title: '光斑虚化',
+    category: 'focus',
+    modes: ['t2v', 'i2v'],
+    durationHint: '5s',
+    skeleton:
+      '背景的点光源虚化成圆形光斑，主体清晰，光斑在背景里闪烁浮动，画面梦幻。',
+    pitfalls: ['光斑需要背景里有点光源（灯/烛光），否则虚化不出光斑'],
+  },
+  {
+    id: 'focus-selective',
+    title: '选择性对焦',
+    category: 'focus',
+    modes: ['t2v', 'i2v'],
+    durationHint: '任意',
+    skeleton:
+      '只有画面中的某一局部清晰，其余部分全部虚化，观众的视线被强制聚焦到清晰的那一点。',
+    pitfalls: ['清晰区域要小且明确（如"只有眼睛清晰"），否则会显得是失焦'],
   },
 ];
 
