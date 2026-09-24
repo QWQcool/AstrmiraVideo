@@ -1,0 +1,101 @@
+Bundling 6%
+Bundling 12%
+Bundling 38%
+Bundling 65%
+Bundling 71%
+Bundling 76%
+Bundling 81%
+Bundling 86%
+Bundling 91%
+Bundling 98%
+Bundling 100%
+Copying public dir 11 MB
+Copying public dir 21.8 MB
+Copying public dir 32.7 MB
+Copying public dir 43.4 MB
+Copying public dir 54.3 MB
+Copying public dir 65.2 MB
+Copying public dir 75.8 MB
+Copying public dir 83.7 MB
+Getting composition
+[90mComposition          ProtoOffthread[39m
+[90mCodec                h264[39m
+[90mOutput               out/offthread.mp4[39m
+[90mConcurrency          2x[39m
+Rendered 0/72
+Rendered 1/72, time remaining: 37s
+Rendered 2/72, time remaining: 18s
+Rendered 3/72, time remaining: 14s
+Rendered 4/72, time remaining: 11s
+Rendered 5/72, time remaining: 10s
+Rendered 6/72, time remaining: 8s
+Rendered 7/72, time remaining: 8s
+Rendered 8/72, time remaining: 7s
+Rendered 9/72, time remaining: 6s
+Rendered 10/72, time remaining: 6s
+Rendered 11/72, time remaining: 5s
+Rendered 12/72, time remaining: 5s
+Rendered 13/72, time remaining: 5s
+Rendered 14/72, time remaining: 4s
+Rendered 15/72, time remaining: 4s
+Rendered 16/72, time remaining: 4s
+Rendered 17/72, time remaining: 4s
+Rendered 18/72, time remaining: 3s
+Rendered 19/72, time remaining: 3s
+Rendered 20/72, time remaining: 3s
+Rendered 21/72, time remaining: 3s
+Rendered 22/72, time remaining: 3s
+Rendered 23/72, time remaining: 3s
+Rendered 24/72, time remaining: 3s
+Rendered 25/72, time remaining: 3s
+Rendered 26/72, time remaining: 2s
+Rendered 27/72, time remaining: 2s
+Rendered 28/72, time remaining: 2s
+Rendered 29/72, time remaining: 2s
+Rendered 30/72, time remaining: 2s
+Rendered 31/72, time remaining: 2s
+Rendered 32/72, time remaining: 2s
+Rendered 33/72, time remaining: 2s
+Rendered 34/72, time remaining: 2s
+Rendered 35/72, time remaining: 2s
+Rendered 36/72, time remaining: 2s
+Rendered 37/72, time remaining: 2s
+Rendered 38/72, time remaining: 2s
+Rendered 39/72, time remaining: 1s
+Rendered 40/72, time remaining: 1s
+Rendered 41/72, time remaining: 1s
+Rendered 42/72, time remaining: 1s
+Rendered 43/72, time remaining: 1s
+Rendered 44/72, time remaining: 1s
+Rendered 45/72, time remaining: 1s
+Rendered 46/72, time remaining: 1s
+Rendered 47/72, time remaining: 1s
+Rendered 48/72, time remaining: 1s
+Rendered 49/72, time remaining: 1s
+Rendered 50/72, time remaining: 1s
+Rendered 51/72, time remaining: 1s
+Rendered 52/72, time remaining: 1s
+Rendered 53/72, time remaining: 1s
+Rendered 54/72, time remaining: 1s
+Rendered 55/72, time remaining: 0s
+Rendered 56/72, time remaining: 0s
+Rendered 57/72, time remaining: 0s
+Rendered 58/72, time remaining: 0s
+Rendered 59/72, time remaining: 0s
+Rendered 60/72, time remaining: 0s
+Rendered 61/72, time remaining: 0s
+Rendered 62/72, time remaining: 0s
+Rendered 63/72, time remaining: 0s
+Rendered 64/72, time remaining: 0s
+Rendered 65/72, time remaining: 0s
+Rendered 66/72, time remaining: 0s
+Rendered 67/72, time remaining: 0s
+Rendered 68/72, time remaining: 0s
+Rendered 69/72, time remaining: 0s
+Rendered 70/72, time remaining: 0s
+Rendered 71/72, time remaining: 0s
+Rendered 72/72
+Encoded 38/72
+Encoded 58/72
+Encoded 72/72
+[34m+                    out/offthread.mp4[39m [90m2.1 MB[39m
