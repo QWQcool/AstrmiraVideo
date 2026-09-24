@@ -90,6 +90,7 @@ export function EditView() {
   const sourceId = route.query.get('task');
 
   const [history, setHistory] = useState<TaskProgress[]>([]);
+  const [edlHistory, setEdlHistory] = useState<TaskProgress[]>([]);
   const [operations, setOperations] = useState<EditOperation[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,12 +99,17 @@ export function EditView() {
 
   const reload = useCallback(async (): Promise<void> => {
     try {
-      const data = await fetchHistory();
-      setHistory(data.items);
+      // V9 修复：剪辑产物不进历史成片 —— 生成产物（源片 + 拼接素材）与剪辑历史分开查
+      const [main, edits] = await Promise.all([
+        fetchHistory(),
+        sourceId === null ? Promise.resolve(null) : fetchHistory({ kind: 'edit', source: sourceId }),
+      ]);
+      setHistory(main.items);
+      setEdlHistory(edits === null ? [] : edits.items);
     } catch (caught) {
       setError(describeError(caught));
     }
-  }, []);
+  }, [sourceId]);
 
   useEffect(() => {
     void reload();
@@ -117,12 +123,6 @@ export function EditView() {
 
   const source = useMemo(
     () => history.find((item) => item.taskId === sourceId) ?? null,
-    [history, sourceId],
-  );
-
-  /** 该源片的剪辑历史（`origin.sourceTaskId` 指向它） */
-  const edlHistory = useMemo(
-    () => history.filter((item) => item.origin?.kind === 'edit' && item.origin.sourceTaskId === sourceId),
     [history, sourceId],
   );
 

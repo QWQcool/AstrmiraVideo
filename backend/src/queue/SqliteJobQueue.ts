@@ -10,8 +10,39 @@ import type { JobQueue, QueueJob, TaskProgressUpdate } from './JobQueue.js';
  * 1. `claim` 必须排除 `uncertain` / 终态任务（由 TaskStore.claimOne 的 SQL 条件保证）；
  * 2. `requeue` 仅允许**尚未提交上游**的任务（凭 `upstreamTaskId` 判定）。
  */
+/**
+ * 任务终态事件（V9 修复：剪辑失败不进操作日志的缺口）。
+ *
+ * 为什么加它：`POST /api/edits` 返回 200 只代表"任务入队成功"，**执行是异步的** ——
+ * 终态（complete / fail / uncertain）不产生新的 HTTP 请求，于是操作日志里无迹可查
+ * （用户在剪辑台看到失败，翻日志却全是 200）。这里把终态作为**事件**抛给调用方
+ * （`index.ts` 注入写 `EventLogStore`），让"任务跑完了 / 跑砸了 / 结果待核对"在日志里可见。
+ */
+export interface TaskTerminalEvent {
+  taskId: string;
+  action: 'task.complete' | 'task.fail' | 'task.uncertain';
+  provider: string;
+  /** 剪辑任务 = 'edit'（由 edit_script 列派生）；缺省 = 生成任务 */
+  kind?: 'edit';
+  errorCode?: string;
+  disposition?: string;
+  message?: string;
+}
+
 export class SqliteJobQueue implements JobQueue {
-  constructor(private readonly store: TaskStore) {}
+  constructor(
+    private readonly store: TaskStore,
+    private readonly onTaskTerminal?: (event: TaskTerminalEvent) => void,
+  ) {}
+
+  /** 终态上报：失败不抛（日志丢了不该让任务状态也丢） */
+  private emitTerminal(event: TaskTerminalEvent): void {
+    try {
+      this.onTaskTerminal?.(event);
+    } catch {
+      /* 日志写失败不改变任务终态 */
+    }
+  }
 
   async submit(job: QueueJob): Promise<{ taskId: string }> {
     const existing = this.store.findTaskIdByIdempotencyKey(job.idempotencyKey);
@@ -74,6 +105,7 @@ export class SqliteJobQueue implements JobQueue {
     taskId: string,
     output: { videoUrl: string; thumbnailUrl?: string; message?: string },
   ): Promise<void> {
+    const before = this.store.get(taskId);
     this.store.update(taskId, {
       status: 'succeeded',
       progressPercent: 100,
@@ -85,18 +117,40 @@ export class SqliteJobQueue implements JobQueue {
       // 那会让界面出现"succeeded + 上游生成中"的矛盾组合。
       message: output.message ?? '生成完成',
     });
+    if (before !== null) {
+      this.emitTerminal({
+        taskId,
+        action: 'task.complete',
+        provider: before.provider,
+        ...(before.editScript === undefined ? {} : { kind: 'edit' }),
+        ...(output.message === undefined ? {} : { message: output.message }),
+      });
+    }
   }
 
   async fail(taskId: string, error: TaskProgress['error']): Promise<void> {
+    const before = this.store.get(taskId);
+    const finalError = error ?? {
+      code: 'UPSTREAM_ERROR',
+      message: '未知失败（provider 未给出错误详情）',
+      disposition: 'retryable' as const,
+    };
     this.store.update(taskId, {
       status: 'failed',
       submitting: false,
-      error: error ?? {
-        code: 'UPSTREAM_ERROR',
-        message: '未知失败（provider 未给出错误详情）',
-        disposition: 'retryable',
-      },
+      error: finalError,
     });
+    if (before !== null) {
+      this.emitTerminal({
+        taskId,
+        action: 'task.fail',
+        provider: before.provider,
+        ...(before.editScript === undefined ? {} : { kind: 'edit' }),
+        errorCode: finalError.code,
+        disposition: finalError.disposition,
+        message: finalError.message,
+      });
+    }
   }
 
   /**
@@ -123,11 +177,23 @@ export class SqliteJobQueue implements JobQueue {
   }
 
   async markUncertain(taskId: string, error: TaskProgress['error']): Promise<void> {
+    const before = this.store.get(taskId);
     const uncertain: TaskError = {
       code: error?.code ?? 'UNCERTAIN_RESULT',
       message: error?.message ?? '结果不明：已提交上游但无法确认执行结果',
       disposition: 'uncertain',
     };
     this.store.update(taskId, { status: 'failed', error: uncertain });
+    if (before !== null) {
+      this.emitTerminal({
+        taskId,
+        action: 'task.uncertain',
+        provider: before.provider,
+        ...(before.editScript === undefined ? {} : { kind: 'edit' }),
+        errorCode: uncertain.code,
+        disposition: uncertain.disposition,
+        message: uncertain.message,
+      });
+    }
   }
 }

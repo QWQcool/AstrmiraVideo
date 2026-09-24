@@ -13,7 +13,11 @@ import { z } from 'zod';
  */
 export const LOG_ACTIONS = [
   'generate.submit',
+  'edit.submit',
   'task.cancel',
+  'task.complete',
+  'task.fail',
+  'task.uncertain',
   'history.delete',
   'upload',
   'enhance',
@@ -29,7 +33,11 @@ export type LogAction = (typeof LOG_ACTIONS)[number];
 /** 中文标签（界面展示；后端只存 id，避免中文进库后改文案要迁数据） */
 export const LOG_ACTION_LABELS: Record<string, string> = {
   'generate.submit': '提交生成',
+  'edit.submit': '提交剪辑',
   'task.cancel': '取消任务',
+  'task.complete': '任务完成',
+  'task.fail': '任务失败',
+  'task.uncertain': '结果待核对',
   'history.delete': '删除历史',
   upload: '上传素材',
   enhance: '提示词扩写',

@@ -41,6 +41,7 @@ export function describeAction(method: string, path: string): string | undefined
 
   if (method === 'POST') {
     if (clean === '/api/generate') return 'generate.submit';
+    if (clean === '/api/edits') return 'edit.submit';
     if (clean === '/api/upload') return 'upload';
     if (clean === '/api/prompt/enhance') return 'enhance';
     if (clean === '/api/providers/keys/verify') return 'keys.verify';

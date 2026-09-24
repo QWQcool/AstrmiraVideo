@@ -160,7 +160,26 @@ export async function buildApp() {
   const db = openDatabase();
   const store = new TaskStore(db);
   const eventLog = new EventLogStore(db);
-  const queue = new SqliteJobQueue(store);
+  // V9 修复：任务终态（complete / fail / uncertain）也进操作日志 —— 否则异步任务的失败
+  // 不产生新的 HTTP 请求，操作日志里无迹可查（剪辑失败但日志全是 200 的缺口）。
+  const queue = new SqliteJobQueue(store, (event) => {
+    eventLog.append({
+      ts: Date.now(),
+      method: 'TASK',
+      path: `/api/tasks/${event.taskId}`,
+      action: event.action,
+      ...(event.action === 'task.complete' ? { statusCode: 200 } : {}),
+      ...(event.action === 'task.fail' ? { statusCode: 500 } : {}),
+      taskId: event.taskId,
+      provider: event.provider,
+      ...(event.errorCode === undefined ? {} : { errorCode: event.errorCode }),
+      ...(event.disposition === undefined ? {} : { disposition: event.disposition }),
+      detail: {
+        ...(event.kind === undefined ? {} : { kind: event.kind }),
+        ...(event.message === undefined ? {} : { message: event.message }),
+      },
+    });
+  });
   // 防线 5：60s 防抖冷却（键的构成见 security/rateLimit.ts）
   const cooldown = new CooldownStore(db);
 

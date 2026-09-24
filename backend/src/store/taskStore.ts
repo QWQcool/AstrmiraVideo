@@ -203,10 +203,31 @@ export class TaskStore {
       });
   }
 
-  /** 历史画廊：最近 N 条（含参数快照，供一键回填） */
-  listRecent(limit = 50): TaskRecord[] {
+  /**
+   * 历史画廊：最近 N 条（含参数快照，供一键回填）。
+   *
+   * V9 修复（用户 2026-09-24 拍板）：**剪辑产物默认不进历史成片** —— 它们复用源片的
+   * requestSnapshot（提示词与源片相同），混在画廊里看起来像"重复记录"。
+   *
+   * - 默认（无 filter）：只返回**生成产物**（`edit_script IS NULL`）；
+   * - `filter = { kind: 'edit', sourceTaskId }`：返回某源片的剪辑产物（剪辑台的
+   *   「本片剪辑历史」用它 —— 剪辑产物仍然可查可删，只是不混在生成历史里）。
+   */
+  listRecent(limit = 50, filter?: { kind: 'edit'; sourceTaskId: string }): TaskRecord[] {
+    if (filter !== undefined) {
+      const rows = this.db
+        .prepare(
+          `SELECT * FROM tasks
+            WHERE edit_script IS NOT NULL
+              AND json_extract(edit_script, '$.sourceTaskId') = ?
+            ORDER BY created_at DESC LIMIT ?`,
+        )
+        .all(filter.sourceTaskId, limit) as TaskRow[];
+      return rows.map(rowToRecord);
+    }
+
     const rows = this.db
-      .prepare('SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?')
+      .prepare('SELECT * FROM tasks WHERE edit_script IS NULL ORDER BY created_at DESC LIMIT ?')
       .all(limit) as TaskRow[];
     return rows.map(rowToRecord);
   }

@@ -279,8 +279,11 @@ export function clearLogs(query: LogQuery = {}): Promise<LogDeleteResponse> {
   return request(`/api/logs${suffix}`, LogDeleteResponseSchema, { method: 'DELETE' });
 }
 
-export function fetchHistory(): Promise<HistoryResponse> {
-  return request('/api/history', HistoryResponseSchema);
+export function fetchHistory(filter?: { kind: 'edit'; source: string }): Promise<HistoryResponse> {
+  // V9 修复：剪辑产物默认不进历史成片；剪辑台用 `?kind=edit&source=<id>` 查某源片的剪辑历史
+  const suffix =
+    filter === undefined ? '' : `?kind=edit&source=${encodeURIComponent(filter.source)}`;
+  return request(`/api/history${suffix}`, HistoryResponseSchema);
 }
 
 export function deleteHistory(taskId: string): Promise<OperationResult> {

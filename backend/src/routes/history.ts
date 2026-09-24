@@ -16,6 +16,16 @@ import { toTaskProgress, type TaskStore } from '../store/taskStore.js';
 
 const TaskIdParamsSchema = z.object({ taskId: z.string() });
 
+/**
+ * `GET /api/history` 的可选查询参数（V9 修复：剪辑产物默认不进历史成片）。
+ * - 缺省：只返回**生成产物**；
+ * - `?kind=edit&source=<taskId>`：返回某源片的剪辑产物（剪辑台的「本片剪辑历史」用它）。
+ */
+const HistoryQuerySchema = z.object({
+  kind: z.literal('edit').optional(),
+  source: z.string().optional(),
+});
+
 /** 快照里被引用的参考资产 id（首帧 / 尾帧 / 参考视频三格） */
 function referencedAssetIds(snapshot: { assets?: Record<string, string | undefined> }): string[] {
   const assets = snapshot.assets;
@@ -60,11 +70,17 @@ export const createHistoryRoutes =
     app.get(
       '/api/history',
       {
-        schema: { response: { 200: HistoryResponseSchema } },
+        schema: { querystring: HistoryQuerySchema, response: { 200: HistoryResponseSchema } },
       },
-      async () => {
+      async (request) => {
         const outputsDir = deps.outputsDir ?? resolveOutputsDir();
-        const records = deps.store.listRecent(50).map(toTaskProgress);
+        // V9 修复：`?kind=edit&source=<id>` 查剪辑产物（剪辑台用）；缺省只返回生成产物。
+        const { kind, source } = request.query;
+        const records = (
+          kind === 'edit' && source !== undefined
+            ? deps.store.listRecent(50, { kind: 'edit', sourceTaskId: source })
+            : deps.store.listRecent(50)
+        ).map(toTaskProgress);
 
         // V2.3（CONTRACT §4/§5）：逐条补成片体积（stat）+ 目录级聚合（扫 outputs/）。
         // 两者都是**只读**，并发跑；任何一项失败都在 storageUsage 内部降级，不让接口 500。
