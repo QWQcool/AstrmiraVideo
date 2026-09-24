@@ -5,6 +5,7 @@ import { ApiError, fetchHistory, resolveMediaUrl } from '../lib/api';
 import { navigate, useHashRoute } from '../lib/router';
 import { formatBytes, formatRelativeTime } from '../lib/overviewStats';
 import { DEFAULT_PROJECT_FPS, createProjectFromSource } from '../edit/model';
+import { ExportPanel } from '../edit/ExportPanel';
 import { probeVideoMeta } from '../edit/mediaProbe';
 import { togglePlayback } from '../edit/playerRef';
 import { EditStore } from '../edit/store';
@@ -198,9 +199,11 @@ export function EditView() {
         </div>
 
         <aside className="ed-side">
+          {store === null ? null : <ExportPanel store={store} sourceTaskId={sourceId} />}
+
           <section className="wb-panel ed-side-panel">
             <div className="wb-field-head">
-              <Eyebrow index={1} tone="gold" as="h2">
+              <Eyebrow index={2} tone="gold" as="h2">
                 源片
               </Eyebrow>
               <span className="wb-note">
@@ -216,7 +219,7 @@ export function EditView() {
 
           <section className="wb-panel ed-side-panel">
             <div className="wb-field-head">
-              <Eyebrow index={2} tone="gold" as="h2">
+              <Eyebrow index={3} tone="gold" as="h2">
                 本片剪辑历史
               </Eyebrow>
             </div>

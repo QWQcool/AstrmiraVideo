@@ -1,0 +1,39 @@
+diff --git a/dist/esm/index.mjs b/dist/esm/index.mjs
+index 3cee5d93b4cfba5e5f308327bb49fdc7a719a795..6a47b53ef95938bf84cf1e52bcc66ab9c732cca5 100644
+--- a/dist/esm/index.mjs
++++ b/dist/esm/index.mjs
+@@ -1337,29 +1337,11 @@ var LicensingInternals = {
+ 
+ // src/send-telemetry-event.ts
+ import { Internals as Internals4 } from "remotion";
+-var sendUsageEvent = async ({
+-  licenseKey,
+-  succeeded,
+-  apiName,
+-  isStill,
+-  isProduction
+-}) => {
+-  const host = typeof window === "undefined" ? null : typeof window.location === "undefined" ? null : window.location.origin ?? null;
+-  if (host === null) {
+-    return;
+-  }
+-  if (licenseKey === null) {
+-    Internals4.Log.warn({ logLevel: "warn", tag: "web-renderer" }, `Pass "licenseKey" to ${apiName}(). If you qualify for the Free License (https://remotion.dev/license), pass "free-license" instead.`);
+-  }
+-  await LicensingInternals.internalRegisterUsageEvent({
+-    licenseKey: licenseKey === "free-license" ? null : licenseKey,
+-    event: "web-render",
+-    host,
+-    succeeded,
+-    isStill,
+-    isProduction
+-  });
+-};
++var sendUsageEvent = async () => Promise.resolve(undefined);
++// [astrmira] 遥测已短路为 no-op（pnpm patchedDependencies，见 docs/UPSTREAM.md #13）：
++// 原实现会把终端用户 IP + 站点域名 POST 到 remotion.pro 做许可审计。
++// 合规边界：本项目符合 Remotion 免费资格、删遥测版本仅自用不分发；
++// 开源时须移除本补丁（还原遥测），商业化时须申请 Remotion 商业许可。
+ 
+ // src/take-screenshot.ts
+ import { Internals as Internals8 } from "remotion";

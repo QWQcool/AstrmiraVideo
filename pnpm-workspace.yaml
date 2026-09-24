@@ -1,8 +1,11 @@
 packages:
-  - 'backend'
-  - 'frontend'
-  - 'packages/*'
+  - backend
+  - frontend
+  - packages/*
+
 allowBuilds:
-  esbuild: true
-  # 原生模块：better-sqlite3 需要 postinstall 下载 / 编译二进制，否则 require 直接失败
   better-sqlite3: true
+  esbuild: true
+
+patchedDependencies:
+  '@remotion/web-renderer@4.0.484': patches/@remotion__web-renderer@4.0.484.patch

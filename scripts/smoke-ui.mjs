@@ -33,14 +33,51 @@
  *
  * 用法：`pnpm smoke:ui`（可选 `--headed` 观察浏览器、`--keep` 保留临时目录）
  */
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { promisify } from 'node:util';
 import { chromium } from 'playwright';
+
+const execFileAsync = promisify(execFile);
+
+/** ffprobe 一个文件 / http 地址 → JSON（流与容器信息） */
+async function ffprobeJson(target) {
+  const { stdout } = await execFileAsync('ffprobe', [
+    '-v',
+    'error',
+    '-show_streams',
+    '-show_format',
+    '-of',
+    'json',
+    target,
+  ]);
+  return JSON.parse(stdout);
+}
+
+/**
+ * 取某时刻的一帧，返回亮度标准差：≈0 = 纯色/黑屏，画面越花越大。
+ * 用途：证明导出产物里**真的有画面内容**（而不是一个只有头的空容器）。
+ */
+async function frameLumaStdDev(file, atSec) {
+  const { stdout } = await execFileAsync(
+    'ffmpeg',
+    ['-v', 'error', '-ss', String(atSec), '-i', file, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'gray', 'pipe:1'],
+    { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 },
+  );
+  const bytes = stdout;
+  if (bytes.length === 0) return 0;
+  let sum = 0;
+  for (const value of bytes) sum += value;
+  const mean = sum / bytes.length;
+  let variance = 0;
+  for (const value of bytes) variance += (value - mean) ** 2;
+  return Math.sqrt(variance / bytes.length);
+}
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BACKEND_ENTRY = path.join(ROOT, 'backend', 'dist', 'index.js');
@@ -835,6 +872,64 @@ try {
   await page.waitForSelector('.ed-timeline .ed-clip', { timeout: 15_000 });
   const historyCount = await page.locator('.edit-history li').count();
   assert(historyCount >= 1, `本片剪辑历史可见（${historyCount} 条）`);
+
+  console.log('\n[6f] 剪辑台导出（B34 · P2：浏览器端 web-renderer 真渲染出一个 MP4）');
+  // 上一段刚 reload 过 → 工程是初始态（源片一个 clip）；预期时长 = 内容精确结束帧
+  // （导出不含预览的 1s 编辑余量 —— 这是 exportDurationFrames 的刻意口径）
+  const sizeText = await page.locator('.ed-transport-size').innerText();
+  const projectFps = Number(sizeText.match(/(\d+)\s*fps/)?.[1] ?? 30);
+  const exportFrames = await page.evaluate(() => {
+    const clip = document.querySelector('.ed-timeline .ed-clip');
+    const start = Number(clip?.getAttribute('data-start-frame') ?? 0);
+    const dur = Number(clip?.getAttribute('data-duration-frames') ?? 0);
+    return { contentEnd: start + dur };
+  });
+  const expectedSec = exportFrames.contentEnd / projectFps;
+  note(`导出预期：${expectedSec.toFixed(3)}s（${exportFrames.contentEnd} 帧 @${projectFps}fps）`);
+
+  await page.getByRole('button', { name: /导出成片/ }).click();
+  await page.waitForSelector('.ed-export-result a[download]', { timeout: 120_000 });
+  note(`导出面板结果：${await page.locator('.ed-export-result .wb-note').first().innerText()}`);
+
+  const exportDownloadPromise = page.waitForEvent('download', { timeout: 30_000 });
+  await page.locator('.ed-export-result a[download]').click();
+  const exportDownload = await exportDownloadPromise;
+  const EXPORT_DIR = mkdtempSync(path.join(tmpdir(), 'astrmira-smoke-export-'));
+  const exportPath = path.join(EXPORT_DIR, 'browser-export.mp4');
+  await exportDownload.saveAs(exportPath);
+  if (KEEP) note(`导出产物保留：${exportPath}`);
+
+  const exportProbe = await ffprobeJson(exportPath);
+  const videoStream = exportProbe.streams.find((stream) => stream.codec_type === 'video');
+  const audioStream = exportProbe.streams.find((stream) => stream.codec_type === 'audio');
+  const durationSec = Number(exportProbe.format.duration);
+  assert(
+    videoStream !== undefined,
+    `导出产物含视频流（${videoStream?.codec_name ?? '无'}，${videoStream?.width}×${videoStream?.height}）`,
+  );
+  assert(
+    videoStream !== undefined && videoStream.r_frame_rate === `${projectFps}/1`,
+    `导出的帧率 = 工程帧率（${videoStream?.r_frame_rate ?? '无'}，期望 ${projectFps}/1）`,
+  );
+  assert(
+    Math.abs(durationSec - expectedSec) <= 0.2,
+    `导出时长 = 工程内容时长（${durationSec.toFixed(3)}s vs ${expectedSec.toFixed(3)}s，容差 0.2s）`,
+  );
+  // 音轨以**源片事实**为准（源片有声就该有声，没有就不该凭空出现）
+  const sourceProbe = await ffprobeJson(
+    `${baseUrl}${await page.evaluate(async (id) => {
+      const data = await (await fetch('/api/history')).json();
+      const item = (data.items ?? []).find((entry) => entry.taskId === id);
+      return item?.outputVideoUrl ?? '/api/health';
+    }, sourceTask)}`,
+  );
+  const sourceHasAudio = sourceProbe.streams.some((stream) => stream.codec_type === 'audio');
+  assert(
+    (audioStream !== undefined) === sourceHasAudio,
+    `音轨与源片一致（源片有声=${sourceHasAudio}，导出有声=${audioStream !== undefined}）`,
+  );
+  const lumaStdDev = await frameLumaStdDev(exportPath, Math.max(0.1, expectedSec / 2));
+  assert(lumaStdDev > 8, `导出画面非空白（中点帧亮度标准差 ${lumaStdDev.toFixed(1)}，纯色为 0）`);
 
   console.log('\n[7] 操作日志（V2.1，CONTRACT §10）');
   // 上面 [6] 段用界面真的提交过一条任务 → 它必须已经躺在操作日志里。
