@@ -1,6 +1,15 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.7 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.8 · 已冻结（变更需先改本文，再改代码）**
+> **V2.8 修订（2026-10-08）**：**Step 9 运维保命批（台账 B22 / B25）** —— 均为**向后兼容**的补充。
+>   ① **§5**：`POST /api/providers/keys/verify` 与 `GET /api/logs` 挂**独立限流桶**（内存突发窗口：
+>      **10 秒内 5 次 / 30 次**，429 `RATE_LIMITED` + `Retry-After`；桶口径与理由见该行 ——
+>      `keys/verify` 会向上游发真实探测请求，被刷等于拿部署者的服务器当探针）；
+>   ② **§7**：**容量淘汰（LRU）落地** —— 把此前的"暂缓"改为实现口径：阈值/目标水位/淘汰顺序/
+>      三类保护规则/只淘汰成片与缩略图（不动参考资产与任务记录）；
+>   ③ **§4**：`outputVideoUrl` / `thumbnailUrl` 补一条既成纪律的推广 —— **文件不存在时省略该字段**
+>      （与 `outputSizeBytes` 同纪律：不填一个必然 404 的 URL）；
+>   ④ **§10**：`LOG_ACTIONS` 新增 `storage.evict`（容量淘汰发生后写一条，`method: 'STORAGE'`）。
 > **V2.7 修订（2026-10-08）**：**Step 8 · P3（one-for-all 创作入口，台账 B41）的契约支撑** —— 纯新增，向后兼容。
 >   ① **§5**：新增 `GET /api/assets` —— **资产库清单**（只读）：`@` 提及素材弹层需要"以前上传过的图/视频"的枚举能力，
 >      而资产 ID 此前只存在于上传响应与任务快照里；
@@ -258,6 +267,8 @@ export interface TaskProgress {
   totalSteps?: number;
   message?: string;
   outputVideoUrl?: string;        // 成功后的视频访问直链
+                                  // V2.8：**文件不存在时省略该字段**（容量淘汰 / 手动删除后）——
+                                  // 与 `outputSizeBytes` 同纪律：不填一个必然 404 的 URL
   thumbnailUrl?: string;          // V1.9：成片首帧缩略图（同源 `/media/thumbs/<taskId>.jpg`），画廊封面用
                                   // 可选：抽帧失败 / 旧记录缺该字段时界面回落为 `<video preload="metadata">`
   warnings?: string[];            // 用户可见的非阻断告警（如"素材短于请求时长，已循环播放"、"循环素材自带音轨，已静音"）
@@ -336,8 +347,8 @@ export interface AssetListResponse {
 | `GET` | `/api/assets` | **V2.7 新增**：**资产库清单（只读）**。**200 → `AssetListResponse`（§4 末尾）**（最近 200 个，新的在前；`mime` 为**魔数嗅探事实**，与 `/api/upload` 同口径；`url` 为同源 `/media/assets/<文件>` 直链；`createdAt` = 文件 mtime）。**目录不存在**（从未上传过）→ 200 + 空数组，**不是 404**。用途：`@` 提及素材弹层（B41）与后续资产管理视图；不改变任何生命周期与清理规则（见 §7） |
 | `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage }`**（`items` 最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾）。**V2.4 起**：默认只返回**生成产物**（剪辑产物不进历史，避免提示词与源片相同造成的"重复"观感）；查询参数 `?kind=edit`：**V2.6 起 `source` 可选** —— 带 `source=<taskId>` 返回某源片的剪辑产物（剪辑台"本片剪辑历史"用）；**不带 `source` 返回全部剪辑产物**（剪辑台素材候选 / L2 血缘画布用，同样受最近 50 条上限约束） |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
-| `POST` | `/api/providers/keys/verify` | **V2.1 新增（原【规划·B2】）**：凭据与模型校验，**零费用**。请求头按轨取（视频 `X-Provider-Key` / 文本 `X-LLM-Key`）；**200 → `KeyVerifyResponse`（§9）**；未带 Key → **501 `KEY_MISSING`**；凭据被上游拒绝 → **401 `KEY_INVALID`**；上游不可达 → **502 `UPSTREAM_ERROR`** |
-| `GET` | `/api/logs` | **V2.1 新增**：操作日志查询（筛选 + 分页，见 §10）。**200 → `{ items, total }`** |
+| `POST` | `/api/providers/keys/verify` | **V2.1 新增（原【规划·B2】）**：凭据与模型校验，**零费用**。请求头按轨取（视频 `X-Provider-Key` / 文本 `X-LLM-Key`）；**200 → `KeyVerifyResponse`（§9）**；未带 Key → **501 `KEY_MISSING`**；凭据被上游拒绝 → **401 `KEY_INVALID`**；上游不可达 → **502 `UPSTREAM_ERROR`**；**V2.8 起**：独立限流桶 `verify`（同一来源 IP **10 秒内最多 5 次**，内存突发窗口）→ 429 `RATE_LIMITED` + `Retry-After`。为什么：本端点**会向上游发真实请求**（`/models` + 空 content 探针），没有限流时被刷等于把部署者的服务器当免费探针——与生成任务的 60s 冷却（防线 5）分开计桶，互不影响。**为什么是"窗口 N 次"而不是"最小间隔"**：间隔语义会误伤正常交互（连点两次"测试连接"切轨道验证），窗口语义对"人"无感、对"脚本"生效；它是底线防护，真正的防线仍是 Caddy 登录 + `PUBLIC_API_TOKEN` |
+| `GET` | `/api/logs` | **V2.1 新增**：操作日志查询（筛选 + 分页，见 §10）。**200 → `{ items, total }`**；**V2.8 起**：独立限流桶 `logs`（同一来源 IP **10 秒内最多 30 次**，内存突发窗口）→ 429 `RATE_LIMITED` + `Retry-After`。为什么：日志页挂载 + 轮询 + 连续筛选的请求量远低于该配额（正常使用**完全无感**），但脚本级高频扫描会被挡住（读接口也要有一道底线）；同样独立计桶。**两个 DELETE 刻意不挂桶**（写操作、频率天然低，避免误伤"连续手删"） |
 | `DELETE` | `/api/logs/:id` | **V2.1 新增**：删单条日志。**200 → `{ ok, deleted }`**（删除不存在的条目**不是错误**：DELETE 幂等，`deleted: 0`） |
 | `DELETE` | `/api/logs` | **V2.1 新增**：按当前筛选清空日志（不带筛选即全清）。**200 → `{ ok, deleted }`** |
 | `POST` | `/api/edits` | **V2.2【规划】→ V9 · B9 已实现（V2.5 起降为 API-only，UI 不再暴露）**：基础剪辑 EDL（本地 ffmpeg，**零上游调用**、**不走防线 5 冷却**）。**200 → `{ taskId }`**（复用 §4 的 `GET /api/tasks/:taskId` 轮询与画廊；任务走 `local` 轨 = 本地互斥 1）；操作序列非法（含 `endSec ≤ startSec`、连续两次拼接、转场未跟在拼接之后）→ **400 `INVALID_REQUEST`**；源任务不存在 / 无成片 / 拼接素材不可用 → **404 `TASK_NOT_FOUND`**；ffmpeg 缺失 → **503 `PROVIDER_UNAVAILABLE`**。完整契约见 §11-3 |
@@ -403,8 +414,8 @@ export type ErrorDisposition =
 | 幂等键 → taskId 映射 | SQLite（同上） | 持久；同一键重复提交返回同一任务（§5） |
 | 任务告警 `warnings[]` | SQLite（同上） | 随任务记录持久化，画廊 / 结果卡展示（V1.4 §4）；**仅写服务端日志不算告警** |
 | `submitting` 提交标记 | SQLite（同上） | 提交前写入、成功后写回上游 taskId；重启后据此判定是否已提交（§5，防线 7 前提） |
-| 成片 MP4 | `outputs/`（已入 .gitignore） | **前端一键删除释放磁盘**（`DELETE /api/history/:taskId`）；容量淘汰（LRU）**暂缓**，见 PLAN §9-B22 |
-| 浏览器端渲染产物（V2.5） | `outputs/<taskId>.mp4`（与生成成片同目录）+ 多轨工程 JSON 落 `tasks.edit_origin` 列 | 上传即终态（`status:'succeeded'`，无异步流程）；删除规则与生成成片**完全一致**（`DELETE /api/history/:taskId` 物理删除，工程 JSON 随记录一起删） |
+| 成片 MP4 | `outputs/`（已入 .gitignore） | **前端一键删除释放磁盘**（`DELETE /api/history/:taskId`）；**V2.8 起容量淘汰（LRU）已落地**，见下一行 |
+| **容量淘汰（V2.8 落地，台账 B22）** | 后台扫描 `outputs/`（`server/storageEvict.ts`，默认每 5 分钟一次 + 启动时一次） | **触发**：`totalBytes`（成片 + 缩略图 + 参考资产）超过 `OUTPUTS_MAX_BYTES`（默认 4GiB，env 可调）；**目标水位**：淘汰到 `OUTPUTS_TARGET_RATIO`（默认 0.8）以下即停。**淘汰顺序**：最旧的**已成功**任务先淘汰（只删 `outputs/<taskId>.mp4` 与 `outputs/thumbs/<taskId>.jpg` 两个文件，**保留任务记录**——画廊显示"成片已清理"、血缘画布显示 ghost，历史与血缘不因此断裂）。**三类保护规则**：① `queued/running/submitting` 的任务不淘汰（正在用）；② 被其它任务以 `task:<taskId>` 引用当参考的成片不淘汰（否则"参数一键回填"再提交会 404）；③ **参考资产（`outputs/assets/`）不参与容量淘汰**（体积小且属用户数据，只在任务删除时按既有保护规则清理）。每次淘汰后写一条 `storage.evict` 操作日志（§10） |
 | 成片缩略图（V1.9） | `outputs/thumbs/<taskId>.jpg` | 成功出片后由调度器抽首帧生成（宽度 480，`/media/thumbs/...` 直链）；**尽力而为**：抽帧失败只记日志，任务仍为 `succeeded`；随任务删除一并物理删除 |
 | 上传的参考资产 | `outputs/assets/<assetId>.<jpg\|png>` | 关联任务删除时一并清理（`DELETE /api/history/:taskId`）；**保护规则**：若该 `assetId` 仍被其它任务引用（「参数一键回填」会复用资产），则只删任务、保留资产 —— 否则会毁掉另一条任务的参考图。扩展名由防线 4 的清洗结果决定，因此按 `<assetId>.` 前缀匹配删除。**V2.7**：可由 `GET /api/assets` **只读列举**（含抽帧产物——它与上传资产同目录同规则）；列举不改变上述任何清理规则 |
 | 中间帧 / 临时音频 | host 轨：`outputs/.tmp/<taskId>/`；client 轨（【规划】，PLAN §6-D26）：落在用户机器、由 worker 清理 | 合成结束立即物理删除（防线 3）；client 轨须回报 `tmpCleaned` 并写入 `warnings[]`，服务端无法强制验证该事实 |
@@ -483,6 +494,10 @@ export interface KeyVerifyResponse {
 - **记（V2.4 新增）**：**任务终态**（`task.complete` / `task.fail` / `task.uncertain`）—— 它不是 HTTP 请求，而是 `SqliteJobQueue` 在任务到达终态时写入（`method: 'TASK'`、`path: /api/tasks/<taskId>`，剪辑任务带 `detail.kind: 'edit'`）。为什么：异步任务的失败原本不产生 HTTP 请求，日志里无迹可查（剪辑失败但日志全是 200 的缺口）；
 - **不记**：`/media/*`（一次播放几十条 Range）、`/api/health`（探活）、`/api/logs*`（日志页自身轮询，否则自我增殖）、`OPTIONS` 预检、以及**成功**的读请求（任务进度每 2s 轮询一次，记下来会把日志淹掉）。
 - **动作清单补登（V2.5）**：`edit.render`（`POST /api/edits/renders` —— 浏览器端渲染产物入库；它是写操作，按上面的规则本来就会记，这里显式登记动作 id 以便日志页筛选）。
+- **动作清单补登（V2.8）**：`storage.evict`（**容量淘汰**，台账 B22）—— 它不是 HTTP 请求，而是后台扫描
+  真正删了文件之后写一条（`method: 'STORAGE'`、`path: /api/storage/evict`、`detail` 含释放字节数与被淘汰的
+  taskId 列表截断）。为什么必须记：文件是**被系统删掉的**，用户"片子怎么没了"时日志里必须有据可查；
+  没淘汰则不写（噪声纪律：无事发生就不要留痕）。
 
 **字段**：
 

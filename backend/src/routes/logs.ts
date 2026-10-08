@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
-import { LogDeleteResponseSchema, LogListResponseSchema, LogQuerySchema } from '@astrmira/shared';
+import {
+  ErrorResponseSchema,
+  LogDeleteResponseSchema,
+  LogListResponseSchema,
+  LogQuerySchema,
+} from '@astrmira/shared';
+import { createErrorResponse } from '../errors.js';
+import { rateLimitKey, resolveClientIp, type BurstLimiter } from '../security/rateLimit.js';
 import type { EventLogFilter, EventLogStore } from '../store/eventLog.js';
 
 /**
@@ -20,6 +27,12 @@ import type { EventLogFilter, EventLogStore } from '../store/eventLog.js';
  */
 export interface LogRoutesDeps {
   store: EventLogStore;
+  /**
+   * V2.8（台账 B25）：**读接口的独立限流桶**（`logs`，10s 内最多 30 次/IP）。
+   * 只挂在 `GET /api/logs` 上：界面自身的挂载 + 轮询 + 连续交互远低于这个配额（正常使用完全无感），
+   * 脚本级高频扫描会被挡住；两个 DELETE 是写操作且频率天然低，不挂桶（避免误伤连续手删）。
+   */
+  limiter?: BurstLimiter;
 }
 
 /** 路径参数：`z.coerce` 让 `"12"` 也能通过（HTTP 路径参数天然是字符串） */
@@ -46,10 +59,29 @@ export const createLogRoutes =
       {
         schema: {
           querystring: LogQuerySchema,
-          response: { 200: LogListResponseSchema },
+          response: { 200: LogListResponseSchema, 429: ErrorResponseSchema },
         },
       },
-      async (request) => deps.store.list(toFilter(request.query)),
+      async (request, reply) => {
+        // V2.8（B25）：10s / 30 次的独立桶 —— 挡脚本级扫描，界面自身的轮询与连续交互无感
+        if (deps.limiter !== undefined) {
+          const decision = deps.limiter.take(rateLimitKey({ ip: resolveClientIp(request) }));
+          if (!decision.allowed) {
+            const retryAfterSec = Math.max(1, Math.ceil(decision.retryAfterMs / 1000));
+            return reply
+              .code(429)
+              .header('retry-after', String(retryAfterSec))
+              .send(
+                createErrorResponse(
+                  'RATE_LIMITED',
+                  `日志查询过于频繁（本端点限 10 秒 30 次），请 ${retryAfterSec} 秒后重试`,
+                ),
+              );
+          }
+        }
+
+        return deps.store.list(toFilter(request.query));
+      },
     );
 
     app.delete(

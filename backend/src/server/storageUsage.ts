@@ -1,6 +1,7 @@
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { StorageUsage, TaskProgress } from '@astrmira/shared';
+import { THUMBNAIL_DIR_NAME } from '../pipeline/thumbnail.js';
 
 /**
  * 输出目录的**目录级聚合**（CONTRACT §4 末尾，V2.3）。
@@ -61,21 +62,52 @@ export async function readStorageUsage(outputsDir: string): Promise<StorageUsage
   };
 }
 
-/**
- * 给单条任务补上成片体积（`TaskProgress.outputSizeBytes`，CONTRACT §4 V2.3）。
- *
- * 契约口径：**文件已清理时省略该字段**（不填 0 —— 0 会被读成"空文件"，那是在撒谎）。
- * `toTaskProgress` 保持纯映射（零 IO），补体积这件事在路由层显式做一次。
- */
-export async function withOutputSize(task: TaskProgress, outputsDir: string): Promise<TaskProgress> {
-  const url = task.outputVideoUrl;
-  if (url === undefined || url === '') return task;
-
+async function sizeIfFile(file: string): Promise<number | null> {
   try {
-    const info = await stat(path.join(outputsDir, path.basename(url)));
-    if (!info.isFile()) return task;
-    return { ...task, outputSizeBytes: info.size };
+    const info = await stat(file);
+    return info.isFile() ? info.size : null;
   } catch {
-    return task;
+    return null;
   }
+}
+
+/**
+ * 给单条任务补上**落盘事实**（CONTRACT §4，V2.3 补体积 / V2.8 补"文件不存在"）：
+ *
+ * - 成片文件在 → `outputSizeBytes`（契约：**文件已清理时省略该字段**，不填 0——0 会被读成"空文件"）；
+ * - 成片文件不在（容量淘汰 / 手动删过文件）→ **省略 `outputVideoUrl`**：给一个必然 404 的直链是撒谎，
+ *   前端据"没有直链"渲染成"成片已清理"（V2.8，台账 B22 的一半）；
+ * - 缩略图同理（文件不在 → 省略 `thumbnailUrl`，界面回落为无封面，而不是一张碎图）。
+ *
+ * `toTaskProgress` 保持纯映射（零 IO），这两件事在路由层显式做一次——调用点 = history 与 tasks 两条查询。
+ */
+export async function withOutputFileFacts(
+  task: TaskProgress,
+  outputsDir: string,
+): Promise<TaskProgress> {
+  let next = task;
+
+  const url = task.outputVideoUrl;
+  if (url !== undefined && url !== '') {
+    const size = await sizeIfFile(path.join(outputsDir, path.basename(url)));
+    if (size === null) {
+      next = { ...next };
+      delete next.outputVideoUrl;
+    } else {
+      next = { ...next, outputSizeBytes: size };
+    }
+  }
+
+  const thumb = next.thumbnailUrl;
+  if (thumb !== undefined && thumb !== '') {
+    const size = await sizeIfFile(
+      path.join(outputsDir, THUMBNAIL_DIR_NAME, `${next.taskId}.jpg`),
+    );
+    if (size === null) {
+      next = { ...next };
+      delete next.thumbnailUrl;
+    }
+  }
+
+  return next;
 }

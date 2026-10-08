@@ -21,6 +21,10 @@ pnpm install
 pnpm dev               # 并行拉起 backend + frontend
 ```
 
+> **Node 版本（V8.10 / 台账 B18 收口）**：**22 = 事实源**（`.nvmrc` + CI + 生产镜像三处同源；
+> `engines` 要求 `>=22`）。本机装了 24 也能跑（`>=22` 都允许），但**别用更老的版本**——
+> 2026-10-08 发生过一次"本地绿、CI 红"，环境漂移类问题最难查。用 nvm 的话 `nvm use` 会读 `.nvmrc`。
+
 > 当前进度：Step 1 骨架【已验证】、Step 1.5 地基整改【已验证】、**Step 3 前端工作台【已验证】**均已完成；**Step 2 只剩 host 本地轨 `LocalH3Provider` 未实现**（选择本地引擎会如实返回 `PROVIDER_UNAVAILABLE`；OI-1 素材 provider 是非目标，见台账 B7）——**AC2 的真实出片已于 2026-09-23 在真机全模式跑通（T2V / I2V / FL2V / V2V，走 `X-Provider-Key` 通道）**；**Step 4 端到端验收【已完成 2026-09-23】**（AC1 的 T2V / I2V 真实云端轨复验 + AC2 固化进集成测试，证据见 [docs/walkthrough.md](docs/walkthrough.md)）；**Step 5 已上线，且 CI → CD 全自动**；**V8.3 体验与功能补强全部批次（0~7）已完成**；**Step 6（V9 前端改版：总览 + 可伸收侧栏 + hash 路由 + 动效体系 + 配方库 + 轻剪辑台）【已完成 2026-09-23】**（侧栏五视图 + 独立剪辑台 `#/edit`；验收证据见 [docs/v9-acceptance.md](docs/v9-acceptance.md)）；**Step 7（剪辑台改版：Remotion 多轨时间轴 + 浏览器端导出 + 渲染入库 + 抽帧→I2V 闭环）【已完成 2026-09-24】** —— 契约升 **V2.5**，验收证据见 [docs/edit-desk-acceptance.md](docs/edit-desk-acceptance.md)；高保真原型见 `docs/ui-proto/index.html`（可双击打开）——计划与 AC 见 PLAN §4，接口见 CONTRACT V2.5——进度唯一权威为 PLAN §5。
 
 填入自己的火山方舟 Key 即可出片（Key 存在**你的浏览器**，服务端过手不留存）；本地轨由**部署者显式启用**（`EXPOSE_HOST_LOCAL_TRACK`），未启用时选择本地引擎会返回 `PROVIDER_UNAVAILABLE`。推荐档位与引擎接入详见 [docs/GUIDE.md](docs/GUIDE.md)。

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { ErrorResponseSchema, OperationResultSchema, TaskProgressSchema } from '@astrmira/shared';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
-import { withOutputSize } from '../server/storageUsage.js';
+import { withOutputFileFacts } from '../server/storageUsage.js';
 import { toTaskProgress, type TaskStore } from '../store/taskStore.js';
 
 /**
@@ -39,7 +39,8 @@ export const createTaskRoutes =
           });
         }
         // V2.3：成功任务带上成片体积（详情抽屉的"文件大小"要用；文件已清理时省略该字段）
-        return withOutputSize(toTaskProgress(record), deps.outputsDir ?? resolveOutputsDir());
+        // V2.8：文件不存在时**省略直链**（容量淘汰后轮询不该拿到必然 404 的 URL）
+        return withOutputFileFacts(toTaskProgress(record), deps.outputsDir ?? resolveOutputsDir());
       },
     );
 

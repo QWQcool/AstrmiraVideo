@@ -3,11 +3,20 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { openDatabase } from '../store/db.js';
-import { CooldownStore, DEFAULT_COOLDOWN_MS, rateLimitKey } from './rateLimit.js';
+import {
+  BURST_WINDOW_MS,
+  BurstLimiter,
+  CooldownStore,
+  DEFAULT_COOLDOWN_MS,
+  rateLimitKey,
+  VERIFY_BURST_MAX,
+} from './rateLimit.js';
 
 /**
  * 防线 5 冷却（AC9）：**冷却状态必须落 SQLite**——内存 Map 会在服务重启后丢窗口。
  * 本文件用**文件库**验证"重启不丢窗口"，用内存库验证判定语义。
+ *
+ * V2.8（B25）追加：`BurstLimiter`（verify / logs 的独立桶，内存突发窗口）——见文件末尾。
  */
 
 const TMP_DIR = mkdtempSync(path.join(tmpdir(), 'astrmira-cooldown-'));
@@ -121,5 +130,46 @@ describe('AC9 · 冷却跨"服务重启"不丢窗口（必须落盘）', () => {
     expect(decision.retryAfterMs).toBeGreaterThan(0);
 
     second.close();
+  });
+});
+
+describe('BurstLimiter（V2.8 / B25：verify 与 logs 的独立桶）', () => {
+  it('窗口内配额用尽 → 拒绝并给出 Retry-After；窗口滑走后恢复', () => {
+    const limiter = new BurstLimiter(BURST_WINDOW_MS, 3);
+    const key = rateLimitKey({ ip: '198.51.100.9' });
+    const t0 = 10_000_000;
+
+    expect(limiter.take(key, t0).allowed).toBe(true);
+    expect(limiter.take(key, t0 + 1).allowed).toBe(true);
+    expect(limiter.take(key, t0 + 2).allowed).toBe(true);
+
+    const blocked = limiter.take(key, t0 + 3);
+    expect(blocked.allowed).toBe(false);
+    // 最早那次在 t0 → 还要等接近一个窗口
+    expect(blocked.retryAfterMs).toBeGreaterThan(9_000);
+    expect(blocked.retryAfterMs).toBeLessThanOrEqual(BURST_WINDOW_MS);
+
+    // 窗口滑走：最早的时间戳过期，配额恢复
+    expect(limiter.take(key, t0 + BURST_WINDOW_MS + 1).allowed).toBe(true);
+  });
+
+  it('按 key 各自计桶（同一 IP 被限不影响其它 IP）', () => {
+    const limiter = new BurstLimiter(BURST_WINDOW_MS, 1);
+    const alpha = rateLimitKey({ ip: '198.51.100.10' });
+    const beta = rateLimitKey({ ip: '198.51.100.11' });
+
+    expect(limiter.take(alpha, 1).allowed).toBe(true);
+    expect(limiter.take(alpha, 2).allowed).toBe(false);
+    expect(limiter.take(beta, 2).allowed).toBe(true);
+  });
+
+  it('生产配额是常量事实：verify 桶 10s / 5 次（改配额必须同时改契约 §5）', () => {
+    const limiter = new BurstLimiter(BURST_WINDOW_MS, VERIFY_BURST_MAX);
+    const key = rateLimitKey({ ip: '198.51.100.12' });
+
+    for (let index = 0; index < VERIFY_BURST_MAX; index += 1) {
+      expect(limiter.take(key, index).allowed).toBe(true);
+    }
+    expect(limiter.take(key, VERIFY_BURST_MAX).allowed).toBe(false);
   });
 });

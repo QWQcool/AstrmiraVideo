@@ -25,6 +25,9 @@ export const LOG_ACTIONS = [
   'keys.verify',
   'logs.delete',
   'logs.clear',
+  // V2.8（台账 B22）：容量淘汰真正删了文件才写 —— 文件是**被系统删掉的**，
+  // 用户"片子怎么没了"时日志里必须有据可查
+  'storage.evict',
   'auth.failed',
   'request.error',
 ] as const;
@@ -46,6 +49,7 @@ export const LOG_ACTION_LABELS: Record<string, string> = {
   'keys.verify': '测试连接',
   'logs.delete': '删除日志',
   'logs.clear': '清空日志',
+  'storage.evict': '容量淘汰',
   'auth.failed': '鉴权失败',
   'request.error': '请求失败',
 };

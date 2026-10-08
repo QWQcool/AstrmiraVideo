@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { serializerCompiler, validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ErrorResponse, KeyVerifyResponse } from '@astrmira/shared';
+import { BURST_WINDOW_MS, BurstLimiter } from '../security/rateLimit.js';
 import { createKeyVerifyRoutes } from './keysVerify.js';
 
 /**
@@ -43,11 +44,14 @@ function stubFetch(
 
 const apps: FastifyInstance[] = [];
 
-async function buildHarness(fetchImpl: typeof fetch): Promise<FastifyInstance> {
+async function buildHarness(
+  fetchImpl: typeof fetch,
+  extra: { limiter?: BurstLimiter } = {},
+): Promise<FastifyInstance> {
   const app = Fastify().withTypeProvider<ZodTypeProvider>();
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
-  await app.register(createKeyVerifyRoutes({ fetchImpl, timeoutMs: 1_000 }));
+  await app.register(createKeyVerifyRoutes({ fetchImpl, timeoutMs: 1_000, ...extra }));
   await app.ready();
   apps.push(app);
   return app;
@@ -217,5 +221,56 @@ describe('文本轨', () => {
     expect(body.keyValid).toBe(true);
     expect(body.modelAvailable).toBe(false);
     expect(body.message).toContain('开通');
+  });
+});
+
+describe('V2.8（B25）：独立限流桶', () => {
+  it('配额用尽 → 429 + Retry-After，且**不触达上游**；另一个 IP 不受影响', async () => {
+    const { fetchImpl, calls } = stubFetch(() => ({
+      status: 200,
+      payload: { data: [{ id: 'doubao-seedance-1-0-pro-250528' }] },
+    }));
+    const app = await buildHarness(fetchImpl, { limiter: new BurstLimiter(BURST_WINDOW_MS, 2) });
+    const payload = {
+      track: 'video' as const,
+      baseUrl: 'https://ark.example/api/v3',
+      model: 'doubao-seedance-1-0-pro-250528',
+    };
+
+    for (let index = 0; index < 2; index += 1) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/providers/keys/verify',
+        headers: VIDEO_KEY,
+        payload,
+        remoteAddress: '198.51.100.200',
+      });
+      expect(response.statusCode).toBe(200);
+    }
+
+    const upstreamCallsBefore = calls.length;
+    const limited = await app.inject({
+      method: 'POST',
+      url: '/api/providers/keys/verify',
+      headers: VIDEO_KEY,
+      payload,
+      remoteAddress: '198.51.100.200',
+    });
+
+    expect(limited.statusCode).toBe(429);
+    expect(limited.headers['retry-after']).toBeDefined();
+    expect((limited.json() as ErrorResponse).code).toBe('RATE_LIMITED');
+    // 关键：被限的这次请求**一个上游包都没发**（限流挡在探测之前）
+    expect(calls.length).toBe(upstreamCallsBefore);
+
+    // 桶按 IP 计：另一个来源不受影响
+    const other = await app.inject({
+      method: 'POST',
+      url: '/api/providers/keys/verify',
+      headers: VIDEO_KEY,
+      payload,
+      remoteAddress: '198.51.100.201',
+    });
+    expect(other.statusCode).toBe(200);
   });
 });

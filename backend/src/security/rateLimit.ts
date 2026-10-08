@@ -15,6 +15,53 @@ export const DEFAULT_COOLDOWN_MS = 60_000;
 /** 冷却桶名：与"验证路由独立限流桶"（台账 B2）区分 */
 export const SUBMIT_BUCKET = 'generate';
 
+/**
+ * 独立限流桶（V2.8 / 台账 B25）。三个桶**各自计时间**，互相不影响：
+ * - `generate`：60s 防抖（防线 5，付费上游）—— `CooldownStore`，状态落 SQLite；
+ * - `verify`：**10s 窗口最多 5 次/IP** —— `/api/providers/keys/verify` **会向视频/文本上游
+ *   发真实探测请求**（`/models` + 空 content 探针），没有限流时被刷 = 拿部署者的服务器当免费探针；
+ * - `logs`：**10s 窗口最多 30 次/IP** —— 读接口的底线（挡脚本级扫描；界面自身的挂载 + 轮询 + 连续交互远低于此）。
+ *
+ * 为什么这两个桶用**内存突发窗口**而不是 SQLite 冷却：
+ * ① 它们是"底线防护"（真正的防线是 Caddy 登录 + `PUBLIC_API_TOKEN`），不是计费闸门；
+ * ② 读接口若每次请求都写一次库（记录冷却），反而把轻量轮询变成 DB 写放大；
+ * ③ 冷却语义（"必须间隔 N 秒"）会误伤正常交互（连点两次"测试连接"、日志页挂载+轮询），
+ *    而窗口内 N 次的语义对"人"完全无感、对"脚本"生效。进程重启清零，可接受。
+ */
+export const VERIFY_BUCKET = 'verify';
+export const LOGS_BUCKET = 'logs';
+/** 突发窗口：两个桶共用窗口长度（10s），配额各自定义 */
+export const BURST_WINDOW_MS = 10_000;
+export const VERIFY_BURST_MAX = 5;
+export const LOGS_BURST_MAX = 30;
+
+/**
+ * 窗口内计数的突发限流器（内存版；V2.8 / B25）。
+ *
+ * `take()` 一次完成"判定 + 记账"——没有 check/record 两步，也就不存在"忘了记"的绕过路径。
+ * 内存按 key 累积，`take` 时顺手丢掉过期时间戳（无定时器、无后台清理）。
+ */
+export class BurstLimiter {
+  private readonly hits = new Map<string, number[]>();
+
+  constructor(
+    private readonly windowMs: number,
+    private readonly maxHits: number,
+  ) {}
+
+  take(key: string, now: number = Date.now()): RateLimitDecision {
+    const fresh = (this.hits.get(key) ?? []).filter((ts) => now - ts < this.windowMs);
+    if (fresh.length >= this.maxHits) {
+      const oldest = fresh[0] ?? now;
+      this.hits.set(key, fresh);
+      return { allowed: false, retryAfterMs: Math.max(1, this.windowMs - (now - oldest)) };
+    }
+    fresh.push(now);
+    this.hits.set(key, fresh);
+    return { allowed: true, retryAfterMs: 0 };
+  }
+}
+
 export interface RateLimitKeyParts {
   ip: string;
   /** 复合键预留：BYOK Key 指纹（SHA-256 前 8 位）；Step 2 恒传 `undefined` */

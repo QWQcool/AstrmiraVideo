@@ -13,6 +13,7 @@ import {
   SEEDANCE_TASKS_PATH,
 } from '../providers/seedanceProtocol.js';
 import { LLM_KEY_HEADER, PROVIDER_KEY_HEADER, resolveLlmKey, resolveProviderKey } from '../security/credential.js';
+import { rateLimitKey, resolveClientIp, type BurstLimiter } from '../security/rateLimit.js';
 import { redactSecrets } from '../security/redact.js';
 
 /**
@@ -36,9 +37,15 @@ export interface KeyVerifyDeps {
   /** 注入 fetch（测试用桩；缺省 = 全局 fetch） */
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /**
+   * V2.8（台账 B25）：**独立限流桶**（`verify`，10s 内最多 5 次/IP，见 `security/rateLimit.ts`）。
+   * 为什么必须有：本端点会向上游发真实探测请求，被刷等于拿部署者的服务器当免费探针；
+   * 与生成任务的 60s 冷却**各自计桶**（同一 IP 在校验被限不影响提交生成，反之亦然）。
+   */
+  limiter?: BurstLimiter;
 }
 
-type VerifyStatus = 200 | 400 | 401 | 501 | 502;
+type VerifyStatus = 200 | 400 | 401 | 429 | 501 | 502;
 
 /** 错误码 → HTTP 状态（刻意局部定义，与 enhance.ts 同一理由：每个路由的场景语义不同） */
 const VERIFY_ERROR_STATUS: Partial<Record<ErrorCode, VerifyStatus>> = {
@@ -213,6 +220,7 @@ export const createKeyVerifyRoutes =
             200: KeyVerifyResponseSchema,
             400: ErrorResponseSchema,
             401: ErrorResponseSchema,
+            429: ErrorResponseSchema,
             501: ErrorResponseSchema,
             502: ErrorResponseSchema,
           },
@@ -221,6 +229,25 @@ export const createKeyVerifyRoutes =
       async (request, reply) => {
         const fetchImpl = deps.fetchImpl ?? fetch;
         const timeoutMs = deps.timeoutMs ?? 20_000;
+
+        // V2.8（B25）：独立限流桶 —— `take()` 一次完成"判定 + 记账"，且**在探测之前**记账
+        // （失败也占配额，否则"故意让它失败"就成了绕过限流的办法）。与生成冷却互不影响。
+        if (deps.limiter !== undefined) {
+          const decision = deps.limiter.take(rateLimitKey({ ip: resolveClientIp(request) }));
+          if (!decision.allowed) {
+            const retryAfterSec = Math.max(1, Math.ceil(decision.retryAfterMs / 1000));
+            return reply
+              .code(429)
+              .header('retry-after', String(retryAfterSec))
+              .send(
+                createErrorResponse(
+                  'RATE_LIMITED',
+                  `校验请求过于频繁：本端点限 10 秒 5 次（不影响生成任务的冷却），请 ${retryAfterSec} 秒后重试`,
+                ),
+              );
+          }
+        }
+
         const body = request.body;
         const isVideo = body.track === 'video';
         const apiKey = isVideo ? resolveProviderKey(request) : resolveLlmKey(request);

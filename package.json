@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "pnpm --parallel --filter \"*\" dev",
     "build": "pnpm --filter @astrmira/shared build && pnpm --filter backend build && pnpm --filter frontend build",

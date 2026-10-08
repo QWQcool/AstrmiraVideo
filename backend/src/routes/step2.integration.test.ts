@@ -1,4 +1,12 @@
-import { copyFileSync, existsSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +47,11 @@ class CountingStubProvider implements VideoProvider {
     this.submitCalls += 1;
     const upstreamId = `up-${this.submitCalls}`;
     await sleep(this.delayMs);
+
+    // V2.8（契约 §4）：`GET /api/tasks/:id` 现在按"成片文件是否存在"决定是否下发
+    // `outputVideoUrl`（容量淘汰后不该给一个必然 404 的直链）——桩也必须**真的落盘**，
+    // 否则测的是"虚构 URL 会被原样返回"这条已经不成立的假设。
+    writeFileSync(path.join(OUTPUTS_DIR, `${upstreamId}.mp4`), Buffer.alloc(1024));
 
     this.results.set(upstreamId, {
       taskId: upstreamId,
@@ -133,6 +146,14 @@ beforeAll(async () => {
 afterAll(async () => {
   await app.close();
   __clearProviderTestOverrides();
+  // 清掉桩落盘的成片（V2.8 起桩会写真实文件，见 submit 的注释）
+  try {
+    for (const name of readdirSync(OUTPUTS_DIR)) {
+      if (/^up-\d+\.mp4$/.test(name)) rmSync(path.join(OUTPUTS_DIR, name), { force: true });
+    }
+  } catch {
+    /* outputs 目录不存在（全新克隆）时无需清理 */
+  }
   // Windows 上 SQLite 的 WAL 句柄可能延迟释放：清理失败不应让测试失败
   try {
     rmSync(TMP_DATA_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

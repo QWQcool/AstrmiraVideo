@@ -5,7 +5,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { ErrorResponseSchema, HistoryResponseSchema, OperationResultSchema } from '@astrmira/shared';
 import { THUMBNAIL_DIR_NAME } from '../pipeline/thumbnail.js';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
-import { readStorageUsage, withOutputSize } from '../server/storageUsage.js';
+import { readStorageUsage, withOutputFileFacts } from '../server/storageUsage.js';
 import { toTaskProgress, type TaskStore } from '../store/taskStore.js';
 
 /**
@@ -87,10 +87,11 @@ export const createHistoryRoutes =
             : deps.store.listRecent(50)
         ).map(toTaskProgress);
 
-        // V2.3（CONTRACT §4/§5）：逐条补成片体积（stat）+ 目录级聚合（扫 outputs/）。
-        // 两者都是**只读**，并发跑；任何一项失败都在 storageUsage 内部降级，不让接口 500。
+        // V2.3（CONTRACT §4/§5）：逐条补落盘事实（体积 / V2.8 起"文件不存在即省略直链"）
+        // + 目录级聚合（扫 outputs/）。两者都是**只读**，并发跑；
+        // 任何一项失败都在 storageUsage 内部降级，不让接口 500。
         const [items, storage] = await Promise.all([
-          Promise.all(records.map((record) => withOutputSize(record, outputsDir))),
+          Promise.all(records.map((record) => withOutputFileFacts(record, outputsDir))),
           readStorageUsage(outputsDir),
         ]);
 

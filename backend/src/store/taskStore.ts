@@ -357,6 +357,37 @@ export class TaskStore {
    * 判据用 `request_snapshot` 的全文 LIKE（快照是 JSON，assetId 一定以字符串出现），
    * 足够精确，且不用为此加索引/关联表。
    */
+  /**
+   * 容量淘汰用（V2.8 / 台账 B22）：**最旧的已成功且有成片**的任务（`created_at` 升序）。
+   *
+   * 为什么单独一条查询而不是复用 `listRecent`：淘汰要从**最旧**的一端开始，
+   * 而 `listRecent` 按最新 50 条截断——只看最近 50 条永远看不到该淘汰的那批。
+   */
+  listOldestWithOutput(limit: number): TaskRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM tasks
+          WHERE status = 'succeeded'
+            AND output_video_url IS NOT NULL AND output_video_url != ''
+          ORDER BY created_at ASC LIMIT ?`,
+      )
+      .all(limit) as TaskRow[];
+    return rows.map(rowToRecord);
+  }
+
+  /**
+   * 有多少任务把这条成片以 `task:<taskId>` 引用当参考？（V2.8 容量淘汰的保护规则）
+   *
+   * 与 `countTasksReferencingAsset` 同一套路（快照 JSON 全文 LIKE）：被引用的成片**不淘汰** ——
+   * 否则"参数一键回填"再提交会撞 404（引用还在，片子没了）。
+   */
+  countTasksReferencingTaskRef(taskId: string): number {
+    const row = this.db
+      .prepare('SELECT COUNT(*) AS c FROM tasks WHERE task_id != ? AND request_snapshot LIKE ?')
+      .get(taskId, `%task:${taskId}%`) as { c: number };
+    return row.c;
+  }
+
   countTasksReferencingAsset(assetId: string, exceptTaskId: string): number {
     const row = this.db
       .prepare(

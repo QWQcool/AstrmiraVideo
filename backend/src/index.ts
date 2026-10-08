@@ -36,11 +36,18 @@ import {
 } from './security/auth.js';
 import { LLM_KEY_HEADER, LOG_REDACT_PATHS, PROVIDER_KEY_HEADER } from './security/credential.js';
 import { createKeyVault } from './security/keyVault.js';
-import { CooldownStore } from './security/rateLimit.js';
+import {
+  BURST_WINDOW_MS,
+  BurstLimiter,
+  CooldownStore,
+  LOGS_BURST_MAX,
+  VERIFY_BURST_MAX,
+} from './security/rateLimit.js';
 import { registerRequestLog } from './server/requestLog.js';
 import { registerSecurityHeaders } from './server/securityHeaders.js';
 import { registerSpa } from './server/spa.js';
 import { registerStaticOutputs, resolveOutputsDir } from './server/staticOutputs.js';
+import { startStorageEvictor } from './server/storageEvict.js';
 import { createAssetUrlResolver, createTaskVideoUrlResolver } from './store/assets.js';
 import { openDatabase } from './store/db.js';
 import { EventLogStore } from './store/eventLog.js';
@@ -184,6 +191,9 @@ export async function buildApp() {
   });
   // 防线 5：60s 防抖冷却（键的构成见 security/rateLimit.ts）
   const cooldown = new CooldownStore(db);
+  // V2.8（B25）：两条独立限流桶（内存突发窗口；与生成冷却各自计桶、互不影响）
+  const verifyLimiter = new BurstLimiter(BURST_WINDOW_MS, VERIFY_BURST_MAX);
+  const logsLimiter = new BurstLimiter(BURST_WINDOW_MS, LOGS_BURST_MAX);
 
   // 操作日志钩子必须**在路由注册之前**挂：Fastify 的 `register()` 子上下文在注册那一刻
   // 继承父级已存在的钩子 —— 放后面挂，前面注册的路由就一条都记不到（实测踩点）。
@@ -252,9 +262,37 @@ export async function buildApp() {
   });
   dispatcher.start();
 
+  // V2.8（B22）：容量淘汰 —— 后台扫描（默认 5 分钟 + 启动一次），超阈值时从最旧的已成功任务
+  // 开始删成片与缩略图（保留任务记录；三类保护见 server/storageEvict.ts 的头注释）。
+  // 真正删了文件才写操作日志（噪声纪律）。
+  const storageEvictor = startStorageEvictor({
+    outputsDir: resolveOutputsDir(),
+    store,
+    onEvict: (outcome) => {
+      eventLog.append({
+        ts: Date.now(),
+        method: 'STORAGE',
+        path: '/api/storage/evict',
+        action: 'storage.evict',
+        statusCode: 200,
+        detail: {
+          freedBytes: outcome.freedBytes,
+          beforeBytes: outcome.beforeBytes,
+          afterBytes: outcome.afterBytes,
+          evictedCount: outcome.evictedTaskIds.length,
+          // 只留前 10 个 id：日志是排错用的，不是全量清单（明细可由 tasks 表反查）
+          evictedTaskIds: outcome.evictedTaskIds.slice(0, 10),
+          skippedReferenced: outcome.skippedReferenced,
+        },
+      });
+    },
+    onError: (err) => app.log.warn({ err }, '容量淘汰扫描异常（不影响服务）'),
+  });
+
   app.addHook('onClose', async () => {
-    // 先排空调度器（停表 + 等在飞 tick 与在途任务）**再关库**：
-    // 关早了，在飞的 tick 会在关闭后的连接上读写 → unhandled rejection（2026-09-24 CI 实测）
+    // 先排空后台任务（淘汰器 + 调度器：停表 + 等在飞的一轮）**再关库**：
+    // 关早了，在飞的扫描会在关闭后的连接上读写 → unhandled rejection（2026-09-24 CI 实测）
+    await storageEvictor.drain();
     await dispatcher.drain();
     db.close();
   });
@@ -270,10 +308,11 @@ export async function buildApp() {
   await app.register(createEditRoutes({ store, queue }));
   // V2.5（B34 · P4）：浏览器端渲染产物入库（同步归档，服务端不渲染）
   await app.register(createEditRenderRoutes({ store }));
-  await app.register(createKeyVerifyRoutes());
+  // V2.8（B25）：校验与日志各带独立限流桶（见 security/rateLimit.ts 的桶常量）
+  await app.register(createKeyVerifyRoutes({ limiter: verifyLimiter }));
   await app.register(createTaskRoutes({ store }));
   await app.register(createHistoryRoutes({ store }));
-  await app.register(createLogRoutes({ store: eventLog }));
+  await app.register(createLogRoutes({ store: eventLog, limiter: logsLimiter }));
   await registerStaticOutputs(app);
 
   // 单进程形态（PLAN §7-9）：进程同时托管 /api、/media 与前端产物。
