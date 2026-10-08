@@ -208,7 +208,7 @@ export function LeftPanel(props: LeftPanelProps) {
           hint={
             mode === 't2v'
               ? '可选：上传后会切到「图生视频」；仅文生视频可直接忽略此槽'
-              : '必需：作为首帧（起点画面）'
+              : '必需：作为首帧（起点画面）。⚠️ 含真人 / 拟真人脸的图会被上游隐私检测拒绝 —— 可换非人物素材，或改用文生视频'
           }
           kind="image"
           aspectRatio={aspectRatio}
@@ -223,7 +223,7 @@ export function LeftPanel(props: LeftPanelProps) {
       {mode === 'fl2v' ? (
         <AssetDropZone
           label="参考尾帧"
-          hint="必需：作为尾帧（终点画面）；与首帧一起交给上游补中间运动"
+          hint="必需：作为尾帧（终点画面）；与首帧一起交给上游补中间运动。⚠️ 含真人 / 拟真人脸的图会被上游隐私检测拒绝"
           kind="image"
           aspectRatio={aspectRatio}
           asset={assets.lastFrame}

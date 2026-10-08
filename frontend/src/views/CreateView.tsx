@@ -28,6 +28,8 @@ import {
 import { newIdempotencyKey } from '../lib/idempotency';
 import {
   assetsForRefs,
+  filterAssetCandidates,
+  filterTaskCandidates,
   hasPendingRef,
   ignoredMentionHint,
   selectMentions,
@@ -93,12 +95,21 @@ function refFromTask(task: TaskProgress): MentionRef {
 
 /** 资产 → chip 引用 */
 function refFromAsset(asset: AssetListEntry): MentionRef {
+  // V2.9（B43）：有原始文件名就用它当 chip 标签（人认得名字，认不出编号）；
+  // 没有（抽帧产物 / 老资产）就退回"图/视频·编号"，**不编造名字**
+  const label =
+    asset.name === undefined
+      ? `${asset.kind === 'image' ? '图' : '视频'}·${asset.assetId.slice(0, 6)}`
+      : asset.name.length > 16
+        ? `${asset.name.slice(0, 16)}…`
+        : asset.name;
+
   return {
     id: newIdempotencyKey(),
     ref: asset.assetId,
     kind: asset.kind,
     previewUrl: asset.kind === 'image' ? asset.url : null,
-    label: `${asset.kind === 'image' ? '图' : '视频'}·${asset.assetId.slice(0, 6)}`,
+    label,
   };
 }
 
@@ -251,23 +262,16 @@ export function CreateView() {
     setPrompt(value);
   };
 
-  const filteredTasks = useMemo(() => {
-    const keyword = mentionFilter.trim().toLowerCase();
-    if (keyword === '') return taskPool.slice(0, 8);
-    return taskPool
-      .filter(
-        (item) =>
-          item.requestSnapshot.prompt.toLowerCase().includes(keyword) ||
-          item.taskId.toLowerCase().includes(keyword),
-      )
-      .slice(0, 8);
-  }, [taskPool, mentionFilter]);
+  const filteredTasks = useMemo(
+    () => filterTaskCandidates(taskPool, mentionFilter),
+    [taskPool, mentionFilter],
+  );
 
-  const filteredAssets = useMemo(() => {
-    const keyword = mentionFilter.trim().toLowerCase();
-    if (keyword === '') return assetPool.slice(0, 8);
-    return assetPool.filter((item) => item.assetId.toLowerCase().includes(keyword)).slice(0, 8);
-  }, [assetPool, mentionFilter]);
+  // V2.9（B43）：按**名字**过滤（有名字时），assetId 仍可搜（老习惯与老资产兜底）——纯函数在 lib/mentions
+  const filteredAssets = useMemo(
+    () => filterAssetCandidates(assetPool, mentionFilter),
+    [assetPool, mentionFilter],
+  );
 
   // ── 提交 ──
   const handleSubmit = async (): Promise<void> => {
@@ -397,6 +401,15 @@ export function CreateView() {
             </div>
           ) : null}
 
+          {/* B32（Step 10 · P1）：真人素材的**前置提示** —— 只做文案引导（本项目无本地人脸检测能力，
+              不假装检测、不阻断选择）；上游隐私检测拒绝时后端会给出可执行文案（seedanceProtocol） */}
+          {refs.some((item) => item.kind === 'image') ? (
+            <p className="wb-note cr-realperson-note">
+              提示：含真人 / 拟真人脸的图做首帧·尾帧会被上游隐私检测拒绝 —— 可换非人物素材（风景 /
+              物体 / 动漫风格），或改用文字描述人物（T2V）。
+            </p>
+          ) : null}
+
           {mentionOpen ? (
             <div className="cr-mention" role="listbox" aria-label="选择素材">
               <input
@@ -450,7 +463,9 @@ export function CreateView() {
                       <span className="cr-mention-glyph">🎬</span>
                     )}
                     <span className="cr-mention-label">
-                      资产 · {item.kind === 'image' ? '图片' : '视频'} · {item.assetId.slice(0, 8)}
+                      资产 · {item.kind === 'image' ? '图片' : '视频'} ·{' '}
+                      {/* V2.9（B43）：有原始文件名就显示名字（人认名字，不认编号） */}
+                      {item.name ?? item.assetId.slice(0, 8)}
                     </span>
                   </button>
                 ))}

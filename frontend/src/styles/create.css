@@ -100,6 +100,12 @@
   flex-wrap: wrap;
 }
 
+/* B32：真人素材前置提示（引导不是闸门——样式上刻意低调，不抢主流程） */
+.cr-realperson-note {
+  margin-top: 8px;
+  font-size: var(--fs-sm);
+}
+
 /* ── 素材 chips ── */
 .cr-chips {
   display: flex;

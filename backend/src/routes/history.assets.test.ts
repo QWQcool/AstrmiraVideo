@@ -120,11 +120,19 @@ async function submitTaskWithAsset(
   return (response.json() as { taskId: string }).taskId;
 }
 
-function assetFiles(assetId: string): string[] {
+/**
+ * 资产目录里与某 assetId 相关的文件，分成两栏（V2.9 / B43 起）：
+ * - `media`：媒体文件本身（扩展名由防线 4 决定——不透明图 → jpg）；
+ * - `meta`：**sidecar** `<assetId>.json`（原始文件名等元数据；与资产同前缀，天然被同一条清理规则覆盖）。
+ */
+function assetFiles(assetId: string): { media: string[]; meta: string[] } {
   const dir = path.join(TMP_OUTPUTS_DIR, 'assets');
-  if (!existsSync(dir)) return [];
-  // 扩展名由防线 4 决定（不透明图 → jpg），这里只按前缀判断存在性
-  return readdirSync(dir).filter((name) => name.startsWith(`${assetId}.`));
+  if (!existsSync(dir)) return { media: [], meta: [] };
+  const all = readdirSync(dir).filter((name) => name.startsWith(`${assetId}.`));
+  return {
+    media: all.filter((name) => !name.endsWith('.json')),
+    meta: all.filter((name) => name.endsWith('.json')),
+  };
 }
 
 beforeAll(async () => {
@@ -149,15 +157,19 @@ afterAll(async () => {
 });
 
 describe('删除任务 · 参考资产清理', () => {
-  it('资产只被这一条任务引用 → 删任务时一并删掉资产文件', async () => {
+  it('资产只被这一条任务引用 → 删任务时一并删掉资产文件（媒体 + sidecar）', async () => {
     const assetId = await uploadPng('198.51.100.71');
-    expect(assetFiles(assetId)).toHaveLength(1);
+    // V2.9：上传同时写了媒体文件与 sidecar（原始文件名只落本地）
+    expect(assetFiles(assetId).media).toHaveLength(1);
+    expect(assetFiles(assetId).meta).toHaveLength(1);
 
     const taskId = await submitTaskWithAsset(assetId, '198.51.100.72', 'assets-case-1');
     const removed = await app.inject({ method: 'DELETE', url: `/api/history/${taskId}` });
 
     expect(removed.statusCode).toBe(200);
-    expect(assetFiles(assetId)).toHaveLength(0);
+    // 契约 §7：sidecar 落在同一条 `<assetId>.` 前缀清理规则里——不新增清理路径，也不留孤儿
+    expect(assetFiles(assetId).media).toHaveLength(0);
+    expect(assetFiles(assetId).meta).toHaveLength(0);
   });
 
   it('资产被其它任务复用 → 删一条任务**不能**删掉资产', async () => {
@@ -169,6 +181,7 @@ describe('删除任务 · 参考资产清理', () => {
 
     const removed = await app.inject({ method: 'DELETE', url: `/api/history/${first}` });
     expect(removed.statusCode).toBe(200);
-    expect(assetFiles(assetId), '资产仍被另一条任务引用，必须保留').toHaveLength(1);
+    expect(assetFiles(assetId).media, '资产仍被另一条任务引用，必须保留').toHaveLength(1);
+    expect(assetFiles(assetId).meta, 'sidecar 与资产同生共死').toHaveLength(1);
   });
 });

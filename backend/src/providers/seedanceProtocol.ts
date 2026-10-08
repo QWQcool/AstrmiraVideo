@@ -425,5 +425,34 @@ export function classifyHttpFailure(
     return { code: 'UPSTREAM_ERROR', message: detail };
   }
 
+  // Step 10 · B32：上游**隐私检测**拒绝（真人 / 拟真人脸）—— 码与处置都不变
+  // （`UPSTREAM_ERROR` + `terminal`，§6 闭集不动；也不会归 uncertain：请求在参数校验阶段就被拒、
+  // 没有"提交了但不知结果"），但文案必须**可执行**：这类失败花不了成片钱，用户要的是"下一步怎么办"。
+  // 排错所需的原始 code 与 message 保留在 `detail` 里（不吞上游事实）。
+  if (looksLikeRealPersonRejection(upstream?.code, upstream?.message)) {
+    return {
+      code: 'UPSTREAM_ERROR',
+      message:
+        `${detail}｜诊断：上游隐私检测判定该输入图可能含真人（含拟真人物的生成图同样会被拒），` +
+        '请求在参数校验阶段即终止 —— 未开始生成、不产生成片费用。可执行动作：' +
+        '① 换不含人物的素材（风景 / 物体 / 动漫风格）；' +
+        '② 改用文生视频（T2V），用文字描述人物；' +
+        '③ 有本地显卡时可走本地轨（本地引擎不做上游隐私检测）。',
+      dispositionOverride: 'terminal',
+    };
+  }
+
   return { code: 'UPSTREAM_ERROR', message: detail, dispositionOverride: 'terminal' };
+}
+
+/**
+ * 上游隐私检测拒绝的判据（Step 10 · B32）。
+ *
+ * 双判据（code / message 任一命中）——上游措辞变化时能兜住；但**刻意不宽泛**：
+ * 只认"隐私 / 真人"这一族（`PrivacyInformation`、"may contain real person"），
+ * 不把其它 `*SensitiveContentDetected` 变种也拉进这条文案里（那会给出错误的建议动作）。
+ */
+export function looksLikeRealPersonRejection(code?: string, message?: string): boolean {
+  const haystack = `${code ?? ''} ${message ?? ''}`.toLowerCase();
+  return haystack.includes('privacyinformation') || haystack.includes('may contain real person');
 }

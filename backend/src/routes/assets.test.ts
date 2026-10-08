@@ -134,6 +134,29 @@ describe('GET /api/assets · 资产库清单（V2.7）', () => {
     }
   });
 
+  it('V2.9：有 sidecar → 透出原始文件名；没有 / 坏掉 → 不带 name（不猜、不填占位）', async () => {
+    writeFileSync(
+      path.join(ASSETS_DIR, `${UUID_A}.json`),
+      JSON.stringify({ name: '海边 参考图.png', uploadedAt: 1 }),
+    );
+    const UUID_C = '33333333-3333-4333-8333-333333333333';
+    writeFileSync(path.join(ASSETS_DIR, `${UUID_C}.png`), pngBytes());
+    writeFileSync(path.join(ASSETS_DIR, `${UUID_C}.json`), '{ this is not json');
+
+    const response = await app.inject({ method: 'GET', url: '/api/assets' });
+    const body = response.json() as {
+      assets: Array<{ assetId: string; url: string; name?: string }>;
+    };
+    const byId = new Map(body.assets.map((asset) => [asset.assetId, asset]));
+
+    expect(byId.get(UUID_A)?.name).toBe('海边 参考图.png');
+    expect(byId.get(UUID_B)).not.toHaveProperty('name');
+    expect(byId.get(UUID_C)).not.toHaveProperty('name');
+
+    // sidecar 自己**不是**资产（json 无魔数）——它只是同目录的元数据
+    expect(body.assets.some((asset) => asset.url.endsWith('.json'))).toBe(false);
+  });
+
   it('空目录（从未上传）→ 200 + 空数组，不是 404', async () => {
     // 独立最小 app + 注入空目录：不碰主 app 的 DATA_DIR（避免双连接抢同一 SQLite）
     const emptyOut = mkdtempSync(path.join(tmpdir(), 'astrmira-assets-empty-'));

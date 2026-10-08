@@ -31,6 +31,53 @@ import { resolveOutputsDir } from '../server/staticOutputs.js';
 export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 export const MAX_FILES = 4;
 
+/**
+ * V2.9（台账 B43）：用户原始文件名的 sanitize —— **只取 basename**（路径不参与）、
+ * 去掉控制字符、截断 120 字符；清洗后为空则视为"没有名字"。
+ *
+ * 为什么要有这一层：原始文件名是**用户输入**，会被存进 sidecar 并回显到 `@` 弹层；
+ * 它不参与任何路径构造（路径仍只用随机 assetId，防线 5 的老纪律不变）。
+ */
+export function sanitizeOriginalName(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  const base = raw.split(/[\\/]/).pop() ?? '';
+  // 剥掉控制字符（C0 + DEL）：文件名会回显到 `@` 弹层，控制字符只会带来显示与注入问题。
+  // 用**码点过滤**而不是正则——`no-control-regex` 会拦（规则是对的，所以这里不留例外）。
+  const cleaned = [...base]
+    .filter((char) => {
+      const code = char.codePointAt(0) ?? 0;
+      return code >= 0x20 && code !== 0x7f;
+    })
+    .join('')
+    .trim();
+  if (cleaned === '') return undefined;
+  return cleaned.length > 120 ? cleaned.slice(0, 120) : cleaned;
+}
+
+/**
+ * 写资产元数据 sidecar `<assetId>.json`（V2.9 / B43）。
+ *
+ * 三条纪律：① **只落本地** —— 不进上游请求、不进操作日志、不进任务快照；
+ * ② **失败不阻断上传**（元数据是增强，不是事实源；上传的主体是媒体文件本身）；
+ * ③ 生命周期跟着资产走 —— 删除按既有的 `<assetId>.` 前缀规则自动覆盖，不新增清理路径。
+ */
+async function writeAssetMeta(
+  assetsDir: string,
+  assetId: string,
+  originalName: string | undefined,
+): Promise<void> {
+  if (originalName === undefined) return;
+  try {
+    await writeFile(
+      path.join(assetsDir, `${assetId}.json`),
+      JSON.stringify({ name: originalName, uploadedAt: Date.now() }),
+      'utf8',
+    );
+  } catch {
+    /* 见 ② */
+  }
+}
+
 /** 魔数嗅探后的白名单 */
 export const ALLOWED_MIME: ReadonlySet<string> = new Set([
   'image/jpeg',
@@ -131,6 +178,7 @@ export const createUploadRoutes =
               }
 
               await writeFile(path.join(assetsDir, `${assetId}.${sanitized.ext}`), sanitized.buffer);
+              await writeAssetMeta(assetsDir, assetId, sanitizeOriginalName(part.filename));
               assets.push({
                 assetId,
                 kind: 'image',
@@ -143,6 +191,7 @@ export const createUploadRoutes =
 
             // 视频：原样落盘（时长与尺寸的对齐发生在生成阶段）
             await writeFile(path.join(assetsDir, `${assetId}.${sniffed.ext}`), buffer);
+            await writeAssetMeta(assetsDir, assetId, sanitizeOriginalName(part.filename));
             assets.push({ assetId, kind: 'video', mime: sniffed.mime, size: buffer.length });
           }
         } catch (err) {

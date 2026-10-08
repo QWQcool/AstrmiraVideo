@@ -1,4 +1,9 @@
-import type { GenerationMode, VideoGenerateRequest } from '@astrmira/shared';
+import type {
+  AssetListEntry,
+  GenerationMode,
+  TaskProgress,
+  VideoGenerateRequest,
+} from '@astrmira/shared';
 
 /**
  * `@` 提及素材 → 生成请求 的纯函数层（V2.7 / 台账 B41 · one-for-all 创作入口）。
@@ -98,6 +103,57 @@ export function assetsForRefs(refs: MentionRef[]): VideoGenerateRequest['assets'
 /** 是否存在上传中的 chip（界面把它接进提交禁用态，与三槽的 `uploadingSlot !== null` 同语义） */
 export function hasPendingRef(refs: MentionRef[]): boolean {
   return refs.some((item) => item.ref === '');
+}
+
+/**
+ * 弹层候选的每类上限（候选不是全量列表：先给最可能的几条，搜不到再靠关键词）。
+ */
+export const MENTION_LIST_LIMIT = 8;
+
+/**
+ * 资产候选过滤（V2.9 / 台账 B43）。纯函数 —— 界面只负责渲染。
+ *
+ * 口径（大小写不敏感）：
+ * - 有 `name`（原始文件名，来自 sidecar）→ **按名字匹配**（人认名字，不认编号）；
+ * - `assetId` 仍可搜（V2.9 之前的老资产没有名字，且编号是老用户的既有习惯）；
+ * - 空关键词 → 前 `limit` 条。
+ */
+export function filterAssetCandidates(
+  assets: AssetListEntry[],
+  keyword: string,
+  limit: number = MENTION_LIST_LIMIT,
+): AssetListEntry[] {
+  const needle = keyword.trim().toLowerCase();
+  if (needle === '') return assets.slice(0, limit);
+
+  return assets
+    .filter(
+      (item) =>
+        item.assetId.toLowerCase().includes(needle) ||
+        (item.name?.toLowerCase().includes(needle) ?? false),
+    )
+    .slice(0, limit);
+}
+
+/**
+ * 成片 / 剪辑产物候选过滤（V2.7 起沿用：按提示词或 taskId 匹配）。
+ * 与 `filterAssetCandidates` 同一套语义，放在一起便于对照。
+ */
+export function filterTaskCandidates(
+  tasks: TaskProgress[],
+  keyword: string,
+  limit: number = MENTION_LIST_LIMIT,
+): TaskProgress[] {
+  const needle = keyword.trim().toLowerCase();
+  if (needle === '') return tasks.slice(0, limit);
+
+  return tasks
+    .filter(
+      (item) =>
+        item.requestSnapshot.prompt.toLowerCase().includes(needle) ||
+        item.taskId.toLowerCase().includes(needle),
+    )
+    .slice(0, limit);
 }
 
 /**

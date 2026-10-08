@@ -70,6 +70,12 @@ export const UploadResponseSchema = z.object({
 export const AssetListEntrySchema = UploadedAssetSchema.extend({
   url: z.string(),
   createdAt: z.number().int().nonnegative(),
+  /**
+   * V2.9（台账 B43）：用户原始文件名的 **sanitize 结果**（来自 `<assetId>.json` sidecar）。
+   * 可选：抽帧产物与 V2.9 之前的老资产没有 sidecar → 无该字段（不填占位、不猜名字）。
+   * ⚠️ 它**只落本地**：不进上游请求、不进操作日志、不进任务快照（见 CONTRACT §5 / §7）。
+   */
+  name: z.string().optional(),
 });
 
 /** `GET /api/assets` 的 200 响应（最近 200 个，新的在前；空目录 → 空数组，不是 404） */

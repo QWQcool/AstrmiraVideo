@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import type { AssetListEntry, TaskProgress } from '@astrmira/shared';
 import type { MentionRef } from './mentions';
 import {
   assetsForRefs,
+  filterAssetCandidates,
+  filterTaskCandidates,
   hasPendingRef,
   ignoredMentionHint,
+  MENTION_LIST_LIMIT,
   modeForRefs,
   selectMentions,
 } from './mentions';
@@ -129,5 +133,56 @@ describe('ignoredMentionHint · "多退少补"必须说出来', () => {
     )!;
     expect(fl2v).toContain('首尾帧');
     expect(fl2v).toContain('删除');
+  });
+});
+
+describe('弹层候选过滤（V2.9 / 台账 B43）', () => {
+  const asset = (assetId: string, name?: string): AssetListEntry => ({
+    assetId,
+    kind: 'image',
+    mime: 'image/png',
+    size: 1,
+    url: `/media/assets/${assetId}.png`,
+    createdAt: 1,
+    ...(name === undefined ? {} : { name }),
+  });
+
+  const task = (taskId: string, prompt: string): TaskProgress => ({
+    taskId,
+    status: 'succeeded',
+    progressPercent: 100,
+    requestSnapshot: { prompt, mode: 't2v', aspectRatio: '16:9', provider: 'fixture-local' },
+    createdAt: 1,
+  });
+
+  it('空关键词 → 只给前 limit 条（候选不是全量列表）', () => {
+    const many = Array.from({ length: 12 }, (_, index) => asset(`id-${index}`));
+    expect(filterAssetCandidates(many, '')).toHaveLength(MENTION_LIST_LIMIT);
+    expect(filterAssetCandidates(many, '', 3)).toHaveLength(3);
+    expect(filterTaskCandidates([task('t-1', 'p')], '  ')).toHaveLength(1);
+  });
+
+  it('按原始文件名匹配（大小写不敏感）——人认名字，不认编号', () => {
+    const pool = [
+      asset('11111111-1111-4111-8111-111111111111', '海边的日落.png'),
+      asset('22222222-2222-4222-8222-222222222222', 'BEACH-wide.png'),
+      asset('33333333-3333-4333-8333-333333333333'),
+    ];
+
+    expect(filterAssetCandidates(pool, '海边')[0]?.name).toBe('海边的日落.png');
+    expect(filterAssetCandidates(pool, 'beach')[0]?.name).toBe('BEACH-wide.png');
+    // 搜不到就是空数组（不做模糊兜底 —— 静默给错素材比空更糟）
+    expect(filterAssetCandidates(pool, '不存在的名字')).toEqual([]);
+  });
+
+  it('V2.9 之前的老资产（没有 name）仍可按 assetId 搜到', () => {
+    const legacy = asset('33333333-3333-4333-8333-333333333333');
+    expect(filterAssetCandidates([legacy], '33333333')).toHaveLength(1);
+  });
+
+  it('成片候选：按提示词或 taskId 匹配', () => {
+    const pool = [task('aaaa-bbbb', '雨夜街头'), task('cccc-dddd', '海边')];
+    expect(filterTaskCandidates(pool, '雨夜')).toHaveLength(1);
+    expect(filterTaskCandidates(pool, 'cccc')[0]?.taskId).toBe('cccc-dddd');
   });
 });

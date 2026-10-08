@@ -229,3 +229,52 @@ describe('HTTP 失败归类（"明确返回"与"结果不明"的分界线）', (
     expect(result.message).toContain('ratio 不支持');
   });
 });
+
+describe('B32（Step 10）：隐私检测拒绝的可执行文案', () => {
+  /**
+   * 2026-09-23 Step 4 验收的真实报文（docs/walkthrough.md §1-3a）：
+   * `InputImageSensitiveContentDetected.PrivacyInformation` /
+   * `The request failed because the input image 'content[1]' may contain real person`。
+   */
+  const privacyPayload = {
+    error: {
+      code: 'InputImageSensitiveContentDetected.PrivacyInformation',
+      message:
+        "The request failed because the input image 'content[1]' may contain real person, please check the input image",
+    },
+  };
+
+  it('码与处置不变（UPSTREAM_ERROR + terminal），但文案给出可执行动作', () => {
+    const result = classifyHttpFailure(400, privacyPayload);
+
+    expect(result.code).toBe('UPSTREAM_ERROR');
+    expect(result.dispositionOverride).toBe('terminal');
+    // 排错所需的原始事实保留（不吞上游 code / message）
+    expect(result.message).toContain('PrivacyInformation');
+    expect(result.message).toContain('may contain real person');
+    // 三件可执行动作（换素材 / 改 T2V / 有卡走本地轨）
+    expect(result.message).toContain('换不含人物的素材');
+    expect(result.message).toContain('文生视频');
+    expect(result.message).toContain('本地轨');
+    // 如实说清钱的边界：参数校验阶段被拒 = 没有成片费用
+    expect(result.message).toContain('不产生成片费用');
+  });
+
+  it('message 侧同样能认出来（上游只改 code 不改措辞时兜住）', () => {
+    const result = classifyHttpFailure(400, {
+      error: { code: 'SomeNewCode', message: 'input image may contain real person' },
+    });
+    expect(result.message).toContain('可执行动作');
+  });
+
+  it('反向断言：其它 4xx 不得被误判成隐私拒绝（否则建议动作是错的）', () => {
+    const caseA = classifyHttpFailure(400, {
+      error: { code: 'InputVideoSensitiveContentDetected.Violence', message: 'violent content' },
+    });
+    expect(caseA.message).not.toContain('可执行动作');
+    expect(caseA.message).not.toContain('真人');
+
+    const caseB = classifyHttpFailure(400, { error: { code: 'InvalidParameter', message: 'ratio 不支持' } });
+    expect(caseB.message).not.toContain('隐私检测');
+  });
+});

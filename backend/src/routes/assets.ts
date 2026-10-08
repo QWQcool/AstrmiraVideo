@@ -1,4 +1,4 @@
-import { readdir, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileTypeFromFile } from 'file-type';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -29,6 +29,23 @@ export const MAX_LISTED_ASSETS = 200;
 export interface AssetRoutesDeps {
   /** assets 根目录（默认 `OUTPUT_DIR` / `outputs`）；测试注入临时目录用 */
   outputsDir?: string;
+}
+
+/**
+ * 读 sidecar 里的原始文件名（V2.9 / 台账 B43）。
+ *
+ * sidecar = `<assetId>.json`（由 `/api/upload` 写，见 CONTRACT §5 / §7）。
+ * 三种情况一律返回 `undefined`（**不猜、不填占位**）：文件不存在（抽帧产物 / 老资产）、
+ * JSON 坏掉、`name` 不是非空字符串。
+ */
+async function readOriginalName(assetsDir: string, assetId: string): Promise<string | undefined> {
+  try {
+    const raw = await readFile(path.join(assetsDir, `${assetId}.json`), 'utf8');
+    const parsed = JSON.parse(raw) as { name?: unknown };
+    return typeof parsed.name === 'string' && parsed.name !== '' ? parsed.name : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export const createAssetRoutes =
@@ -73,6 +90,7 @@ export const createAssetRoutes =
                 : null;
             if (kind === null) continue;
 
+            const originalName = await readOriginalName(assetsDir, assetId);
             entries.push({
               assetId,
               kind,
@@ -80,6 +98,7 @@ export const createAssetRoutes =
               size: info.size,
               url: `/media/assets/${name}`,
               createdAt: Math.round(info.mtimeMs),
+              ...(originalName === undefined ? {} : { name: originalName }),
             });
           } catch {
             // 扫描期间文件被删（与 DELETE /api/history/:taskId 的清理并发）：跳过即可

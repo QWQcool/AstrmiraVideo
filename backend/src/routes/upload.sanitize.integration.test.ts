@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import sharp, { type Metadata } from 'sharp';
@@ -7,6 +7,7 @@ import type { UploadResponse } from '@astrmira/shared';
 import { buildApp } from '../index.js';
 import { MAX_LONG_EDGE } from '../pipeline/imageSanitize.js';
 import { isAlignedTo32 } from '../pipeline/smartCrop.js';
+import { sanitizeOriginalName } from './upload.js';
 
 /**
  * Step 4-AC2 的**集成层**证据：上传的**落盘产物**合规（PLAN §4 Step 4-AC2）。
@@ -252,5 +253,40 @@ describe('Step 4-AC2 · WebP / 超大图上传后，落盘产物合规（以磁�
 
     expect(meta.exif).toBeUndefined();
     expect(meta.icc).toBeUndefined();
+  });
+});
+
+describe('资产元数据 sidecar（V2.9 / 台账 B43）', () => {
+  it('上传写 sidecar（原始文件名只落本地）→ GET /api/assets 能按名字认出来', async () => {
+    const jpeg = await solid(64, 64).jpeg().toBuffer();
+    const uploaded = await uploadOne({
+      filename: '海边 参考图.jpeg',
+      contentType: 'image/jpeg',
+      content: jpeg,
+    });
+    const assetId = uploaded.assets[0]?.assetId as string;
+
+    // ① 落盘事实：`<assetId>.json` 与资产同目录（删除按 `<assetId>.` 前缀规则自动覆盖）
+    const metaPath = path.join(assetsDir(), `${assetId}.json`);
+    expect(existsSync(metaPath)).toBe(true);
+    const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as { name?: string; uploadedAt?: number };
+    expect(meta.name).toBe('海边 参考图.jpeg');
+    expect(typeof meta.uploadedAt).toBe('number');
+
+    // ② 契约面：清单条目带 name（同一条 app：上传 → 列表）
+    const list = await app.inject({ method: 'GET', url: '/api/assets' });
+    const entry = (
+      list.json() as { assets: Array<{ assetId: string; name?: string }> }
+    ).assets.find((item) => item.assetId === assetId);
+    expect(entry?.name).toBe('海边 参考图.jpeg');
+  });
+
+  it('sanitize 是纯函数：只取 basename、剥控制字符、截断 120、空名视为没有名字', () => {
+    expect(sanitizeOriginalName('..\\..\\windows\\system32\\cmd.exe')).toBe('cmd.exe');
+    expect(sanitizeOriginalName('/etc/passwd')).toBe('passwd');
+    expect(sanitizeOriginalName('a\u0000b\u001fc.png')).toBe('abc.png');
+    expect(sanitizeOriginalName('   ')).toBeUndefined();
+    expect(sanitizeOriginalName(undefined)).toBeUndefined();
+    expect(sanitizeOriginalName('x'.repeat(200))?.length).toBe(120);
   });
 });
