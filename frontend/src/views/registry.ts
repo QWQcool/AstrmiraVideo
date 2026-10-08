@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { CanvasView } from './CanvasView';
 import { CreateView } from './CreateView';
 import { EditView } from './EditView';
 import { LibraryView } from './LibraryView';
@@ -19,7 +20,15 @@ import { WorkbenchView } from './WorkbenchView';
  * - `preferRail: true` = 进入该视图时侧栏**默认收起**（工作台 / 剪辑台这类"要空间"的视图）；
  *   用户手动切换过侧栏后，本字段不再干预（见 App 的 railTouched）。
  */
-export type ViewIconKey = 'grid' | 'wand' | 'spark' | 'film' | 'cards' | 'list' | 'scissors';
+export type ViewIconKey =
+  | 'grid'
+  | 'wand'
+  | 'spark'
+  | 'film'
+  | 'cards'
+  | 'list'
+  | 'scissors'
+  | 'graph';
 
 export interface ViewDef {
   /** hash 路径（不含查询参数），如 `#/overview` */
@@ -46,6 +55,7 @@ export const VIEW_REGISTRY: readonly ViewDef[] = [
   { path: '#/workbench', title: '工作台 · 专业', eyebrow: 'Workbench', icon: 'wand', component: WorkbenchView, preferRail: true },
   { path: '#/overview', title: '总览', eyebrow: 'Overview', icon: 'grid', component: OverviewView },
   { path: '#/library', title: '视频库', eyebrow: 'Library', icon: 'film', component: LibraryView },
+  { path: '#/canvas', title: '画布', eyebrow: 'Lineage', icon: 'graph', component: CanvasView },
   { path: '#/recipes', title: '配方库', eyebrow: 'Recipe Library', icon: 'cards', component: RecipesView },
   { path: '#/logs', title: '操作日志', eyebrow: 'Logs', icon: 'list', component: LogsView },
   { path: '#/edit', title: '剪辑台', eyebrow: 'Editing Desk', icon: 'scissors', component: EditView, hidden: true, preferRail: true },

@@ -1,0 +1,261 @@
+/**
+ * 血缘画布（#/canvas；Step 8 · P4 / 台账 B42）。
+ *
+ * 组件 = @xyflow/react（UPSTREAM #5；钉死版本）；本文件只做皮肤与布局，全部走 tokens。
+ * 画布坐标（节点位置）由 lib/lineage.ts 的纯函数给出，不由 CSS 决定。
+ */
+
+.cv-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 1500px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.cv-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.cv-title {
+  margin: 2px 0 0;
+  font-family: var(--serif);
+  font-size: var(--fs-display);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.cv-legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: var(--fs-note);
+  color: var(--muted);
+}
+
+.cv-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cv-legend-line {
+  width: 22px;
+  height: 2px;
+  border-radius: 2px;
+}
+
+.cv-note {
+  text-align: center;
+}
+
+.cv-alert {
+  margin-top: 2px;
+}
+
+/* ── 空态 ── */
+.cv-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 46px 20px;
+  border: 1px dashed var(--line-gold);
+  border-radius: var(--radius-surface);
+  background-color: var(--gold-tint);
+  text-align: center;
+}
+
+.cv-empty-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: var(--fs-title);
+  color: var(--text);
+}
+
+/* ── 画布主体 ── */
+.cv-canvas {
+  height: 68vh;
+  min-height: 420px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  background-color: var(--canvas);
+  overflow: hidden;
+}
+
+/* React Flow 的默认控件配色跟随主题（内部按钮默认是白底深字，暗色下刺眼） */
+.cv-canvas .react-flow__controls button {
+  background-color: var(--panel);
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  fill: var(--text);
+}
+
+.cv-canvas .react-flow__controls button:hover {
+  background-color: var(--panel2);
+}
+
+.cv-canvas .react-flow__attribution {
+  background: transparent;
+}
+
+.cv-canvas .react-flow__attribution a {
+  color: var(--faint);
+}
+
+/* ── 节点卡（自定义节点；两类共用） ── */
+.cv-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 244px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background-color: var(--panel-glass);
+  box-shadow: 0 6px 18px var(--gold-tint);
+  font-size: var(--fs-label);
+  color: var(--text);
+}
+
+.cv-node-selected {
+  border-color: var(--line-gold);
+  box-shadow: 0 0 0 1px var(--gold-line), 0 10px 24px var(--gold-shadow);
+}
+
+/* ghost（引用了但已不在列表里）：虚线 + 调低不透明度，像"缺页"而不是"正常卡" */
+.cv-node-ghost {
+  border-style: dashed;
+  opacity: 0.72;
+}
+
+.cv-node-thumb {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background-color: var(--panel2);
+}
+
+.cv-node-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cv-node-glyph {
+  font-size: var(--fs-body);
+}
+
+.cv-node-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cv-node-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-node-badge {
+  color: var(--gold);
+}
+
+.cv-node-sub {
+  font-size: var(--fs-note);
+  color: var(--muted);
+}
+
+/* 隐形锚点：只给边挂靠，不提供连线（isConnectable=false） */
+.cv-handle {
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  min-height: 1px;
+  border: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── 详情抽屉 ── */
+.cv-drawer {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  width: 300px;
+  max-height: 76vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line-gold);
+  border-radius: var(--radius-surface);
+  background-color: var(--panel);
+  box-shadow: 0 18px 48px var(--gold-shadow);
+  z-index: 20;
+}
+
+.cv-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cv-drawer-title {
+  font-family: var(--serif);
+  font-size: var(--fs-title);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-drawer-ghost {
+  color: var(--danger);
+}
+
+.cv-drawer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cv-drawer-actions .wb-btn {
+  justify-content: flex-start;
+  text-decoration: none;
+}
+
+.cv-player {
+  width: 100%;
+  border-radius: var(--radius-control);
+  background-color: var(--canvas);
+}
+
+/* 窄屏：画布不好用，如实说 —— 而不是硬塞一个 200px 高的画布 */
+.cv-mobile-note {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .cv-canvas {
+    display: none;
+  }
+
+  .cv-mobile-note {
+    display: block;
+  }
+}

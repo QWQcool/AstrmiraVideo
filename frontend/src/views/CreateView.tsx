@@ -318,7 +318,9 @@ export function CreateView() {
   const outputUrl = task === null ? null : resolveMediaUrl(task.outputVideoUrl);
 
   return (
-    <section className="wb-main">
+    /* 单列页面容器 `wb-page`，**不是** `wb-main`：后者是工作台三栏栅格
+       （`minmax(320px,380px) 1fr minmax(300px,360px)`），造梦盒塞进第一栏会只剩 380px 宽 */
+    <section className="wb-page">
       <div
         className={dragActive ? 'cr-wrap cr-wrap-drag' : 'cr-wrap'}
         onDragOver={(event) => {

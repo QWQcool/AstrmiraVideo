@@ -274,12 +274,12 @@ try {
   const bootRail = await page.locator('.sidebar').getAttribute('data-rail');
   assert(bootRail === '1', `工作台默认收起侧栏（data-rail=${bootRail}，期望 1）`);
   assert(
-    (await page.locator('.sidebar .nav-item').count()) === 6,
-    `侧栏有六个一级视图入口（创作/工作台/总览/视频库/配方库/日志；剪辑台不进侧栏；实际 ${await page.locator('.sidebar .nav-item').count()}）`,
+    (await page.locator('.sidebar .nav-item').count()) === 7,
+    `侧栏有七个一级视图入口（创作/工作台/总览/视频库/画布/配方库/日志；剪辑台不进侧栏；实际 ${await page.locator('.sidebar .nav-item').count()}）`,
   );
 
-  // 六个一级视图可切换，且侧栏 aria-current 跟随（剪辑台是 hidden 视图，单独验）
-  for (const hash of ['#/create', '#/overview', '#/library', '#/recipes', '#/logs', '#/workbench']) {
+  // 七个一级视图可切换，且侧栏 aria-current 跟随（剪辑台是 hidden 视图，单独验）
+  for (const hash of ['#/create', '#/overview', '#/library', '#/canvas', '#/recipes', '#/logs', '#/workbench']) {
     await page.evaluate((h) => { location.hash = h; }, hash);
     await page.waitForFunction(
       (h) => document.querySelector('.nav-item[aria-current="page"]')?.getAttribute('href') === h,
@@ -1357,8 +1357,75 @@ try {
 
   // 空提示词 → 提交按钮置灰（防线 6 的前端半边）
   assert(await page.locator('.cr-submit').isDisabled(), '空提示词时提交按钮置灰');
+
+  // 造梦盒必须拿到整幅宽度（曾误用工作台三栏栅格 .wb-main → 被挤成 380px 窄条）
+  const createPanelBox = await page.locator('.cr-panel').boundingBox();
+  assert(
+    createPanelBox !== null && createPanelBox.width >= 600,
+    `造梦盒占据整幅宽度（实际 ${createPanelBox === null ? 'null' : Math.round(createPanelBox.width)}px）`,
+  );
   await page.screenshot({ path: path.join(SHOT_DIR, 'create.png'), fullPage: false });
   note('创作入口截图留档：artifacts/ui-smoke/create.png');
+
+  console.log('\n[7e] 血缘画布（P4 / B42：L2 只读 DAG）');
+  await page.goto(`${baseUrl}/#/canvas`, { waitUntil: 'load' });
+  await page.waitForFunction(() => document.querySelectorAll('.cv-node').length >= 1, {
+    timeout: 15_000,
+  });
+  const canvasNodes = page.locator('.cv-node');
+  assert(true, `画布渲染节点（${await canvasNodes.count()} 个）`);
+  assert(
+    (await page.locator('.cv-legend-item').count()) === 4,
+    '图例齐全（剪辑自 / 抽帧 / 素材参考 / 成片参考四类派生边）',
+  );
+
+  // 只读断言①：连线锚点不可交互（.cv-handle 是隐形锚点，pointer-events: none）
+  const handleInert = await page.evaluate(() => {
+    const handle = document.querySelector('.cv-handle');
+    return handle === null ? false : getComputedStyle(handle).pointerEvents === 'none';
+  });
+  assert(handleInert, '只读：连线锚点不可交互（pointer-events: none）');
+
+  // 只读断言①b（行为）：从节点边缘拖到另一节点**不产生新边**（拖拽只是挪位置）
+  const edgesBefore = await page.locator('.cv-canvas .react-flow__edge').count();
+  const boxA = await canvasNodes.first().boundingBox();
+  const boxB = await canvasNodes.nth(1).boundingBox();
+  assert(boxA !== null && boxB !== null, '至少两个节点有可视几何（画布可交互）');
+  if (boxA !== null && boxB !== null) {
+    await page.mouse.move(boxA.x + boxA.width - 2, boxA.y + boxA.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(boxB.x + boxB.width / 2, boxB.y + boxB.height / 2, { steps: 8 });
+    await page.mouse.up();
+    assert(
+      (await page.locator('.cv-canvas .react-flow__edge').count()) === edgesBefore,
+      '只读：拖拽不会产生新边',
+    );
+  }
+
+  // 画布容器必须拿到整幅宽度（曾误用工作台三栏栅格 .wb-main → 被挤成 380px，节点缩到 0.4 倍）
+  const canvasBox = await page.locator('.cv-canvas').boundingBox();
+  assert(
+    canvasBox !== null && canvasBox.width >= 600,
+    `画布占据整幅宽度（实际 ${canvasBox === null ? 'null' : Math.round(canvasBox.width)}px）`,
+  );
+
+  // 点节点 → 详情抽屉（动作按钮指向既有 hash 参数）
+  await canvasNodes.first().click();
+  await page.waitForSelector('.cv-drawer', { timeout: 5_000 });
+  assert(true, '点节点弹出详情抽屉');
+  assert(
+    (await page.locator('.cv-drawer-actions .wb-btn').count()) >= 1,
+    '抽屉里有动作入口（复用参数 / 送剪辑台 / 设为视频参考…）',
+  );
+
+  // 只读断言②：Delete 键不删除节点（deleteKeyCode=null）
+  const beforeDelete = await canvasNodes.count();
+  await page.keyboard.press('Delete');
+  await sleep(250);
+  assert((await canvasNodes.count()) === beforeDelete, 'Delete 键不删除节点（只读视图）');
+
+  await page.screenshot({ path: path.join(SHOT_DIR, 'canvas.png'), fullPage: false });
+  note('画布截图留档：artifacts/ui-smoke/canvas.png');
 
   console.log('\n[8] 控制台卫生');
   const realConsoleErrors = consoleErrors.filter(

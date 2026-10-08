@@ -367,6 +367,31 @@ export function WorkbenchView() {
   }
 
   /**
+   * 「画布 → 工作台」设为视频参考（P4 / B42）：`#/workbench?refTask=<taskId>` ——
+   * 画布的"设为视频参考"按钮跳过来，这里落到参考视频槽（复用上一条动作，零新逻辑）。
+   *
+   * 与 `frameAsset` 同套路：hash 参数严格校验（UUID 形状），`handledRefTask` 保证同一次跳转只应用一次；
+   * 候选尚未加载完时**不标记 handled**，等 `videoRefCandidates` 到位后 effect 会再跑一遍。
+   */
+  const handledRefTask = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (route.path !== '#/workbench') {
+      handledRefTask.current = null;
+      return;
+    }
+    const refTaskId = route.query.get('refTask');
+    if (refTaskId === null || handledRefTask.current === refTaskId) return;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(refTaskId)) return;
+
+    const target = videoRefCandidates.find((item) => item.taskId === refTaskId);
+    if (target === undefined || target.outputVideoUrl === undefined) return;
+
+    handledRefTask.current = refTaskId;
+    handleVideoRefTaskSelect(refTaskId);
+  }, [route, videoRefCandidates]);
+
+  /**
    * 清空某个槽。**模式必须跟着回落** —— 否则会留下"首尾帧模式但没有尾帧"这种悬空状态，
    * 用户看到的是一排没有素材的槽和一个灰着的提交按钮。
    */

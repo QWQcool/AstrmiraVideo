@@ -26,6 +26,14 @@ const ICONS: Record<ViewIconKey, ReactNode> = {
     </>
   ),
   wand: <path d="M5 19 19 5M15.5 4.5l1 1M19.5 8.5l1 1M4.5 14.5l1 1" />,
+  // 画布（B42）：两个节点 + 一条派生线 —— 血缘的最小示意
+  graph: (
+    <>
+      <circle cx="6.5" cy="7" r="2.6" />
+      <circle cx="17.5" cy="17" r="2.6" />
+      <path d="M8.6 8.6l6.8 6.8" />
+    </>
+  ),
   // 创作（B41）：四角星 + 一颗小星尘 —— "一句话点亮一颗星"的意象
   spark: (
     <>

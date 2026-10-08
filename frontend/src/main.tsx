@@ -6,6 +6,7 @@ import './styles/index.css';
 import './styles/workbench.css';
 import './styles/edit.css';
 import './styles/create.css';
+import './styles/canvas.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
