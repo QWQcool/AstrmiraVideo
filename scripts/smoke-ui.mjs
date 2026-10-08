@@ -953,7 +953,37 @@ try {
   note(`导出预期：${expectedSec.toFixed(3)}s（@${projectFps}fps；含草稿恢复后的既有编辑）`);
 
   await page.getByRole('button', { name: /导出成片/ }).click();
-  await page.waitForSelector('.ed-export-result a[download]', { timeout: 120_000 });
+
+  // 竞态等待：下载链接出现 = 成功；出现错误框 = 失败（**立刻**给出可读原因）。
+  // 旧写法只等下载链接，失败时只能看到"120s 超时"，看不出卡在哪（2026-09-24 CI 的教训）。
+  const exportOutcome = await page
+    .waitForFunction(
+      () => {
+        if (document.querySelector('.ed-export-result a[download]') !== null) return 'done';
+        if (document.querySelector('.wb-uncertain') !== null) {
+          return `error:${document.querySelector('.wb-uncertain')?.textContent ?? ''}`;
+        }
+        return false;
+      },
+      { timeout: 120_000, polling: 500 },
+    )
+    .then(async (handle) => String(await handle.jsonValue()))
+    .catch(async () => {
+      const progress = await page
+        .locator('.ed-export-progress .wb-note')
+        .first()
+        .innerText()
+        .catch(() => '(无进度条)');
+      return `timeout:${progress}`;
+    });
+
+  if (exportOutcome !== 'done') {
+    // 失败时把现场信息一并打出来：进度条文本、控制台错误、渲染期间的最后一张截图
+    note(`导出未完成 → ${exportOutcome}`);
+    note(`控制台错误（收集到 ${consoleErrors.length} 条）：${consoleErrors.slice(-3).join(' | ')}`);
+    await page.screenshot({ path: path.join(SHOT_DIR, 'export-failed.png'), fullPage: false });
+  }
+  assert(exportOutcome === 'done', `浏览器端导出完成（${exportOutcome.slice(0, 200)}）`);
   note(`导出面板结果：${await page.locator('.ed-export-result .wb-note').first().innerText()}`);
 
   const exportDownloadPromise = page.waitForEvent('download', { timeout: 30_000 });
