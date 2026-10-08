@@ -74,6 +74,8 @@ export interface JobDispatcherOptions {
 export class JobDispatcher {
   private timer: NodeJS.Timeout | null = null;
   private readonly inFlight = new Set<string>();
+  /** 在飞的 tick（`claim` 侧）—— `drain` 必须等它们，否则关库后仍在读库 */
+  private readonly ticks = new Set<Promise<void>>();
   private readonly intervalMs: number;
 
   constructor(private readonly options: JobDispatcherOptions) {
@@ -83,10 +85,27 @@ export class JobDispatcher {
   start(): void {
     if (this.timer !== null) return;
     this.timer = setInterval(() => {
-      void this.tick();
+      this.launchTick();
     }, this.intervalMs);
     // 不阻止进程退出（测试里便于收尾）
     this.timer.unref?.();
+  }
+
+  /**
+   * 领一轮任务并**记录 promise**。两件事一起做：
+   * 1. `drain` 能等它收尾（`ticks`）；
+   * 2. 异常统一走 `onError` —— `void this.tick()` 裸调用时，claim 阶段抛错（最典型：
+   *    库已关）会变成 **unhandled rejection**，Vitest/CI 直接判失败。
+   *
+   * 这不是理论问题：2026-09-24 的 CI 就红在 `The database connection is not open`
+   * （step4 集成测试关库时恰好有 tick 在飞，见 PLAN §5）。
+   */
+  private launchTick(): void {
+    const tick = this.tick().catch((err: unknown) => {
+      this.options.onError?.(err);
+    });
+    this.ticks.add(tick);
+    void tick.finally(() => this.ticks.delete(tick));
   }
 
   stop(): void {
@@ -105,8 +124,15 @@ export class JobDispatcher {
     }
   }
 
-  /** 等待所有在途任务结束（测试用） */
+  /**
+   * 收尾：**停表 → 等在飞 tick → 等在途任务**。
+   * `index.ts` 的 onClose 必须在 `db.close()` 之前 `await` 它 —— 关早了就是
+   * "关库之后仍在写"（2026-09-24 CI 实测的 unhandled rejection）。
+   */
   async drain(): Promise<void> {
+    this.stop();
+    // 先快照再 await：期间 `.finally` 会从 Set 里删条目，直接传 Set 会在迭代中变更
+    await Promise.allSettled(Array.from(this.ticks));
     while (this.inFlight.size > 0) {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }

@@ -253,7 +253,9 @@ export async function buildApp() {
   dispatcher.start();
 
   app.addHook('onClose', async () => {
-    dispatcher.stop();
+    // 先排空调度器（停表 + 等在飞 tick 与在途任务）**再关库**：
+    // 关早了，在飞的 tick 会在关闭后的连接上读写 → unhandled rejection（2026-09-24 CI 实测）
+    await dispatcher.drain();
     db.close();
   });
 
