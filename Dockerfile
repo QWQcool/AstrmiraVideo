@@ -29,6 +29,11 @@ WORKDIR /app
 
 # 先只拷贝清单文件：依赖层可被缓存，改业务代码不会触发重新安装
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# ⚠️ `patches/` 必须在 `pnpm install` **之前**拷贝：pnpm-workspace.yaml 里声明了
+# patchedDependencies（@remotion/web-renderer 的遥测短路补丁），安装时 pnpm 要读取补丁文件
+# 计算哈希并应用。漏拷的症状是 install 直接 exit 254，栈里只看到 `readNormalizedFile` 读文件失败
+# ——2026-10-08 的 CD 就死在这里（B34 P2 之后首次真正跑到部署）。
+COPY patches patches/
 COPY packages/shared/package.json packages/shared/
 COPY backend/package.json backend/
 COPY frontend/package.json frontend/
@@ -59,6 +64,8 @@ WORKDIR /app
 
 # 生产依赖（与构建阶段保持同样的 workspace 结构，避免 pnpm 符号链接断链）
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# 同构建阶段：patchedDependencies 的补丁文件要在 install 之前就位（否则 exit 254）
+COPY patches patches/
 COPY packages/shared/package.json packages/shared/
 COPY backend/package.json backend/
 
