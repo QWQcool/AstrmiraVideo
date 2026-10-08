@@ -1,4 +1,13 @@
-# AstrmiraVideo · 产品与开发规划（PLAN V8.8）
+# AstrmiraVideo · 产品与开发规划（PLAN V8.9）
+
+> **修订说明（V8.9，2026-10-08）**
+> 1. **CI/CD 从"连续 8 次红"修复到"verify + deploy 双绿"**（详见 §5 的「CI/CD 修复」条目）：
+>    四种叠在一起的红（CSP 拦 WASM 编解码器 / CI 浏览器无 H.264 / 本地误读 lint / Docker 缺 patches）
+>    + 一个真实并发缺陷（调度器在关库后仍写库）。**线上首次拿到 Step 8 全部改动**。
+> 2. §8 避坑表新增 **15~17**（门禁输出不许截尾读 / 浏览器端能力要在真浏览器 + 探针下验 /
+>    Docker 构建上下文必须含 `patches/`）。
+> 3. **产品级修复**：生产 CSP 增 `'wasm-unsafe-eval'` —— 只放行 WASM 编译，`eval` 仍禁；
+>    `securityHeaders.test.ts` 双向断言钉住（"有 wasm 放行"且"无 unsafe-eval"）。
 
 > **修订说明（V8.8，2026-10-08）**
 > 1. **Step 8 · P4（L2 只读血缘画布 / B42）【已完成】**：`#/canvas` 一级视图（自写分层布局 + `@xyflow/react@12.12.0` 钉死
@@ -608,6 +617,13 @@
         容器宽度 / 点节点出抽屉 / 抽屉有动作 / Delete 不删节点）；移动端在 [7c] 的既有断言不受影响。
       - 门禁终态：lint 0 / type 0 / 契约 11 / 后端 **354** / 前端 **190**（+13）/ 构建 / UI 冒烟全绿。
       - **Step 8 四片（P1~P4）全部完成**；待用户验收。
+- [x] **CI/CD 修复（2026-10-08）——"绿灯交还"**：发现 **CI 自 2026-09-24（B34 P2）起连续 8 次红**（CD 的 deploy 依赖 verify，因此**线上自那以后从未部署过新代码**）。排查出**四种叠在一起的红**（拖得越久越难拆）：
+      - **① [6f] 浏览器端导出挂死（最深的一个，且是产品缺陷）**：生产 CSP `script-src 'self'` 拦掉了 WebAssembly 编译 —— mediabunny 的编解码器在**没有硬件编码器**的环境回退 WASM（CI 无 GPU / Linux 用户），本地 Windows 有硬件编码器所以从不走这条路，**只在 CI 暴露**。修法 = CSP 增 `'wasm-unsafe-eval'`（CSP3 窄口子：只放行 WASM 编译，`eval` 仍被禁）+ `securityHeaders.test.ts` 双向断言。
+      - **② CI 的浏览器选型不对**：Playwright 自带 Chromium 在 Linux 无 H.264；真实用户用 Chrome / Edge。修法 = 冒烟支持 `SMOKE_CHANNEL=chrome`（CI 装 Chrome 跑）+ **[6f] 前加 WebCodecs 能力探针**（把 120s 静默超时变成一行可读诊断）。
+      - **③ 本地门禁被"截尾输出"骗了**：`pnpm lint` 实际在报 `assets.test.ts` 未使用变量（CI 抓到），而本地用 `Select-Object -Last 2` 截输出把 ELIFECYCLE 归给了下一条命令 ⇒ 误报"lint 0"。**此后门禁一律验退出码 / 关键词**。
+      - **④ deploy 死在服务器 docker build**：`pnpm install --frozen-lockfile` exit 254 —— Dockerfile 只 COPY 了清单文件就安装，而 `patchedDependencies`（B34 P2 引入的遥测短路补丁）要求 `patches/` 在场。修法 = 构建/运行两个阶段都在 install 前 `COPY patches patches/`。
+      - 顺带修掉一个**真实并发缺陷**：`onClose` 只 `dispatcher.stop()`（清定时器）就关库，**在飞的 tick 会压在已关闭的连接上**（CI 上 101MB 上传把套件拖慢后必现 `The database connection is not open`）。修法 = `drain()` 改为"停表 + 等在飞 tick + 等在途任务"，`onClose` 先 `await drain()` 再 `db.close()`；新增 `dispatcher.drain.test.ts` 3 项回归。
+      - **终态**：`verify` 4m42s 全绿（lint/type/契约/覆盖率/构建/冒烟全过）+ **`deploy` 成功** —— 线上首次拿到 Step 8 全部改动（100MB / `task:` 引用 / 创作入口 / 血缘画布 + CSP 修复）。
 
 ---
 
@@ -723,6 +739,9 @@
 | 12 | **缺依赖必须中文报错并显式失败**（不许崩栈）：provider 与脚本启动时探测 ffmpeg，缺失则打印安装指引 | 已实现（`lib/ffmpeg.ts`） |
 | 13 | **目录与卷约定**：`data/`（SQLite）、`outputs/`（成片）、`outputs/assets/`（参考资产）、`outputs/thumbs/`（封面）、`outputs/.tmp/`（中间产物）；全部在 `.gitignore` 内，容器里经卷挂载（镜像重建不丢任务库与成片） | 已固化（`compose.yaml` + `store/db.ts`） |
 | 14 | **视图容器别用 `.wb-main`**：它是**工作台三栏栅格**（`minmax(320px,380px) 1fr minmax(300px,360px)`）——单列页面（创作 / 画布 / 库 / 日志…）塞进去只会占第一栏 380px。单列视图一律用 `.wb-page`；"容器宽度够不够"已有冒烟永久断言（≥600px）兜底 | 已修复（P4 实测：画布被缩到 0.4 倍、节点压到侧栏下；创作入口同样中招） |
+| 15 | **门禁输出不许截尾读**：`pnpm lint` 在报 1 个 warning 时，`-Last 2` 截出来的恰好是"Finished…"与下一段的 ELIFECYCLE，看起来像"绿"。**判定一律看退出码或 grep `Found .* warning`**（2026-10-08 因此误报过一次 lint 0） | 已固化（当次 CI 修复） |
+| 16 | **浏览器端能力要在真浏览器 + 探针下验**：① 冒烟默认浏览器（Playwright Chromium）在 Linux 无 H.264，CI 需 `SMOKE_CHANNEL=chrome`；② 任何依赖 WebCodecs 的能力，前置 `isConfigSupported` 探针（把静默超时变成一行诊断）；③ 生产 CSP 需放行 `'wasm-unsafe-eval'`（WASM 回退编解码器），但**绝不放行 `'unsafe-eval'`** | 已修复（2026-10-08；`securityHeaders.test.ts` 双向断言钉住） |
+| 17 | **Docker 构建上下文必须含 `patches/`**：`pnpm-workspace.yaml` 有 `patchedDependencies` 时，`pnpm install --frozen-lockfile` 要读补丁文件算哈希——Dockerfile 若只 COPY 清单就安装，会 exit 254 且报错栈晦涩（`readNormalizedFile`） | 已修复（2026-10-08 CD 实测；构建与运行两个阶段都在 install 前 COPY） |
 
 ---
 
