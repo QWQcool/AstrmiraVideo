@@ -20,8 +20,18 @@ import type { FastifyInstance } from 'fastify';
  */
 export const PRODUCTION_CSP: string = [
   "default-src 'self'",
-  // 前端产物是外链 JS（Vite 不注入内联脚本），因此**不需要** 'unsafe-inline'
-  "script-src 'self'",
+  // 前端产物是外链 JS（Vite 不注入内联脚本），因此**不需要** 'unsafe-inline'。
+  //
+  // B34 · P2 追加（2026-10-08 由 CI 定位）：**浏览器端导出的编解码器需要编译 WebAssembly**。
+  // mediabunny 在"没有可用硬件编码器"的环境（CI 无 GPU runner / 用户的 Linux 机器）会回退到
+  // WASM 编解码器，`WebAssembly.instantiate()` 在 CSP3 下要求 `'wasm-unsafe-eval'` ——
+  // 只有 `'self'` 时会被直接拦掉（CI 的实测报文：`Aborted(CompileError: ... violates ... "script-src 'self'")`）。
+  // 本地 Windows 恰好有硬件编码器、从不走这条路，所以这个缺陷只在 CI / Linux 用户上暴露。
+  //
+  // 为什么加的是 `'wasm-unsafe-eval'` 而不是 `'unsafe-eval'`：
+  // 前者**只**允许从本地字节码编译 WASM 模块，不允许 `eval()` / `new Function()` 执行字符串 ——
+  // 这正是 CSP3 为 WASM 设计的窄口子（Chrome / Edge / Firefox 均支持）。
+  "script-src 'self' 'wasm-unsafe-eval'",
   // React 的 style 属性属于行内样式，受这条管辖，必须放开 'unsafe-inline'。
   // 代价可接受：样式注入的危害远小于脚本注入，且本项目的样式没有任何用户可控输入。
   "style-src 'self' 'unsafe-inline'",

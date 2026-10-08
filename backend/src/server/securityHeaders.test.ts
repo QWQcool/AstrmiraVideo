@@ -27,6 +27,10 @@ describe('securityHeaders（CSP）', () => {
     expect(PRODUCTION_CSP).not.toContain("script-src 'self' 'unsafe-inline'");
     // B34 · P2：浏览器端导出（@remotion/web-renderer）的 blob keepalive worker 需要它
     expect(PRODUCTION_CSP).toContain("worker-src 'self' blob:");
+    // 2026-10-08（CI 实测）：导出在无硬件编码器环境下回退 WASM 编解码器，
+    // 必须放行 'wasm-unsafe-eval' —— 但**绝不放行** 'unsafe-eval'（那会打开 JS 字符串执行）
+    expect(PRODUCTION_CSP).toContain("'wasm-unsafe-eval'");
+    expect(PRODUCTION_CSP).not.toContain("'unsafe-eval'");
     await app.close();
   });
 

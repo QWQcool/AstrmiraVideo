@@ -984,7 +984,9 @@ try {
     await page.screenshot({ path: path.join(SHOT_DIR, 'export-failed.png'), fullPage: false });
   }
   assert(exportOutcome === 'done', `浏览器端导出完成（${exportOutcome.slice(0, 200)}）`);
-  note(`导出面板结果：${await page.locator('.ed-export-result .wb-note').first().innerText()}`);
+  if (exportOutcome === 'done') {
+    note(`导出面板结果：${await page.locator('.ed-export-result .wb-note').first().innerText()}`);
+  }
 
   const exportDownloadPromise = page.waitForEvent('download', { timeout: 30_000 });
   await page.locator('.ed-export-result a[download]').click();
