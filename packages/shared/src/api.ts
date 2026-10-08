@@ -62,6 +62,21 @@ export const UploadResponseSchema = z.object({
   assets: z.array(UploadedAssetSchema),
 });
 
+/**
+ * `GET /api/assets` 的条目（V2.7 / 台账 B41）。
+ * 在 `UploadedAsset` 之上补 `url`（同源 `/media/assets/<文件>` 直链）与 `createdAt`（文件 mtime，epoch ms）。
+ * 与上传响应同一口径：`mime` / `size` 都是**落盘产物事实**（图像已过防线 4 清洗）。
+ */
+export const AssetListEntrySchema = UploadedAssetSchema.extend({
+  url: z.string(),
+  createdAt: z.number().int().nonnegative(),
+});
+
+/** `GET /api/assets` 的 200 响应（最近 200 个，新的在前；空目录 → 空数组，不是 404） */
+export const AssetListResponseSchema = z.object({
+  assets: z.array(AssetListEntrySchema),
+});
+
 export type GenerateResponse = z.infer<typeof GenerateResponseSchema>;
 export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
 export type HistoryResponse = z.infer<typeof HistoryResponseSchema>;
@@ -69,3 +84,5 @@ export type StorageUsage = z.infer<typeof StorageUsageSchema>;
 export type OperationResult = z.infer<typeof OperationResultSchema>;
 export type UploadedAsset = z.infer<typeof UploadedAssetSchema>;
 export type UploadResponse = z.infer<typeof UploadResponseSchema>;
+export type AssetListEntry = z.infer<typeof AssetListEntrySchema>;
+export type AssetListResponse = z.infer<typeof AssetListResponseSchema>;

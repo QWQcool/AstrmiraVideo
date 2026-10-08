@@ -1,4 +1,12 @@
-# AstrmiraVideo · 产品与开发规划（PLAN V8.6）
+# AstrmiraVideo · 产品与开发规划（PLAN V8.7）
+
+> **修订说明（V8.7，2026-10-08）**
+> 1. **Step 8 · P3（one-for-all 创作入口 / B41）【已完成】**：默认视图改 `#/create`（**D39**）、
+>    工作台改「工作台 · 专业」；契约先行 **CONTRACT V2.7**（新增 `GET /api/assets`）；新增台账 **B43**
+>    （`@` 弹层的资产搜索——资产暂无人类可读名字，如实登记）；证据 = §5 的 Step 8-P3 条目。
+> 2. §4 Step 8 的 P3 任务与 AC5 标记达成；§9 B41 收口。
+> 3. 学习点固化：**keepalive 常驻视图会让"隐藏副本"参与全局 DOM 查询**（冒烟选器需限定可见层）——
+>    已写进 §5 条目，作后续加常驻视图的前车之鉴。
 
 > **修订说明（V8.6，2026-09-24）**
 > 1. **补记 Step 7（剪辑台改版 / B34）**：P1~P5 已于 2026-09-24 收官（证据 [edit-desk-acceptance.md](edit-desk-acceptance.md)），契约 V2.5；本条为补登的修订说明（当时只更新了 §5 指针与 §9 台账）。
@@ -270,9 +278,12 @@
      接受 `task:<taskId>` 引用 —— shared `TASK_REF_PREFIX`/`parseTaskRef` + `store/assets.ts`
      判别式解析器（not_found / no_output / no_public_base 三分开）+ provider/registry/dispatcher
      透传 + generate 路由**同步 404** + 工作台 V2V 槽「从成片库选择」；
-  3. **P3 one-for-all 创作入口（B41）**：新默认首页 = 意图输入框（`@` 提及资产与成片、配方 chips
-     即"技能"、拖图/粘贴即 I2V 入口）+ 画幅/时长/档位/双轨收进"更多设置"抽屉；模式推断复用
-     `lib/assets.ts` 纯函数（素材决定模式）；现三栏工作台保留为专业模式（Step 6 证据链不动）；
+  3. **P3 one-for-all 创作入口（B41）【已完成 2026-10-08】**：新默认首页 `#/create`「造梦盒」——
+     `@` 提及（chip 提交制，`lib/mentions.ts` 纯函数 + 15 项单测）覆盖资产库与成片/剪辑产物、
+     配方 chips、拖图/粘贴直传、画幅/时长/档位/引擎/seed 收进"更多设置"抽屉、提交后内联任务卡不跳页；
+     契约先行 **CONTRACT V2.7**（新增 `GET /api/assets`，contract 测试先红后绿）；现三栏工作台
+     保留为「工作台 · 专业」（Step 6 证据链不动）；冒烟新增 **[7d]** 段（8 条断言）；
+     设计参考稿 = `docs/assets/11~13_mockup_create_*.png`；
   4. **P4 L2 只读血缘画布（B42）**：`@xyflow/react` 渲染全部任务的派生 DAG（节点 = 成片/资产，
      边 = `origin` / 抽帧来源），点节点回填参数或跳剪辑台；**只读**，零契约变更。
 - **AC1【已达成】**：>100MB 的上传与渲染入库被 **413** 拒绝（两路由各一测），≤100MB 正常；
@@ -283,8 +294,11 @@
   `TASK_NOT_FOUND`（不入队、不消耗冷却、不触达上游）；已出片 → provider 解析为
   `${PUBLIC_BASE_URL}/media/*` 进上游 `video_url`；未配 `PUBLIC_BASE_URL` → `INVALID_ASSET` + 配置指引。
 - **AC4**：门禁全绿（lint / type / test:contract / test:coverage / test:frontend / build / smoke:ui）。
-- **AC5**（P3）：one-for-all 首页可完成「一句话 + @ 成片 → 提交生成」全链路（冒烟断言）；高级控件
-  默认收起；`@` 提及的素材解析与三槽纯函数结果**逐例一致**（复用 `lib/assets` 单测矩阵）。
+- **AC5**（P3）【已达成】：one-for-all 首页可完成「一句话 + @ 成片 → 提交生成」全链路 ——
+  冒烟 [7d] 断言：`@` 弹层列出候选 → 选中成 chip → 模式摘要行推断为「视频参考」→ 移除 chip 回落
+  「文生视频」；高级控件默认收起（展开后五项齐全）；空提示词提交置灰。
+  `@` 提及的素材解析与三槽纯函数语义**逐例一致**（`lib/mentions.ts` 15 项单测矩阵，
+  含"上传中视为缺失"与"多余素材明说原因"两类边界）。
 - **AC6**（P4）：画布覆盖全部历史任务与剪辑产物的派生链；只读（无编辑操作入口）；空态有文案；
   `prefers-reduced-motion` 下动效归零（冒烟断言）。
 - **验证方式**：门禁七件套 + 冒烟新增断言（P3/P4 各自界面行为）+ P3 视觉走查截图归档 `artifacts/`。
@@ -369,7 +383,7 @@
 
 ## 5. 进度日志（唯一进度权威，其他文档只准链接本节）
 
-**截至 2026-09-24 · 当前指针：Step 2 仅剩 host 本地轨 `LocalH3Provider` 未实现（AC2 已在真机跑通 T2V / I2V / FL2V / V2V 四种模式，均走 `X-Provider-Key` 通道，证据见 §4 Step 2-AC2）；Step 1 / 1.5 / 3 / 4 / 5 / 6 / **7 已完成**；Step 6（V9 前端改版）AC1~AC8 达成（证据 [`v9-acceptance.md`](v9-acceptance.md)），**唯一待办 = 用户线上验收**；**Step 7（剪辑台改版 / B34）P1~P5 已收官**（证据 [`edit-desk-acceptance.md`](edit-desk-acceptance.md)），等用户验收；**Step 8 已立项**（2026-09-24 用户拍板：B36 体积上限 100MB + B37 产物即素材 → B41 one-for-all 入口 → B42 L2 只读血缘画布，契约 V2.6 先行，见 §9）**
+**截至 2026-09-24 · 当前指针：Step 2 仅剩 host 本地轨 `LocalH3Provider` 未实现（AC2 已在真机跑通 T2V / I2V / FL2V / V2V 四种模式，均走 `X-Provider-Key` 通道，证据见 §4 Step 2-AC2）；Step 1 / 1.5 / 3 / 4 / 5 / 6 / **7 已完成**；Step 6（V9 前端改版）AC1~AC8 达成（证据 [`v9-acceptance.md`](v9-acceptance.md)），**唯一待办 = 用户线上验收**；**Step 7（剪辑台改版 / B34）P1~P5 已收官**（证据 [`edit-desk-acceptance.md`](edit-desk-acceptance.md)），等用户验收；**Step 8 P1~P3 已完成**（B36 体积上限 100MB + B37 产物即素材，2026-09-24；**B41 one-for-all 创作入口，2026-10-08**，契约 V2.7），**仅剩 P4（B42 L2 只读血缘画布）待开工**，见 §4 Step 8 与 [EXEC-STEP8.md](EXEC-STEP8.md)**
 
 - [x] 架构纠偏：淘汰素材拼贴路线，确立【描述 + 参考图/视频 → 双轨生成】多模态管线（见 §6-D1）；
 - [x] 本地算力验证【已验证】：MiniMax H3 NF4 在 Tier 2 机器（16GB 显存）全量缓存并跑通 T2V / I2V / 双引号立体声台词；
@@ -537,7 +551,28 @@
       - **P2（B37）**：(a) `GET /api/history?kind=edit` 的 `source` 改可选（store 新增全量分支 + 路由 + 前端 `fetchHistory`）；剪辑台候选合并剪辑产物（✂ 标识）、剪辑产物可再剪（串剪）。(b) `assets.referenceVideo` 接受 `task:<taskId>`：shared `TASK_REF_PREFIX`/`parseTaskRef` → `store/assets.ts` 判别式解析器（not_found/no_output/no_public_base 三分开）→ provider/registry/dispatcher 透传 → **generate 路由同步 404**（契约承诺不落异步失败）→ 工作台 V2V 槽「从成片库选择」（选中即切 V2V，预览走 `/media` 直链）。
       - 新增测试 10 项：`taskStore.test.ts` 三档口径 3 / `assets.test.ts` 解析器 4 / provider task 引用 3 / generate 路由 taskRef 4（含防线 5 冷却互伤的真实踩点：同 IP 用例被 429，改独立 IP）。冒烟 [6] 新增「从成片库选择」断言。
       - 门禁终态：lint 0 / type 0 / 契约 11 / 后端 **350** / 前端 **162** / 构建 / UI 冒烟全绿。
-      - **P3（B41 one-for-all 入口）/ P4（B42 L2 只读血缘画布）待开工**，顺序与 AC 见 §4 Step 8。
+- [x] **Step 8 · P3（one-for-all 创作入口，台账 B41）【已完成 2026-10-08】**（契约 **V2.7** 先行；任务与 AC 见 §4 Step 8）：
+      - **契约先行**：CONTRACT 升 **V2.7** —— 新增 `GET /api/assets`（资产库清单，只读；`@` 弹层的枚举能力，
+        此前资产 ID 只存在于上传响应与任务快照里）；shared 补 `AssetListResponseSchema`；契约测试
+        「§5 每条路由都已注册」先红（未注册）后绿（落地）——这次把"先契约后代码"跑成了可见证据。
+      - **后端**：`routes/assets.ts` 目录扫描（`<uuid>.<ext>` 命名过滤 + 魔数嗅探定 kind/mime + stat 定
+        size/mtime；空目录 → 200 + 空数组不是 404；上限 200 新在前）+ 4 项路由单测（含"后缀骗人"样本：
+        PNG 内容存成 .jpg，列表以嗅探为准）。
+      - **纯函数层**：`lib/mentions.ts`（`selectMentions` / `assetsForRefs` / `hasPendingRef` /
+        `ignoredMentionHint`）+ 15 项单测矩阵 —— 与三槽路径同一纪律（上传中视为缺失、只发该模式用得到的
+        引用、多余素材明说原因）。
+      - **前端**：`#/create` 「造梦盒」（意图框 + `@` 弹层 + chips 行 + 配方 chips + 更多设置抽屉 +
+        整页拖图/粘贴 + 内联任务卡不跳页）；默认视图改为 `#/create`（**D39**），工作台改「工作台 · 专业」；
+        创作入口与工作台同为 keepalive 常驻（切视图不丢输入/任务卡）；`newIdempotencyKey` 提升为
+        `lib/idempotency.ts` 共享（工作台去重）。
+      - **踩点两处（如实记录）**：① 创作入口常驻后，隐藏副本会与工作台的通用选器（`.wb-segment` 计数、
+        `.wb-main` 全局查询、移动端三栏统计）撞车 → 冒烟选器分别限定 `:visible` / `.wb-keepalive:not([hidden])`；
+        ② 兜底页按钮走 `DEFAULT_VIEW`，D39 后它指向 `#/create` —— 按钮改名「回到首页」并同步冒烟断言
+        （"回到工作台"的旧文案会骗人）。
+      - **验证**：冒烟新增 **[7d]** 段 8 条断言（`@` 弹层列候选 → 选中成 chip → 模式摘要推断「视频参考」→
+        移除回落「文生视频」→ 更多设置默认收起/展开齐全 → 空提示词置灰）；[1] 段新增"默认落地 #/create"。
+      - 门禁终态：lint 0 / type 0 / 契约 11 / 后端 **354** / 前端 **177** / 构建 / UI 冒烟全绿。
+      - **P4（B42 L2 只读血缘画布）待开工**，顺序与 AC 见 §4 Step 8。
 
 ---
 
@@ -699,7 +734,8 @@
 | B35 | **预览与导出的像素级一致性断言**：两者的同一性目前由"同一套 composition + 同一 `durationInFrames`"在**结构上**保证，冒烟只断言产物客观事实（时长/帧率/音轨/非空白）。真正的像素比对 = 播放器逐帧截图 vs 导出帧对拍（容忍编码差异的阈值需先定） | Step 7 验收的如实说明（[edit-desk-acceptance.md](edit-desk-acceptance.md) §4） | 出现"预览看着对、导出不对"的报障时立即做（在那之前保持结构保证 + 客观事实断言） |
 | B36 | ~~入库体积上限 20MB~~ → **Step 8 施工中（用户 2026-09-24 拍板提到 100MB）**：`MAX_FILE_BYTES` / `MAX_RENDER_BYTES` / 两份 Caddyfile `request_body.max_size` / 前端上传文案四处同步；>100MB 才考虑分片上传（当前不值当） | Step 7 · P4；2026-09-24 触发（V2V 参考视频与长工程入库的真实诉求） | ~~出现诉求时~~ → **已触发** |
 | B37 | ~~剪辑产物作为其它工程的素材~~ → **Step 8 施工中（2026-09-24 拍板）**：(a) `GET /api/history?kind=edit`（不带 `source`）返回全部剪辑产物 → 时间轴素材候选合并；(b) `assets.referenceVideo` 接受 `task:<taskId>` 引用（成片本就挂在 `/media/*`，配了 `PUBLIC_BASE_URL` 后天然满足上游"公网 URL"要求） | Step 7 · P4；2026-09-24 触发（多工程串剪 + 剪辑产物当 V2V 参考） | ~~出现诉求时~~ → **已触发**（它还是 B41 的 "@成片" 与 B42 的 "边" 的共同地基） |
-| B41 | **one-for-all 创作入口**（参考即梦 / Flova 形态）：新默认首页 = 意图输入框（`@` 提及资产与历史成片、配方 chips 即"技能"、拖图/粘贴即 I2V 入口），画幅/时长/档位/双轨收进"更多设置"抽屉；现三栏工作台退为**专业模式**切页（不取代，Step 6 证据链不动）。模式推断复用 `lib/assets.ts` 纯函数（`modeAfterSlotUpload` 等"素材决定模式"纪律）；基础版零新路由（`/api/upload` + `/api/generate` 编排层），"@成片当参考"依赖 B37-(b) | 用户 2026-09-24 拍板（"工作台控件太多"的体验批评 + 即梦/Flova 截图参考）；视觉要求"尽量好看"，允许联网参考优秀设计 | Step 8 内，B36/B37 之后 |
+| B41 | ~~one-for-all 创作入口~~ → **已完成（Step 8 · P3，2026-10-08）**：`#/create`「造梦盒」= 意图输入框 + `@` 提及（chip 提交制，`lib/mentions.ts`）+ 配方 chips + 拖图/粘贴直传 + 更多设置抽屉 + 内联任务卡；默认视图变更 = **D39**，契约 = **V2.7**（新增 `GET /api/assets`）；证据见 §5 的 Step 8-P3 条目 | 用户 2026-09-24 拍板（"工作台控件太多"的体验批评 + 即梦/Flova 截图参考） | — |
+| B43 | **`@` 弹层的资产搜索**：当前资产候选按 assetId 前 8 位展示、过滤也只匹配 assetId（资产没有人类可读的名字）；要做"按文件名/内容搜"需给资产加元数据（上传时记原始文件名？——隐私与体积的取舍要先定） | Step 8 · P3 的如实说明（弹层里资产只能按编号认） | 资产数量上到几十个、按编号认不过来时 |
 | B42 | **L2 只读血缘画布**：React Flow（`@xyflow/react`，组件选型已登记 UPSTREAM #5）把 `origin` 派生链可视化为 DAG（成片/资产 = 节点，抽帧/剪辑/再生成 = 边），点节点回填参数或跳剪辑台；**只读**，零契约风险。血缘数据已存在（`tasks.origin` + 抽帧资产来源），只需 `kind=all` 查询。L3（可操作画布 = 多镜头编排 OI-3 的 UI 形态）等 L2 用过后再拍 | 用户 2026-09-24 拍板立项；PLAN §6-D9 的"L1 优先"分层与 UPSTREAM #5 是本项的规划源头 | Step 8 内，B41 之后 |
 | B38 | **独立音效素材**：`/api/upload` 白名单不含 mp3/wav，音频轨只能取视频文件的音轨。要做"音效库"需先扩白名单 + 决定时长/码率清洗口径 | Step 7 · P3/P4（同上） | 出现"配背景音乐 / 音效"的真实诉求时 |
 | B39 | **legacy EDL 与浏览器导出的路径收敛**：`POST /api/edits`（服务端 ffmpeg，API-only）与浏览器端导出语义重叠。保留它是因为"纯服务端基础剪辑"对脚本化使用仍有价值；若长期无人调用可整体删除（删除动作 = 路由 + executor + 测试 + CONTRACT §11-3） | Step 7 · P4（同上） | 决定"是否维护两条剪辑路径"时（先看 `/api/edits` 的真实调用量） |

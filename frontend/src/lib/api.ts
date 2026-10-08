@@ -1,4 +1,5 @@
 import {
+  AssetListResponseSchema,
   ErrorResponseSchema,
   GenerateResponseSchema,
   HealthResponseSchema,
@@ -13,6 +14,7 @@ import {
   UploadResponseSchema,
 } from '@astrmira/shared';
 import type {
+  AssetListResponse,
   EditProject,
   EditScript,
   ErrorCode,
@@ -278,6 +280,14 @@ export function clearLogs(query: LogQuery = {}): Promise<LogDeleteResponse> {
   }
   const suffix = params.toString() === '' ? '' : `?${params.toString()}`;
   return request(`/api/logs${suffix}`, LogDeleteResponseSchema, { method: 'DELETE' });
+}
+
+/**
+ * 资产库清单（V2.7 / 台账 B41；CONTRACT §5）。
+ * 只读枚举，含抽帧产物（同目录同规则）；空目录返回空数组（不是 404）。
+ */
+export function fetchAssets(): Promise<AssetListResponse> {
+  return request('/api/assets', AssetListResponseSchema);
 }
 
 export function fetchHistory(filter?: { kind: 'edit'; source?: string }): Promise<HistoryResponse> {

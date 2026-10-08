@@ -1,6 +1,10 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.6 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.7 · 已冻结（变更需先改本文，再改代码）**
+> **V2.7 修订（2026-10-08）**：**Step 8 · P3（one-for-all 创作入口，台账 B41）的契约支撑** —— 纯新增，向后兼容。
+>   ① **§5**：新增 `GET /api/assets` —— **资产库清单**（只读）：`@` 提及素材弹层需要"以前上传过的图/视频"的枚举能力，
+>      而资产 ID 此前只存在于上传响应与任务快照里；
+>   ② **§7**：「上传的参考资产」一行补注该端点（只读列举，不改变生命周期与清理规则）。
 > **V2.6 修订（2026-09-24）**：**Step 8 立项批（台账 B36 / B37，用户拍板）** —— 均为**向后兼容**的扩展。
 >   ① **§5**：`/api/upload` 与 `/api/edits/renders` 的体积上限由 20MB 提到 **100MB**（反代 `request_body.max_size` 同步；PLAN §7-9 口径同步）；
 >   ② **§5**：`GET /api/history?kind=edit` 的 `source` 参数改为**可选** —— 不带时返回**全部剪辑产物**（剪辑台素材候选与 L2 画布用；带 `source` 仍只回某源片的剪辑历史）；
@@ -293,6 +297,24 @@ export interface StorageUsage {
   assetBytes: number;   // 参考资产（`outputs/assets/*`）
   assetCount: number;
 }
+
+/**
+ * V2.7：`GET /api/assets` 的条目与响应（B41 `@` 提及素材弹层的枚举能力）。
+ * 与上传响应同一口径：`mime` / `size` 是**落盘产物事实**（含抽帧产物——同目录同规则）；
+ * `url` 为同源 `/media/assets/<文件>` 直链；`createdAt` = 文件 mtime（epoch ms）。
+ * 实现：`backend/src/routes/assets.ts`（目录扫描 + 魔数嗅探，只读）。
+ */
+export interface AssetListEntry {
+  assetId: string;
+  kind: 'image' | 'video';
+  mime: string;
+  size: number;
+  url: string;
+  createdAt: number;
+}
+export interface AssetListResponse {
+  assets: AssetListEntry[];   // 最近 200 个，新的在前；目录不存在 → []
+}
 ```
 
 > **可选实现项（OI）的实现边界**：`stock-local`（素材）与 `fixture-local`（CI 夹具）**必须实现与上面完全相同的接口**，不得新增专属请求字段、不得改变接口形状、不得要求调用方分支判断；其私有参数一律走 `options`。注册点为 `providers/registry.ts`，默认关闭（env `ENABLE_STOCK_PROVIDER`），能力位由 `GET /api/providers/status` 下发——前端不得硬编码具体 provider。详见 PLAN §4「Step 2 补充」。
@@ -311,6 +333,7 @@ export interface StorageUsage {
 | `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消；已在终态 → `{ ok: false }`）。**200 → `{ ok, taskId }`**。语义是**尽力而为**：服务端把任务置 `cancelled`（此后调度器**不再推进**、也不会被 heartbeat 覆盖），并**通知上游停止**；上游是否真的停止、是否已产生费用，本服务无法代上游保证 —— 前端文案必须如实说明并指向服务商后台核对 |
 | `POST` | `/api/prompt/enhance` | 提示词扩写助手（**V2.0 已实现**，凭据经 `X-LLM-Key`，见下方注记段）。**200 → `PromptEnhanceResponse`（§3，含必填 `engine`）**；无 Key → **501 `LLM_NOT_CONFIGURED`**；空 / 超长提示词 → **400 `PROMPT_REJECTED`**；上游拒绝凭据 → **401 `KEY_INVALID`**；其余上游故障（含超时）→ **502 `UPSTREAM_ERROR`**。状态映射的完整口径见 §3 |
 | `POST` | `/api/upload` | 上传参考图/视频（multipart，**V2.6 起** ≤100MB × ≤4，**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目） |
+| `GET` | `/api/assets` | **V2.7 新增**：**资产库清单（只读）**。**200 → `AssetListResponse`（§4 末尾）**（最近 200 个，新的在前；`mime` 为**魔数嗅探事实**，与 `/api/upload` 同口径；`url` 为同源 `/media/assets/<文件>` 直链；`createdAt` = 文件 mtime）。**目录不存在**（从未上传过）→ 200 + 空数组，**不是 404**。用途：`@` 提及素材弹层（B41）与后续资产管理视图；不改变任何生命周期与清理规则（见 §7） |
 | `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage }`**（`items` 最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾）。**V2.4 起**：默认只返回**生成产物**（剪辑产物不进历史，避免提示词与源片相同造成的"重复"观感）；查询参数 `?kind=edit`：**V2.6 起 `source` 可选** —— 带 `source=<taskId>` 返回某源片的剪辑产物（剪辑台"本片剪辑历史"用）；**不带 `source` 返回全部剪辑产物**（剪辑台素材候选 / L2 血缘画布用，同样受最近 50 条上限约束） |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
 | `POST` | `/api/providers/keys/verify` | **V2.1 新增（原【规划·B2】）**：凭据与模型校验，**零费用**。请求头按轨取（视频 `X-Provider-Key` / 文本 `X-LLM-Key`）；**200 → `KeyVerifyResponse`（§9）**；未带 Key → **501 `KEY_MISSING`**；凭据被上游拒绝 → **401 `KEY_INVALID`**；上游不可达 → **502 `UPSTREAM_ERROR`** |
@@ -383,7 +406,7 @@ export type ErrorDisposition =
 | 成片 MP4 | `outputs/`（已入 .gitignore） | **前端一键删除释放磁盘**（`DELETE /api/history/:taskId`）；容量淘汰（LRU）**暂缓**，见 PLAN §9-B22 |
 | 浏览器端渲染产物（V2.5） | `outputs/<taskId>.mp4`（与生成成片同目录）+ 多轨工程 JSON 落 `tasks.edit_origin` 列 | 上传即终态（`status:'succeeded'`，无异步流程）；删除规则与生成成片**完全一致**（`DELETE /api/history/:taskId` 物理删除，工程 JSON 随记录一起删） |
 | 成片缩略图（V1.9） | `outputs/thumbs/<taskId>.jpg` | 成功出片后由调度器抽首帧生成（宽度 480，`/media/thumbs/...` 直链）；**尽力而为**：抽帧失败只记日志，任务仍为 `succeeded`；随任务删除一并物理删除 |
-| 上传的参考资产 | `outputs/assets/<assetId>.<jpg\|png>` | 关联任务删除时一并清理（`DELETE /api/history/:taskId`）；**保护规则**：若该 `assetId` 仍被其它任务引用（「参数一键回填」会复用资产），则只删任务、保留资产 —— 否则会毁掉另一条任务的参考图。扩展名由防线 4 的清洗结果决定，因此按 `<assetId>.` 前缀匹配删除 |
+| 上传的参考资产 | `outputs/assets/<assetId>.<jpg\|png>` | 关联任务删除时一并清理（`DELETE /api/history/:taskId`）；**保护规则**：若该 `assetId` 仍被其它任务引用（「参数一键回填」会复用资产），则只删任务、保留资产 —— 否则会毁掉另一条任务的参考图。扩展名由防线 4 的清洗结果决定，因此按 `<assetId>.` 前缀匹配删除。**V2.7**：可由 `GET /api/assets` **只读列举**（含抽帧产物——它与上传资产同目录同规则）；列举不改变上述任何清理规则 |
 | 中间帧 / 临时音频 | host 轨：`outputs/.tmp/<taskId>/`；client 轨（【规划】，PLAN §6-D26）：落在用户机器、由 worker 清理 | 合成结束立即物理删除（防线 3）；client 轨须回报 `tmpCleaned` 并写入 `warnings[]`，服务端无法强制验证该事实 |
 | **BYOK Key（`X-Provider-Key` / `X-LLM-Key`）** | **服务端零留存（无此数据）** | V1.8：仅存在于单次请求的内存上下文；不落库、不入日志、不回显（见 §5「凭据传递约定」）；env 兜底值由部署者自管 |
 | 前端任务 ID 锚点 | 浏览器 `localStorage` | 刷新后凭 ID 向服务端重挂载进度 |

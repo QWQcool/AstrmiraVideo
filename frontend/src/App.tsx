@@ -26,6 +26,7 @@ import {
   writeThemePref,
   type ThemePref,
 } from './lib/theme';
+import { CreateView } from './views/CreateView';
 import { UnknownView } from './views/UnknownView';
 import { WorkbenchView } from './views/WorkbenchView';
 
@@ -295,7 +296,15 @@ export default function App() {
             <WorkbenchView />
           </div>
 
-          {view !== undefined && view.path !== '#/workbench' && ActiveView !== undefined ? (
+          {/* 创作入口常驻（同一条纪律，V2.7 / B41）：输入、素材 chips、内联任务卡在切视图后不丢 */}
+          <div className="wb-keepalive" hidden={view?.path !== '#/create'}>
+            <CreateView />
+          </div>
+
+          {view !== undefined &&
+          view.path !== '#/workbench' &&
+          view.path !== '#/create' &&
+          ActiveView !== undefined ? (
             <ActiveView />
           ) : null}
           {view === undefined ? <UnknownView hash={route.hash} /> : null}

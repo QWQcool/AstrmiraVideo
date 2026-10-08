@@ -5,6 +5,7 @@ import './styles/tokens.css';
 import './styles/index.css';
 import './styles/workbench.css';
 import './styles/edit.css';
+import './styles/create.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

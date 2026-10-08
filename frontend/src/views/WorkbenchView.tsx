@@ -29,6 +29,7 @@ import {
   modeAfterSlotUpload,
 } from '../lib/assets';
 import { resolveLlmConfig, resolveLlmKey, resolveProviderKey } from '../lib/byok';
+import { newIdempotencyKey } from '../lib/idempotency';
 import { appendSkeleton } from '../lib/recipeInsert';
 import { useHashRoute } from '../lib/router';
 import { useShell } from '../lib/shell';
@@ -718,14 +719,6 @@ export function WorkbenchView() {
       </footer>
     </>
   );
-}
-
-/** 幂等键：非安全上下文下 `crypto.randomUUID` 不可用，需降级 */
-function newIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `idem-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function describeError(caught: unknown): string {

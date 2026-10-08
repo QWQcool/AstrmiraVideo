@@ -1,0 +1,382 @@
+/**
+ * 创作入口（#/create；Step 8 · P3 / 台账 B41，决策 D39）。
+ *
+ * 视觉基调：星尘内核的"造梦盒" —— 深底、居中、一块带微光金描边的面板；
+ * 高级控件默认收起（"控件分层"而不是删控件）。全部走 tokens，零字面量。
+ * 参考稿：docs/assets/11~13_mockup_create_*.png（看布局与氛围，不看其中的乱码文字）。
+ */
+
+.cr-wrap {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 34px 20px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-radius: var(--radius-surface);
+  transition: box-shadow 0.2s var(--ease-ui);
+}
+
+/* 整页拖拽态：整块面板浮起 + 金色晕圈（"把图拖到这里"的可见回应） */
+.cr-wrap-drag {
+  box-shadow: 0 0 0 2px var(--gold-line), 0 0 42px var(--gold-glow);
+}
+
+.cr-hero {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0 6px;
+}
+
+.cr-eyebrow {
+  margin: 0;
+  font-family: var(--serif-caps);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.cr-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: var(--fs-metric);
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: var(--track-tight);
+}
+
+.cr-sub {
+  margin: 0;
+  font-size: var(--fs-body);
+  color: var(--muted);
+}
+
+.cr-sub code {
+  font-family: var(--mono);
+  font-size: var(--fs-note);
+  color: var(--gold);
+}
+
+.cr-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line-gold);
+  border-radius: var(--radius-surface);
+  background-color: var(--panel);
+  box-shadow: 0 18px 48px var(--gold-shadow);
+}
+
+.cr-input {
+  width: 100%;
+  min-height: 84px;
+  padding: 10px 2px;
+  border: none;
+  background: transparent;
+  resize: vertical;
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: var(--fs-title);
+  line-height: 1.7;
+}
+
+.cr-input::placeholder {
+  color: var(--faint);
+}
+
+.cr-input:focus {
+  outline: none;
+}
+
+/* ── 提示行（@ 入口 + 拖拽提示）── */
+.cr-hint-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── 素材 chips ── */
+.cr-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background-color: var(--panel2);
+  font-size: var(--fs-note);
+  color: var(--text);
+}
+
+.cr-chip-thumb {
+  width: 20px;
+  height: 20px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.cr-chip-glyph {
+  font-size: var(--fs-body);
+}
+
+.cr-chip-label {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-chip-remove {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--fs-body);
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.cr-chip-remove:hover {
+  color: var(--danger);
+}
+
+/* ── @ 提及弹层 ── */
+.cr-mention {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background-color: var(--panel2);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: card-rise 0.18s var(--ease-ui);
+}
+
+.cr-mention-search {
+  width: 100%;
+}
+
+.cr-mention-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 232px;
+  overflow-y: auto;
+}
+
+.cr-mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-label);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cr-mention-item:hover {
+  background-color: var(--gold-soft);
+}
+
+.cr-mention-thumb {
+  width: 34px;
+  height: 22px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.cr-mention-glyph {
+  width: 34px;
+  text-align: center;
+}
+
+.cr-mention-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-mention-empty {
+  margin: 6px 4px;
+}
+
+/* ── 配方 chips 横滚条 ── */
+.cr-recipes {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.cr-recipe {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background-color: transparent;
+  color: var(--muted);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease-ui), color 0.15s var(--ease-ui);
+}
+
+.cr-recipe:hover {
+  border-color: var(--line-gold);
+  color: var(--gold);
+}
+
+.cr-recipe-more {
+  color: var(--gold);
+  border-color: var(--line-gold);
+}
+
+/* ── 更多设置 ── */
+.cr-more {
+  border-top: 1px dashed var(--line);
+  padding-top: 12px;
+  animation: card-rise 0.2s var(--ease-ui);
+}
+
+.cr-more-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.cr-more-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cr-more-toggle {
+  border: none;
+  background: transparent;
+  color: var(--gold);
+  font-size: var(--fs-label);
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+/* ── 模式摘要行 / 操作区 ── */
+.cr-mode-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.cr-mode-tag {
+  font-size: var(--fs-label);
+  color: var(--gold);
+  letter-spacing: var(--track-caps);
+}
+
+.cr-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 0 4px;
+}
+
+.cr-submit {
+  min-width: 148px;
+}
+
+.cr-link {
+  border: none;
+  background: transparent;
+  color: var(--gold);
+  font-size: var(--fs-label);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+}
+
+.cr-link:hover {
+  text-decoration: underline;
+}
+
+.cr-alert {
+  margin-top: 2px;
+}
+
+/* ── 内联任务卡 ── */
+.cr-task {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line-gold);
+  border-radius: var(--radius-surface);
+  background-color: var(--panel2);
+  animation: card-rise 0.24s var(--ease-ui);
+}
+
+.cr-task-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cr-task-error {
+  color: var(--danger);
+}
+
+.cr-bar {
+  height: 4px;
+  border-radius: 999px;
+  background-color: var(--line);
+  overflow: hidden;
+}
+
+.cr-bar-fill {
+  height: 100%;
+  background-color: var(--gold);
+  border-radius: 999px;
+  transition: width 0.4s var(--ease-ui);
+}
+
+.cr-player {
+  width: 100%;
+  border-radius: var(--radius-control);
+  background-color: var(--canvas);
+}
+
+.cr-task-actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .cr-wrap {
+    padding: 20px 12px 40px;
+  }
+
+  .cr-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

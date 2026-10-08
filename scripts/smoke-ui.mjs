@@ -248,6 +248,11 @@ try {
     (await page.locator('.wb-brand-title').innerText()).includes('AstrmiraVideo'),
     '品牌标题渲染正确',
   );
+  // 默认落地（V2.7 / B41 / D39）：无 hash 打开时落到 #/create（one-for-all 创作入口）。
+  // 三栏骨架与页脚水印住在工作台里，随后切过去检查（工作台是 keepalive 常驻视图，切换不卸载）。
+  assert(page.url().includes('#/create'), `默认落地到创作入口 #/create（实际 ${page.url()}）`);
+  await page.evaluate(() => { location.hash = '#/workbench'; });
+  await page.waitForSelector('.wb-panel', { timeout: 10_000 });
   const panelCount = await page.locator('.wb-panel').count();
   assert(panelCount === 3, `三栏骨架齐全（.wb-panel × 3，实际 ${panelCount}）`);
   assert(
@@ -263,18 +268,18 @@ try {
   assert(cinzelLoaded, 'Cinzel（--serif-caps）自托管加载成功，不依赖外部 CDN');
 
   console.log('\n[1b] 应用壳（V9 · B2：侧栏 + 自写 hash 路由 + 数据化视图注册表）');
-  // 默认视图（用户拍板 2026-09-23）：无 hash 打开时落到 #/workbench，且工作台默认收起侧栏
-  assert(page.url().includes('#/workbench'), `默认视图为 #/workbench（实际 ${page.url()}）`);
+  // 默认视图 = #/create（已在 [1] 断言）；此处从工作台开始检查壳本身，且工作台/创作都默认收起侧栏
+  assert(page.url().includes('#/workbench'), `已切到工作台（实际 ${page.url()}）`);
   assert(await page.locator('.sidebar').isVisible(), '侧栏渲染出来了');
   const bootRail = await page.locator('.sidebar').getAttribute('data-rail');
   assert(bootRail === '1', `工作台默认收起侧栏（data-rail=${bootRail}，期望 1）`);
   assert(
-    (await page.locator('.sidebar .nav-item').count()) === 5,
-    `侧栏有五个一级视图入口（剪辑台不进侧栏；实际 ${await page.locator('.sidebar .nav-item').count()}）`,
+    (await page.locator('.sidebar .nav-item').count()) === 6,
+    `侧栏有六个一级视图入口（创作/工作台/总览/视频库/配方库/日志；剪辑台不进侧栏；实际 ${await page.locator('.sidebar .nav-item').count()}）`,
   );
 
-  // 五个一级视图可切换，且侧栏 aria-current 跟随（剪辑台是 hidden 视图，单独验）
-  for (const hash of ['#/overview', '#/library', '#/recipes', '#/logs', '#/workbench']) {
+  // 六个一级视图可切换，且侧栏 aria-current 跟随（剪辑台是 hidden 视图，单独验）
+  for (const hash of ['#/create', '#/overview', '#/library', '#/recipes', '#/logs', '#/workbench']) {
     await page.evaluate((h) => { location.hash = h; }, hash);
     await page.waitForFunction(
       (h) => document.querySelector('.nav-item[aria-current="page"]')?.getAttribute('href') === h,
@@ -310,9 +315,13 @@ try {
   await page.evaluate(() => { location.hash = '#/definitely-not-a-view'; });
   await page.waitForSelector('.wb-unknown', { timeout: 5_000 });
   assert(await page.getByText('这个视图不存在').isVisible(), '未知 hash 落到兜底页（不白屏）');
-  await page.getByRole('button', { name: '回到工作台' }).click();
+  await page.getByRole('button', { name: '回到首页' }).click();
+  // 兜底页按钮走 DEFAULT_VIEW = #/create（D39）；随后的检查都在工作台，先切过去
+  await page.waitForFunction(() => location.hash === '#/create', { timeout: 5_000 });
+  await page.waitForSelector('.cr-panel', { timeout: 5_000 });
+  assert(page.url().includes('#/create'), '兜底页可回到首页（DEFAULT_VIEW = #/create）');
+  await page.evaluate(() => { location.hash = '#/workbench'; });
   await page.waitForSelector('.wb-main', { timeout: 5_000 });
-  assert(page.url().includes('#/workbench'), '兜底页可回到工作台');
 
   console.log('\n[2] 首屏与后端真的通了（同源 /api/providers/status）');
   await page.getByText('服务在线').waitFor({ timeout: 10_000 });
@@ -357,10 +366,11 @@ try {
   note(`截图留档（仅 artifact，不参与判定）：${path.relative(ROOT, homeShot)} · ${path.relative(ROOT, drawerShot)}`);
 
   console.log('\n[4] 生成参数控件（V8.3 批次 1：时长 / 清晰度 → 目标尺寸联动）');
-  const durationButtons = page.locator('.wb-segment', { hasText: /^\d+s$/ });
+  // 限定 :visible —— 创作入口是 keepalive 常驻视图，隐藏副本里也有 .wb-segment（B41 起）
+  const durationButtons = page.locator('.wb-segment:visible', { hasText: /^\d+s$/ });
   assert((await durationButtons.count()) >= 3, `时长选项 ≥ 3 个（实际 ${await durationButtons.count()}）`);
   assert(
-    (await page.locator('.wb-segment[aria-pressed="true"]', { hasText: /^\d+s$/ }).count()) === 1,
+    (await page.locator('.wb-segment:visible[aria-pressed="true"]', { hasText: /^\d+s$/ }).count()) === 1,
     '时长默认选中恰好一个选项',
   );
 
@@ -375,7 +385,7 @@ try {
 
   await page.getByRole('button', { name: '10s', exact: true }).click();
   assert(
-    (await page.locator('.wb-segment[aria-pressed="true"]', { hasText: '10s' }).count()) === 1,
+    (await page.locator('.wb-segment:visible[aria-pressed="true"]', { hasText: '10s' }).count()) === 1,
     '时长可以切到 10s 且选中态正确',
   );
 
@@ -1280,7 +1290,8 @@ try {
   await mobile.evaluate(() => { location.hash = '#/workbench'; });
   await mobile.waitForSelector('.wb-main', { timeout: 5_000 });
   const stack = await mobile.evaluate(() =>
-    Array.from(document.querySelectorAll('.wb-main > *')).map((el) => {
+    // 限定当前可见的 keepalive 层：创作入口（B41）也是常驻视图，隐藏副本里有自己的 .wb-main
+    Array.from(document.querySelectorAll('.wb-keepalive:not([hidden]) .wb-main > *')).map((el) => {
       const box = el.getBoundingClientRect();
       return { x: Math.round(box.x), y: Math.round(box.y) };
     }),
@@ -1306,6 +1317,48 @@ try {
   await mobile.screenshot({ path: path.join(SHOT_DIR, 'mobile.png'), fullPage: false });
   note('移动端截图留档：artifacts/ui-smoke/mobile.png');
   await mobileContext.close();
+
+  console.log('\n[7d] 创作入口（V2.7 / B41：@ 提及 + 素材 chips + 模式摘要 + 更多设置收起）');
+  // 重载一次保证素材池拿到 [6] 段造的夹具成片（创作入口是 keepalive 常驻视图，不随导航重挂载）
+  await page.goto(`${baseUrl}/#/create`, { waitUntil: 'load' });
+  await page.waitForSelector('.cr-panel', { timeout: 10_000 });
+  assert(true, '创作入口渲染（#/create 落地即「造梦盒」）');
+
+  // @ 提及：显式按钮打开弹层 → 候选里有刚造的成片 → 选中成 chip（chip 提交制，引用不进文本）
+  await page.locator('.cr-hint-row .cr-recipe').click();
+  await page.waitForSelector('.cr-mention', { timeout: 5_000 });
+  const mentionItems = page.locator('.cr-mention-item');
+  await page.waitForFunction(
+    () => document.querySelectorAll('.cr-mention-item').length >= 1,
+    { timeout: 10_000 },
+  );
+  assert(true, `@ 弹层列出候选素材（${await mentionItems.count()} 条）`);
+  await mentionItems.first().click();
+  await page.waitForSelector('.cr-chip', { timeout: 5_000 });
+  assert(true, '选中后生成素材 chip（引用是结构化 chips，不是文本里的 @）');
+  assert(
+    (await page.locator('.cr-mode-tag').innerText()).includes('视频参考'),
+    '模式摘要行按素材推断为「视频参考」（素材决定模式，与三槽同一纪律）',
+  );
+
+  // 移除 chip → 模式回落文生视频（不留下悬空状态）
+  await page.locator('.cr-chip-remove').first().click();
+  await page.waitForFunction(
+    () => (document.querySelector('.cr-mode-tag')?.textContent ?? '').includes('文生视频'),
+    { timeout: 5_000 },
+  );
+  assert(true, '移除 chip 后模式回落到「文生视频」');
+
+  // 更多设置默认收起（D39：控件分层），展开后出现高级项
+  assert((await page.locator('.cr-more').count()) === 0, '「更多设置」默认收起（首页不是第二个工作台）');
+  await page.getByRole('button', { name: /更多设置/ }).click();
+  await page.waitForSelector('.cr-more', { timeout: 5_000 });
+  assert(true, '展开后出现高级设置（画幅 / 时长 / 清晰度 / 引擎 / seed）');
+
+  // 空提示词 → 提交按钮置灰（防线 6 的前端半边）
+  assert(await page.locator('.cr-submit').isDisabled(), '空提示词时提交按钮置灰');
+  await page.screenshot({ path: path.join(SHOT_DIR, 'create.png'), fullPage: false });
+  note('创作入口截图留档：artifacts/ui-smoke/create.png');
 
   console.log('\n[8] 控制台卫生');
   const realConsoleErrors = consoleErrors.filter(

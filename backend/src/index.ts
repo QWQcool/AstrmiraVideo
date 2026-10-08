@@ -19,6 +19,7 @@ import { JobDispatcher } from './queue/dispatcher.js';
 import { SqliteJobQueue } from './queue/SqliteJobQueue.js';
 import { createEditRoutes } from './routes/edits.js';
 import { createEditRenderRoutes } from './routes/editRenders.js';
+import { createAssetRoutes } from './routes/assets.js';
 import { createEnhanceRoutes } from './routes/enhance.js';
 import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
@@ -260,6 +261,8 @@ export async function buildApp() {
     createGenerateRoutes({ store, queue, resolveProvider: getProvider, cooldown, keyVault }),
   );
   await app.register(createUploadRoutes());
+  // V2.7（B41）：资产库清单（只读；`@` 提及素材弹层用）
+  await app.register(createAssetRoutes());
   await app.register(createEnhanceRoutes());
   // V9 · B9：基础剪辑 EDL（本地 ffmpeg；与生成任务共用队列与轮询）—— B34 后 UI 不再暴露，API 保留
   await app.register(createEditRoutes({ store, queue }));

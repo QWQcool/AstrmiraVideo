@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { CreateView } from './CreateView';
 import { EditView } from './EditView';
 import { LibraryView } from './LibraryView';
 import { LogsView } from './LogsView';
@@ -18,7 +19,7 @@ import { WorkbenchView } from './WorkbenchView';
  * - `preferRail: true` = 进入该视图时侧栏**默认收起**（工作台 / 剪辑台这类"要空间"的视图）；
  *   用户手动切换过侧栏后，本字段不再干预（见 App 的 railTouched）。
  */
-export type ViewIconKey = 'grid' | 'wand' | 'film' | 'cards' | 'list' | 'scissors';
+export type ViewIconKey = 'grid' | 'wand' | 'spark' | 'film' | 'cards' | 'list' | 'scissors';
 
 export interface ViewDef {
   /** hash 路径（不含查询参数），如 `#/overview` */
@@ -33,12 +34,17 @@ export interface ViewDef {
   preferRail?: boolean;
 }
 
-/** 默认视图（2026-09-23 用户在 B1 闸门拍板）：工具型应用落地即干活，不每次多点一次 */
-export const DEFAULT_VIEW = '#/workbench';
+/**
+ * 默认视图 = `#/create`（one-for-all 创作入口；PLAN §6-D39，2026-10-08 立项的 B41）。
+ * 取代 2026-09-23 拍板的 `#/workbench`：工具型应用落地即干活 —— 现在"干活"的起点是
+ * 一句话输入框，专业三栏退为 `#/workbench`（能力与证据链原样保留）。
+ */
+export const DEFAULT_VIEW = '#/create';
 
 export const VIEW_REGISTRY: readonly ViewDef[] = [
+  { path: '#/create', title: '创作', eyebrow: 'Create', icon: 'spark', component: CreateView, preferRail: true },
+  { path: '#/workbench', title: '工作台 · 专业', eyebrow: 'Workbench', icon: 'wand', component: WorkbenchView, preferRail: true },
   { path: '#/overview', title: '总览', eyebrow: 'Overview', icon: 'grid', component: OverviewView },
-  { path: '#/workbench', title: '生成工作台', eyebrow: 'Workbench', icon: 'wand', component: WorkbenchView, preferRail: true },
   { path: '#/library', title: '视频库', eyebrow: 'Library', icon: 'film', component: LibraryView },
   { path: '#/recipes', title: '配方库', eyebrow: 'Recipe Library', icon: 'cards', component: RecipesView },
   { path: '#/logs', title: '操作日志', eyebrow: 'Logs', icon: 'list', component: LogsView },

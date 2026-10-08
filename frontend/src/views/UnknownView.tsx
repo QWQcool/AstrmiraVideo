@@ -21,7 +21,7 @@ export function UnknownView({ hash }: { hash: string }) {
         它没有被静默重定向——因为"悄悄跳到别处"会让人以为自己点错了。
       </p>
       <button type="button" className="wb-btn wb-btn-gold" onClick={() => navigate(DEFAULT_VIEW)}>
-        回到工作台
+        回到首页
       </button>
     </section>
   );
