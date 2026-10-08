@@ -34,7 +34,7 @@
  * 用法：`pnpm smoke:ui`（可选 `--headed` 观察浏览器、`--keep` 保留临时目录）
  */
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -1387,6 +1387,46 @@ try {
   await page.goto(`${baseUrl}/#/create`, { waitUntil: 'load' });
   await page.waitForSelector('.cr-panel', { timeout: 10_000 });
   assert(true, '创作入口渲染（#/create 落地即「造梦盒」）');
+
+  // ── B43（V2.9）：资产原始文件名 —— 只落本地，但界面要能按名字认素材 ──────────
+  // 用 API 上传一张**有名字**的图（借夹具任务的封面当素材：真实 JPEG + 真实 multipart）。
+  // 注意：冒烟跑的是**自己的临时 OUTPUT_DIR**（不是仓库 outputs/）——首版写错目录，实测踩点。
+  const thumbDir = path.join(OUTPUTS_DIR, 'thumbs');
+  const thumbNames = existsSync(thumbDir) ? readdirSync(thumbDir).filter((n) => n.endsWith('.jpg')) : [];
+  assert(thumbNames.length > 0, '存在夹具封面文件（B43 上传素材的来源）');
+  const uploadForm = new FormData();
+  uploadForm.append(
+    'files',
+    new Blob([readFileSync(path.join(thumbDir, thumbNames[0]))], { type: 'image/jpeg' }),
+    '海边参考图.jpg',
+  );
+  const uploadRes = await fetch(`${baseUrl}/api/upload`, { method: 'POST', body: uploadForm });
+  assert(uploadRes.ok, `B43：上传带文件名的资产成功（HTTP ${uploadRes.status}）`);
+  const uploadedAsset = (await uploadRes.json()).assets[0];
+  const assetRes = await fetch(`${baseUrl}/api/assets`);
+  const assetEntry = (await assetRes.json()).assets.find((a) => a.assetId === uploadedAsset.assetId);
+  assert(assetEntry?.name === '海边参考图.jpg', 'B43：/api/assets 透出原始文件名（sidecar 只落本地）');
+
+  await page.locator('.cr-hint-row .cr-recipe').click(); // 打开弹层
+  await page.waitForSelector('.cr-mention', { timeout: 5_000 });
+  await page.locator('.cr-mention-search').fill('海边');
+  await page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('.cr-mention-label')].some((el) =>
+        (el.textContent ?? '').includes('海边参考图'),
+      ),
+    { timeout: 5_000 },
+  );
+  assert(true, 'B43：弹层按原始文件名过滤命中（大小写不敏感，assetId 仍可搜）');
+  await page.locator('.cr-mention-item', { hasText: '海边参考图' }).first().click();
+  await page.waitForSelector('.cr-chip', { timeout: 5_000 });
+  // B32：加入图片素材后出现"真人素材会被上游隐私检测拒绝"的前置提示（引导，不阻断）
+  await page.waitForSelector('.cr-realperson-note', { timeout: 5_000 });
+  assert(true, 'B32：图片素材下出现真人素材前置提示（只做引导，不假装检测）');
+  await page.locator('.cr-chip-remove').first().click();
+  await page.waitForFunction(() => document.querySelectorAll('.cr-chip').length === 0, {
+    timeout: 5_000,
+  });
 
   // @ 提及：显式按钮打开弹层 → 候选里有刚造的成片 → 选中成 chip（chip 提交制，引用不进文本）
   await page.locator('.cr-hint-row .cr-recipe').click();

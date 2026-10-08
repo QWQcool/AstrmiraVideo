@@ -47,6 +47,7 @@ pnpm dev               # 并行拉起 backend + frontend
 | [docs/walkthrough.md](docs/walkthrough.md) | Step 4 验收记录 | AC1~AC4 的逐条证据（命令 / 输出摘录 / 判定）、如实澄清项——**只放证据，不放状态**（状态见 PLAN §5） |
 | [docs/v9-acceptance.md](docs/v9-acceptance.md) | Step 6（V9）验收记录 | AC1~AC8 的逐条证据、门禁基线、遗留与如实说明——**只放证据，不放状态** |
 | [docs/edit-desk-acceptance.md](docs/edit-desk-acceptance.md) | Step 7（剪辑台改版 / B34）验收记录 | AC1~AC8 的逐条证据、修掉的真缺陷清单、能力边界与遗留台账——**只放证据，不放状态** |
+| [docs/step8-10-acceptance.md](docs/step8-10-acceptance.md) | **Step 8~10 验收清单**（创作入口与画布 / 运维批 / 素材体验批） | 逐条「点哪里 → 看什么 → 期望」+ 谁跑（【我】已跑的自动化证据 / 【你】需真实 Key 或人眼）+ **明确没做与做不到的**（不把"未验证"读成"已验证"） |
 | ~~docs/EXEC-STEP2-5.md~~ | ~~施工手册（一次性）~~ | **已归档删除**（2026-09-23）：Step 2 ~ Step 5 已完工，其仍有效的口径逐处迁入 PLAN（§3 铁律 → 本文协作规范、§7-9 部署硬要求、§8 施工避坑、§9 台账、§4 各 Step 的 AC）。历史从 git 取回即可，**不再建第二份施工手册** |
 | [NEXT_SESSION_PROMPT.md](NEXT_SESSION_PROMPT.md) | 跨会话接力 | 纯指针，不含任何独家信息 |
 
