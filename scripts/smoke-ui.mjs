@@ -219,7 +219,18 @@ const consoleWarnings = [];
 try {
   if (!(await waitForHealth(baseUrl))) throw new Error(`后端未在超时内就绪（${baseUrl}/api/health）`);
 
-  browser = await chromium.launch({ headless: !HEADED });
+  // 浏览器渠道：默认 Playwright 自带的 Chromium；CI 传 `SMOKE_CHANNEL=chrome` 用 **Chrome for Testing**。
+  //
+  // 为什么需要这个开关（2026-09-24 起 CI 一直红在 [6f] 的根因）：浏览器端导出依赖 WebCodecs 的
+  // **H.264 编码**，而开源 Chromium 构建**不含**专有编解码器（Linux 上实测：导出永远不出结果）。
+  // 真实用户用的是 Chrome / Edge（含编解码器），所以 CI 用 Chrome 跑才是"对着真实环境验"。
+  const BROWSER_CHANNEL = process.env.SMOKE_CHANNEL?.trim();
+  browser = await chromium.launch({
+    headless: !HEADED,
+    ...(BROWSER_CHANNEL === undefined || BROWSER_CHANNEL === ''
+      ? {}
+      : { channel: BROWSER_CHANNEL }),
+  });
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
     deviceScaleFactor: 1,
@@ -901,6 +912,27 @@ try {
   assert(historyCount >= 1, `本片剪辑历史可见（${historyCount} 条）`);
 
   console.log('\n[6f] 剪辑台导出（B34 · P2：浏览器端 web-renderer 真渲染出一个 MP4）');
+
+  // 前置能力探针（2026-09-24 CI 教训）：浏览器端导出依赖 WebCodecs 的 H.264 编码。
+  // 没有这个能力时，旧写法会**静默挂 120 秒**再报一句 "waitForSelector 超时"，看不出根因；
+  // 现在一行诊断：要么通过，要么直说"当前浏览器不支持 H.264 编码"。
+  const h264EncodeSupport = await page.evaluate(async () => {
+    if (typeof VideoEncoder === 'undefined') return 'VideoEncoder 不存在';
+    try {
+      const support = await VideoEncoder.isConfigSupported({
+        codec: 'avc1.42001f',
+        width: 640,
+        height: 360,
+        bitrate: 1_000_000,
+        framerate: 30,
+      });
+      return support.supported === true ? 'ok' : 'H.264 编码不受支持（Chromium 开源构建不含专有编解码器；CI 请用 SMOKE_CHANNEL=chrome）';
+    } catch (caught) {
+      return `探测异常：${caught instanceof Error ? caught.message : String(caught)}`;
+    }
+  });
+  assert(h264EncodeSupport === 'ok', `浏览器具备 WebCodecs H.264 编码能力（${h264EncodeSupport}）`);
+
   // 上一段刚 reload 过 → 工程是初始态（源片一个 clip）；预期时长 = 内容精确结束帧
   // （导出不含预览的 1s 编辑余量 —— 这是 exportDurationFrames 的刻意口径）
   const sizeText = await page.locator('.ed-transport-size').innerText();

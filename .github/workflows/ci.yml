@@ -75,11 +75,19 @@ jobs:
       - name: 构建产物（UI 冒烟需要 backend/dist 与 frontend/dist）
         run: pnpm build
 
-      - name: 安装 chromium（UI 冒烟用）
-        run: pnpm exec playwright install --with-deps chromium
+      # 同时装 chromium 与 **chrome**：
+      # - chromium：其余段落用（与历史一致）；
+      # - chrome（Chrome for Testing）：浏览器端导出段落（[6f]/[6g]）**必需** ——
+      #   开源 Chromium 构建不含 H.264 专有编解码器，WebCodecs 编码不可用，导出永远不出结果
+      #   （2026-09-24 起 CI 一直红在这里，2026-10-08 定位；真实用户用的是 Chrome / Edge）。
+      - name: 安装 chromium + chrome（UI 冒烟用）
+        run: pnpm exec playwright install --with-deps chromium chrome
 
       - name: UI 冒烟（生产形态 + 控制台零 error）
         run: pnpm smoke:ui
+        env:
+          # 用 Chrome 跑冒烟 = 对着"真实用户浏览器能力"验（含 H.264 编码）
+          SMOKE_CHANNEL: chrome
 
       # 截图只作留档（人看），不参与判定
       - name: 上传 UI 冒烟截图
