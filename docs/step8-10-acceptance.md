@@ -11,6 +11,31 @@
 ## 〇、前置与复现方式
 
 - **线上**：Caddy 登录 + `PUBLIC_API_TOKEN` 两层保护；Key 在「凭据设置（BYOK）」抽屉里填，**只存你自己的浏览器**。
+- **本地验收（推荐"生产形态"，最接近线上）**：
+
+  ```bash
+  pnpm build          # 首次或代码有改动时
+  pnpm serve:local    # → http://127.0.0.1:3000（单进程托管 API + /media + 前端产物）
+  ```
+
+  常用开关：`--fixture`（开放夹具引擎：无 Key、零成本造任务，用来铺验收数据）、
+  `--evict-mb 3`（把容量淘汰阈值压到 3MB，**当场看到"成片已清理"**，会真删本地 `outputs/` 里最旧的成片）、
+  `--port 3100`、`--public-base-url https://xxx`（V2V / 成片参考需要上游能抓到的公网地址）。
+  细节与差别逐条写在 `scripts/serve-local.mjs` 的头注释里。
+
+  | 差别项 | 本地生产形态 | 线上（Caddy 之后） |
+  | :--- | :--- | :--- |
+  | 传输 / 登录 | http，回环免鉴权（不需要 Token） | https + Caddy 登录 + `PUBLIC_API_TOKEN` |
+  | 请求体上限 | 应用层 100MB | 反代 `request_body` 100MB **+** 应用层 100MB（同口径） |
+  | 来源 IP 与限流 | 全部按"本机一个 IP"计 → 生成 60s 冷却连点会拦（**预期行为**） | `TRUST_PROXY=1` 按真实来源 IP 各自计 |
+  | `PUBLIC_BASE_URL` | 默认未配：I2V 图片可用（data URL 兜底）；**V2V / 成片参考会如实报错**并给配置指引 | 已配 → 视频参考可用 |
+  | 数据 | 仓库本地 `data/` + `outputs/`（gitignored） | 服务器容器卷（两者互不影响） |
+  | 引擎 | `--fixture` 时多一个夹具引擎（零成本） | 只有云端 / 本地轨 |
+  | Runtime | 本机 Node 24（`engines >=22`）、ffmpeg 走 PATH | 镜像 Node 22、ffmpeg 内置 |
+
+  > 另一条路是 `pnpm dev`（Vite dev server + watch 后端）：改代码立即热更，但**没有** CSP 头与服务端托管形态，
+  > 离线上更远 —— 适合开发，不适合验收。验收请用上面的 `serve:local`。
+
 - **本地复现一套门禁**（约 2 分钟）：
 
   ```bash

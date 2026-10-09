@@ -18,7 +18,9 @@
 ```bash
 cp .env.example .env   # 按需填入火山 Key / 本地 H3 目录
 pnpm install
-pnpm dev               # 并行拉起 backend + frontend
+pnpm dev               # 并行拉起 backend + frontend（开发用，Vite 热更）
+# 想在本机按**线上那份形态**验收（单进程托管 API + /media + 前端产物）：
+pnpm build && pnpm serve:local   # → http://127.0.0.1:3000（加 --fixture 可零成本造验收数据）
 ```
 
 > **Node 版本（V8.10 / 台账 B18 收口）**：**22 = 事实源**（`.nvmrc` + CI + 生产镜像三处同源；
