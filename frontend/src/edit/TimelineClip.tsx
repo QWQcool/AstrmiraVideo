@@ -5,6 +5,7 @@ import {
   clipEndFrame,
   clipGeometry,
   collectSnapTargets,
+  editSourceLabel,
   type EditClip,
 } from './model';
 import type { EditStore } from './store';
@@ -86,13 +87,14 @@ export const TimelineClip: React.FC<{
   let label: string;
   switch (clip.kind) {
     case 'video':
-      label = clip.label ?? clip.source.taskId.slice(0, 8);
+      label = clip.label ?? editSourceLabel(clip.source);
       break;
     case 'caption':
       label = clip.text;
       break;
     case 'audio':
-      label = clip.source.taskId.slice(0, 8);
+      // V2.10：音频片段可能来自**上传的音频素材**（没有 taskId），统一走 editSourceLabel
+      label = editSourceLabel(clip.source);
       break;
     case 'transition':
       label = EDIT_TRANSITION_LABELS[clip.transition];

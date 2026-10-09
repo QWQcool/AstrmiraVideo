@@ -1,7 +1,7 @@
 import React from 'react';
 import { Eyebrow } from '../components/Eyebrow';
 import { CLIP_FIELD_SCHEMA, applyProperty, readProperty, type FieldDescriptor } from './clipProperties';
-import { EDIT_TRANSITION_LABELS, findClip, type EditClip } from './model';
+import { EDIT_TRANSITION_LABELS, editSourceLabel, findClip, type EditClip } from './model';
 import type { EditStore } from './store';
 import { useEditStore } from './store';
 import { formatTimecode } from './time';
@@ -30,7 +30,7 @@ function factsFor(clip: EditClip, fps: number): { label: string; value: string }
     { label: '时长', value: formatTimecode(clip.durationFrames, fps) },
   ];
   if (clip.kind === 'video' || clip.kind === 'audio') {
-    facts.push({ label: '来源', value: clip.source.taskId.slice(0, 8) });
+    facts.push({ label: '来源', value: editSourceLabel(clip.source) });
     facts.push({
       label: '源片',
       value: `${formatTimecode(clip.source.durationFrames, fps)} · 裁入 ${formatTimecode(clip.trimStartFrames, fps)}`,

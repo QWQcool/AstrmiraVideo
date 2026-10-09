@@ -30,19 +30,49 @@ export const TRACK_KIND_LABELS: Record<EditTrackKind, string> = {
   audio: '音效',
 };
 
-/** 素材引用：服务端已落盘的成片。`url` 是同源相对地址（`/media/*`），渲染时绝对化（P0 实测坑②） */
-export const EditClipSourceSchema = z.object({
-  /** 来源任务 id（溯源与「本片剪辑历史」联动用） */
-  taskId: z.string().min(1),
-  /** 成片地址（`/media/<file>.mp4`） */
-  url: z.string().startsWith('/media/'),
-  /**
-   * 源片真实时长（工程帧口径），由 `<video>` 元数据探测得出（`mediaProbe.ts`）。
-   * 它是裁剪上限的唯一依据 —— 不可用请求参数里的 `durationSec` 代替（那是请求值，不是成片事实）。
-   */
-  durationFrames: z.number().int().min(1),
-});
+/**
+ * 素材引用：**成片**（`task:`）或**上传资产**（`asset:`，V2.10 / 台账 B57 的音频素材）。
+ * `url` 是同源相对地址（`/media/*`），渲染时绝对化（P0 实测坑②）。
+ *
+ * 为什么 `taskId` 变成可选：音效轨要能取自**上传的音频素材**，而上传资产没有任务 id ——
+ * 硬塞一个是伪造溯源。二者**至少有一个**由 `superRefine` 收口（都不给 = 无来源，拒绝）。
+ * 消费方要用 `editSourceLabel()` 取显示名，不要直接读 `taskId`（它可能不存在）。
+ */
+export const EditClipSourceSchema = z
+  .object({
+    /** 成片来源（任务 id；溯源与「本片剪辑历史」联动用） */
+    taskId: z.string().min(1).optional(),
+    /** 上传资产来源（V2.10：音频素材） */
+    assetId: z.string().min(1).optional(),
+    /** 媒体地址（成片 `/media/<taskId>.mp4` / 资产 `/media/assets/<file>`） */
+    url: z.string().startsWith('/media/'),
+    /**
+     * 源片真实时长（工程帧口径），由媒体元数据探测得出（`mediaProbe.ts`）。
+     * 它是裁剪上限的唯一依据 —— 不可用请求参数里的 `durationSec` 代替（那是请求值，不是成片事实）。
+     */
+    durationFrames: z.number().int().min(1),
+    /** 资产的可读名字（sidecar 的 `name`，仅显示用；成片来源没有） */
+    name: z.string().max(120).optional(),
+  })
+  .superRefine((source, ctx) => {
+    if (source.taskId === undefined && source.assetId === undefined) {
+      ctx.addIssue({ code: 'custom', message: '来源必须指明 taskId 或 assetId' });
+    }
+  });
 export type EditClipSource = z.infer<typeof EditClipSourceSchema>;
+
+/**
+ * 来源的**显示名**（V2.10）：`name`（上传资产的原始文件名）> `taskId` 前 8 位 > `assetId` 前 8 位。
+ *
+ * 为什么收口在这里：`taskId` 自 V2.10 起可为空（音频素材没有任务 id），
+ * 时间轴标签与属性面板若各自 `slice(0, 8)` 会在资产来源上**崩在 undefined**。
+ */
+export function editSourceLabel(source: EditClipSource): string {
+  if (source.name !== undefined && source.name !== '') return source.name;
+  if (source.taskId !== undefined) return source.taskId.slice(0, 8);
+  if (source.assetId !== undefined) return source.assetId.slice(0, 8);
+  return '素材';
+}
 
 const ClipBaseShape = {
   id: z.string().min(1),
@@ -131,14 +161,62 @@ export const TransitionClipSchema = z.object({
 });
 export type TransitionClip = z.infer<typeof TransitionClipSchema>;
 
+/**
+ * 音效片段（V2.10 / 台账 B57）：来源可以是**成片的音轨**（`task:`）或**上传的音频素材**（`asset:`）；
+ * `fadeInFrames` / `fadeOutFrames` 是广告片收尾必需的淡入淡出（0 = 不淡）。
+ */
 export const AudioClipSchema = z.object({
   ...ClipBaseShape,
   kind: z.literal('audio'),
   source: EditClipSourceSchema,
   trimStartFrames: z.number().int().min(0),
   volume: z.number().min(0).max(2),
+  /** 淡入帧数（0~durationFrames；缺省 0）。语义见 `audioFadeFactor` 与 CONTRACT §11-2 */
+  fadeInFrames: z.number().int().min(0).optional(),
+  /** 淡出帧数（0~durationFrames；缺省 0） */
+  fadeOutFrames: z.number().int().min(0).optional(),
 });
 export type AudioClip = z.infer<typeof AudioClipSchema>;
+
+/**
+ * 淡入淡出的音量系数（V2.10 / B57）——**预览与导出同一套实现**（渲染层只调用，不另写一份）。
+ *
+ * `frameInClip` = **相对片段起点**的帧号（`<Sequence from>` 内的 frame 就是这个口径）。
+ * 规则：淡入段线性 `f/fadeIn`、淡出段线性 `(duration-f)/fadeOut`，**两段重叠时取较小值**
+ * （不会因两段叠加而放大）；`fadeIn + fadeOut > duration` 时不报错（曲线语义是"最多这么长"）。
+ * 边界：`f = 0` 时淡入系数为 0、`f = duration` 时淡出系数为 0（真正的淡入淡出而不是"少淡一点"）。
+ */
+export function audioFadeFactor(
+  clip: Pick<AudioClip, 'durationFrames' | 'fadeInFrames' | 'fadeOutFrames'>,
+  frameInClip: number,
+): number {
+  const total = Math.max(1, clip.durationFrames);
+  const fadeIn = Math.min(clip.fadeInFrames ?? 0, total);
+  const fadeOut = Math.min(clip.fadeOutFrames ?? 0, total);
+  const frame = Math.min(Math.max(frameInClip, 0), total);
+  let factor = 1;
+  if (fadeIn > 0 && frame < fadeIn) factor = Math.min(factor, frame / fadeIn);
+  if (fadeOut > 0 && frame > total - fadeOut) factor = Math.min(factor, (total - frame) / fadeOut);
+  return factor;
+}
+
+/** 某帧的**实际音量** = `volume × audioFadeFactor`（渲染层用它，别自己算） */
+export function audioVolumeAt(clip: AudioClip, frameInClip: number): number {
+  return clip.volume * audioFadeFactor(clip, frameInClip);
+}
+
+/**
+ * 传给渲染层 `volume` prop 的值（V2.10 / B57）：无淡入淡出时给**常量**
+ * （Remotion 能走静态音量路径，不必逐帧求值），有淡变时给帧函数。
+ *
+ * 帧口径：Remotion 在 `<Sequence>` 内传给 volume 回调的帧就是**相对片段起点**的帧
+ * （实测 `remotion/dist/cjs/audio/use-audio-frame.js`：`useCurrentFrame() + cumulatedNegativeFrom`），
+ * 与 `audioVolumeAt` 的 `frameInClip` 同口径 —— 因此可以直传。
+ */
+export function audioVolumeProp(clip: AudioClip): number | ((frame: number) => number) {
+  if ((clip.fadeInFrames ?? 0) === 0 && (clip.fadeOutFrames ?? 0) === 0) return clip.volume;
+  return (frame: number) => audioVolumeAt(clip, frame);
+}
 
 export const EditClipSchema = z.discriminatedUnion('kind', [
   VideoClipSchema,
@@ -392,7 +470,7 @@ function appendClipToTrack(project: EditProject, kind: EditTrackKind, clip: Edit
 export type ClipPatch =
   | { kind: 'video'; speed?: number; volume?: number; label?: string | null }
   | { kind: 'caption'; text?: string; position?: CaptionPosition; preset?: CaptionPreset }
-  | { kind: 'audio'; volume?: number }
+  | { kind: 'audio'; volume?: number; fadeInFrames?: number; fadeOutFrames?: number }
   | { kind: 'transition'; transition?: EditTransitionKind; durationFrames?: number };
 
 /**
@@ -437,7 +515,16 @@ export function updateClipFields(project: EditProject, clipId: string, patch: Cl
 
   if (clip.kind === 'audio' && patch.kind === 'audio') {
     const volume = patch.volume === undefined ? clip.volume : clamp(patch.volume, 0, 2);
-    return mapClip(project, clipId, () => ({ ...clip, volume: Math.round(volume * 100) / 100 }));
+    const next: AudioClip = { ...clip, volume: Math.round(volume * 100) / 100 };
+    // 淡入淡出（V2.10 / B57）：钳到 [0, durationFrames] —— 曲线语义是"最多这么长"，
+    // 两段之和可以超过总长（重叠时取较小值，见 audioFadeFactor），因此不做"和 ≤ 总长"的额外约束
+    if (patch.fadeInFrames !== undefined) {
+      next.fadeInFrames = clamp(Math.round(patch.fadeInFrames), 0, clip.durationFrames);
+    }
+    if (patch.fadeOutFrames !== undefined) {
+      next.fadeOutFrames = clamp(Math.round(patch.fadeOutFrames), 0, clip.durationFrames);
+    }
+    return mapClip(project, clipId, () => next);
   }
 
   if (clip.kind === 'transition' && patch.kind === 'transition') {

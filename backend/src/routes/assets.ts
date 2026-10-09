@@ -31,21 +31,52 @@ export interface AssetRoutesDeps {
   outputsDir?: string;
 }
 
+/** sidecar（`<assetId>.json`）里我们认得的部分 */
+export interface AssetSidecar {
+  name?: string;
+  kind?: 'image' | 'video' | 'audio';
+}
+
 /**
- * 读 sidecar 里的原始文件名（V2.9 / 台账 B43）。
+ * 读 sidecar（V2.9 的 `name` + V2.10 的 `kind`）。
  *
  * sidecar = `<assetId>.json`（由 `/api/upload` 写，见 CONTRACT §5 / §7）。
- * 三种情况一律返回 `undefined`（**不猜、不填占位**）：文件不存在（抽帧产物 / 老资产）、
- * JSON 坏掉、`name` 不是非空字符串。
+ * 三种情况一律返回空对象（**不猜、不填占位**）：文件不存在（抽帧产物 / 老资产）、
+ * JSON 坏掉、字段不是期望的形状。
  */
-async function readOriginalName(assetsDir: string, assetId: string): Promise<string | undefined> {
+async function readAssetSidecar(assetsDir: string, assetId: string): Promise<AssetSidecar> {
   try {
     const raw = await readFile(path.join(assetsDir, `${assetId}.json`), 'utf8');
-    const parsed = JSON.parse(raw) as { name?: unknown };
-    return typeof parsed.name === 'string' && parsed.name !== '' ? parsed.name : undefined;
+    const parsed = JSON.parse(raw) as { name?: unknown; kind?: unknown };
+    const meta: AssetSidecar = {};
+    if (typeof parsed.name === 'string' && parsed.name !== '') meta.name = parsed.name;
+    if (parsed.kind === 'image' || parsed.kind === 'video' || parsed.kind === 'audio') {
+      meta.kind = parsed.kind;
+    }
+    return meta;
   } catch {
-    return undefined;
+    return {};
   }
+}
+
+/**
+ * 资产类别的**唯一判定处**（V2.10 / 台账 B57）：
+ * sidecar 的 `kind` 优先（上传时已由 ffprobe 算准，免去逐文件探测），
+ * 缺失时按**容器 mime**兜底（`audio/*` → audio、`video/*` → video、`image/*` → image），
+ * 三者都不是 → `null`（调用方跳过该文件）。
+ *
+ * ⚠️ 兜底**不猜**：老资产与抽帧产物走这条，其中"纯音频 mp4"会被兜底判为 video（如实边界，
+ * 因为不重新探测就无法区分；见 CONTRACT §5）。
+ */
+export function resolveAssetKind(
+  sidecarKind: AssetSidecar['kind'],
+  mime: string,
+): 'image' | 'video' | 'audio' | null {
+  if (sidecarKind !== undefined) return sidecarKind;
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('audio/')) return 'audio';
+  if (mime.startsWith('video/')) return 'video';
+  return null;
 }
 
 export const createAssetRoutes =
@@ -80,17 +111,15 @@ export const createAssetRoutes =
             const info = await stat(filePath);
             if (!info.isFile()) continue;
 
-            // 魔数嗅探只读文件头；未知类型 / 既非图也非视频者跳过
+            // 魔数嗅探只读文件头；未知类型（含 sidecar 的 `.json`）一律跳过
             const sniffed = await fileTypeFromFile(filePath);
             if (sniffed === undefined) continue;
-            const kind = sniffed.mime.startsWith('image/')
-              ? ('image' as const)
-              : sniffed.mime.startsWith('video/')
-                ? ('video' as const)
-                : null;
+
+            // V2.10：kind 以 sidecar 为准（上传时已算准），缺失才按容器兜底
+            const sidecar = await readAssetSidecar(assetsDir, assetId);
+            const kind = resolveAssetKind(sidecar.kind, sniffed.mime);
             if (kind === null) continue;
 
-            const originalName = await readOriginalName(assetsDir, assetId);
             entries.push({
               assetId,
               kind,
@@ -98,7 +127,7 @@ export const createAssetRoutes =
               size: info.size,
               url: `/media/assets/${name}`,
               createdAt: Math.round(info.mtimeMs),
-              ...(originalName === undefined ? {} : { name: originalName }),
+              ...(sidecar.name === undefined ? {} : { name: sidecar.name }),
             });
           } catch {
             // 扫描期间文件被删（与 DELETE /api/history/:taskId 的清理并发）：跳过即可

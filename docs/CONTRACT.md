@@ -1,6 +1,20 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.9 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.10 · 已冻结（变更需先改本文，再改代码）**
+> **V2.10 修订（2026-10-09）**：**音频素材与 BGM（台账 B57）** —— 向后兼容的扩展（新增一类资产，不改既有语义）。
+>   ① **§5**：`POST /api/upload` 白名单新增 **mp3 / wav / m4a**（魔数嗅探 + **ffprobe 流类型复核**）；
+>      **实测事实（2026-10-09）**：`file-type` 对 `.m4a` 与 `.mp4` **都返回 `video/mp4`**（无论 brand 怎么写），
+>      容器嗅探**无法**区分"纯音频 mp4"与"带画面的 mp4"——因此判 `audio` 不能只看容器，必须由 ffprobe
+>      复核「无视频流且有音频流」。音频**原样落盘**（不走防线 4 清洗，与视频同规则），体积上限
+>      `MAX_AUDIO_BYTES = 20MB`（BGM 量级；视频仍 100MB）；sidecar 增**可选** `kind` 字段（见 ②）；
+>   ② **§5 / §4**：`UploadedAsset.kind` / `AssetListEntry.kind` 由 `image|video` 扩为 **`image|video|audio`**；
+>      `GET /api/assets` 的 kind **优先读 sidecar**（`outputs/assets/<assetId>.json`，上传时已算出真相），
+>      无 sidecar 时按容器嗅探兜底（`audio/*` → audio；`video/*` → video，**不猜** —— 老资产与抽帧产物走这条）；
+>   ③ **§7**：「上传的参考资产」扩展名补 `.mp3|.wav|.m4a`；音频资产的生命周期与**参考资产完全同规则**
+>      （同一 `<assetId>.` 前缀清理、不参与容量淘汰），**不新增任何清理路径**；
+>   ④ **§11-2**：`EditClipSource` 增**可选** `assetId` / `name`（`taskId` 转为**可选**，二者**至少有一个**）——
+>      音效轨要能取自**上传的音频素材**（此前只能取成片的音轨）；`AudioClip` 增**可选** `fadeInFrames` /
+>      `fadeOutFrames`（0~`durationFrames`，默认 0）供广告片收尾的淡入淡出。
 > **V2.9 修订（2026-10-08）**：**Step 10 批（台账 B43 资产元数据；B32 无需契约变更）** —— 向后兼容。
 >   ① **§5**：`POST /api/upload` 落一份**资产元数据 sidecar**（`<assetId>.json`：原始文件名 + 上传时间）——
 >      `@` 提及弹层要"按名字认素材"，而此前只有 assetId；原始文件名**只落本地**（不进上游、不进日志、
@@ -324,11 +338,13 @@ export interface StorageUsage {
  * `url` 为同源 `/media/assets/<文件>` 直链；`createdAt` = 文件 mtime（epoch ms）。
  * **V2.9（台账 B43）**：新增可选 `name` —— 用户原始文件名的 sanitize 结果
  * （来自 `<assetId>.json` sidecar；抽帧产物没有该字段）。它**只落本地**，见 §5 与 §7。
- * 实现：`backend/src/routes/assets.ts`（目录扫描 + 魔数嗅探 + sidecar 读取，只读）。
+ * **V2.10（台账 B57）**：`kind` 扩 `audio`；kind **优先读 sidecar**（上传时由 ffprobe 判定），
+ * 无 sidecar 时按容器嗅探兜底（`audio/*` → audio、`video/*` → video）。
+ * 实现：`backend/src/routes/assets.ts`（目录扫描 + sidecar 优先 + 魔数嗅探兜底，只读）。
  */
 export interface AssetListEntry {
   assetId: string;
-  kind: 'image' | 'video';
+  kind: 'image' | 'video' | 'audio';
   mime: string;
   size: number;
   url: string;
@@ -354,8 +370,8 @@ export interface AssetListResponse {
 | `GET` | `/api/tasks/:taskId` | 轮询任务状态与结果。**200 → `TaskProgress`（§4）**；不存在或已清理 → **404 `TASK_NOT_FOUND`** |
 | `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消；已在终态 → `{ ok: false }`）。**200 → `{ ok, taskId }`**。语义是**尽力而为**：服务端把任务置 `cancelled`（此后调度器**不再推进**、也不会被 heartbeat 覆盖），并**通知上游停止**；上游是否真的停止、是否已产生费用，本服务无法代上游保证 —— 前端文案必须如实说明并指向服务商后台核对 |
 | `POST` | `/api/prompt/enhance` | 提示词扩写助手（**V2.0 已实现**，凭据经 `X-LLM-Key`，见下方注记段）。**200 → `PromptEnhanceResponse`（§3，含必填 `engine`）**；无 Key → **501 `LLM_NOT_CONFIGURED`**；空 / 超长提示词 → **400 `PROMPT_REJECTED`**；上游拒绝凭据 → **401 `KEY_INVALID`**；其余上游故障（含超时）→ **502 `UPSTREAM_ERROR`**。状态映射的完整口径见 §3 |
-| `POST` | `/api/upload` | 上传参考图/视频（multipart，**V2.6 起** ≤100MB × ≤4，**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目）。**V2.9**：落一份 sidecar `<assetId>.json`（`{ name?, uploadedAt }`）—— `name` = 用户原始文件名的 **sanitize 结果**（`basename` + 去控制字符 + 截断 120 字符），**只落本地**：不进上游请求、不进操作日志、不进任务快照；写失败不阻断上传（元数据是增强，不是事实源） |
-| `GET` | `/api/assets` | **V2.7 新增**：**资产库清单（只读）**。**200 → `AssetListResponse`（§4 末尾）**（最近 200 个，新的在前；`mime` 为**魔数嗅探事实**，与 `/api/upload` 同口径；`url` 为同源 `/media/assets/<文件>` 直链；`createdAt` = 文件 mtime）。**V2.9**：条目新增可选 `name`（来自 sidecar；抽帧产物没有原始文件名 → 无该字段），弹层据此"按名字认素材"。**目录不存在**（从未上传过）→ 200 + 空数组，**不是 404**。用途：`@` 提及素材弹层（B41）与后续资产管理视图；不改变任何生命周期与清理规则（见 §7） |
+| `POST` | `/api/upload` | 上传参考图/视频/**音频**（multipart，**V2.6 起** ≤100MB × ≤4（**V2.10 起音频 ≤20MB**），**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目）。**V2.9**：落一份 sidecar `<assetId>.json`（`{ name?, uploadedAt }`）—— `name` = 用户原始文件名的 **sanitize 结果**（`basename` + 去控制字符 + 截断 120 字符），**只落本地**：不进上游请求、不进操作日志、不进任务快照；写失败不阻断上传（元数据是增强，不是事实源）。**V2.10（B57）**：白名单新增 **mp3 / wav / m4a**（`audio/mpeg` / `audio/wav` / 容器为 `video/mp4` 的纯音频文件），音频体积上限 **20MB**（`MAX_AUDIO_BYTES`，超限 413）、**原样落盘**（不走防线 4 图像清洗）；判 `audio` 的口径 = 容器嗅探 + **ffprobe 流类型复核**（见上「V2.10 修订」①，容器嗅探对 m4a 不可靠）；sidecar 增**可选** `kind`（`image`/`video`/`audio`，供 `/api/assets` 免探测复读） |
+| `GET` | `/api/assets` | **V2.7 新增**：**资产库清单（只读）**。**200 → `AssetListResponse`（§4 末尾）**（最近 200 个，新的在前；`mime` 为**魔数嗅探事实**，与 `/api/upload` 同口径；`url` 为同源 `/media/assets/<文件>` 直链；`createdAt` = 文件 mtime）。**V2.9**：条目新增可选 `name`（来自 sidecar；抽帧产物没有原始文件名 → 无该字段），弹层据此"按名字认素材"。**目录不存在**（从未上传过）→ 200 + 空数组，**不是 404**。用途：`@` 提及素材弹层（B41）与后续资产管理视图；不改变任何生命周期与清理规则（见 §7）。**V2.10（B57）**：`kind` 扩展为 `image|video|audio` —— **优先读 sidecar 的 `kind`**（上传时已由 ffprobe 算准，免去逐文件探测），sidecar 缺失 / 无该字段时按容器嗅探兜底（`audio/*` → audio、`video/*` → video；**不猜**——老资产与抽帧产物走这条，其中 `.m4a` 老资产会被兜底判为 video，属如实边界） |
 | `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage }`**（`items` 最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾）。**V2.4 起**：默认只返回**生成产物**（剪辑产物不进历史，避免提示词与源片相同造成的"重复"观感）；查询参数 `?kind=edit`：**V2.6 起 `source` 可选** —— 带 `source=<taskId>` 返回某源片的剪辑产物（剪辑台"本片剪辑历史"用）；**不带 `source` 返回全部剪辑产物**（剪辑台素材候选 / L2 血缘画布用，同样受最近 50 条上限约束） |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
 | `POST` | `/api/providers/keys/verify` | **V2.1 新增（原【规划·B2】）**：凭据与模型校验，**零费用**。请求头按轨取（视频 `X-Provider-Key` / 文本 `X-LLM-Key`）；**200 → `KeyVerifyResponse`（§9）**；未带 Key → **501 `KEY_MISSING`**；凭据被上游拒绝 → **401 `KEY_INVALID`**；上游不可达 → **502 `UPSTREAM_ERROR`**；**V2.8 起**：独立限流桶 `verify`（同一来源 IP **10 秒内最多 5 次**，内存突发窗口）→ 429 `RATE_LIMITED` + `Retry-After`。为什么：本端点**会向上游发真实请求**（`/models` + 空 content 探针），没有限流时被刷等于把部署者的服务器当免费探针——与生成任务的 60s 冷却（防线 5）分开计桶，互不影响。**为什么是"窗口 N 次"而不是"最小间隔"**：间隔语义会误伤正常交互（连点两次"测试连接"切轨道验证），窗口语义对"人"无感、对"脚本"生效；它是底线防护，真正的防线仍是 Caddy 登录 + `PUBLIC_API_TOKEN` |
@@ -428,7 +444,7 @@ export type ErrorDisposition =
 | 成片 MP4 | `outputs/`（已入 .gitignore） | **前端一键删除释放磁盘**（`DELETE /api/history/:taskId`）；**V2.8 起容量淘汰（LRU）已落地**，见下一行 |
 | **容量淘汰（V2.8 落地，台账 B22）** | 后台扫描 `outputs/`（`server/storageEvict.ts`，默认每 5 分钟一次 + 启动时一次） | **触发**：`totalBytes`（成片 + 缩略图 + 参考资产）超过 `OUTPUTS_MAX_BYTES`（默认 4GiB，env 可调）；**目标水位**：淘汰到 `OUTPUTS_TARGET_RATIO`（默认 0.8）以下即停。**淘汰顺序**：最旧的**已成功**任务先淘汰（只删 `outputs/<taskId>.mp4` 与 `outputs/thumbs/<taskId>.jpg` 两个文件，**保留任务记录**——画廊显示"成片已清理"、血缘画布显示 ghost，历史与血缘不因此断裂）。**三类保护规则**：① `queued/running/submitting` 的任务不淘汰（正在用）；② 被其它任务以 `task:<taskId>` 引用当参考的成片不淘汰（否则"参数一键回填"再提交会 404）；③ **参考资产（`outputs/assets/`）不参与容量淘汰**（体积小且属用户数据，只在任务删除时按既有保护规则清理）。每次淘汰后写一条 `storage.evict` 操作日志（§10） |
 | 成片缩略图（V1.9） | `outputs/thumbs/<taskId>.jpg` | 成功出片后由调度器抽首帧生成（宽度 480，`/media/thumbs/...` 直链）；**尽力而为**：抽帧失败只记日志，任务仍为 `succeeded`；随任务删除一并物理删除 |
-| 上传的参考资产 | `outputs/assets/<assetId>.<jpg\|png>` | 关联任务删除时一并清理（`DELETE /api/history/:taskId`）；**保护规则**：若该 `assetId` 仍被其它任务引用（「参数一键回填」会复用资产），则只删任务、保留资产 —— 否则会毁掉另一条任务的参考图。扩展名由防线 4 的清洗结果决定，因此按 `<assetId>.` 前缀匹配删除。**V2.7**：可由 `GET /api/assets` **只读列举**（含抽帧产物——它与上传资产同目录同规则）；列举不改变上述任何清理规则。**V2.9**：每个上传资产可带一份 sidecar `outputs/assets/<assetId>.json`（原始文件名 + 上传时间）；它**天然被同一条 `<assetId>.` 前缀规则覆盖**（删资产即删 sidecar、不新增清理路径），也不参与容量淘汰（与资产同规则） |
+| 上传的参考资产 | `outputs/assets/<assetId>.<jpg\|png\|mp3\|wav\|m4a>` | 关联任务删除时一并清理（`DELETE /api/history/:taskId`）；**保护规则**：若该 `assetId` 仍被其它任务引用（「参数一键回填」会复用资产），则只删任务、保留资产 —— 否则会毁掉另一条任务的参考图。扩展名由防线 4 的清洗结果决定，因此按 `<assetId>.` 前缀匹配删除。**V2.7**：可由 `GET /api/assets` **只读列举**（含抽帧产物——它与上传资产同目录同规则）；列举不改变上述任何清理规则。**V2.9**：每个上传资产可带一份 sidecar `outputs/assets/<assetId>.json`（原始文件名 + 上传时间）；它**天然被同一条 `<assetId>.` 前缀规则覆盖**（删资产即删 sidecar、不新增清理路径），也不参与容量淘汰（与资产同规则）。**V2.10**：扩展名补 `.mp3` / `.wav` / `.m4a`（音频素材，台账 B57）—— 与参考资产**完全同规则**：同一 `<assetId>.` 前缀清理、不参与容量淘汰；sidecar 增可选 `kind`（`/api/assets` 免探测复读，见 §5） |
 | 中间帧 / 临时音频 | host 轨：`outputs/.tmp/<taskId>/`；client 轨（【规划】，PLAN §6-D26）：落在用户机器、由 worker 清理 | 合成结束立即物理删除（防线 3）；client 轨须回报 `tmpCleaned` 并写入 `warnings[]`，服务端无法强制验证该事实 |
 | **BYOK Key（`X-Provider-Key` / `X-LLM-Key`）** | **服务端零留存（无此数据）** | V1.8：仅存在于单次请求的内存上下文；不落库、不入日志、不回显（见 §5「凭据传递约定」）；env 兜底值由部署者自管 |
 | 前端任务 ID 锚点 | 浏览器 `localStorage` | 刷新后凭 ID 向服务端重挂载进度 |
@@ -596,9 +612,18 @@ export interface EditTrack {
 }
 export type EditClip = VideoClip | CaptionClip | TransitionClip | AudioClip;
 
+/** V2.10（B57）：片段来源 —— 成片（task）或上传资产（asset），**二者至少有一个** */
+export interface EditClipSource {
+  taskId?: string;   // 成片来源（<TaskProgress.taskId>）
+  assetId?: string;  // 上传资产来源（音频素材；B57 新增）
+  url: string;       // 恒为同源 /media/* 相对地址
+  durationFrames: number;  // 由 <video>/<audio> 元数据探测得出（裁剪上限的唯一依据）
+  name?: string;     // 资产的可读名字（sidecar 的 name，仅显示用；B57）
+}
+
 export interface VideoClip {
   kind: 'video'; id: string; startFrame: number; durationFrames: number;
-  source: { taskId: string; url: string; durationFrames: number }; // url 恒为同源 /media/* 相对地址
+  source: EditClipSource;
   trimStartFrames: number;   // 裁入点（对应 <Video trimBefore>，帧）
   speed: number;             // 0.25~4；源片消耗 = durationFrames × speed
   volume: number;            // 0~2（0 = 静音）
@@ -617,10 +642,18 @@ export interface TransitionClip {
 }
 export interface AudioClip {
   kind: 'audio'; id: string; startFrame: number; durationFrames: number;
-  source: { taskId: string; url: string; durationFrames: number };
+  source: EditClipSource;      // V2.10：可取自**上传的音频素材**（此前只能取成片的音轨）
   trimStartFrames: number; volume: number;
+  fadeInFrames?: number;       // V2.10（B57）：淡入帧数，0~durationFrames，默认 0
+  fadeOutFrames?: number;      // V2.10（B57）：淡出帧数，0~durationFrames，默认 0
 }
 ```
+
+**音频淡入淡出（V2.10 / 台账 B57）**：音量是**时间的函数**（预览与导出**同一套**实现，都在
+`packages/shared/src/editProject.ts` 的纯函数里，渲染层只调用不另写一套）——第 `f` 帧的音量 =
+`volume × fadeFactor`，其中淡入段线性 `f/fadeInFrames`、淡出段线性 `(durationFrames-f)/fadeOutFrames`，
+两段重叠时取**较小值**（不会因两段叠加而放大）。`fadeIn + fadeOut > durationFrames` 时**不报错**，
+按"两段各自钳制到 `durationFrames`、取较小值"渲染（曲线的语义是"最多这么长"，不是"必须这么长"）。
 
 **转场语义（与渲染严格一致，不许两套口径）**：
 - 转场坐在**两个同轨相邻视频片段**的接缝上（加转场前要求 `to.startFrame === from.endFrame`）；

@@ -51,3 +51,20 @@ export function probeVideoMeta(url: string, fps: number, timeoutMs = 15_000): Pr
     video.src = url;
   });
 }
+
+/**
+ * 音频素材的时长探测（V2.10 / 台账 B57）。
+ *
+ * 复用 `probeVideoMeta`：浏览器对**纯音频**资源同样会在 `<video>` 上触发 `loadedmetadata`
+ * 并给出 `duration`（此时 `videoWidth/Height` 为 0，而音频只需要时长）。
+ * 单独包一层是为了让调用点的意图明确 —— 也让"音频为什么要用 video 元素探测"这件事
+ * 有一个带解释的落点（否则下一个维护者会以为是写错了元素）。
+ */
+export async function probeAudioDurationFrames(
+  url: string,
+  fps: number,
+  timeoutMs = 15_000,
+): Promise<number> {
+  const meta = await probeVideoMeta(url, fps, timeoutMs);
+  return meta.durationFrames;
+}

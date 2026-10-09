@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import type { TaskProgress } from '@astrmira/shared';
+import type { AssetListEntry, TaskProgress } from '@astrmira/shared';
 import { resolveMediaUrl } from '../lib/api';
 import {
   DEFAULT_TRANSITION_FRAMES,
@@ -9,7 +9,7 @@ import {
   previewDurationFrames,
   type EditClipSource,
 } from './model';
-import { probeVideoMeta } from './mediaProbe';
+import { probeAudioDurationFrames, probeVideoMeta } from './mediaProbe';
 import { seekToFrame } from './playerRef';
 import type { EditStore } from './store';
 import { MAX_PX_PER_FRAME, MIN_PX_PER_FRAME, useEditStore } from './store';
@@ -23,6 +23,10 @@ import { TimelineClip } from './TimelineClip';
  * - 轨道头固定 120px，右侧内容区宽度 = 时长 × 缩放（pxPerFrame），横向滚动；
  * - 播放头竖线是**唯一订阅 playheadFrame 的时间轴组件**；
  * - 工具栏：素材下拉（加镜头/音效）、＋字幕、＋转场（需选中视频片段）、删除、适配、缩放。
+ *
+ * V2.10（台账 B57）：素材下拉分两组 —— **成片**（value = 裸 taskId，与既有行为/断言一致）
+ * 与**音频素材**（value = `asset:<assetId>`，来自 `GET /api/assets` 的 kind=audio）。
+ * 音频素材只能进音效轨（＋镜头对它置灰并给出原因），音效轨片段带淡入淡出。
  */
 
 const HEADER_W = 120;
@@ -93,16 +97,21 @@ const PlayheadLine: React.FC<{ store: EditStore }> = ({ store }) => {
   );
 };
 
+/** 音频素材在素材下拉里的 value 前缀（成片仍用裸 taskId，避免改动既有断言与草稿） */
+const ASSET_VALUE_PREFIX = 'asset:';
+
 export const Timeline: React.FC<{
   store: EditStore;
   /** 可作为素材的成片（已成功且有产物；含源片自己 —— 同一片多次入场是合法剪辑手法） */
   candidates: TaskProgress[];
-}> = ({ store, candidates }) => {
+  /** V2.10（台账 B57）：上传的**音频素材**（`GET /api/assets` 里 kind=audio 的那些） */
+  audioAssets: AssetListEntry[];
+}> = ({ store, candidates, audioAssets }) => {
   const project = useEditStore(store, (s) => s.project);
   const ppf = useEditStore(store, (s) => s.pxPerFrame);
   const selectedClipId = useEditStore(store, (s) => s.selectedClipId);
 
-  const [pendingTaskId, setPendingTaskId] = useState('');
+  const [pendingValue, setPendingValue] = useState('');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -131,24 +140,53 @@ export const Timeline: React.FC<{
     store.setZoom((width - HEADER_W - 80) / duration);
   };
 
-  const resolveTask = (taskId: string): { task: TaskProgress; url: string } | null => {
-    const task = candidates.find((item) => item.taskId === taskId);
+  /** 下拉里的选中项 → 可添加的素材（成片或音频资产）；两者都解析不出 URL 时返回 null */
+  const resolveSelection = (
+    value: string,
+  ): { kind: 'task' | 'asset'; url: string; label: string; source: Omit<EditClipSource, 'durationFrames'> } | null => {
+    if (value.startsWith(ASSET_VALUE_PREFIX)) {
+      const assetId = value.slice(ASSET_VALUE_PREFIX.length);
+      const asset = audioAssets.find((item) => item.assetId === assetId);
+      const url = resolveMediaUrl(asset?.url);
+      if (asset === undefined || url === null) return null;
+      return {
+        kind: 'asset',
+        url,
+        label: asset.name ?? asset.assetId.slice(0, 8),
+        // 资产来源没有 taskId：硬塞一个是伪造溯源（CONTRACT §11-2 的 EditClipSource）
+        source: {
+          assetId: asset.assetId,
+          url,
+          ...(asset.name === undefined ? {} : { name: asset.name }),
+        },
+      };
+    }
+
+    const task = candidates.find((item) => item.taskId === value);
     const url = resolveMediaUrl(task?.outputVideoUrl);
-    return task === undefined || url === null ? null : { task, url };
+    if (task === undefined || url === null) return null;
+    return { kind: 'task', url, label: task.taskId.slice(0, 8), source: { taskId: task.taskId, url } };
   };
 
-  const addFromTask = async (mode: 'video' | 'audio'): Promise<void> => {
-    const resolved = resolveTask(pendingTaskId);
+  const selectedIsAudioAsset = pendingValue.startsWith(ASSET_VALUE_PREFIX);
+
+  const addFromSelection = async (mode: 'video' | 'audio'): Promise<void> => {
+    const resolved = resolveSelection(pendingValue);
     if (resolved === null) return;
+    if (mode === 'video' && resolved.kind === 'asset') {
+      // 音频素材只能进音效轨 —— 说清楚而不是静默忽略（不静默降级）
+      setAddError('音频素材只能加到音效轨（用「＋音效」）');
+      return;
+    }
     setAdding(true);
     setAddError(null);
     try {
-      const meta = await probeVideoMeta(resolved.url, project.fps);
-      const source: EditClipSource = {
-        taskId: resolved.task.taskId,
-        url: resolved.url,
-        durationFrames: meta.durationFrames,
-      };
+      // 音频只要时长（`<video>` 元素同样能给音频的 duration）；视频仍走 probeVideoMeta
+      const durationFrames =
+        mode === 'audio' && resolved.kind === 'asset'
+          ? await probeAudioDurationFrames(resolved.url, project.fps)
+          : (await probeVideoMeta(resolved.url, project.fps)).durationFrames;
+      const source: EditClipSource = { ...resolved.source, durationFrames };
       if (mode === 'video') {
         store.addClip(source);
       } else {
@@ -166,32 +204,49 @@ export const Timeline: React.FC<{
       <div className="ed-tl-toolbar">
         <select
           className="wb-input ed-tl-pick"
-          value={pendingTaskId}
+          value={pendingValue}
           aria-label="选择要添加的素材"
-          onChange={(event) => setPendingTaskId(event.target.value)}
+          onChange={(event) => setPendingValue(event.target.value)}
         >
           <option value="">选择素材…</option>
-          {candidates.map((item) => (
-            <option key={item.taskId} value={item.taskId}>
-              {item.origin?.kind === 'edit' ? '✂ ' : ''}
-              {item.taskId.slice(0, 8)} · {item.requestSnapshot.prompt.slice(0, 16)}
-            </option>
-          ))}
+          {/* V2.10：成片与音频素材分组；成片的 value 仍是裸 taskId（既有断言与草稿不受影响） */}
+          <optgroup label="成片">
+            {candidates.map((item) => (
+              <option key={item.taskId} value={item.taskId}>
+                {item.origin?.kind === 'edit' ? '✂ ' : ''}
+                {item.taskId.slice(0, 8)} · {item.requestSnapshot.prompt.slice(0, 16)}
+              </option>
+            ))}
+          </optgroup>
+          {audioAssets.length === 0 ? null : (
+            <optgroup label="音频素材">
+              {audioAssets.map((asset) => (
+                <option key={asset.assetId} value={`${ASSET_VALUE_PREFIX}${asset.assetId}`}>
+                  🎵 {asset.name ?? asset.assetId.slice(0, 8)}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         <button
           type="button"
           className="wb-btn"
-          disabled={pendingTaskId === '' || adding}
-          onClick={() => void addFromTask('video')}
+          disabled={pendingValue === '' || adding || selectedIsAudioAsset}
+          title={
+            selectedIsAudioAsset
+              ? '音频素材不能进镜头轨（用「＋音效」）'
+              : '在时间轴末尾追加一段镜头（源片/剪辑产物）'
+          }
+          onClick={() => void addFromSelection('video')}
         >
           {adding ? '读取素材…' : '＋镜头'}
         </button>
         <button
           type="button"
           className="wb-btn"
-          disabled={pendingTaskId === '' || adding}
-          title="把素材里的音频作为音效轨片段（不显示画面）"
-          onClick={() => void addFromTask('audio')}
+          disabled={pendingValue === '' || adding}
+          title="把素材的音轨作为音效轨片段（不显示画面）：成片取音轨，音频素材直接进场"
+          onClick={() => void addFromSelection('audio')}
         >
           ＋音效
         </button>

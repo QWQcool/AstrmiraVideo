@@ -118,11 +118,11 @@ export const MENTION_LIST_LIMIT = 8;
  * - `assetId` 仍可搜（V2.9 之前的老资产没有名字，且编号是老用户的既有习惯）；
  * - 空关键词 → 前 `limit` 条。
  */
-export function filterAssetCandidates(
-  assets: AssetListEntry[],
+export function filterAssetCandidates<T extends AssetListEntry>(
+  assets: T[],
   keyword: string,
   limit: number = MENTION_LIST_LIMIT,
-): AssetListEntry[] {
+): T[] {
   const needle = keyword.trim().toLowerCase();
   if (needle === '') return assets.slice(0, limit);
 

@@ -8,10 +8,14 @@ import {
   addTransition,
   addVideoClip,
   applySnap,
+  audioFadeFactor,
+  audioVolumeAt,
+  audioVolumeProp,
   clipEndFrame,
   collectSnapTargets,
   contentEndFrame,
   createProjectFromSource,
+  editSourceLabel,
   findClip,
   moveClip,
   previewDurationFrames,
@@ -20,6 +24,7 @@ import {
   transitionWindow,
   trimClip,
   updateClipFields,
+  type AudioClip,
   type EditClipSource,
 } from './model';
 import { formatTimecode, framesToSeconds, secondsToFrames } from './time';
@@ -501,5 +506,119 @@ describe('属性面板字段更新（updateClipFields）', () => {
     const { project: withCaption, clipId } = addCaptionClip(project, { atFrame: 0 });
     const unchanged = updateClipFields(withCaption, clipId, { kind: 'video', speed: 2 });
     expect(unchanged).toBe(withCaption);
+  });
+});
+
+describe('V2.10（台账 B57）· 音频素材来源与淡入淡出', () => {
+  const audioSource = { assetId: 'asset-audio', url: '/media/assets/a.mp3', durationFrames: 90 };
+
+  it('片段来源可以是**上传资产**（音频素材），工程仍通过校验', () => {
+    const { project, clipId } = addAudioClip(createProjectFromSource(makeSource()), audioSource);
+    expect(EditProjectSchema.safeParse(project).success).toBe(true);
+    const clip = findClip(project, clipId)!.clip;
+    expect(clip.kind === 'audio' && clip.source.assetId).toBe('asset-audio');
+    // 没有伪造 taskId —— 资产来源就是资产来源
+    expect(clip.kind === 'audio' && clip.source.taskId).toBe(undefined);
+  });
+
+  it('**无来源**（既无 taskId 也无 assetId）被 schema 拒绝（不静默接受无源片段）', () => {
+    const project = createProjectFromSource(makeSource());
+    const broken = {
+      ...project,
+      tracks: [
+        {
+          id: 'track-audio',
+          kind: 'audio',
+          clips: [
+            {
+              kind: 'audio',
+              id: 'clip-audio',
+              startFrame: 0,
+              durationFrames: 30,
+              trimStartFrames: 0,
+              volume: 1,
+              source: { url: '/media/x.mp3', durationFrames: 30 },
+            },
+          ],
+        },
+      ],
+    };
+    expect(EditProjectSchema.safeParse(broken).success).toBe(false);
+  });
+
+  it('editSourceLabel：name > taskId 前 8 位 > assetId 前 8 位（资产来源不会崩在 undefined）', () => {
+    expect(editSourceLabel({ taskId: 'abcdefgh-1111', url: '/media/a.mp4', durationFrames: 1 })).toBe(
+      'abcdefgh',
+    );
+    expect(
+      editSourceLabel({ assetId: '12345678-2222', url: '/media/b.mp3', durationFrames: 1 }),
+    ).toBe('12345678');
+    expect(
+      editSourceLabel({
+        assetId: '12345678-2222',
+        name: 'BGM.mp3',
+        url: '/media/b.mp3',
+        durationFrames: 1,
+      }),
+    ).toBe('BGM.mp3');
+  });
+
+  it('淡入淡出曲线：线性、端点为 0、中段为 1', () => {
+    const clip: Pick<AudioClip, 'durationFrames' | 'fadeInFrames' | 'fadeOutFrames'> = {
+      durationFrames: 100,
+      fadeInFrames: 10,
+      fadeOutFrames: 20,
+    };
+    expect(audioFadeFactor(clip, 0)).toBe(0);
+    expect(audioFadeFactor(clip, 5)).toBeCloseTo(0.5);
+    expect(audioFadeFactor(clip, 10)).toBe(1);
+    expect(audioFadeFactor(clip, 50)).toBe(1);
+    expect(audioFadeFactor(clip, 90)).toBeCloseTo(0.5);
+    expect(audioFadeFactor(clip, 100)).toBe(0);
+  });
+
+  it('两段重叠时取**较小值**（不会因叠加而放大），越界帧被钳到端点上', () => {
+    const overlap = { durationFrames: 10, fadeInFrames: 8, fadeOutFrames: 8 };
+    // frame=4：淡入 4/8=0.5、淡出 (10-4)/8=0.75 → 取小 = 0.5
+    expect(audioFadeFactor(overlap, 4)).toBeCloseTo(0.5);
+    expect(audioFadeFactor(overlap, -5)).toBe(0);
+    expect(audioFadeFactor(overlap, 999)).toBe(0);
+    // 无淡变 → 恒定 1（不因"没设"而静音）
+    expect(audioFadeFactor({ durationFrames: 10 }, 0)).toBe(1);
+    expect(audioFadeFactor({ durationFrames: 10 }, 10)).toBe(1);
+  });
+
+  it('audioVolumeProp：无淡变给**常量**（Remotion 走静态路径），有淡变给帧函数', () => {
+    const plain: AudioClip = {
+      kind: 'audio',
+      id: 'c1',
+      startFrame: 0,
+      durationFrames: 60,
+      trimStartFrames: 0,
+      volume: 0.8,
+      source: { taskId: 't', url: '/media/a.mp4', durationFrames: 60 },
+    };
+    expect(audioVolumeProp(plain)).toBe(0.8);
+    expect(audioVolumeProp({ ...plain, fadeInFrames: 0, fadeOutFrames: 0 })).toBe(0.8);
+
+    const faded = { ...plain, fadeInFrames: 30 };
+    const prop = audioVolumeProp(faded);
+    expect(typeof prop).toBe('function');
+    if (typeof prop !== 'function') throw new Error('应为帧函数');
+    expect(prop(0)).toBe(0);
+    expect(prop(30)).toBeCloseTo(0.8);
+    expect(audioVolumeAt(faded, 15)).toBeCloseTo(0.4);
+  });
+
+  it('updateClipFields 把淡入淡出钳到 [0, durationFrames]（越界就地修正，不报错）', () => {
+    const { project, clipId } = addAudioClip(createProjectFromSource(makeSource()), audioSource);
+    const bumped = updateClipFields(project, clipId, {
+      kind: 'audio',
+      fadeInFrames: 9999,
+      fadeOutFrames: -5,
+    });
+    const clip = findClip(bumped, clipId)!.clip;
+    expect(clip.kind === 'audio' && clip.fadeInFrames).toBe(audioSource.durationFrames);
+    expect(clip.kind === 'audio' && clip.fadeOutFrames).toBe(0);
   });
 });

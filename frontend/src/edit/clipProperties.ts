@@ -72,7 +72,27 @@ export const CLIP_FIELD_SCHEMA: Record<EditClip['kind'], FieldDescriptor[]> = {
       hint: '逐词入场 / 打字机的动效技法借鉴 video-shotcraft（Apache-2.0）',
     },
   ],
-  audio: [{ key: 'volume', label: '音量', type: 'number', min: 0, max: 2, step: 0.05, unit: '×' }],
+  audio: [
+    { key: 'volume', label: '音量', type: 'number', min: 0, max: 2, step: 0.05, unit: '×' },
+    {
+      key: 'fadeInFrames',
+      label: '淡入',
+      type: 'number',
+      min: 0,
+      step: 1,
+      unit: '帧',
+      hint: 'BGM 起手不突兀；0 = 不淡。上限由片段时长收口（model 钳制）',
+    },
+    {
+      key: 'fadeOutFrames',
+      label: '淡出',
+      type: 'number',
+      min: 0,
+      step: 1,
+      unit: '帧',
+      hint: '广告片收尾必需；与淡入重叠时取较小值（不会叠加放大）',
+    },
+  ],
   transition: [
     {
       key: 'transition',
@@ -111,6 +131,9 @@ export function readProperty(clip: EditClip, key: string): string | number {
       break;
     case 'audio':
       if (key === 'volume') return clip.volume;
+      // V2.10（B57）：未设置过淡入淡出 → 显示 0（缺省即"不淡"，不是"未知"）
+      if (key === 'fadeInFrames') return clip.fadeInFrames ?? 0;
+      if (key === 'fadeOutFrames') return clip.fadeOutFrames ?? 0;
       break;
     case 'transition':
       if (key === 'transition') return clip.transition;
@@ -156,7 +179,11 @@ export function applyProperty(
     }
     case 'audio': {
       const number = readNumber(raw);
-      if (key === 'volume' && number !== null) return { kind: 'audio', volume: number };
+      if (number === null) return null;
+      if (key === 'volume') return { kind: 'audio', volume: number };
+      // V2.10（B57）：淡入淡出（值域钳制在 model.updateClipFields）
+      if (key === 'fadeInFrames') return { kind: 'audio', fadeInFrames: number };
+      if (key === 'fadeOutFrames') return { kind: 'audio', fadeOutFrames: number };
       return null;
     }
     case 'transition': {

@@ -49,10 +49,14 @@ export const OperationResultSchema = z.object({
 /**
  * `POST /api/upload` 的资产描述（CONTRACT §5 / §7）。
  * `mime` 来自**魔数嗅探**结果，不是客户端声明的 Content-Type（PLAN §7-6）。
+ *
+ * V2.10（台账 B57）：`kind` 新增 `audio` —— 音频（mp3 / wav / m4a）**原样落盘**。
+ * ⚠️ 判 `audio` 不能只看容器：实测 `file-type` 对 `.m4a` 与 `.mp4` 都返回 `video/mp4`，
+ * 因此服务端用 **ffprobe 流类型复核**（无视频流且有音频流 → audio），见 CONTRACT §5。
  */
 export const UploadedAssetSchema = z.object({
   assetId: z.string(),
-  kind: z.enum(['image', 'video']),
+  kind: z.enum(['image', 'video', 'audio']),
   mime: z.string(),
   size: z.number().int().nonnegative(),
 });

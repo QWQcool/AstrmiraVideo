@@ -3,6 +3,7 @@ import { AbsoluteFill, Sequence, interpolate, useCurrentFrame } from 'remotion';
 import { Audio, Video } from '@remotion/media';
 import {
   TRACK_RENDER_ORDER,
+  audioVolumeProp,
   transitionWindow,
   type AudioClip,
   type CaptionClip,
@@ -214,7 +215,9 @@ const AudioClipLayer: React.FC<{ clip: AudioClip; mediaBaseUrl: string }> = ({
     <Audio
       src={resolveClipUrl(mediaBaseUrl, clip.source.url)}
       trimBefore={clip.trimStartFrames}
-      volume={clip.volume}
+      // V2.10（B57）：无淡入淡出时是常量（Remotion 走静态路径），有淡变时是帧函数；
+      // 曲线实现收口在 shared 的 audioVolumeAt（预览与导出同一套，这里不另算）
+      volume={audioVolumeProp(clip)}
     />
   </Sequence>
 );

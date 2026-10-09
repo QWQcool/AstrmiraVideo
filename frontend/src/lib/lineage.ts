@@ -54,11 +54,19 @@ export interface LineageNode {
 
   // ── asset 专属 ──
   assetId?: string;
-  assetKind?: 'image' | 'video';
+  /** V2.10（B57）：资产类别含音频（音频素材也是画布上的一等节点，如实呈现） */
+  assetKind?: 'image' | 'video' | 'audio';
   url?: string | null;
 }
 
 export type LineageEdgeKind = 'edit' | 'extract' | 'reference' | 'task-ref';
+
+/** 资产类别的中文标签（V2.10 起含音频；画布副标签用） */
+const ASSET_KIND_LABEL: Record<'image' | 'video' | 'audio', string> = {
+  image: '图片',
+  video: '视频',
+  audio: '音频',
+};
 
 export interface LineageEdge {
   id: string;
@@ -160,7 +168,7 @@ export function buildLineage(input: LineageInput): LineageGraph {
             id,
             kind: 'asset',
             label: `资产 ${assetId.slice(0, 8)}`,
-            sublabel: asset.kind === 'image' ? '图片' : '视频',
+            sublabel: ASSET_KIND_LABEL[asset.kind],
             depth: 0,
             createdAt: asset.createdAt,
             assetId,

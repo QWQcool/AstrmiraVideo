@@ -3,6 +3,7 @@ import { CLIP_FIELD_SCHEMA, applyProperty, readProperty } from './clipProperties
 import {
   MAX_TRANSITION_FRAMES,
   MIN_TRANSITION_FRAMES,
+  addAudioClip,
   addCaptionClip,
   addTransition,
   addVideoClip,
@@ -108,5 +109,34 @@ describe('面板 → 模型 的端到端（applyProperty + updateClipFields）',
     const patch = applyProperty(transitionClip, 'durationFrames', '30')!;
     const next = updateClipFields(added.project, transitionClip.id, patch);
     expect(findClip(next, bId)!.clip.startFrame).toBe(120);
+  });
+
+  it('V2.10（B57）：音效片段的淡入淡出可读可写，且缺省值为 0（不是空串/未知）', () => {
+    const project = createProjectFromSource(makeSource());
+    const { project: withAudio, clipId } = addAudioClip(project, {
+      assetId: 'asset-bgm',
+      url: '/media/assets/bgm.mp3',
+      durationFrames: 120,
+    });
+    const clip = findClip(withAudio, clipId)!.clip;
+    expect(clip.kind).toBe('audio');
+
+    // 缺省：显示 0（"不淡"，不是"未知"）
+    expect(readProperty(clip, 'fadeInFrames')).toBe(0);
+    expect(readProperty(clip, 'fadeOutFrames')).toBe(0);
+
+    const fadeIn = applyProperty(clip, 'fadeInFrames', '15')!;
+    const fadeOut = applyProperty(clip, 'fadeOutFrames', '30')!;
+    const next = updateClipFields(
+      updateClipFields(withAudio, clipId, fadeIn),
+      clipId,
+      fadeOut,
+    );
+    const updated = findClip(next, clipId)!.clip;
+    expect(updated.kind === 'audio' && updated.fadeInFrames).toBe(15);
+    expect(updated.kind === 'audio' && updated.fadeOutFrames).toBe(30);
+
+    // 空串必须被拒绝（`Number('') === 0` 那个真坑）
+    expect(applyProperty(clip, 'fadeInFrames', '')).toBe(null);
   });
 });

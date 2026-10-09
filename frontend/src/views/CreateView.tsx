@@ -93,8 +93,21 @@ function refFromTask(task: TaskProgress): MentionRef {
   };
 }
 
-/** 资产 → chip 引用 */
-function refFromAsset(asset: AssetListEntry): MentionRef {
+/**
+ * 可作为**生成参考**的资产（V2.10 边界）：图像 / 视频。
+ *
+ * 为什么要把音频挡在外面：音频（B57）不是生成参考 —— 云端与本地轨都没有"音频输入"这一档，
+ * 放进来只会在提交时被上游拒（或更糟：被当成图片发出去）。音频素材的用途是**剪辑台的音效轨**。
+ * 用类型谓词而不是 `as` 断言：这样"音频混进参考池"是**编译期错误**，不是运行期惊喜。
+ */
+type RefAsset = AssetListEntry & { kind: 'image' | 'video' };
+
+function isRefAsset(asset: AssetListEntry): asset is RefAsset {
+  return asset.kind === 'image' || asset.kind === 'video';
+}
+
+/** 资产 → chip 引用（只接受 RefAsset；音频在池入口就被过滤掉） */
+function refFromAsset(asset: RefAsset): MentionRef {
   // V2.9（B43）：有原始文件名就用它当 chip 标签（人认得名字，认不出编号）；
   // 没有（抽帧产物 / 老资产）就退回"图/视频·编号"，**不编造名字**
   const label =
@@ -123,7 +136,8 @@ export function CreateView() {
   const [mentionFilter, setMentionFilter] = useState('');
 
   // ── 素材池（`@` 弹层的候选：资产库 + 成片/剪辑产物）──
-  const [assetPool, setAssetPool] = useState<AssetListEntry[]>([]);
+  // V2.10：池子里**只放可作为生成参考的资产**（音频素材挡在池外，见 `isRefAsset`）
+  const [assetPool, setAssetPool] = useState<RefAsset[]>([]);
   const [taskPool, setTaskPool] = useState<TaskProgress[]>([]);
   const [poolError, setPoolError] = useState<string | null>(null);
 
@@ -153,7 +167,7 @@ export function CreateView() {
         fetchHistory(),
         fetchHistory({ kind: 'edit' }),
       ]);
-      setAssetPool(assets.assets);
+      setAssetPool(assets.assets.filter(isRefAsset));
       setTaskPool(
         [...generated.items, ...edits.items]
           .filter((item) => item.status === 'succeeded' && item.outputVideoUrl !== undefined)
@@ -210,11 +224,19 @@ export function CreateView() {
   /** 拖入 / 粘贴 / 选择文件 → 逐个上传为资产，chip 先以"上传中"占位（ref = ''） */
   const handleFiles = useCallback(
     (files: File[]): void => {
+      // V2.10（B57）：音频是**合法上传**（服务端收，剪辑台音效轨用），但它不是生成参考 ——
+      // 明确说出"去哪用"，而不是静默丢弃（不静默降级）
+      const audioCount = files.filter((file) => file.type.startsWith('audio/')).length;
+      if (audioCount > 0) {
+        setUploadError('音频素材不作为生成参考：请到剪辑台的音效轨添加（造梦盒只收图片 / 视频）');
+      } else {
+        setUploadError(null);
+      }
+
       const eligible = files
         .filter((file) => file.type.startsWith('image/') || file.type.startsWith('video/'))
         .slice(0, 4);
       if (eligible.length === 0) return;
-      setUploadError(null);
 
       for (const file of eligible) {
         const id = newIdempotencyKey();
@@ -228,10 +250,14 @@ export function CreateView() {
           .then((result) => {
             const asset = result.assets[0];
             if (asset === undefined) throw new Error('上传未返回任何资产');
+            // V2.10：拖进来的"视频"其实是纯音频容器（服务端 ffprobe 复核的结论）→ 如实报错，
+            // 不把它伪装成可用的画面参考（catch 分支会把占位 chip 撤掉）
+            if (asset.kind === 'audio') {
+              throw new Error('这个文件里没有画面（纯音频）：请到剪辑台的音效轨使用');
+            }
+            const kind = asset.kind;
             setRefs((prev) =>
-              prev.map((item) =>
-                item.id === id ? { ...item, ref: asset.assetId, kind: asset.kind } : item,
-              ),
+              prev.map((item) => (item.id === id ? { ...item, ref: asset.assetId, kind } : item)),
             );
             void reloadPools();
           })

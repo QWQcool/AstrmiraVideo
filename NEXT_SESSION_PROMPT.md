@@ -25,7 +25,7 @@
 
 ## 当前指针
 
-**Step 2 双轨 Provider（cloud 的 AC2 已全模式跑通：T2V / I2V / FL2V / V2V；host 本地轨 `LocalH3Provider` 仍未实现）＋ Step 3 前端工作台（已完成）＋ Step 4 端到端验收（**已完成 2026-09-23**，证据见 `docs/walkthrough.md`）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ V8.3 体验与功能补强（**批次 0~7 全部完成**）＋ Step 6 V9 前端改版（**已完成 2026-09-23：B1~B10 全部交付**，验收证据 = `docs/v9-acceptance.md`）＋ **Step 7 剪辑台改版（Remotion 多轨时间轴，台账 B34）【已完成 2026-09-24：P1~P5 全部交付】**（验收证据 = `docs/edit-desk-acceptance.md`；契约升至 **V2.5**：§11-2 多轨工程 / §11-3 EDL 降为 API-only / §5 新增 `POST /api/edits/renders`）。**两个待办都只剩"用户验收"**（Step 6 线上验收、Step 7 验收；`docs/EXEC-V9.md` 待验收后归档）——施工入口 = `docs/PLAN.md` **§4 的 Step+AC**（§5 进度日志是唯一进度权威、§6 是决策 D22~D38、§9 是台账 B1~B40）与 `docs/CONTRACT.md` **V2.5**。以 §5 进度日志的实际状态为准，不要以本文件为准。
+**Step 2 双轨 Provider（cloud 的 AC2 已全模式跑通：T2V / I2V / FL2V / V2V；host 本地轨 `LocalH3Provider` 仍未实现）＋ Step 3 前端工作台（已完成）＋ Step 4 端到端验收（**已完成 2026-09-23**，证据见 `docs/walkthrough.md`）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ V8.3 体验与功能补强（**批次 0~7 全部完成**）＋ Step 6 V9 前端改版（**已完成 2026-09-23：B1~B10 全部交付**，验收证据 = `docs/v9-acceptance.md`）＋ **Step 7 剪辑台改版（Remotion 多轨时间轴，台账 B34）【已完成 2026-09-24：P1~P5 全部交付】**（验收证据 = `docs/edit-desk-acceptance.md`；契约升至 **V2.5**：§11-2 多轨工程 / §11-3 EDL 降为 API-only / §5 新增 `POST /api/edits/renders`）。**两个待办都只剩"用户验收"**（Step 6 线上验收、Step 7 验收；`docs/EXEC-V9.md` 待验收后归档）——施工入口 = `docs/PLAN.md` **§4 的 Step+AC**（§5 进度日志是唯一进度权威、§6 是决策 D22~D38、§9 是台账 B1~B40）与 `docs/CONTRACT.md` **V2.10**。以 §5 进度日志的实际状态为准，不要以本文件为准。
 
 > ⚠️ **2026-09-23 线上故障与修复（批次 6，读一遍再动手）**：用户报 `invalidEndpointorModel.NotFound`。
 > 根因是三层叠加：① `options.model` / `options.baseUrl` **此前无人消费**（云端 provider 只读 env）；
@@ -43,6 +43,14 @@
 > ✅ **真实出片四模式全部跑通（T2V / I2V / FL2V / V2V，2026-09-23）**，且 **Step 4 端到端验收【已完成 2026-09-23】**：
 > AC1 复验 T2V（含直角双引号对白，89.0s）+ I2V（非 32 倍数图 831×479 → 清洗 800×448 → 出片，62.3s）；AC2 把六类输入（WebP / 超大图 / 非规整 / 透明 / HEIC 拒绝 / EXIF 剥离）固化为集成测试；**证据归档 = `docs/walkthrough.md`**。
 > 实测顺带发现：上游会对 **I2V 输入图做隐私检测**（含拟真人脸 → 400，未开始生成），登记为台账 **B32**。
+
+**2026-10-09 新增 · B 端待开发批已开工**（用户拍板"每做完一个自测验收后提交推送，需要决策的按 AI 推荐来，不要阻塞"）：
+**第一片 = 台账 B57（音频素材与 BGM）【已完成 2026-10-09】**（契约 **V2.10**：上传白名单 mp3/wav/m4a +
+`ffprobe` 流类型复核 + 资产 `kind` 扩 `audio` + 剪辑台音效轨取材于音频素材 + 淡入淡出；证据见 PLAN §5「B57」条目与
+冒烟 `[6i]` 段）。**执行序（AI 自定，续作请照此推进或说明为何改序）**：
+B47（项目/成员角色 = B 端数据地基）→ B48 成本台账 → B49 交付物工程化 → B51 Webhook 集成 →
+B53 可观测与 SLA → B52 私有化部署包（涉服务器实操，排最后）；B54/B55（上游能力接线）需真实 Key 与价格实测、
+B56 样片需授权预算 —— 三者**不阻塞**上述代码项。**台账与口径的唯一权威仍是 PLAN §9**。
 
 **当前卡点与待办**：无阻塞卡点。**Step 5 已上线，且 CI → CD 已实测跑通**（push 到 main → CI 全绿 → `deploy` job 自动 scp 上传 + 服务器本地构建镜像 + 健康检查；实测 `verify` 与 `deploy` 双绿，站点返回 CSP 与三项安全头，`/api/health` 为 200）。Secrets 为 `DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / **`SSH_PASSWORD`**。
 

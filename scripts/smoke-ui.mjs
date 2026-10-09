@@ -1182,6 +1182,87 @@ try {
   });
   assert(frameLoaded > 0, `抽帧资产可读（${frameLoaded} 字节）`);
 
+  console.log('\n[6i] 音频素材与 BGM（V2.10 / B57：上传 → 资产 kind → 音效轨取材 → 淡入淡出）');
+
+  // ① 上传一段**真实 WAV**：44 字节头由脚本自己拼（与后端单测同一夹具口径，不依赖 ffmpeg）
+  const wavBgm = (() => {
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0, 'ascii');
+    header.writeUInt32LE(36 + 8000, 4);
+    header.write('WAVE', 8, 'ascii');
+    header.write('fmt ', 12, 'ascii');
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(1, 22);
+    header.writeUInt32LE(8000, 24);
+    header.writeUInt32LE(8000, 28);
+    header.writeUInt16LE(1, 32);
+    header.writeUInt16LE(8, 34);
+    header.write('data', 36, 'ascii');
+    header.writeUInt32LE(8000, 40);
+    return Buffer.concat([header, Buffer.alloc(8000, 128)]);
+  })();
+  const audioForm = new FormData();
+  audioForm.append('files', new Blob([wavBgm], { type: 'audio/wav' }), '氛围BGM.wav');
+  const audioUploadRes = await fetch(`${baseUrl}/api/upload`, { method: 'POST', body: audioForm });
+  assert(audioUploadRes.ok, `B57：音频上传成功（HTTP ${audioUploadRes.status}）`);
+  const audioAsset = (await audioUploadRes.json()).assets[0];
+  assert(
+    audioAsset?.kind === 'audio',
+    `B57：服务端按流类型判为音频（kind=${audioAsset?.kind}，mime=${audioAsset?.mime}）`,
+  );
+  const audioEntry = (await (await fetch(`${baseUrl}/api/assets`)).json()).assets.find(
+    (item) => item.assetId === audioAsset.assetId,
+  );
+  assert(
+    audioEntry?.kind === 'audio' && audioEntry?.name === '氛围BGM.wav',
+    'B57：/api/assets 如实报 kind=audio + 原始文件名（sidecar 优先，不走容器兜底）',
+  );
+
+  // ② 剪辑台：音频素材出现在素材下拉的「音频素材」组；选中它时「＋镜头」置灰（音频不是画面素材）
+  await page.goto(`${baseUrl}/#/edit?task=${sourceTask}`, { waitUntil: 'load' });
+  await page.waitForSelector('.ed-timeline .ed-clip', { timeout: 15_000 });
+  const audioOptionValue = `asset:${audioAsset.assetId}`;
+  await page.waitForFunction(
+    (value) => document.querySelector(`.ed-tl-pick option[value="${value}"]`) !== null,
+    audioOptionValue,
+    { timeout: 10_000 },
+  );
+  assert(true, 'B57：素材下拉出现该音频素材（value = asset:<assetId>）');
+  await page.locator('.ed-tl-pick').selectOption(audioOptionValue);
+  assert(
+    await page.getByRole('button', { name: '＋镜头' }).isDisabled(),
+    'B57：选中音频素材时「＋镜头」置灰（音频只能进音效轨）',
+  );
+
+  // ③ ＋音效：音效轨出现片段；标签 = 原始文件名（资产来源没有 taskId，不能崩在 undefined）
+  await page.getByRole('button', { name: '＋音效' }).click();
+  await page.waitForSelector('.ed-clip[data-clip-kind="audio"]', { timeout: 15_000 });
+  const audioClipText = await page.locator('.ed-clip[data-clip-kind="audio"]').innerText();
+  assert(
+    audioClipText.includes('氛围BGM'),
+    `B57：音效轨片段标签 = 原始文件名（实际「${audioClipText.trim().slice(0, 24)}」）`,
+  );
+
+  // ④ 淡出（广告片收尾必需）：属性面板设 15 帧 → 草稿恢复后仍是 15（写回工程的成功证据）
+  await page.locator('.ed-clip[data-clip-kind="audio"]').click();
+  const audioFadeOutField = page
+    .locator('[data-testid="ed-inspector"] .ed-field', { hasText: '淡出' })
+    .locator('input');
+  await audioFadeOutField.fill('15');
+  await page.waitForTimeout(700); // 草稿防抖 500ms
+  await page.reload();
+  await page.waitForSelector('.ed-clip[data-clip-kind="audio"]', { timeout: 15_000 });
+  await page.locator('.ed-clip[data-clip-kind="audio"]').click();
+  const fadeOutValue = await page
+    .locator('[data-testid="ed-inspector"] .ed-field', { hasText: '淡出' })
+    .locator('input')
+    .inputValue();
+  assert(
+    fadeOutValue === '15',
+    `B57：淡出写回工程并经草稿恢复（刷新后仍是 ${fadeOutValue} 帧）`,
+  );
+
   console.log('\n[7] 操作日志（V2.1，CONTRACT §10）');
   // 上面 [6] 段用界面真的提交过一条任务 → 它必须已经躺在操作日志里。
   // 这条断言把"界面动作 → 服务端留痕"整条链钉住（也是这次故障排错最需要的能力）。

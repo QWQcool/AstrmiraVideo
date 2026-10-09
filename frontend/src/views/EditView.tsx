@@ -1,8 +1,8 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { describeEditOrigin } from '@astrmira/shared';
-import type { TaskProgress } from '@astrmira/shared';
+import type { AssetListEntry, TaskProgress } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
-import { ApiError, fetchHistory, resolveMediaUrl } from '../lib/api';
+import { ApiError, fetchAssets, fetchHistory, resolveMediaUrl } from '../lib/api';
 import { navigate, useHashRoute } from '../lib/router';
 import { formatBytes, formatRelativeTime } from '../lib/overviewStats';
 import { DEFAULT_PROJECT_FPS, createProjectFromSource } from '../edit/model';
@@ -64,6 +64,8 @@ export function EditView() {
   const [history, setHistory] = useState<TaskProgress[]>([]);
   const [allEdits, setAllEdits] = useState<TaskProgress[]>([]);
   const [edlHistory, setEdlHistory] = useState<TaskProgress[]>([]);
+  // V2.10（台账 B57）：上传的音频素材（资产库里 kind=audio 的那些）——音效轨的独立素材来源
+  const [assets, setAssets] = useState<AssetListEntry[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [store, setStore] = useState<EditStore | null>(null);
@@ -71,16 +73,18 @@ export function EditView() {
 
   const reload = useCallback(async (): Promise<void> => {
     try {
-      // 三路并发：生成产物（源片 + 候选素材）、全部剪辑产物（B37：素材候选合并）、
-      // 本片剪辑历史（V2.4 口径，剪辑产物不进主历史）
-      const [main, edits, sourceEdits] = await Promise.all([
+      // 四路并发：生成产物（源片 + 候选素材）、全部剪辑产物（B37：素材候选合并）、
+      // 本片剪辑历史（V2.4 口径，剪辑产物不进主历史）、资产库（B57：音频素材）
+      const [main, edits, sourceEdits, assetList] = await Promise.all([
         fetchHistory(),
         fetchHistory({ kind: 'edit' }),
         sourceId === null ? Promise.resolve(null) : fetchHistory({ kind: 'edit', source: sourceId }),
+        fetchAssets(),
       ]);
       setHistory(main.items);
       setAllEdits(edits.items);
       setEdlHistory(sourceEdits === null ? [] : sourceEdits.items);
+      setAssets(assetList.assets);
       setLoadError(null);
     } catch (caught) {
       setLoadError(describeError(caught));
@@ -108,6 +112,15 @@ export function EditView() {
         .filter((item) => item.status === 'succeeded' && item.outputVideoUrl !== undefined)
         .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)),
     [history, allEdits],
+  );
+
+  /** V2.10（B57）：音效轨的素材来源 = 资产库里的音频（新的在前，与成片候选同一观感） */
+  const audioAssets = useMemo(
+    () =>
+      assets
+        .filter((asset) => asset.kind === 'audio')
+        .sort((a, b) => b.createdAt - a.createdAt),
+    [assets],
   );
 
   const sourceUrl = resolveMediaUrl(source?.outputVideoUrl);
@@ -303,7 +316,9 @@ export function EditView() {
         </aside>
       </div>
 
-      {store === null ? null : <Timeline store={store} candidates={candidates} />}
+      {store === null ? null : (
+        <Timeline store={store} candidates={candidates} audioAssets={audioAssets} />
+      )}
 
       <p className="wb-note ed-footnote">
         多轨时间轴（Remotion 预览，所见即所得）：拖动移动片段、左右缘拖拽裁剪、Delete 删除、空格播放/暂停。
