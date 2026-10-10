@@ -284,6 +284,41 @@ H3 只识别直角双引号 `"` 包裹的对白；中文引号 `“”` 或无�
 
 **本版不做**：码率 / 编码参数对齐（只对画幅与帧率）、大包分片。
 
+## （十）对接客户系统：Webhook 回调（V2.15 / B51 片 A）
+
+**它解决什么**：客户系统不必再轮询 `/api/tasks/:id` —— 任务到终态时我们主动 `POST` 一条事件过去。
+
+**三步接入**（用 curl 举例，实际建议用客户的脚本/后端）：
+
+```bash
+# 1. 建订阅（URL 必须是客户系统自己处理的端点；默认不许是内网地址）
+curl -X POST https://<你的站点>/api/webhooks \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://crm.example.com/astrmira/hook"}'
+# → 201 { "webhook": {...}, "secret": "whsec_…" }  ← ⚠️ 明文 secret **只出现这一次**，请存好
+
+# 2. 收到回调时验签（Node 示例）
+#   const expected = 'sha256=' + crypto.createHmac('sha256', SECRET).update(rawBody).digest('hex');
+#   if (expected !== req.headers['x-astrmira-signature']) return res.status(401).end();
+
+# 3. 没收到？查投递流水（"客户到底收到没有"的唯一证据）
+curl 'https://<你的站点>/api/webhooks/<webhookId>/deliveries?limit=20'
+```
+
+**四条要记住的语义**：
+
+| 项 | 说明 |
+| :--- | :--- |
+| **订阅从创建那刻起生效** | 之前的终态任务**不会补投**（否则一接入就是事件洪峰）；历史请走 `GET /api/history` |
+| **最多 2 秒延迟** | 实现是扫描补投（不是终态即推），换来的是"重启也不丢、且只改一处" |
+| **失败会重试 3 次** | 退避 5s / 25s；用尽后标记 `failed` 不再自动重试（长时间宕机请自己拉历史补） |
+| **`X-Astrmira-Delivery` 是幂等键** | 重试带同一个 id，客户侧按它去重 |
+
+**内网回调**：默认拒绝把回调发往环回 / 私网 / 链路本地（SSRF 防护）。客户系统确实在内网时，
+由部署者在 `.env` 设 **`WEBHOOK_ALLOW_PRIVATE=1`**（这是部署者的决定：那之后这台机器可以访问内网）。
+
+**事件与载荷的完整形状、错误码**见 [CONTRACT §15](CONTRACT.md)。
+
 ## （八）花了多少钱：成本台账（V2.12 / B48）
 
 **一句话口径**：这里给出的是**预估**（公开价目 × 上游计费公式），**不是账单**——

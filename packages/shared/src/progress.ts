@@ -37,7 +37,12 @@ export const ErrorCodeSchema = z.enum([
   // **没有登记它** —— 契约内部不自洽。B9 实现时把它补进字典（详见 CONTRACT §6 / §11-2）。
   'INVALID_REQUEST', // 请求**形状合法但值/组合不合法**（如剪辑的 endSec ≤ startSec、连续两次拼接）
   // ── V2.11 追加（台账 B47 项目维度）──
-  'PROJECT_NOT_FOUND', // 指定的项目不存在（不静默落到默认项目 —— 否则用户会在"默认项目"里看到本不属于它的东西）
+  'PROJECT_NOT_FOUND',
+  /**
+   * Webhook 不存在（V2.15 / 台账 B51）：`/api/webhooks/:webhookId` 系列。
+   * 与 `PROJECT_NOT_FOUND` 同风格 —— **显式 404 而不是静默 200**（客户系统据此知道配置已被删）。
+   */
+  'WEBHOOK_NOT_FOUND', // 指定的项目不存在（不静默落到默认项目 —— 否则用户会在"默认项目"里看到本不属于它的东西）
 ]);
 
 export const TaskErrorSchema = z.object({

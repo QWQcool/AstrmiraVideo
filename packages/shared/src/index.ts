@@ -14,6 +14,7 @@
  * - projects.ts → §12 项目维度（V2.11 / 台账 B47）
  * - cost.ts     → §13 成本台账口径与预估模型（V2.12 / 台账 B48）
  * - deliverables.ts → §14 交付物命名、平台规格预设与归档清单（V2.13 / 台账 B49）
+ * - webhooks.ts → §15 Webhook 终态回调（V2.15 / 台账 B51 片 A）
  */
 export * from './request.js';
 export * from './status.js';
@@ -30,3 +31,4 @@ export * from './edit.js';
 export * from './projects.js';
 export * from './cost.js';
 export * from './deliverables.js';
+export * from './webhooks.js';

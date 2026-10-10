@@ -24,6 +24,7 @@ import { createEnhanceRoutes } from './routes/enhance.js';
 import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
 import { createCostRoutes } from './routes/costs.js';
+import { createWebhookRoutes } from './routes/webhooks.js';
 import { createHistoryRoutes } from './routes/history.js';
 import { createKeyVerifyRoutes } from './routes/keysVerify.js';
 import { createLogRoutes } from './routes/logs.js';
@@ -54,6 +55,8 @@ import { createAssetUrlResolver, createTaskVideoUrlResolver } from './store/asse
 import { openDatabase } from './store/db.js';
 import { EventLogStore } from './store/eventLog.js';
 import { ProjectStore } from './store/projects.js';
+import { WebhookStore } from './store/webhooks.js';
+import { WebhookDispatcher } from './webhook/dispatcher.js';
 import { reconcileOrphanTasks } from './store/reconciliation.js';
 import { TaskStore } from './store/taskStore.js';
 
@@ -173,6 +176,8 @@ export async function buildApp() {
   const store = new TaskStore(db);
   // V2.11（B47）：项目维度（默认项目由 openDatabase 的 bootstrapProjects 保证存在）
   const projects = new ProjectStore(db);
+  // V2.15（B51）：Webhook 订阅与投递流水
+  const webhooks = new WebhookStore(db);
   const eventLog = new EventLogStore(db);
   // V9 修复：任务终态（complete / fail / uncertain）也进操作日志 —— 否则异步任务的失败
   // 不产生新的 HTTP 请求，操作日志里无迹可查（剪辑失败但日志全是 200 的缺口）。
@@ -294,11 +299,25 @@ export async function buildApp() {
     onError: (err) => app.log.warn({ err }, '容量淘汰扫描异常（不影响服务）'),
   });
 
+  // V2.15（B51）：Webhook 终态回调 —— 扫描补投 + 投递循环（默认 2s 一轮）。
+  // 为什么是扫描而不是"终态时立刻推"：见 store/webhooks.ts 的文件头（一处覆盖全部终态写入点 + 重启补投）。
+  const webhookDispatcher = new WebhookDispatcher({
+    webhooks,
+    tasks: store,
+    ...(process.env['PUBLIC_BASE_URL'] === undefined
+      ? {}
+      : { publicBaseUrl: process.env['PUBLIC_BASE_URL'] }),
+    onError: (err) => app.log.warn({ err }, 'Webhook 投递循环异常（不影响服务）'),
+  });
+  webhookDispatcher.start();
+
   app.addHook('onClose', async () => {
-    // 先排空后台任务（淘汰器 + 调度器：停表 + 等在飞的一轮）**再关库**：
+    // 先排空后台任务（淘汰器 + 调度器 + Webhook 投递：停表 + 等在飞的一轮）**再关库**：
     // 关早了，在飞的扫描会在关闭后的连接上读写 → unhandled rejection（2026-09-24 CI 实测）
+    webhookDispatcher.stop();
     await storageEvictor.drain();
     await dispatcher.drain();
+    await webhookDispatcher.drain();
     db.close();
   });
 
@@ -328,6 +347,8 @@ export async function buildApp() {
   await app.register(createHistoryRoutes({ store }));
   // V2.12（B48）：成本台账汇总（只读；金额为预估，口径见 COST_DISCLAIMER）
   await app.register(createCostRoutes({ store, projects }));
+  // V2.15（B51 片 A）：Webhook 订阅管理（终态回调；secret 只回显一次，URL 过 SSRF 准入）
+  await app.register(createWebhookRoutes({ webhooks, projects }));
   await app.register(createLogRoutes({ store: eventLog, limiter: logsLimiter }));
   await registerStaticOutputs(app);
 
