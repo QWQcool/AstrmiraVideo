@@ -124,6 +124,7 @@ AstrmiraVideo/
 | [docs/GUIDE.md](docs/GUIDE.md) | 上手指南与运维手册 | Tier 0~3 算力矩阵、双轨引擎接入、四种工作流、FAQ、**运维巡检与备份恢复 SOP** |
 | [docs/FRONTEND-REVIEW.md](docs/FRONTEND-REVIEW.md) | **前端框架与适配性复盘** | 技术选型逐层点名、"要不要换框架"的判据、移动端适配体检（含复现命令） |
 | [docs/N8N-REFERENCE.md](docs/N8N-REFERENCE.md) | **n8n 设计借鉴清单** | 逐条借鉴项（画布交互 / 产品语义 / 工程交付）→ 台账编号映射、落地顺序、**明确不借鉴的**、参考方式与许可证边界 |
+| [docs/PENDING-DECISIONS.md](docs/PENDING-DECISIONS.md) | **待拍板清单** | 只有产品负责人能定的开放项（选项 / 推荐 / 卡住了什么）+ 需追认的已定项 + 按条件排期的技术债 |
 | [docs/UPSTREAM.md](docs/UPSTREAM.md) | 上游台账 | 参考/复刻项目与版本追溯（含 ffmpeg 等外部工具的来源 / 版本 / 许可证登记） |
 | [docs/walkthrough.md](docs/walkthrough.md) | Step 4 验收记录 | AC1~AC4 的逐条证据——**只放证据，不放状态** |
 | [docs/v9-acceptance.md](docs/v9-acceptance.md) | Step 6（V9）验收记录 | AC1~AC8 的逐条证据、门禁基线、遗留与如实说明 |
