@@ -205,30 +205,59 @@ export class EventLogStore {
   }
 
   /**
-   * 保留策略（V2.18 / 台账 B23）：**按时间**与**按条数**两条判据，删的都是最旧的。
+   * 保留策略（V2.18 / 台账 B23；**V2.24 / B73 改为按结果分级**）：**按时间**与**按条数**两条判据，删的都是最旧的。
    *
-   * ## 三条口径
+   * ## 四条口径
    * 1. **只删操作日志** —— 任务表 / 项目 / Webhook 流水是用户与业务数据，一条都不动
    *    （这是本方法写在 `EventLogStore` 里、而不是写成通用 SQL 的原因）；
-   * 2. **条数用"水位"而不是"删到刚好 maxRows"**：删到 `maxRows × ratio` 以下就停。
+   * 2. **时间判据分级**（V2.24）：**异常记录留久、正常记录留短** —— 失败的记录是排错资产、
+   *    成功的记录是噪声。两类的条件是**显式且互补**的：异常 = `status_code >= 400` 或带
+   *    `disposition` / `error_code`；正常 = 其余（含 `status_code IS NULL`）。
+   *    ⚠️ **不能用 `NOT(异常)` 写正常类**：SQL 三值逻辑下 `NOT NULL` 仍是 NULL，会**漏删**那一批行；
+   * 3. **条数用"水位"而不是"删到刚好 maxRows"**：删到 `maxRows × ratio` 以下就停。
    *    否则每天跑一次时每来一条新日志就会触发一次删除（读写放大），
    *    而运维真正想要的是"库不要无限长"，不是"永远精确等于 20 万条"；
-   * 3. **两条判据的删除量取并集**（先按时间删超期的，再按条数删最旧的），返回**实际删了多少** ——
-   *    调用方据此决定要不要留痕（噪声纪律：没删就不写日志）。
+   *    **条数判据不分类**：防膨胀的硬上限与"哪类记录更值钱"是两个问题；
+   * 4. **各判据的删除量分别返回**（时间还拆正常 / 异常两类），**实际删了多少** ——
+   *    调用方据此决定要不要留痕与怎么留痕（噪声纪律：没删就不写日志）。
    */
-  prune(options: { maxAgeDays?: number; maxRows?: number; now?: number; ratio?: number }): {
+  prune(options: {
+    maxAgeDays?: number;
+    maxAgeDaysFailed?: number;
+    maxRows?: number;
+    now?: number;
+    ratio?: number;
+  }): {
     deleted: number;
     remaining: number;
     deletedByAge: number;
+    deletedByAgeNormal: number;
+    deletedByAgeFailed: number;
     deletedByCount: number;
   } {
     const now = options.now ?? Date.now();
-    let deletedByAge = 0;
+    const dayMs = 24 * 60 * 60 * 1000;
+    let deletedByAgeNormal = 0;
+    let deletedByAgeFailed = 0;
     let deletedByCount = 0;
 
+    /** 「异常记录」：失败请求，或带处置 / 错误码的（任务终态失败与不确定都落这一类） */
+    const ABNORMAL = '(status_code >= 400 OR disposition IS NOT NULL OR error_code IS NOT NULL)';
+    /** 「正常记录」：上面那条的**补集**，显式写出（对 NULL 安全） */
+    const NORMAL = '(status_code IS NULL OR status_code < 400) AND disposition IS NULL AND error_code IS NULL';
+
+    if (options.maxAgeDaysFailed !== undefined && options.maxAgeDaysFailed > 0) {
+      const cutoff = now - options.maxAgeDaysFailed * dayMs;
+      deletedByAgeFailed = this.db
+        .prepare(`DELETE FROM event_log WHERE ts < ? AND ${ABNORMAL}`)
+        .run(cutoff).changes;
+    }
+
     if (options.maxAgeDays !== undefined && options.maxAgeDays > 0) {
-      const cutoff = now - options.maxAgeDays * 24 * 60 * 60 * 1000;
-      deletedByAge = this.db.prepare('DELETE FROM event_log WHERE ts < ?').run(cutoff).changes;
+      const cutoff = now - options.maxAgeDays * dayMs;
+      deletedByAgeNormal = this.db
+        .prepare(`DELETE FROM event_log WHERE ts < ? AND ${NORMAL}`)
+        .run(cutoff).changes;
     }
 
     if (options.maxRows !== undefined && options.maxRows > 0) {
@@ -248,10 +277,13 @@ export class EventLogStore {
       }
     }
 
+    const deletedByAge = deletedByAgeNormal + deletedByAgeFailed;
     return {
       deleted: deletedByAge + deletedByCount,
       remaining: this.countAll(),
       deletedByAge,
+      deletedByAgeNormal,
+      deletedByAgeFailed,
       deletedByCount,
     };
   }

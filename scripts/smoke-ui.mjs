@@ -1843,15 +1843,16 @@ try {
   assert(submitRows.total > 0, `界面提交的生成任务已记入操作日志（action=generate.submit，${submitRows.total} 条）`);
   assert(submitRows.paths.includes('/api/generate'), '日志里能看到 /api/generate 这条记录');
 
-  // V2.18（B23）：保留策略**默认不删任何东西**（90 天 / 20 万条都没到）→ 日志里不该出现 `log.prune`。
-  // 这条断言同时证明两件事：守护流程跑过（没抛错），以及它**没有乱删**（噪声纪律：没删就不留痕）。
+  // V2.18（B23）/ V2.24（B73）：保留策略**默认不删任何东西**（分级阈值 正常 30 天 / 异常 180 天、
+  // 20 万条都没到）→ 日志里不该出现 `log.prune`。这条断言同时证明两件事：
+  // 守护流程跑过（没抛错），以及它**没有乱删**（噪声纪律：没删就不留痕）。
   const pruneRows = await page.evaluate(async () => {
     const response = await fetch('/api/logs?action=log.prune&limit=5');
     return (await response.json()).total;
   });
   assert(
     pruneRows === 0,
-    `默认保留策略下没有日志被删（log.prune 记录数 = ${pruneRows}，未超 90 天 / 20 万条）`,
+    `默认保留策略下没有日志被删（log.prune 记录数 = ${pruneRows}，未超分级阈值 30/180 天、20 万条）`,
   );
 
   // V9：日志从顶栏弹层升级为一级视图（D33）—— 从侧栏导航进入 `#/logs`

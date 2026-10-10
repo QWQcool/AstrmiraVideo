@@ -319,9 +319,10 @@ export async function buildApp() {
     onError: (err) => app.log.warn({ err }, '容量淘汰扫描异常（不影响服务）'),
   });
 
-  // V2.18（B23）：操作日志保留策略（默认 90 天 / 20 万行；两条判据各自可用 0 关闭）。
-  // 真删了才写 `log.prune`（噪声纪律，与 `storage.evict` 同一条）；两条都关时**启动即警告** ——
-  // 那种配置下先被吃掉的会是日志，而运维往往直到冒烟才发现。
+  // V2.18（B23）/ V2.24（B73）：操作日志保留策略 —— **按结果分级**：
+  // 异常记录（失败请求 / 带处置或错误码）默认 180 天、正常记录默认 30 天、条数统一 20 万行水位；
+  // 每条判据各自可用 0 关闭。真删了才写 `log.prune`（噪声纪律，与 `storage.evict` 同一条）；
+  // 全部关闭时**启动即警告** —— 那种配置下先被吃掉的会是日志，而运维往往直到冒烟才发现。
   const logRetention = startLogRetention({
     store: eventLog,
     policy: resolveRetentionPolicy(),
@@ -335,9 +336,16 @@ export async function buildApp() {
         detail: {
           deleted: outcome.deleted,
           deletedByAge: outcome.deletedByAge,
+          // V2.24（B73）：分级拆分 —— "删的是排错资产还是噪声"必须能从留痕里读出来
+          deletedByAgeNormal: outcome.deletedByAgeNormal,
+          deletedByAgeFailed: outcome.deletedByAgeFailed,
           deletedByCount: outcome.deletedByCount,
           remaining: outcome.remaining,
-          policy: { maxAgeDays: outcome.maxAgeDays, maxRows: outcome.maxRows },
+          policy: {
+            maxAgeDays: outcome.maxAgeDays,
+            maxAgeDaysFailed: outcome.maxAgeDaysFailed,
+            maxRows: outcome.maxRows,
+          },
         },
       });
     },
@@ -346,7 +354,7 @@ export async function buildApp() {
   if (isRetentionDisabled(logRetention.policy())) {
     app.log.warn(
       { policy: logRetention.policy() },
-      '日志保留策略已关闭（LOG_RETENTION_DAYS=0 且 LOG_MAX_ROWS=0）：操作日志将无限增长，数据库会持续变大',
+      '日志保留策略已关闭（LOG_RETENTION_DAYS=0 且 LOG_RETENTION_DAYS_FAILED=0 且 LOG_MAX_ROWS=0）：操作日志将无限增长，数据库会持续变大',
     );
   }
 
