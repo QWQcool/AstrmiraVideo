@@ -1039,6 +1039,45 @@
   line-height: 1.7;
 }
 
+/* 崩溃兜底面板（V2.24 / B61）：借用 danger 色系（它确实是"出事了"），
+   但**不做全屏遮罩** —— 旁边还留着侧栏，用户应当能直接切走（那正是这层的价值）。 */
+.wb-crash {
+  border: 1px solid var(--danger-line-strong);
+  background-color: var(--danger-tint);
+  border-radius: var(--radius-control);
+  padding: 18px;
+  margin: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 720px;
+}
+
+.wb-crash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wb-crash-details summary {
+  cursor: pointer;
+}
+
+/* 报告是"要复制走"的裸文本：等宽 + 可横向滚动（长 UA / 长栈不该撑破面板） */
+.wb-crash-pre {
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: var(--radius-control);
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+  font-size: var(--fs-note);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  user-select: text;
+}
+
 /* 可播封面做成按钮（V8.3 批次 7）：点它 → 载入中栏播放。
    视觉上保持原样（它本来就是一块封面图），只补焦点态与悬停提示。 */
 .wb-card-thumb-button {

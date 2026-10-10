@@ -305,6 +305,53 @@ for (const theme of THEMES) {
   }
 }
 
+// ── ⑪ 崩溃兜底层还在（V2.24 / 台账 B61）──
+//
+// 为什么静态查得动：兜底层是**不可见**的 —— 它不渲染任何东西（没出错时），
+// 因此"被摘掉"不会有任何视觉回归、不会有类型错误、测试也不会红。
+// 唯一能被摘掉的方式就是**有人动了这段代码**，而那正是这里要挡的：
+// ① 把 class 组件"现代化"成函数组件（React 至今没有函数式 error boundary ——
+//    换掉之后 `getDerivedStateFromError` / `componentDidCatch` 消失，兜底**静默失效**）；
+// ② 把 `<ErrorBoundary>` 从渲染路径上摘掉（"这层好像没用"）。
+const BOUNDARY = path.join(SRC, 'components', 'ErrorBoundary.tsx');
+const boundaryText = contents.get(BOUNDARY);
+
+if (boundaryText === undefined) {
+  failures.push('找不到 components/ErrorBoundary.tsx（B61 的兜底层不见了）');
+} else {
+  for (const api of ['getDerivedStateFromError', 'componentDidCatch']) {
+    if (!boundaryText.includes(api)) {
+      failures.push(
+        `ErrorBoundary 不再实现 \`${api}\`（B61）：React 只有 class 组件能做 error boundary，` +
+          '改成函数组件会**静默失去**全部兜底能力',
+      );
+    }
+  }
+}
+
+/** 顶层（main.tsx）必须包住 App —— 壳自身崩掉时那是唯一还剩的出口 */
+const MAIN = path.join(SRC, 'main.tsx');
+const mainText = contents.get(MAIN);
+
+if (mainText === undefined || !/<ErrorBoundary[\s>]/.test(mainText)) {
+  failures.push('main.tsx 未用 <ErrorBoundary> 包住 App（B61：壳自身渲染抛错会直接白屏）');
+}
+
+/**
+ * 壳里每个视图各一层：数一下 `<ErrorBoundary` 的出现次数。
+ * 3 = 工作台 / 创作入口（两个 keep-alive 常驻视图）+ ActiveView（按路由切换的那个）。
+ * 少于 3 就是有人摘掉了一层 —— 而**摘掉一层不会有任何可见症状**（只会在真出事时才暴露）。
+ */
+const APP = path.join(SRC, 'App.tsx');
+const appText = contents.get(APP);
+const boundaryUses = appText === undefined ? 0 : (appText.match(/<ErrorBoundary[\s>]/g) ?? []).length;
+
+if (boundaryUses < 3) {
+  failures.push(
+    `App.tsx 只有 ${boundaryUses} 处 <ErrorBoundary>（B61 要求 ≥3：两个 keep-alive 视图 + 路由视图）`,
+  );
+}
+
 // ── 汇总 ──
 if (failures.length > 0) {
   console.error(`✗ 视觉自检失败（${failures.length} 项）：`);

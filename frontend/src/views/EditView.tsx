@@ -1,8 +1,11 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { describeEditOrigin } from '@astrmira/shared';
 import type { AssetListEntry, TaskProgress } from '@astrmira/shared';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Eyebrow } from '../components/Eyebrow';
 import { ApiError, fetchAssets, fetchHistory, resolveMediaUrl } from '../lib/api';
+// V2.24（B61）：懒加载失败的兜底要能说清"到底抛了什么"
+import { describeThrown } from '../lib/errorReport';
 import { navigate, useHashRoute } from '../lib/router';
 import { formatBytes, formatRelativeTime } from '../lib/overviewStats';
 import { DEFAULT_PROJECT_FPS, createProjectFromSource } from '../edit/model';
@@ -289,9 +292,26 @@ export function EditView() {
           {store === null ? (
             <div className="wb-skeleton ed-stage-skeleton" />
           ) : (
-            <Suspense fallback={<div className="wb-skeleton ed-stage-skeleton" />}>
-              <PlayerStage store={store} />
-            </Suspense>
+            // V2.24（B61）：懒加载失败（分包 404 / 网络断）也会抛错 → 必须有 error 分支。
+            // 只包 `Suspense` 的话，`PlayerStage` 的 chunk 拉不下来就是**整页白屏**（B61 的原缺口）。
+            <ErrorBoundary
+              label="剪辑台预览"
+              fallback={(error, reset) => (
+                <div className="wb-uncertain" style={{ margin: 'auto' }}>
+                  <span className="wb-uncertain-title">预览播放器没能加载</span>
+                  <span className="wb-uncertain-body">
+                    时间轴与导出仍然可用（它们不依赖这个播放器）。{describeThrown(error)}
+                  </span>
+                  <button type="button" className="wb-btn" onClick={reset}>
+                    重试加载
+                  </button>
+                </div>
+              )}
+            >
+              <Suspense fallback={<div className="wb-skeleton ed-stage-skeleton" />}>
+                <PlayerStage store={store} />
+              </Suspense>
+            </ErrorBoundary>
           )}
         </div>
 

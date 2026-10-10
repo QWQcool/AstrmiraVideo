@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ProjectEntry, ProviderStatus } from '@astrmira/shared';
 import { ByokDrawer } from './components/ByokDrawer';
+// V2.24（B61）：视图级兜底（崩的是这一块，而不是整页）
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Eyebrow } from './components/Eyebrow';
 import { ProjectSwitcher } from './components/ProjectSwitcher';
 import { Sidebar } from './components/Sidebar';
@@ -369,21 +371,33 @@ export default function App() {
           )}
 
           {/* 工作台常驻隐藏（hidden 切换）：提示词/参数/资产/进度在切视图后不丢，轮询继续跑 */}
+          {/* V2.24（B61）：**每个视图各包一层兜底** —— 崩的只是这一块，侧栏与导航仍在，用户能切走。
+              包在 keep-alive 里面而不是外面：这两个视图常驻，包外面会让"隐藏的那一个"的崩溃
+              连当前视图一起吃掉。 */}
           <div className="wb-keepalive" hidden={view?.path !== '#/workbench'}>
-            <WorkbenchView />
+            <ErrorBoundary label="工作台">
+              <WorkbenchView />
+            </ErrorBoundary>
           </div>
 
           {/* 创作入口常驻（同一条纪律，V2.7 / B41）：输入、素材 chips、内联任务卡在切视图后不丢 */}
           <div className="wb-keepalive" hidden={view?.path !== '#/create'}>
-            <CreateView />
+            <ErrorBoundary label="创作入口">
+              <CreateView />
+            </ErrorBoundary>
           </div>
 
           {view !== undefined &&
           view.path !== '#/workbench' &&
           view.path !== '#/create' &&
           ActiveView !== undefined ? (
-            <ActiveView />
+            // `key={view.path}`：切视图时**重新挂载边界**（React 会复用同位置的实例，
+            // 不换 key 的话"上个视图崩过"会把下一个视图也锁在兜底面板里）
+            <ErrorBoundary key={view.path} label={view.title}>
+              <ActiveView />
+            </ErrorBoundary>
           ) : null}
+          {/* 未知视图不包：它本身就是壳的兜底（截图里那句"没有这个视图"） */}
           {view === undefined ? <UnknownView hash={route.hash} /> : null}
         </main>
 
