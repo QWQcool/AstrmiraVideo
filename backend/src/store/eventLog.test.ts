@@ -117,3 +117,34 @@ describe('删除（用户明确要求"可手动删"）', () => {
     expect(store.list().total).toBe(0);
   });
 });
+
+/**
+ * V2.19（台账 B62）：`?taskId=` 过滤 —— 画布节点检查器看"这条任务的全部留痕"。
+ * 它同时也是**清空**的筛选条件之一（同一条纪律：查什么就清什么）。
+ */
+describe('按任务过滤（B62）', () => {
+  it('只返回该任务的留痕；空串与 undefined 都视为"不过滤"', () => {
+    store.append(entry({ ts: 300, taskId: 'task-a', action: 'generate.submit' }));
+    store.append(entry({ ts: 200, taskId: 'task-a', action: 'task.complete', method: 'TASK' }));
+    store.append(entry({ ts: 100, taskId: 'task-b', action: 'generate.submit' }));
+
+    const filtered = store.list({ taskId: 'task-a' });
+    expect(filtered.total).toBe(2);
+    expect(filtered.items.map((item) => item.action)).toEqual(['generate.submit', 'task.complete']);
+
+    // 空串 = 不过滤（HTTP 查询串里 `?taskId=` 是常见形态，不该变成"筛出零条"）
+    expect(store.list({ taskId: '' }).total).toBe(3);
+    expect(store.list({}).total).toBe(3);
+  });
+
+  it('可与其它筛选叠加，且**清空**同样只清该任务的那批', () => {
+    store.append(entry({ ts: 300, taskId: 'task-a', action: 'task.complete', method: 'TASK' }));
+    store.append(entry({ ts: 200, taskId: 'task-a', action: 'task.fail', statusCode: 500 }));
+    store.append(entry({ ts: 100, taskId: 'task-b', action: 'generate.submit' }));
+
+    expect(store.list({ taskId: 'task-a', action: 'task.fail' }).total).toBe(1);
+    expect(store.clear({ taskId: 'task-a' })).toBe(2);
+    expect(store.list().total).toBe(1);
+    expect(store.list().items[0]!.taskId).toBe('task-b');
+  });
+});

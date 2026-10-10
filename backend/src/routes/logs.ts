@@ -48,6 +48,7 @@ function toFilter(query: z.infer<typeof LogQuerySchema>): EventLogFilter {
     ...(query.q === undefined || query.q === '' ? {} : { q: query.q }),
     ...(query.since === undefined ? {} : { since: query.since }),
     ...(query.until === undefined ? {} : { until: query.until }),
+    ...(query.taskId === undefined || query.taskId === '' ? {} : { taskId: query.taskId }),
   };
 }
 

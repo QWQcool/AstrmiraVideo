@@ -10,12 +10,21 @@ import {
   type OnSelectionChangeParams,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { AssetListEntry, TaskProgress } from '@astrmira/shared';
-import { ApiError, fetchAssets, fetchHistory, resolveMediaUrl } from '../lib/api';
+import type {
+  AssetListEntry,
+  CostRecord,
+  EventLogEntry,
+  GenerationMode,
+  TaskProgress,
+} from '@astrmira/shared';
+import { formatYuan, logActionLabel, parseTaskRef } from '@astrmira/shared';
+import { ApiError, fetchAssets, fetchHistory, fetchLogs, resolveMediaUrl } from '../lib/api';
 import { useShell } from '../lib/shell';
 import {
+  assetNodeId,
   buildLineage,
   layoutLineage,
+  taskNodeId,
   type LineageEdgeKind,
   type LineageNode,
 } from '../lib/lineage';
@@ -106,11 +115,146 @@ const CanvasToolbar: FC<{ selectedIds: string[] }> = ({ selectedIds }) => {
   );
 };
 
-/** 节点详情抽屉：动作全部指向既有 hash 参数（零新路由、零契约） */
-function CanvasDrawer({ node, onClose }: { node: LineageNode; onClose: () => void }) {
+const MODE_LABELS: Record<GenerationMode, string> = {
+  t2v: '文生视频',
+  i2v: '图生视频',
+  fl2v: '首尾帧',
+  v2v: '视频参考',
+};
+
+const COST_SOURCE_LABEL: Record<CostRecord['source'], string> = {
+  estimate: '预估（公开价目）',
+  'local-free': '本地轨 · 免费',
+  upstream: '上游真实值',
+};
+
+function formatBytes(bytes: number | undefined): string | null {
+  if (bytes === undefined) return null;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatMoment(ts: number): string {
+  return ts === 0 ? '—' : new Date(ts).toLocaleString();
+}
+
+/**
+ * 请求快照里的引用值 → 画布节点 id。
+ *
+ * 两种形态（与 `lib/lineage.ts` 的推导规则**同源**）：`task:<taskId>` 是成片引用，
+ * 其余是资产 id。这里不判断"节点是否存在" —— 那由 `catalog` 决定，
+ * 于是"引用了但不在画布上"会**置灰并写明**，而不是给一个点了没反应的按钮。
+ */
+function refToNodeId(value: string): string {
+  const refTaskId = parseTaskRef(value);
+  return refTaskId === null ? assetNodeId(value) : taskNodeId(refTaskId);
+}
+
+/**
+ * 某条任务的留痕（V2.19 / 台账 B62）。
+ *
+ * 用 `?taskId=` 取（V2.19 新增的筛选，见 CONTRACT §10）—— 检查器要回答
+ * "这条片子当时发生了什么"：提交、终态（complete/fail/uncertain）、取消、渲染入库都带 `task_id`。
+ * 只取最近 5 条（**看图时的上下文**，不是日志页的替代品），更多请去日志页。
+ */
+const NodeLogList: FC<{ taskId: string }> = ({ taskId }) => {
+  const [items, setItems] = useState<EventLogEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setItems(null);
+    setError(null);
+    fetchLogs({ taskId, limit: 5 })
+      .then((data) => {
+        if (!cancelled) setItems(data.items);
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) setError(describeError(caught));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [taskId]);
+
+  if (error !== null) return <p className="wb-note cv-insp-warn">留痕读取失败：{error}</p>;
+  if (items === null) return <p className="wb-note">正在读取留痕…</p>;
+  if (items.length === 0) {
+    return (
+      <p className="wb-note">没有留痕（这条任务早于操作日志功能，或已被日志保留策略清掉）。</p>
+    );
+  }
+
+  return (
+    <ul className="cv-log-list">
+      {items.map((item) => (
+        <li key={item.id} className="cv-log-row">
+          <span className="cv-log-action">{logActionLabel(item.action)}</span>
+          <span className="cv-log-time">{new Date(item.ts).toLocaleTimeString()}</span>
+          <span className={item.statusCode !== undefined && item.statusCode >= 400 ? 'cv-log-bad' : 'cv-log-ok'}>
+            {item.statusCode ?? '—'}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+};
+
+/**
+ * 节点检查器（V2.19 / 台账 B62；设计参考 n8n 的 NDV，独立实现）。
+ *
+ * ## 它解决什么
+ * 画布此前只能"看位置 + 播一下"：任务对象里那些**排错与对账真正要用的东西**
+ * （提示词快照 / 输入素材 / 产物体积 / 成本 / warnings / 错误 / 该任务的留痕 / 上下游）
+ * 全都没有出口。检查器把它们一次摆出来，并把"上下游"做成**可点击跳转**——
+ * 于是"这条片子是怎么长出来的"从"看图猜"变成"沿链走"。
+ *
+ * ## 三条口径
+ * 1. **不新造数据**：全部读 `LineageNode.task` / `.asset`（= 原始任务 / 资产对象），
+ *    不另抄字段（否则每加一个任务字段就要同步两处）；
+ * 2. **金额如实**：有成本记录就显示它（含来源与"是否命中单价表"），没有就写"未记录"
+ *    —— **不做事后估算**（事后估算会让人以为那是当时的真实花费）；
+ * 3. **只读**：动作全部指向既有 hash 参数（零新路由、零契约）。
+ */
+function CanvasInspector({
+  node,
+  catalog,
+  upstream,
+  downstream,
+  onSelect,
+  onClose,
+}: {
+  node: LineageNode;
+  /** 当前画布上的全部节点（按 id 索引）—— 用来判断"引用能不能跳"，以及跳到哪里 */
+  catalog: Map<string, LineageNode>;
+  upstream: LineageNode[];
+  downstream: LineageNode[];
+  onSelect: (node: LineageNode) => void;
+  onClose: () => void;
+}) {
   const taskId = node.kind === 'task' ? node.taskId : undefined;
   const assetId = node.kind === 'asset' ? node.assetId : undefined;
   const outputUrl = resolveMediaUrl(node.outputVideoUrl ?? undefined);
+  const task = node.task;
+  const asset = node.asset;
+  const request = task?.requestSnapshot;
+  const sizeText = formatBytes(task?.outputSizeBytes);
+
+  /** 输入素材（首帧 / 尾帧 / 视频参考）→ 引用值转成节点 id（能不能跳由 catalog 决定） */
+  const inputs: Array<{ label: string; value: string; nodeId: string }> = [];
+  if (request !== undefined) {
+    const assets = request.assets;
+    if (assets?.firstFrameImage !== undefined) {
+      inputs.push({ label: '首帧图', value: assets.firstFrameImage, nodeId: refToNodeId(assets.firstFrameImage) });
+    }
+    if (assets?.lastFrameImage !== undefined) {
+      inputs.push({ label: '尾帧图', value: assets.lastFrameImage, nodeId: refToNodeId(assets.lastFrameImage) });
+    }
+    if (assets?.referenceVideo !== undefined) {
+      inputs.push({ label: '视频参考', value: assets.referenceVideo, nodeId: refToNodeId(assets.referenceVideo) });
+    }
+  }
 
   return (
     <aside className="cv-drawer" aria-label="节点详情">
@@ -123,7 +267,9 @@ function CanvasDrawer({ node, onClose }: { node: LineageNode; onClose: () => voi
           ✕
         </button>
       </div>
-      <p className="wb-note">{node.sublabel}</p>
+      <p className="wb-note" data-testid="cv-insp-sub">
+        {node.sublabel} · {formatMoment(node.createdAt)}
+      </p>
 
       {node.ghost === true ? (
         <p className="wb-note cv-drawer-ghost">
@@ -132,6 +278,176 @@ function CanvasDrawer({ node, onClose }: { node: LineageNode; onClose: () => voi
       ) : null}
 
       {outputUrl === null ? null : <video className="cv-player" src={outputUrl} controls playsInline />}
+
+      {task === undefined ? null : (
+        <>
+          <section className="cv-insp-section">
+            <h3 className="cv-insp-title">提示词</h3>
+            <p className="cv-insp-prompt">{request?.prompt ?? '（无快照）'}</p>
+            <dl className="cv-insp-kv">
+              <div>
+                <dt>模式</dt>
+                <dd>{request === undefined ? '—' : MODE_LABELS[request.mode]}</dd>
+              </div>
+              <div>
+                <dt>画幅</dt>
+                <dd>{request?.aspectRatio ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>时长</dt>
+                <dd>{request?.params?.durationSec === undefined ? '—' : `${request.params.durationSec}s`}</dd>
+              </div>
+              <div>
+                <dt>引擎</dt>
+                <dd>{request?.provider ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>种子</dt>
+                <dd>
+                  {request?.params?.seed === undefined
+                    ? '随机'
+                    : String(request.params.seed)}
+                </dd>
+              </div>
+              <div>
+                <dt>产物</dt>
+                <dd>{sizeText ?? (node.hasOutput === true ? '已出片' : '无')}</dd>
+              </div>
+            </dl>
+          </section>
+
+          {inputs.length === 0 ? null : (
+            <section className="cv-insp-section">
+              <h3 className="cv-insp-title">输入素材</h3>
+              <div className="cv-insp-links">
+                {inputs.map((item) => {
+                  const target = catalog.get(item.nodeId);
+                  return (
+                    <button
+                      key={item.label}
+                      type="button"
+                      className="cv-jump"
+                      disabled={target === undefined}
+                      title={target === undefined ? '这个引用不在当前画布上' : '跳到这个节点'}
+                      onClick={() => {
+                        if (target !== undefined) onSelect(target);
+                      }}
+                    >
+                      {item.label}：{item.value.slice(0, 22)}
+                      {target === undefined ? '（画布外）' : ''}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          <section className="cv-insp-section">
+            <h3 className="cv-insp-title">成本</h3>
+            {task.cost === undefined ? (
+              <p className="wb-note">
+                未记录成本（老任务或尚未结算）。金额口径见 CONTRACT §13，**以方舟账单为准**。
+              </p>
+            ) : (
+              <>
+                <p className="cv-insp-cost">
+                  {formatYuan(task.cost.yuan)}
+                  <span className="cv-insp-cost-note">
+                    （{COST_SOURCE_LABEL[task.cost.source]}
+                    {task.cost.source !== 'local-free' && !task.cost.fromPriceTable
+                      ? ' · 未命中单价表，按兜底价'
+                      : ''}
+                    ）
+                  </span>
+                </p>
+                <p className="wb-note" title={task.cost.formula}>
+                  模型 {task.cost.modelId} · {task.cost.outputSeconds}s · {task.cost.width}×
+                  {task.cost.height}
+                </p>
+                {task.cost.notes.map((note) => (
+                  <p key={note} className="wb-note cv-insp-warn">
+                    ⚠ {note}
+                  </p>
+                ))}
+              </>
+            )}
+          </section>
+
+          {task.warnings === undefined || task.warnings.length === 0 ? null : (
+            <section className="cv-insp-section">
+              <h3 className="cv-insp-title">警告（{task.warnings.length}）</h3>
+              {task.warnings.map((warning) => (
+                <p key={warning} className="wb-note cv-insp-warn">
+                  ⚠ {warning}
+                </p>
+              ))}
+            </section>
+          )}
+
+          {task.error === undefined ? null : (
+            <section className="cv-insp-section">
+              <h3 className="cv-insp-title">错误</h3>
+              <p className="wb-note cv-insp-bad">
+                【{task.error.code}】{task.error.message}
+              </p>
+              <p className="wb-note">处置：{task.error.disposition}</p>
+            </section>
+          )}
+
+          <section className="cv-insp-section">
+            <h3 className="cv-insp-title">这条任务发生了什么</h3>
+            <NodeLogList taskId={task.taskId} />
+            <button type="button" className="cr-link" onClick={() => navigate('#/logs')}>
+              去操作日志页看全部 →
+            </button>
+          </section>
+        </>
+      )}
+
+      {asset === undefined ? null : (
+        <section className="cv-insp-section">
+          <h3 className="cv-insp-title">资产</h3>
+          <dl className="cv-insp-kv">
+            <div>
+              <dt>类型</dt>
+              <dd>{asset.kind}</dd>
+            </div>
+            <div>
+              <dt>MIME</dt>
+              <dd>{asset.mime}</dd>
+            </div>
+            <div>
+              <dt>体积</dt>
+              <dd>{formatBytes(asset.size) ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>上传于</dt>
+              <dd>{formatMoment(asset.createdAt)}</dd>
+            </div>
+          </dl>
+        </section>
+      )}
+
+      {upstream.length === 0 && downstream.length === 0 ? null : (
+        <section className="cv-insp-section">
+          <h3 className="cv-insp-title">血缘</h3>
+          <div className="cv-insp-links">
+            {[...upstream.map((item) => ({ item, dir: '↑ 上游' })), ...downstream.map((item) => ({ item, dir: '↓ 下游' }))].map(
+              ({ item, dir }) => (
+                <button
+                  key={`${dir}-${item.id}`}
+                  type="button"
+                  className="cv-jump"
+                  title="跳到这个节点"
+                  onClick={() => onSelect(item)}
+                >
+                  {dir} · {item.label}
+                </button>
+              ),
+            )}
+          </div>
+        </section>
+      )}
 
       {taskId === undefined ? null : (
         <div className="cv-drawer-actions">
@@ -265,6 +581,31 @@ export function CanvasView() {
 
   const nodeTypes = useMemo(() => ({ lineage: LineageNodeCard }), []);
 
+  /** 节点索引（检查器判断"引用能不能跳"）+ 上下游邻接表（跳转入口） */
+  const catalog = useMemo(
+    () => new Map(graph.nodes.map((node) => [node.id, node])),
+    [graph.nodes],
+  );
+
+  const { upstreamOf, downstreamOf } = useMemo(() => {
+    const upstream = new Map<string, LineageNode[]>();
+    const downstream = new Map<string, LineageNode[]>();
+    const push = (map: Map<string, LineageNode[]>, key: string, node: LineageNode): void => {
+      const list = map.get(key);
+      if (list === undefined) map.set(key, [node]);
+      else list.push(node);
+    };
+    for (const edge of graph.edges) {
+      const from = catalog.get(edge.from);
+      const to = catalog.get(edge.to);
+      if (from !== undefined && to !== undefined) {
+        push(downstream, from.id, to);
+        push(upstream, to.id, from);
+      }
+    }
+    return { upstreamOf: upstream, downstreamOf: downstream };
+  }, [graph.edges, catalog]);
+
   const empty = !loading && tasks.length === 0;
 
   return (
@@ -358,7 +699,16 @@ export function CanvasView() {
         )}
       </div>
 
-      {selected === null ? null : <CanvasDrawer node={selected} onClose={() => setSelected(null)} />}
+      {selected === null ? null : (
+        <CanvasInspector
+          node={selected}
+          catalog={catalog}
+          upstream={upstreamOf.get(selected.id) ?? []}
+          downstream={downstreamOf.get(selected.id) ?? []}
+          onSelect={setSelected}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </section>
   );
 }

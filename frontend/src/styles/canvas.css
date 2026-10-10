@@ -241,7 +241,8 @@
   position: fixed;
   top: 64px;
   right: 16px;
-  width: 300px;
+  /* B62 起内容变多（提示词 / 成本 / 留痕 / 血缘）：340px 是"信息摆得下、又不遮住画布"的折中 */
+  width: 340px;
   max-height: 76vh;
   overflow-y: auto;
   display: flex;
@@ -290,6 +291,152 @@
   width: 100%;
   border-radius: var(--radius-control);
   background-color: var(--canvas);
+}
+
+/* ── 节点检查器（V2.19 / 台账 B62）────────────────────────────────────────
+   设计参考 n8n 的 NDV（节点详情视图）的分区方式：提示词 / 输入 / 成本 / 警告 /
+   错误 / 留痕 / 血缘，**独立实现**（PLAN §6-D48）。信息密度高但不折叠 ——
+   折叠意味着"要点两下才知道有没有内容"，而这里的内容大多是为了排错。 */
+.cv-insp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.cv-insp-title {
+  margin: 0;
+  font-size: var(--fs-label);
+  font-weight: 500;
+  color: var(--gold);
+}
+
+.cv-insp-prompt {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  background-color: var(--panel2);
+  color: var(--text);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.cv-insp-kv {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 10px;
+  margin: 0;
+}
+
+.cv-insp-kv > div {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-note);
+}
+
+.cv-insp-kv dt {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.cv-insp-kv dd {
+  margin: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-insp-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 跳转按钮：看起来像链接、点起来是按钮（可键盘聚焦），置灰时 title 写明原因 */
+.cv-jump {
+  padding: 5px 8px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text);
+  font-size: var(--fs-note);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cv-jump:hover:enabled {
+  border-color: var(--line-gold);
+  color: var(--gold);
+}
+
+.cv-jump:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cv-insp-cost {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: var(--fs-title);
+  color: var(--text);
+}
+
+.cv-insp-cost-note {
+  font-family: var(--sans);
+  font-size: var(--fs-note);
+  color: var(--muted);
+}
+
+.cv-insp-warn {
+  color: var(--gold);
+}
+
+.cv-insp-bad {
+  color: var(--danger);
+}
+
+/* 留痕（该任务的最近 5 条）：三列 = 动作 / 时间 / 状态码 */
+.cv-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cv-log-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  font-size: var(--fs-note);
+  color: var(--text);
+}
+
+.cv-log-action {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-log-time {
+  color: var(--muted);
+}
+
+.cv-log-ok {
+  color: var(--success);
+}
+
+.cv-log-bad {
+  color: var(--danger);
 }
 
 /* 窄屏：画布不好用，如实说 —— 而不是硬塞一个 200px 高的画布 */

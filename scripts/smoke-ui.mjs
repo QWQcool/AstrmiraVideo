@@ -2133,6 +2133,39 @@ try {
     '抽屉里有动作入口（复用参数 / 送剪辑台 / 设为视频参考…）',
   );
 
+  // V2.19（台账 B62）：节点检查器 —— 点节点能看到"这条片子的一切"
+  // ⚠️ 要点**任务**节点（资产节点只有"资产"一段：它没有提示词/成本/留痕）
+  await page.locator('.cv-canvas .cv-node-task').first().click();
+  await page.waitForTimeout(300);
+  const inspSections = await page.locator('.cv-drawer .cv-insp-section').count();
+  assert(
+    inspSections >= 3,
+    `检查器分区齐全（提示词 / 成本 / 留痕 / 血缘 共 ${inspSections} 段）`,
+  );
+  const promptText = (await page.locator('.cv-insp-prompt').first().innerText()).trim();
+  assert(promptText.length > 0, `提示词快照可见（${promptText.slice(0, 20)}…）`);
+  const inspKv = await page.locator('.cv-drawer .cv-insp-kv dd').count();
+  assert(inspKv >= 4, `参数键值对渲染（模式/画幅/时长/产物 共 ${inspKv} 项）`);
+
+  // ⭐ 这条同时验证了 V2.19 新增的 `?taskId=` 日志筛选（契约 §10）：留痕里必须有这条任务的事件
+  await page.waitForSelector('.cv-drawer .cv-log-row', { timeout: 10_000 });
+  const logRows = await page.locator('.cv-drawer .cv-log-row').count();
+  assert(logRows >= 1, `该任务的留痕可见（${logRows} 条，走 /api/logs?taskId=）`);
+
+  // 血缘跳转：有可跳的邻居时，点一下应该换到那个节点的检查器（标题变化）
+  const jump = page.locator('.cv-drawer .cv-jump:enabled').first();
+  if ((await jump.count()) > 0) {
+    const titleBefore = await page.locator('.cv-drawer-title').innerText();
+    await jump.click();
+    await page.waitForTimeout(400);
+    assert(
+      (await page.locator('.cv-drawer-title').innerText()) !== titleBefore,
+      '点血缘跳转 → 检查器切到相邻节点（沿链走）',
+    );
+  } else {
+    note('这张图上没有可跳的相邻节点（夹具任务较少），跳过血缘跳转断言');
+  }
+
   // V2.19（台账 B64）：画布导航 —— 小地图 + 「缩放到选区」（设计参考 n8n，独立实现）
   assert(
     (await page.locator('.cv-canvas .react-flow__minimap').count()) === 1,

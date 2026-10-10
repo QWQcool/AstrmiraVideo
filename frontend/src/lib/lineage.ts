@@ -57,6 +57,14 @@ export interface LineageNode {
   /** V2.10（B57）：资产类别含音频（音频素材也是画布上的一等节点，如实呈现） */
   assetKind?: 'image' | 'video' | 'audio';
   url?: string | null;
+
+  // ── 原始对象（V2.19 / 台账 B62：节点检查器用）──────────────────────────
+  /** 该节点对应的原始任务对象（ghost 节点为 undefined）。检查器要的提示词快照 /
+   *  warnings / 成本 / 错误 / 产物尺寸全在里面 —— **不再另抄一份字段**，
+   *  否则每加一个任务字段就要同步两处（这正是"单一事实源"要避免的）。 */
+  task?: TaskProgress;
+  /** 该节点对应的原始资产对象（ghost 节点为 undefined） */
+  asset?: AssetListEntry;
 }
 
 export type LineageEdgeKind = 'edit' | 'extract' | 'reference' | 'task-ref';
@@ -141,6 +149,7 @@ export function buildLineage(input: LineageInput): LineageGraph {
             hasOutput: task.outputVideoUrl !== undefined,
             thumbnailUrl: task.thumbnailUrl ?? null,
             outputVideoUrl: task.outputVideoUrl ?? null,
+            task,
           };
     nodes.set(id, node);
     return node;
@@ -174,6 +183,7 @@ export function buildLineage(input: LineageInput): LineageGraph {
             assetId,
             assetKind: asset.kind,
             url: asset.url,
+            asset,
           };
     nodes.set(id, node);
     return node;

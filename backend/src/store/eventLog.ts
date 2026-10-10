@@ -48,6 +48,8 @@ export interface EventLogFilter {
   q?: string;
   since?: number;
   until?: number;
+  /** V2.19（台账 B62）：只取某条任务的留痕（画布节点检查器用） */
+  taskId?: string;
 }
 
 interface EventLogRow {
@@ -119,6 +121,11 @@ function buildWhere(filter: EventLogFilter): { sql: string; params: unknown[] } 
   if (filter.until !== undefined) {
     clauses.push('ts <= ?');
     params.push(filter.until);
+  }
+  // V2.19（台账 B62）：按任务 id 过滤 —— 画布节点检查器看"这条任务的全部留痕"
+  if (filter.taskId !== undefined && filter.taskId !== '') {
+    clauses.push('task_id = ?');
+    params.push(filter.taskId);
   }
   if (filter.q !== undefined && filter.q.trim() !== '') {
     const pattern = likePattern(filter.q.trim());

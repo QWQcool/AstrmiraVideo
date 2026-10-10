@@ -104,6 +104,14 @@ export const LogQuerySchema = z.object({
   q: z.string().optional(),
   since: z.coerce.number().int().optional(),
   until: z.coerce.number().int().optional(),
+  /**
+   * V2.19 新增（台账 B62）：**按任务 id 取一条任务的全部留痕**。
+   *
+   * 为什么加：画布的节点检查器要回答"这条片子当时发生了什么" —— 任务终态
+   * （`task.complete` / `task.fail` / `task.uncertain`）、提交、取消、渲染入库都带 `task_id`，
+   * 用关键词搜提示词只能碰运气。有了它，"点节点 → 看到这条任务的全部事件"是一条直路。
+   */
+  taskId: z.string().optional(),
 });
 
 export type EventLogEntry = z.infer<typeof EventLogEntrySchema>;

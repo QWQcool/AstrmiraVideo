@@ -221,3 +221,38 @@ describe('layoutLineage · 分层布局', () => {
     expect(layout.height).toBeGreaterThan(0);
   });
 });
+
+/**
+ * V2.19（台账 B62）节点检查器：节点要带上**原始对象**。
+ *
+ * 为什么盯这条：检查器要显示提示词快照 / 成本 / warnings / 错误 ——
+ * 如果血缘层"另抄一份字段"，每加一个任务字段就要同步两处（迟早漏）。
+ * 断言用 `toBe`（同一引用）而不是 `toMatchObject`，就是为了钉住"不复制"这件事。
+ */
+describe('节点带上原始对象（B62 节点检查器）', () => {
+  it('task 节点带原始 TaskProgress（同一引用，不是深拷贝）', () => {
+    const source = task({ taskId: 'gen-a' });
+    const graph = buildLineage({ tasks: [source] });
+    const node = graph.nodes.find((item) => item.id === taskNodeId('gen-a'));
+    expect(node?.task).toBe(source);
+    expect(node?.task?.requestSnapshot.prompt).toBe('雨夜街头');
+  });
+
+  it('asset 节点带原始 AssetListEntry；ghost 节点**没有**原始对象（如实缺席）', () => {
+    const entry = asset({ assetId: 'asset-1' });
+    const graph = buildLineage({ tasks: [], assets: [entry] });
+    expect(graph.nodes.find((item) => item.id === assetNodeId('asset-1'))?.asset).toBe(entry);
+
+    const ghostGraph = buildLineage({
+      tasks: [
+        task({
+          taskId: 'i2v-1',
+          requestSnapshot: { ...SNAPSHOT, mode: 'i2v', assets: { firstFrameImage: 'gone-asset' } },
+        }),
+      ],
+    });
+    const ghost = ghostGraph.nodes.find((item) => item.id === assetNodeId('gone-asset'));
+    expect(ghost?.ghost).toBe(true);
+    expect(ghost?.asset).toBeUndefined();
+  });
+});
