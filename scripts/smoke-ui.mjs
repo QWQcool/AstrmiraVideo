@@ -2465,6 +2465,126 @@ try {
   await sleep(250);
   assert((await canvasNodes.count()) === beforeDelete, 'Delete 键不删除节点（只读视图）');
 
+  // ⑨ 画布规模与分页（V2.25 / 台账 B44）
+  //
+  // 分页与"视口裁剪"都只有在**超过一页（50 条）**时才成立 —— 所以先直接往临时库注入
+  // 120 条"更早的任务"（同 B63 的理由：生成路由有 60s 冷却，而这里要验的是画布怎么读、怎么画）。
+  // 注入的时间戳都落在既有夹具任务**之前**，保证它们排在"更早"的那几页里。
+  {
+    const Database = require(path.join(ROOT, 'backend', 'node_modules', 'better-sqlite3'));
+    const db = new Database(path.join(DATA_DIR, 'app.db'));
+    const now = Date.now();
+    const insert = db.prepare(
+      `INSERT OR REPLACE INTO tasks (task_id, track, provider, status, progress_percent,
+                                     request_snapshot, warnings, submitting, project_id,
+                                     created_at, updated_at)
+       VALUES (?, 'cloud', 'cloud-volcano-seedance', 'succeeded', 100, ?, '[]', 0, 'default', ?, ?)`,
+    );
+    const snapshot = JSON.stringify({
+      prompt: '冒烟：更早的历史任务（验证画布分页与视口裁剪）',
+      mode: 't2v',
+      aspectRatio: '16:9',
+      provider: 'cloud-volcano-seedance',
+    });
+    for (let index = 0; index < 120; index += 1) {
+      const at = now - (index + 30) * 24 * 60 * 60 * 1000; // 30 天前往回推
+      insert.run(`smoke-bulk-${String(index).padStart(3, '0')}`, snapshot, at, at);
+    }
+    db.close();
+    note('已注入 120 条历史任务（验证画布分页与视口裁剪；只动临时库）');
+  }
+
+  // 切走再回：画布不是 keepalive 视图，重新挂载才会重拉（第一页）
+  await page.evaluate(() => { location.hash = '#/library'; });
+  await page.locator('.lib-grid').waitFor({ timeout: 10_000 });
+  await page.evaluate(() => { location.hash = '#/canvas'; });
+  await page.waitForFunction(() => document.querySelectorAll('.cv-node').length >= 1, {
+    timeout: 15_000,
+  });
+
+  /**
+   * 读**数据层**的已加载节点数（`data-loaded-nodes`）。
+   *
+   * ⚠️ 不要数 `.cv-node`（DOM）：`onlyRenderVisibleElements` 之后 DOM 数只反映**视口覆盖** ——
+   * 大图上"DOM 数不变"完全可能意味着"数据在长、只是没进视口"（第一版就是这样误判的，
+   * 三次点击全读到 25，断言全部落空）。
+   */
+  const loadedNodeCount = () =>
+    page
+      .locator('[data-testid=cv-canvas]')
+      .getAttribute('data-loaded-nodes')
+      .then((value) => Number(value ?? '0'));
+
+  const firstPageNodes = await loadedNodeCount();
+  assert(
+    firstPageNodes >= 50,
+    `首屏只加载一页（数据层 ≥50 个节点；实际 ${firstPageNodes}）`,
+  );
+  const loadEarlier = page.getByTestId('cv-load-earlier');
+  assert(await loadEarlier.isEnabled(), '「加载更早」可用（服务端 hasMore=true）');
+  assert(
+    (await loadEarlier.textContent())?.includes('加载更早') === true,
+    '按钮文案是「加载更早」（不是"点一下看看有没有"）',
+  );
+
+  await loadEarlier.click();
+  await page.waitForFunction(
+    () => {
+      const canvas = document.querySelector('[data-testid=cv-canvas]');
+      return canvas !== null && Number(canvas.getAttribute('data-loaded-nodes') ?? '0') >= 100;
+    },
+    undefined,
+    { timeout: 15_000 },
+  );
+  const secondPageNodes = await loadedNodeCount();
+  assert(
+    secondPageNodes >= firstPageNodes + 50,
+    `第二次加载向前翻了一整页（数据层 +${secondPageNodes - firstPageNodes} 个节点）`,
+  );
+
+  await loadEarlier.click();
+  await page.waitForFunction(
+    (before) => {
+      const canvas = document.querySelector('[data-testid=cv-canvas]');
+      return (
+        canvas !== null && Number(canvas.getAttribute('data-loaded-nodes') ?? '0') > before
+      );
+    },
+    secondPageNodes,
+    { timeout: 15_000 },
+  );
+  const allPageNodes = await loadedNodeCount();
+  assert(
+    allPageNodes >= 120,
+    `第三次加载仍取到了更早的任务（数据层共 ${allPageNodes} 个节点 —— 注入的 120 条都在图里了）`,
+  );
+  // 翻完：按钮自动置灰 + 文案如实（hasMore=false 才置灰，不是"点了没反应"）
+  await page.waitForFunction(() => {
+    const button = document.querySelector('[data-testid=cv-load-earlier]');
+    return button !== null && button.disabled;
+  }, undefined, { timeout: 15_000 });
+  assert(await loadEarlier.isDisabled(), '全部加载完 → 按钮置灰（不是点了没反应）');
+  assert(
+    (await loadEarlier.textContent())?.includes('已全部加载') === true,
+    '按钮文案如实说明「已全部加载」',
+  );
+  note(
+    `（说明）数据层 ${allPageNodes} 个节点 vs DOM ${await page.locator('.cv-canvas .react-flow__node').count()} 个 —— 差额即"视口外未建 DOM"的部分`,
+  );
+
+  // 视口裁剪（onlyRenderVisibleElements）：一百多个节点一列排开（高度上万像素），
+  // `fitView` 会被 `minZoom=0.2` 钳住 —— **只有一部分在视口内**。判据用"DOM 数 < 数据层数"，
+  // 两边都从真实来源读（不写魔法数字）。
+  const domNodes = await page.locator('.cv-canvas .react-flow__node').count();
+  assert(
+    domNodes < allPageNodes,
+    `视口裁剪生效：DOM 只建了 ${domNodes} 个节点（图里 ${allPageNodes} 个）—— 视口外不建 DOM`,
+  );
+  note('（说明）视口裁剪的开关是代码事实，另由视觉自检第 ⑬ 条静态钉住');
+
+  await page.screenshot({ path: path.join(SHOT_DIR, 'canvas-paged.png'), fullPage: false });
+  note('画布分页截图留档：artifacts/ui-smoke/canvas-paged.png');
+
   await page.screenshot({ path: path.join(SHOT_DIR, 'canvas.png'), fullPage: false });
   note('画布截图留档：artifacts/ui-smoke/canvas.png');
 

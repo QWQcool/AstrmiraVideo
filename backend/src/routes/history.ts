@@ -36,7 +36,20 @@ const HistoryQuerySchema = z.object({
    * 需要出现在界面上的能力（界面的心智模型是"我在哪个项目里"）。
    */
   project: z.string().optional(),
+  /**
+   * V2.25（台账 B44）：分页。`limit` 省略 = 50（与 V2.25 之前完全一致）；
+   * **超出 1~200 直接 400**（不静默 clamp —— 画布只会传 50，超范围说明客户端有 bug，静默截断会藏住它）。
+   */
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  /**
+   * V2.25：游标 —— 只返回 `created_at < before` 的任务（epoch ms）。
+   * 与排序键（`created_at DESC`）同源，"加载更早"逐页向过去推进。
+   */
+  before: z.coerce.number().int().nonnegative().optional(),
 });
+
+/** V2.25：`limit` 省略时的条数（= V2.25 之前写死的 50 —— 老调用方行为不变） */
+const DEFAULT_HISTORY_LIMIT = 50;
 
 /** 快照里被引用的参考资产 id（首帧 / 尾帧 / 参考视频三格） */
 function referencedAssetIds(snapshot: { assets?: Record<string, string | undefined> }): string[] {
@@ -88,18 +101,29 @@ export const createHistoryRoutes =
         const outputsDir = deps.outputsDir ?? resolveOutputsDir();
         // V9 修复：`?kind=edit` 查剪辑产物（剪辑台用）；缺省只返回生成产物。
         // V2.6（B37）：`source` 可选 —— 不带时返回全部剪辑产物（素材候选 / L2 画布用）。
-        const { kind, source } = request.query;
+        const { kind, source, before } = request.query;
         // V2.11（B47）：项目过滤 —— 省略即默认项目（见 HistoryQuerySchema 的注释）
         const projectId = normalizeProjectId(request.query.project);
-        const records = (
+        // V2.25（B44）：分页 —— **多查一条**探测 hasMore，然后截断。
+        // 为什么不另做 COUNT：多查一条的成本是 O(1)（LIMIT 上的第 limit+1 行），
+        // 而 COUNT 会全表扫描一次（大库里它比这一页本身还贵）。
+        const limit = request.query.limit ?? DEFAULT_HISTORY_LIMIT;
+        const probe = limit + 1;
+        const page = (
           kind === 'edit'
-            ? deps.store.listRecent(50, {
+            ? deps.store.listRecent(probe, {
                 kind: 'edit',
                 projectId,
                 ...(source === undefined ? {} : { sourceTaskId: source }),
+                ...(before === undefined ? {} : { before }),
               })
-            : deps.store.listRecent(50, { projectId })
+            : deps.store.listRecent(probe, {
+                projectId,
+                ...(before === undefined ? {} : { before }),
+              })
         ).map(toTaskProgress);
+        const hasMore = page.length > limit;
+        const records = hasMore ? page.slice(0, limit) : page;
 
         // V2.3（CONTRACT §4/§5）：逐条补落盘事实（体积 / V2.8 起"文件不存在即省略直链"）
         // + 目录级聚合（扫 outputs/）。两者都是**只读**，并发跑；
@@ -109,7 +133,7 @@ export const createHistoryRoutes =
           readStorageUsage(outputsDir),
         ]);
 
-        return { items, storage };
+        return { items, storage, hasMore };
       },
     );
 

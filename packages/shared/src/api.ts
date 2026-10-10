@@ -38,6 +38,13 @@ export const HistoryResponseSchema = z.object({
   items: z.array(TaskProgressSchema),
   // V2.3：输出目录聚合 —— 总览"存储占用"卡与"去清理"的数据源
   storage: StorageUsageSchema,
+  /**
+   * V2.25（台账 B44）：**还有更早的任务吗**（服务端按 `limit + 1` 探测后截断，不做额外 COUNT）。
+   *
+   * 为什么不等价于 `items.length === limit`：两者在"正好取满"时含义相反 ——
+   * 用长度猜会让画布的「加载更早」在"最后一批刚好满"时多骗用户点一次空的。
+   */
+  hasMore: z.boolean(),
 });
 
 /** `DELETE /api/history/:taskId` 与 `POST /api/tasks/:taskId/cancel` 的 200 响应 */

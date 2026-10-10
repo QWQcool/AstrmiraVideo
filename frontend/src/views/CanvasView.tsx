@@ -38,6 +38,7 @@ import {
   type LineageGraph,
   type LineageNode,
 } from '../lib/lineage';
+import { combineHasMore, mergeCanvasTasks, oldestCreatedAt } from '../lib/canvasPaging';
 import { downloadText } from '../lib/zipStore';
 import { navigate } from '../lib/router';
 import { LineageNodeCard, type LineageFlowNode } from '../canvas/NodeCard';
@@ -78,6 +79,14 @@ const EDGE_STYLE: Record<LineageEdgeKind, { stroke: string; dash?: string; text:
 
 const EDGE_KINDS: LineageEdgeKind[] = ['edit', 'extract', 'reference', 'task-ref'];
 
+/**
+ * V2.25（台账 B44）：画布每次加载的条数（生成 / 剪辑两类**各自**取这么多）。
+ *
+ * 50 = 服务端省略 `?limit=` 时的默认值（V2.25 之前写死的那个数）—— 首屏行为与过去完全一致，
+ * 「加载更早」每次再向前翻一页。**不要**把它当"画布上限"：上限现在是用户的点击次数。
+ */
+const CANVAS_PAGE_SIZE = 50;
+
 function describeError(caught: unknown): string {
   if (caught instanceof ApiError) {
     const code = caught.failure.code === undefined ? '' : `【${caught.failure.code}】`;
@@ -96,15 +105,37 @@ function describeError(caught: unknown): string {
  * ⚠️ 必须渲染在 `<ReactFlow>` 内部（`useReactFlow` 依赖它的 Provider）。
  * 参考 n8n 的画布导航交互，本组件为独立实现（PLAN §6-D48）。
  */
-const CanvasToolbar: FC<{ selectedIds: string[]; onAddNote: (x: number, y: number) => void }> = ({
-  selectedIds,
-  onAddNote,
-}) => {
+const CanvasToolbar: FC<{
+  selectedIds: string[];
+  onAddNote: (x: number, y: number) => void;
+  /** V2.25（B44）：还有更早的任务可加载吗（两类来源取或，服务端的 `hasMore` 汇总而来） */
+  hasMore: boolean;
+  loadingEarlier: boolean;
+  onLoadEarlier: () => void;
+}> = ({ selectedIds, onAddNote, hasMore, loadingEarlier, onLoadEarlier }) => {
   const { fitView, screenToFlowPosition } = useReactFlow();
   const count = selectedIds.length;
 
   return (
     <div className="cv-tools">
+      {/* V2.25（台账 B44）：把"能看多少"交给用户 —— 每点一次向前翻一页（50 条），
+          翻完**置灰并写明原因**（不是点了没反应）。 */}
+      <button
+        type="button"
+        className="cv-tool"
+        data-testid="cv-load-earlier"
+        disabled={!hasMore || loadingEarlier}
+        title={
+          loadingEarlier
+            ? '正在取更早的任务…'
+            : hasMore
+              ? `把更早的任务也画进来（每次 ${CANVAS_PAGE_SIZE} 条）`
+              : '已经没有更早的任务了'
+        }
+        onClick={onLoadEarlier}
+      >
+        {loadingEarlier ? '⏳ 加载中…' : hasMore ? '⏮ 加载更早' : '⏮ 已全部加载'}
+      </button>
       <button
         type="button"
         className="cv-tool"
@@ -595,18 +626,33 @@ export function CanvasView() {
   const [queue, setQueue] = useState<{ queued: number; oldestAgeSec: number | null } | null>(null);
   /** 画布便签（V2.22 / B67）：按项目存本机，零契约 */
   const [notes, setNotes] = useState<CanvasNote[]>([]);
+  /**
+   * V2.25（台账 B44）：分页状态。
+   * `before` = 已加载数据里最旧一条的 `createdAt`（下一页游标）；`hasMore` = 服务端说还有更早的。
+   */
+  const [page, setPage] = useState<{ hasMore: boolean; before: number | null }>({
+    hasMore: false,
+    before: null,
+  });
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
 
   const reload = useCallback(async (): Promise<void> => {
     try {
       // 三个既有只读接口，零契约变更（生成产物 + 剪辑产物 + 资产库）
       // V2.11（B47）：三者都按当前项目过滤（血缘图是"这个项目里的片子怎么长出来的"）
+      // V2.25（B44）：显式 `limit`（两类各自一页）+ 用响应的 `hasMore` 决定「加载更早」是否可用
       const [generated, edits, assetList] = await Promise.all([
-        fetchHistory({ project: projectId }),
-        fetchHistory({ kind: 'edit', project: projectId }),
+        fetchHistory({ project: projectId, limit: CANVAS_PAGE_SIZE }),
+        fetchHistory({ kind: 'edit', project: projectId, limit: CANVAS_PAGE_SIZE }),
         fetchAssets(projectId),
       ]);
-      setTasks([...generated.items, ...edits.items]);
+      const merged = mergeCanvasTasks([...generated.items, ...edits.items], []);
+      setTasks(merged);
       setAssets(assetList.assets);
+      setPage({
+        hasMore: combineHasMore(generated.hasMore, edits.hasMore),
+        before: oldestCreatedAt(merged),
+      });
       setError(null);
     } catch (caught) {
       setError(describeError(caught));
@@ -614,6 +660,32 @@ export function CanvasView() {
       setLoading(false);
     }
   }, [projectId]);
+
+  /**
+   * V2.25（台账 B44）：「加载更早」—— 以当前最旧一条的 `createdAt` 为游标，两类各自再取一页，
+   * 合并去重后重算游标与 `hasMore`。加载期间按钮置灰（防连点重复拉同一页）。
+   */
+  const loadEarlier = useCallback(async (): Promise<void> => {
+    if (page.before === null || loadingEarlier) return;
+    setLoadingEarlier(true);
+    try {
+      const [generated, edits] = await Promise.all([
+        fetchHistory({ project: projectId, limit: CANVAS_PAGE_SIZE, before: page.before }),
+        fetchHistory({ kind: 'edit', project: projectId, limit: CANVAS_PAGE_SIZE, before: page.before }),
+      ]);
+      const merged = mergeCanvasTasks(tasks, [...generated.items, ...edits.items]);
+      setTasks(merged);
+      setPage({
+        hasMore: combineHasMore(generated.hasMore, edits.hasMore),
+        before: oldestCreatedAt(merged),
+      });
+      setError(null);
+    } catch (caught) {
+      setError(describeError(caught));
+    } finally {
+      setLoadingEarlier(false);
+    }
+  }, [page.before, loadingEarlier, projectId, tasks]);
 
   useEffect(() => {
     void reload();
@@ -887,6 +959,15 @@ export function CanvasView() {
               className="cv-canvas"
               data-testid="cv-canvas"
               data-focus={onlyProblems ? 'problems' : 'all'}
+              /**
+               * V2.25（台账 B44）：**数据层**的已加载节点数（含便签）。
+               *
+               * 为什么必须把它暴露出来：`onlyRenderVisibleElements` 之后，DOM 里的节点数
+               * **只反映视口覆盖，不反映图里有多少数据** —— 大图上"DOM 数不变"其实
+               * 完全可能意味着"数据在长、只是没进视口"。没有这个属性，冒烟就只能靠
+               * DOM 数猜分页，而那是错的（第一版就是这样误判的）。
+               */
+              data-loaded-nodes={flowNodes.length}
             >
               <ReactFlow
                 nodes={flowNodes}
@@ -910,12 +991,27 @@ export function CanvasView() {
                 fitView
                 minZoom={0.2}
                 maxZoom={1.6}
+                /**
+                 * V2.25（台账 B44）：**视口裁剪** —— 只为视口内的节点建 DOM。
+                 *
+                 * 血缘图的形状很"窄高"（生成任务全在同一列，行数 = 任务数）：几百条任务就是
+                 * 上万像素高的一列，`fitView` 会被 `minZoom` 钳到只能看到其中一小截 ——
+                 * 也就是说**大图下大多数节点本来就在视口外**，为它们建 DOM 是纯浪费。
+                 * 这条是纯前端的渲染开关（React Flow 自带），与分页（`?limit=`/`?before=`）互补：
+                 * 分页决定"图里有多少数据"，它决定"屏幕上渲染多少"。
+                 */
+                onlyRenderVisibleElements
               >
                 <Background gap={24} />
                 <Controls showInteractive={false} />
                 <CanvasToolbar
                   selectedIds={selectedIds}
                   onAddNote={(x, y) => mutateNotes(createNote(notes, { x, y }))}
+                  hasMore={page.hasMore}
+                  loadingEarlier={loadingEarlier}
+                  onLoadEarlier={() => {
+                    void loadEarlier();
+                  }}
                 />
                 <MiniMap
                   data-testid="cv-minimap"

@@ -404,14 +404,26 @@ export class TaskStore {
    * V2.11（台账 B47）：新增可选 `projectId` —— **传了才过滤**。所有调用方都显式传
    * （路由层把"省略"收敛成默认项目，见 `normalizeProjectId`），此处不设隐式默认：
    * 存储层"悄悄按默认项目过滤"会让别的调用点（测试、脚本）拿到意料之外的空列表。
+   *
+   * V2.25（台账 B44）：新增可选 `before`（`created_at < before`）—— 分页游标。
+   * 排序键是 `created_at`（不是 `updated_at`），游标语义与排序键**必须**一致，
+   * 否则"翻页期间恰好有任务更新"会导致重复或跳漏。
    */
   listRecent(
     limit = 50,
-    options: { kind?: 'edit'; sourceTaskId?: string; projectId?: string } = {},
+    options: {
+      kind?: 'edit';
+      sourceTaskId?: string;
+      projectId?: string;
+      /** V2.25（台账 B44）：只返回 `created_at < before` 的任务 —— "加载更早"的游标 */
+      before?: number;
+    } = {},
   ): TaskRecord[] {
     const projectClause = options.projectId === undefined ? '' : ' AND project_id = @projectId';
+    const beforeClause = options.before === undefined ? '' : ' AND created_at < @before';
     const params: Record<string, unknown> = { limit };
     if (options.projectId !== undefined) params['projectId'] = options.projectId;
+    if (options.before !== undefined) params['before'] = options.before;
 
     if (options.kind === 'edit') {
       const sourceClause =
@@ -424,7 +436,7 @@ export class TaskStore {
       const rows = this.db
         .prepare(
           `SELECT * FROM tasks
-            WHERE (edit_script IS NOT NULL OR edit_origin IS NOT NULL)${sourceClause}${projectClause}
+            WHERE (edit_script IS NOT NULL OR edit_origin IS NOT NULL)${sourceClause}${projectClause}${beforeClause}
             ORDER BY created_at DESC LIMIT @limit`,
         )
         .all(params) as TaskRow[];
@@ -434,7 +446,7 @@ export class TaskStore {
     const rows = this.db
       .prepare(
         `SELECT * FROM tasks
-          WHERE edit_script IS NULL AND edit_origin IS NULL${projectClause}
+          WHERE edit_script IS NULL AND edit_origin IS NULL${projectClause}${beforeClause}
           ORDER BY created_at DESC LIMIT @limit`,
       )
       .all(params) as TaskRow[];

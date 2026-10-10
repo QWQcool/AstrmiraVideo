@@ -307,14 +307,21 @@ export function fetchHistory(filter?: {
   kind?: 'edit';
   source?: string;
   project?: string;
+  /** V2.25（台账 B44）：1~200；省略 = 服务端默认 50（与 V2.25 之前一致） */
+  limit?: number;
+  /** V2.25：游标 —— 只返回 `created_at < before` 的任务（"加载更早"） */
+  before?: number;
 }): Promise<HistoryResponse> {
   // V9 修复：剪辑产物默认不进历史成片；剪辑台用 `?kind=edit&source=<id>` 查某源片的剪辑历史。
   // V2.6（B37）：`kind:'edit'` 不带 source → 全部剪辑产物（时间轴素材候选合并用）。
   // V2.11（B47）：`project` 省略 = 默认项目。
+  // V2.25（B44）：`limit` / `before` 驱动画布的分页（响应里的 `hasMore` 决定还能不能继续往前翻）。
   const params = new URLSearchParams();
   if (filter?.kind === 'edit') params.set('kind', 'edit');
   if (filter?.source !== undefined) params.set('source', filter.source);
   if (filter?.project !== undefined) params.set('project', filter.project);
+  if (filter?.limit !== undefined) params.set('limit', String(filter.limit));
+  if (filter?.before !== undefined) params.set('before', String(filter.before));
   const suffix = params.size === 0 ? '' : `?${params.toString()}`;
   return request(`/api/history${suffix}`, HistoryResponseSchema);
 }
