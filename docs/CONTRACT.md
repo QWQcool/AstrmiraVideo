@@ -1,6 +1,16 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.26 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.27 · 已冻结（变更需先改本文，再改代码）**
+> **V2.27 修订（2026-10-10）**：**任务执行位置 `executedBy`（台账 A1 片 A，B11）** —— 向后兼容的扩展：
+>   **§4** `TaskProgress` 增可选 `executedBy`（`cloud` / `host-local` / `client-worker`）；
+>   **§7** `tasks` 增 `executed_by` 列，**入库那一刻按 provider 判定**（`resolveExecutedBy`，前后端共用）。
+>   为什么：**"数据不出域"只对存储成立是不够的** —— 云端 BYOK 下提示词与参考图仍会发到上游，
+>   本地轨（D49）的全部价值都建立在"这条任务到底在哪跑"能被如实看到上（画廊 / 视频库 / 画布都标它）。
+>   **缺省 = V2.27 之前的老任务，读路径不猜**（不按 provider 反推历史事实）。
+>   同批如实登记：**剪辑产物标 `client-worker`**（浏览器端渲染，`browser-remotion` 不是契约 provider，
+>   不拿它反推执行位置）。**无新路由、无新错误码**。
+>
+> **状态（上一版）：V2.26 · 已冻结**
 > **V2.26 修订（2026-10-10）**：**新增 §11-6 画布编排 `astrmira.canvas-plan`（台账 A5 片 A；D50 定格 (b)）** ——
 >   画布多一个**编排模式**（`#/canvas?mode=plan`：摆节点 / 连线 / 写参数 / 「▶ 运行编排」），
 >   **执行走既有 `POST /api/generate`：无新路由、无新错误码、无新表**。
@@ -425,6 +435,12 @@ export interface TaskProgress {
   cost?: CostRecord;               // V2.12：成本记录（见 §13）。**只有成功任务在终态结算时写入**；
                                    // 缺省 = 未结算（V2.12 之前的老任务 / 无法估算的任务）——
                                    // "不知道花了多少"与"花了 0 元"（本地轨）必须能分开，故不给默认值 0
+  executedBy?: ExecutedBy;         // V2.27（台账 A1 片 A / B11）：**这条任务实际在哪台机器上跑的**。
+                                   // 'cloud'（产物在上游生成）/ 'host-local'（服务端所在机器）/
+                                   // 'client-worker'（用户设备上执行 —— 含浏览器端渲染的剪辑产物，将来含本地 worker 轨）。
+                                   // 缺省 = V2.27 之前的老任务：界面**不猜**（不按 provider 反推历史事实）。
+                                   // 为什么它是一个契约字段："数据不出域"只对存储成立是不够的 ——
+                                   // 云端 BYOK 下提示词与参考图仍会发到上游，而这个字段是"到底发了没有"的唯一事实源。
   error?: {
     code: ErrorCode;              // 见 §6 错误码字典
     message: string;
@@ -577,6 +593,7 @@ export type ErrorDisposition =
 | :--- | :--- | :--- |
 | 任务状态 + 参数快照 + 画廊元数据 | SQLite（`data/app.db`，better-sqlite3） | 持久，服务重启可恢复 |
 | **项目（V2.11 落地，台账 B47）** | SQLite（同上）：`projects(project_id, name, created_at, updated_at)`；任务归属 = `tasks.project_id` | **默认项目 `default` 由启动引导保证存在**（`bootstrapProjects`：`INSERT ... ON CONFLICT DO NOTHING`），并**回填** `project_id IS NULL` 的老行为 `default`（幂等，每次启动跑一次）。删除只允许**空项目**且**默认项目不可删**（§5 / §12）；**不做级联删除** —— 任务与资产不随项目消失 |
+| **执行位置（V2.27 落地，台账 A1 片 A / B11）** | SQLite（同上）：`tasks.executed_by`（`cloud` / `host-local` / `client-worker`） | 入库那一刻按 provider 判定并写死（`resolveExecutedBy`，共享常量）；**NULL = V2.27 之前的老任务** —— 读路径**不猜**（不按 provider 反推）。用途：画廊 / 视频库 / 画布如实标注"这条在哪跑的"（本地轨 D49 的全部价值都建立在它上面） |
 | 幂等键 → taskId 映射 | SQLite（同上） | 持久；同一键重复提交返回同一任务（§5） |
 | 任务告警 `warnings[]` | SQLite（同上） | 随任务记录持久化，画廊 / 结果卡展示（V1.4 §4）；**仅写服务端日志不算告警** |
 | `submitting` 提交标记 | SQLite（同上） | 提交前写入、成功后写回上游 taskId；重启后据此判定是否已提交（§5，防线 7 前提） |

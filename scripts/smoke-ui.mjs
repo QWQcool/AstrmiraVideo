@@ -829,6 +829,15 @@ try {
     `封面 src 为同源 /media/thumbs/…（实际 ${thumbSrc}）`,
   );
   assert(await card.locator('.wb-card-play').isVisible(), '封面角标可见（静帧不会被误读成图片素材）');
+  // V2.27（台账 A1 片 A / B11）：画廊**如实标注这条在哪跑的**（夹具 provider → 本机）
+  assert(
+    (await card.getByTestId('gallery-executed-by').count()) === 1,
+    '画廊卡片标注执行位置（V2.27：本地轨的全部价值建立在"在哪跑"能被看到上）',
+  );
+  assert(
+    (await card.getByTestId('gallery-executed-by').textContent())?.includes('本机') === true,
+    '夹具任务标为「本机」（host-local —— 按 provider 判定，不是写在卡片里的常量）',
+  );
 
   // ── B37：V2V「从成片库选择」（V2.6 `task:` 引用入口）──────────────────────
   // 此刻画廊里已有一条夹具成片 → 候选必然非空；选中后槽里应是 `task:` 引用
@@ -940,6 +949,11 @@ try {
   await page.locator('.lib-card').first().waitFor({ timeout: 10_000 });
   const totalCards = await page.locator('.lib-card').count();
   assert(totalCards > 0, `视频库列出成片（${totalCards} 张卡片）`);
+  // V2.27（A1 片 A / B11）：视频库也如实标注执行位置（与画廊同一份文案表）
+  assert(
+    /本机|云端|你的电脑/.test((await page.locator('.lib-meta').first().textContent()) ?? ''),
+    '视频库元信息行含执行位置（V2.27）',
+  );
 
   // 破坏性验证（固化）：搜一个不存在的词 → 必须是空态，而不是"原样显示全部卡片"
   await page.getByLabel('搜索提示词').fill('这个词一定不存在-zzz');

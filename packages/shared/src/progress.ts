@@ -51,6 +51,49 @@ export const TaskErrorSchema = z.object({
   disposition: ErrorDispositionSchema,
 });
 
+/**
+ * 任务**实际在哪台机器上跑的**（V2.27 / 台账 A1 片 A，B11）。
+ *
+ * ## 为什么必须有这个字段（而不是从 provider 猜）
+ * "用了哪个引擎"与"算力在哪"是两件事，而且后者是**用户最关心的那件**：
+ * - `cloud`：产物在部署者/用户的云端账号里生成（提示词与参考图**发到了上游**）；
+ * - `host-local`：在本服务所在的那台机器上跑（数据不出这台机器）；
+ * - `client-worker`：在**访问者本机**跑（`astrmira-worker/v1` 协议，数据不出用户电脑）。
+ *
+ * 「数据不出域」这类承诺**只对 storage 成立是不够的** —— 云端 BYOK 下提示词仍会发到上游。
+ * 所以本地轨（D49）的整个价值都建立在"这条任务到底在哪跑"能被**如实看到**上：
+ * 画廊、视频库、画布都要标注它，而不是只在提交时选一次。
+ */
+export const ExecutedBySchema = z.enum(['cloud', 'host-local', 'client-worker']);
+
+/** 执行位置的**短标签**（卡片 / 节点上用的那一行；前后端唯一一份 —— 两处各写一遍必然漂移） */
+export const EXECUTED_BY_LABELS: Record<z.infer<typeof ExecutedBySchema>, string> = {
+  cloud: '云端',
+  'host-local': '本机',
+  'client-worker': '你的电脑',
+};
+
+/**
+ * 执行位置的**完整说法**（鼠标悬停 / 详情里用）。
+ * 它比标签重要：三个位置对"数据去了哪"的含义完全不同，用户有权一眼看到。
+ */
+export const EXECUTED_BY_TITLES: Record<z.infer<typeof ExecutedBySchema>, string> = {
+  cloud: '产物在云端生成：提示词与参考图会发到上游服务商',
+  'host-local': '在本服务所在机器上跑：数据不出这台机器',
+  'client-worker': '在你的设备上执行（含浏览器端渲染的剪辑产物）：服务端不持有中间产物',
+};
+
+/**
+ * 由 provider 判定执行位置（写库时的**唯一**入口）。
+ *
+ * 为什么按 provider 而不是按 track：track 是"调度用哪条互斥队列"（cloud 并发 / local 单卡），
+ * 而执行位置是"算力在哪"—— 将来 client-worker 轨仍会在 local track 上排队，
+ * 但执行位置不同。所以判定要盯着 provider 语义，而不是调度桶。
+ */
+export function resolveExecutedBy(provider: ProviderType): z.infer<typeof ExecutedBySchema> {
+  return provider === 'cloud-volcano-seedance' ? 'cloud' : 'host-local';
+}
+
 export const TaskProgressSchema = z.object({
   taskId: z.string(),
   status: TaskStatusSchema,
@@ -114,6 +157,13 @@ export const TaskProgressSchema = z.object({
    * ③ 金额是**预估**（公开价目 × 上游计费式），口径与免责声明见 `COST_DISCLAIMER`。
    */
   cost: CostRecordSchema.optional(),
+  /**
+   * V2.27（台账 A1 片 A / B11）：**这条任务实际在哪台机器上跑的**。
+   *
+   * 可选是**为了兼容 V2.27 之前的任务**（那时没有这个概念）—— 界面遇到缺省时
+   * **不猜**（不按 provider 反推历史任务的执行位置，因为老任务没有这个事实）。
+   */
+  executedBy: ExecutedBySchema.optional(),
   error: TaskErrorSchema.optional(),
 });
 
@@ -132,6 +182,7 @@ export interface VideoProvider {
 }
 
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
+export type ExecutedBy = z.infer<typeof ExecutedBySchema>;
 export type ErrorDisposition = z.infer<typeof ErrorDispositionSchema>;
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
 export type TaskError = z.infer<typeof TaskErrorSchema>;

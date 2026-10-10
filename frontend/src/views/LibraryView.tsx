@@ -7,6 +7,7 @@ import {
   findPlatformPreset,
 } from '@astrmira/shared';
 import type { HistoryResponse, TaskProgress } from '@astrmira/shared';
+import { EXECUTED_BY_LABELS, EXECUTED_BY_TITLES } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
 import { ApiError, deleteHistory, fetchHistory, resolveMediaUrl } from '../lib/api';
 import {
@@ -504,8 +505,17 @@ export function LibraryView() {
                       剪辑自 {task.origin.sourceTaskId.slice(0, 8)}
                     </span>
                   ) : null}
-                  <span className="lib-meta">
+                  {/* V2.27（A1 片 A / B11）：执行位置如实标注（缺省 = 老任务 —— 不猜、不写） */}
+                  <span
+                    className="lib-meta"
+                    title={
+                      task.executedBy === undefined
+                        ? undefined
+                        : EXECUTED_BY_TITLES[task.executedBy]
+                    }
+                  >
                     {STATUS_TEXT[task.status]} · {formatRelativeTime(task.createdAt, Date.now())}
+                    {task.executedBy === undefined ? '' : ` · ${EXECUTED_BY_LABELS[task.executedBy]}`}
                   </span>
                   <span className="lib-acts">
                     {/* 交付包多选（V2.13 / B49）：data-picked 是给冒烟读的渲染事实 */}

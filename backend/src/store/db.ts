@@ -156,6 +156,9 @@ const COLUMN_MIGRATIONS: ReadonlyArray<{ table: string; column: string; ddl: str
   { table: 'tasks', column: 'cost_yuan', ddl: 'REAL' },
   { table: 'tasks', column: 'cost_source', ddl: 'TEXT' },
   { table: 'tasks', column: 'cost_detail', ddl: 'TEXT' },
+  // V2.27（台账 A1 片 A / B11）：任务**实际在哪台机器上跑的**（cloud / host-local / client-worker）。
+  // NULL = V2.27 之前的老任务 —— 界面遇到 NULL **不猜**（不按 provider 反推历史事实）。
+  { table: 'tasks', column: 'executed_by', ddl: 'TEXT' },
 ];
 
 function applyColumnMigrations(db: Db): void {

@@ -1,4 +1,5 @@
 import type { TaskError, TaskProgress } from '@astrmira/shared';
+import { resolveExecutedBy } from '@astrmira/shared';
 import { settleTaskCost } from '../pricing.js';
 import type { TaskStore, TrackId } from '../store/taskStore.js';
 import type { JobQueue, QueueJob, TaskProgressUpdate } from './JobQueue.js';
@@ -66,6 +67,10 @@ export class SqliteJobQueue implements JobQueue {
       ...(job.editScript === undefined ? {} : { editScript: job.editScript }),
       // V2.11（台账 B47）：项目归属随任务落库（缺省由 store 收敛成默认项目）
       ...(job.projectId === undefined ? {} : { projectId: job.projectId }),
+      // V2.27（台账 A1 片 A / B11）：**执行位置在入库那一刻定下来**（按 provider 判定）——
+      // 不能事后从 provider 反推：provider 描述"用哪个引擎"，执行位置描述"算力在哪"，
+      // 将来的 client-worker 轨会用同一个 provider id 在**另一台机器**上跑。
+      executedBy: resolveExecutedBy(job.request.provider),
     });
     this.store.putIdempotencyKey(job.idempotencyKey, job.taskId);
 

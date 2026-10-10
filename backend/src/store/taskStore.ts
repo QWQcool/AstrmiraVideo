@@ -2,6 +2,7 @@ import type {
   CostRecord,
   EditProject,
   EditScript,
+  ExecutedBy,
   TaskError,
   TaskProgress,
   VideoGenerateRequest,
@@ -54,6 +55,11 @@ export interface TaskRecord {
    */
   projectId?: string;
   /**
+   * V2.27（台账 A1 片 A / B11）：**这条任务实际在哪台机器上跑的**。
+   * 可选 = V2.27 之前的老任务（读路径**不猜** —— 不按 provider 反推历史事实）。
+   */
+  executedBy?: ExecutedBy;
+  /**
    * V2.12（台账 B48）：成本记录（预估）。**只有成功任务在终态结算时写入**，
    * 缺省 = 未结算（V2.12 之前的老任务 / 无法估算的任务）。
    */
@@ -80,6 +86,7 @@ interface TaskRow {
   edit_origin: string | null;
   extracted_asset_ids: string | null;
   project_id: string | null;
+  executed_by: string | null;
   cost_yuan: number | null;
   cost_source: string | null;
   cost_detail: string | null;
@@ -111,6 +118,8 @@ function rowToRecord(row: TaskRow): TaskRecord {
       : { extractedAssetIds: JSON.parse(row.extracted_asset_ids) as string[] }),
     // V2.11：NULL 读作默认项目（回填之前建的行；回填之后理论上不会再出现 NULL）
     projectId: row.project_id ?? DEFAULT_PROJECT_ID,
+    // V2.27（A1 片 A / B11）：NULL = V2.27 之前的老任务 —— **不猜**（不按 provider 反推）
+    ...(row.executed_by === null ? {} : { executedBy: row.executed_by as ExecutedBy }),
     // V2.12：成本记录（NULL = 未结算，**不给默认值** —— "花了 0 元"与"不知道花了多少"要分开）。
     // `cost_yuan` / `cost_source` 是给 SQL 聚合用的**冗余列**，真相在 `cost_detail` 的完整 JSON；
     // 万一 detail 损坏，退回到"只有金额与来源"的最小记录（不整条丢掉）。
@@ -210,6 +219,8 @@ export function toTaskProgress(record: TaskRecord): TaskProgress {
       : { extractedAssetIds: record.extractedAssetIds }),
     // V2.12（B48）：成本记录（缺省 = 未结算；界面必须把"未结算"显示出来，否则金额会被误读成全部）
     ...(record.cost === undefined ? {} : { cost: record.cost }),
+    // V2.27（A1 片 A / B11）：执行位置（缺省 = V2.27 之前的老任务 —— 界面对缺省**不猜**）
+    ...(record.executedBy === undefined ? {} : { executedBy: record.executedBy }),
     // V2.3：任务创建时间（`tasks.created_at` 列本就存在且有索引，零迁移）。
     // 总览"今日生成"与视频库"按时间排序"的数据源。
     createdAt: record.createdAt,
@@ -228,10 +239,11 @@ export class TaskStore {
         `INSERT INTO tasks (task_id, track, provider, status, progress_percent, request_snapshot,
                             output_video_url, thumbnail_url, warnings, error, upstream_task_id,
                             submitting, message, edit_script, edit_origin, extracted_asset_ids,
-                            project_id, cost_yuan, cost_source, cost_detail, created_at, updated_at)
+                            project_id, executed_by, cost_yuan, cost_source, cost_detail,
+                            created_at, updated_at)
          VALUES (@taskId, @track, @provider, @status, @progressPercent, @requestSnapshot,
                  @outputVideoUrl, @thumbnailUrl, @warnings, @error, @upstreamTaskId, @submitting,
-                 @message, @editScript, @editOrigin, @extractedAssetIds, @projectId,
+                 @message, @editScript, @editOrigin, @extractedAssetIds, @projectId, @executedBy,
                  @costYuan, @costSource, @costDetail, @createdAt, @updatedAt)`,
       )
       .run({
@@ -254,6 +266,8 @@ export class TaskStore {
           record.extractedAssetIds === undefined ? null : JSON.stringify(record.extractedAssetIds),
         // V2.11：入库时缺省即默认项目（调用方不传也不会留下 NULL）
         projectId: record.projectId ?? DEFAULT_PROJECT_ID,
+        // V2.27（A1 片 A）：执行位置 —— **调用方（队列）按 provider 判定**；缺省即 NULL（老行为）
+        executedBy: record.executedBy ?? null,
         // V2.12：入库时通常还没有成本（结算在终态），但接口保持一致（可写入已算好的成本）
         ...costParams(record.cost),
         createdAt: now,
@@ -285,6 +299,7 @@ export class TaskStore {
                          message = @message,
                          edit_script = @editScript, edit_origin = @editOrigin,
                          extracted_asset_ids = @extractedAssetIds,
+                         executed_by = @executedBy,
                          cost_yuan = @costYuan, cost_source = @costSource,
                          cost_detail = @costDetail,
                          updated_at = @updatedAt
@@ -308,6 +323,8 @@ export class TaskStore {
         editOrigin: next.editOrigin === undefined ? null : JSON.stringify(next.editOrigin),
         extractedAssetIds:
           next.extractedAssetIds === undefined ? null : JSON.stringify(next.extractedAssetIds),
+        // V2.27（A1 片 A）：执行位置（缺省 → NULL —— 老任务不被"补写"成推测值）
+        executedBy: next.executedBy ?? null,
         // V2.12（B48）：成本三列与 record.cost 同步（缺省 → NULL，**不写 0**）
         ...costParams(next.cost),
         updatedAt: Date.now(),

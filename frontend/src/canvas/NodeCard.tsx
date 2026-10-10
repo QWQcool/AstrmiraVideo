@@ -1,4 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
+import { EXECUTED_BY_LABELS, EXECUTED_BY_TITLES } from '@astrmira/shared';
 import { isProblemNode, lineageStatusClass, type LineageNode } from '../lib/lineage';
 
 /**
@@ -55,6 +56,16 @@ export function LineageNodeCard({ data, selected }: NodeProps<LineageFlowNode>) 
           </span>
         </span>
         <span className="cv-node-sub">{node.sublabel}</span>
+        {/* V2.27（A1 片 A / B11）：画布节点也如实标"这条在哪跑的"（缺省 = 老任务，不猜） */}
+        {node.task?.executedBy === undefined ? null : (
+          <span
+            className="cv-node-sub"
+            data-testid="cv-node-executed-by"
+            title={EXECUTED_BY_TITLES[node.task.executedBy]}
+          >
+            ▸ {EXECUTED_BY_LABELS[node.task.executedBy]}
+          </span>
+        )}
       </div>
 
       <Handle type="source" position={Position.Right} isConnectable={false} className="cv-handle" />

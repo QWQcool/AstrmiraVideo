@@ -208,6 +208,10 @@ export const createEditRenderRoutes =
           // V2.12（B48）：剪辑入库**显式结算 0 元**（浏览器内渲染，不产生 API 费用）——
           // 不结算的话它会在成本报表里落进"未结算"，而"没花钱"与"不知道花了多少"是两件事
           cost: settleTaskCost(source.requestSnapshot, 'local') ?? undefined,
+          // V2.27（台账 A1 片 A / B11）：剪辑产物在**用户浏览器里渲染** → 如实标 client-worker
+          //（枚举语义 = "在用户设备上执行"，将来本地 worker 轨也归它；'browser-remotion' 不是契约里的 provider，
+          // 读路径不靠它反推执行位置）
+          executedBy: 'client-worker',
           progressPercent: 100,
           // 复用源片快照：渲染产物没有新的生成参数，画廊回填要用一份完整请求
           requestSnapshot: source.requestSnapshot,

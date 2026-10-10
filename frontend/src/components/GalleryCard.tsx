@@ -1,4 +1,5 @@
 import type { TaskProgress } from '@astrmira/shared';
+import { EXECUTED_BY_LABELS, EXECUTED_BY_TITLES } from '@astrmira/shared';
 import { Eyebrow } from './Eyebrow';
 import { resolveMediaUrl } from '../lib/api';
 import { formatIndex, statusLabel } from '../lib/format';
@@ -100,6 +101,18 @@ export function GalleryCard({
           {snapshot.params?.seed === undefined ? '' : ` · seed ${snapshot.params.seed}`}
           {snapshot.assets?.firstFrameImage === undefined ? '' : ' · 含参考图'}
         </span>
+
+        {/* V2.27（台账 A1 片 A / B11）：**这条在哪跑的**如实标注 ——
+            本地轨（D49）的全部价值都建立在它上面。缺省 = 老任务，**不猜**（宁可不写）。 */}
+        {task.executedBy === undefined ? null : (
+          <span
+            className="wb-note"
+            data-testid="gallery-executed-by"
+            title={EXECUTED_BY_TITLES[task.executedBy]}
+          >
+            ▸ 执行于{EXECUTED_BY_LABELS[task.executedBy]}
+          </span>
+        )}
 
         {task.warnings === undefined || task.warnings.length === 0 ? null : (
           <span className="wb-note">⚠ {task.warnings.join('；')}</span>
