@@ -2129,6 +2129,22 @@ try {
     createPanelBox !== null && createPanelBox.width >= 600,
     `造梦盒占据整幅宽度（实际 ${createPanelBox === null ? 'null' : Math.round(createPanelBox.width)}px）`,
   );
+  // V2.23（台账 B71）：行业模板 —— 一键填入"起手式"（提示词 + 画幅/时长/清晰度）
+  const templateChips = page.locator('.cr-templates .cr-recipe-tpl');
+  const templateCount = await templateChips.count();
+  assert(templateCount >= 3, `行业模板 chips 就位（${templateCount} 个行业）`);
+  await page.getByTestId('cr-template-lighting-midcentury').click();
+  await page.waitForTimeout(300);
+  const templatedPrompt = await page.locator('textarea.cr-input').inputValue();
+  assert(
+    templatedPrompt.includes('logo') && templatedPrompt.length > 40,
+    '点模板 → 提示词骨架被整段填入（含"不要出现文字或 logo"的纪律）',
+  );
+  assert(
+    (await page.locator('.cr-alert').first().innerText()).includes('已套用'),
+    '界面如实说明"套用了哪个模板、推荐什么参数"（不假装已切换模式）',
+  );
+
   await page.screenshot({ path: path.join(SHOT_DIR, 'create.png'), fullPage: false });
   note('创作入口截图留档：artifacts/ui-smoke/create.png');
 

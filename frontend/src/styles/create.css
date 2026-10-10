@@ -376,6 +376,25 @@
   flex-wrap: wrap;
 }
 
+/* ── 行业模板（V2.23 / 台账 B71）─────────────────────────────────────────
+   与配方 chips 同排但明确区分：模板是"一支片子的起点"，配方是"一个镜头技法"。
+   金色描边 + 前导标签，让客户一眼看出这两排不是一回事。 */
+.cr-templates {
+  margin-top: 6px;
+  align-items: center;
+}
+
+.cr-tpl-label {
+  flex: 0 0 auto;
+  padding-right: 2px;
+  font-size: var(--fs-note);
+  color: var(--muted);
+}
+
+.cr-recipe-tpl {
+  border-color: var(--line-gold);
+}
+
 @media (max-width: 768px) {
   .cr-wrap {
     padding: 20px 12px 40px;

@@ -7,7 +7,12 @@ import type {
   TaskProgress,
   VideoGenerateRequest,
 } from '@astrmira/shared';
-import { RECIPE_CARDS, estimateCostFromRequest, formatYuan } from '@astrmira/shared';
+import {
+  INDUSTRY_TEMPLATES,
+  RECIPE_CARDS,
+  estimateCostFromRequest,
+  formatYuan,
+} from '@astrmira/shared';
 import {
   ApiError,
   fetchAssets,
@@ -543,6 +548,35 @@ export function CreateView() {
             >
               全部配方 →
             </button>
+          </div>
+
+          {/* V2.23（台账 B71）：行业模板 —— 客户第一次打开时，"你能做什么"不该由他自己想。
+              点一下 = 填入**起手式**（提示词骨架 + 画幅/时长/清晰度）；**模式仍由素材与提示词推断**，
+              所以这里的措辞是"推荐"，不假装"已切换"。 */}
+          <div className="cr-recipes cr-templates" aria-label="行业模板">
+            <span className="cr-tpl-label">行业模板</span>
+            {INDUSTRY_TEMPLATES.map((template) => (
+              <button
+                key={template.id}
+                type="button"
+                className="cr-recipe cr-recipe-tpl"
+                data-testid={`cr-template-${template.id}`}
+                title={`${template.summary}\n推荐：${MODE_LABELS[template.recommendedMode]} · ${template.aspectRatio} · ${template.durationSec}s${template.requiresImage ? ' · 需先拖入参考图' : ''}\n（会覆盖当前输入框内容）`}
+                onClick={() => {
+                  setPrompt(template.skeleton);
+                  setAspectRatio(template.aspectRatio);
+                  setDurationSec(template.durationSec);
+                  setResolutionTier(template.resolutionTier);
+                  setNotice(
+                    `已套用「${template.industry} · ${template.title}」起手式：` +
+                      `推荐 ${MODE_LABELS[template.recommendedMode]} · ${template.aspectRatio} · ` +
+                      `${template.durationSec}s · ${template.resolutionTier}（可直接改）`,
+                  );
+                }}
+              >
+                {template.industry} · {template.title}
+              </button>
+            ))}
           </div>
 
           {moreOpen ? (
