@@ -1,6 +1,15 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.27 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.28 · 已冻结（变更需先改本文，再改代码）**
+> **V2.28 修订（2026-10-10）**：**新增 §18 本地 worker 协议 `astrmira-worker/v1`（台账 A1 片 A / B1）** ——
+>   浏览器**直连**用户本机的 worker（默认 `http://127.0.0.1:8765`），**服务端不参与调度**：
+>   五个端点（health / jobs / jobs/:id / cancel / result）、**无凭据字段**、参考素材只收 data URL、
+>   错误码由客户端映射成 §6 的码（404 → `TASK_NOT_FOUND`、409 → `GPU_BUSY` ……）。
+>   **无新路由、无新错误码、无新表**；片 A **如实不做**"结果回传归档"（那需要服务端入口，
+>   与真机验证一起做 = 片 B/C）。同批说明：`TaskProgress.executedBy`（V2.27）是它的搭档 ——
+>   将来 worker 产物以 `client-worker` 如实标注。
+
+> **状态（上一版）：V2.27 · 已冻结**
 > **V2.27 修订（2026-10-10）**：**任务执行位置 `executedBy`（台账 A1 片 A，B11）** —— 向后兼容的扩展：
 >   **§4** `TaskProgress` 增可选 `executedBy`（`cloud` / `host-local` / `client-worker`）；
 >   **§7** `tasks` 增 `executed_by` 列，**入库那一刻按 provider 判定**（`resolveExecutedBy`，前后端共用）。
@@ -1483,4 +1492,52 @@ export interface BackupManifest {
 ② **增量备份**（`VACUUM INTO` 是全量；outputs 可自行用 rsync 做增量）；③ **自动定时备份**
 （本版只提供工具与闸门，调度交给客户已有的 cron/计划任务）；④ **跨版本数据迁移**（向前兼容由 `COLUMN_MIGRATIONS`
 保证，但"回退到旧版本"不在支持范围 —— 回退请用恢复）。
+---
 
+## 18. 本地 worker 协议 `astrmira-worker/v1`（V2.28 新增；台账 A1 片 A / B1）
+
+> **它是什么**：**用户自己机器上的一个本地 HTTP 服务**，浏览器**直连**它（服务端不参与调度）。
+> 这是 D49「数据不出域」对**推理**也成立的唯一路径：云端 BYOK 下提示词与参考图仍会发到上游，
+> 而本地 worker 全程不出用户电脑。**协议先于实现落地**（片 A）—— 测试里的**假 worker**
+> （一个实现本协议的本地 HTTP 服务）让浏览器端适配器在**没有真机**的情况下也能被完整验证。
+
+### 传输与地址
+
+- HTTP + JSON；默认端口 **8765**（可改；地址由用户配置）。
+- 浏览器侧默认 `http://127.0.0.1:8765` —— **127.0.0.1 是"潜在可信来源"**，
+  HTTPS 页面调它**不触发混合内容拦截**；换成**局域网 IP**（`http://192.168.x.x`）会被拦 ——
+  客户端的静态检查（`checkWorkerLink`）据此给出**可执行指引**，而不是一条没有解释的失败。
+- ⚠️ **Chrome 的 Private Network Access 预检**：worker 必须对预检请求回
+  `Access-Control-Allow-Private-Network: true`（这是**协议对 worker 的要求**；只回 `*` 不够）。
+
+### 端点（五个）
+
+| 方法 | 路径 | 请求 | 响应 |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/v1/health` | — | `{ protocol, engine, available, reason?, busy? }` —— `protocol` 必须是 `astrmira-worker/v1`（**不匹配 = 客户端明确拒绝**，不尝试兼容） |
+| `POST` | `/v1/jobs` | `WorkerJobRequest` | `{ jobId }`；worker 忙碌 → **409** |
+| `GET` | `/v1/jobs/:jobId` | — | `WorkerJobStatus`；不存在 → **404** |
+| `DELETE` | `/v1/jobs/:jobId` | — | `{ cancelled: boolean }` |
+| `GET` | `/v1/jobs/:jobId/result` | — | **产物字节**（视频流） |
+
+`WorkerJobRequest`：`prompt` / `mode` / `aspectRatio` / `durationSec?` / `seed?` /
+**`firstFrameImage?` / `referenceVideo?`（data URL）**。
+
+### 四条口径
+
+1. **不传凭据**：worker 在用户自己的机器上，不需要我们的 BYOK Key —— 协议里**没有任何凭据字段**
+   （这是它与云端轨最大的结构差异）；
+2. **参考素材只收 data URL**（**不收本地文件路径**）：worker 在本机运行，路径输入就是"任意文件读取面"；
+   data URL 由浏览器从用户选择的文件读出，worker 不碰文件系统；
+3. **不返回硬件型号**：`health` 只报能力位与可执行原因（与 §2 / D27 同一条纪律 ——
+   型号由用户在 worker 自己的界面上看）；
+4. **错误码映射在客户端**：worker 的 404 / 409 / 5xx 由浏览器端适配器映射成**本契约 §6 的错误码**
+   （404 → `TASK_NOT_FOUND`、409 → `GPU_BUSY`、连不上或协议不符 → `PROVIDER_UNAVAILABLE`、
+   其余 → `UPSTREAM_ERROR`）—— 上层只认契约码，不允许冒出"只有某个模块认识"的错误类型。
+
+### 如实边界（片 A 不做）
+
+- **不做"结果回传归档"**：产物由浏览器收下（预览 / 下载）；把它登记成系统里的一条任务需要
+  **服务端入口**（新路由 + 契约），与真机验证一起做（片 B/C）；
+- **不做自检与端口 / 目录冲突实测**（片 B：需要用户的真机与模型）；
+- **不做中间帧清理审计**（片 C：worker 须回报 `tmpCleaned` 并写入 `warnings[]`，见 §7 中间帧一行）。

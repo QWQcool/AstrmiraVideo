@@ -35,3 +35,4 @@ export * from './deliverables.js';
 export * from './webhooks.js';
 export * from './metrics.js';
 export * from './canvasPlan.js';
+export * from './workerProtocol.js';
