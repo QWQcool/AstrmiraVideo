@@ -34,3 +34,4 @@ export * from './cost.js';
 export * from './deliverables.js';
 export * from './webhooks.js';
 export * from './metrics.js';
+export * from './canvasPlan.js';

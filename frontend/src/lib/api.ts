@@ -95,6 +95,8 @@ interface RequestOptions {
   /** 文本轨 Key（仅扩写用）；`undefined` → 服务端返回 501 `LLM_NOT_CONFIGURED` */
   llmKey?: string;
   idempotencyKey?: string;
+  /** V2.26（A5 片 A）：编排运行 id —— 同一次「运行」内的连续提交共享一个冷却窗口 */
+  planRunId?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
 }
@@ -105,6 +107,8 @@ function buildHeaders(options: RequestOptions): Record<string, string> {
   if (options.providerKey !== undefined) headers[PROVIDER_KEY_HEADER] = options.providerKey;
   if (options.llmKey !== undefined) headers[LLM_KEY_HEADER] = options.llmKey;
   if (options.idempotencyKey !== undefined) headers['idempotency-key'] = options.idempotencyKey;
+  // V2.26：编排运行的头（见 CONTRACT §11-6 与 PlanRunRegistry）
+  if (options.planRunId !== undefined) headers['x-plan-run'] = options.planRunId;
   return headers;
 }
 
@@ -199,13 +203,25 @@ export function fetchProviderStatus(signal?: AbortSignal): Promise<ProviderStatu
  */
 export function submitGenerate(
   body: VideoGenerateRequest,
-  options: { idempotencyKey: string; providerKey?: string },
+  options: {
+    idempotencyKey: string;
+    providerKey?: string;
+    /**
+     * V2.26（台账 A5 片 A）：编排运行 id。
+     *
+     * 编排一次「运行」会提交一串节点，而 60s 冷却的粒度是"一次提交" ——
+     * 带上它之后，**同一次运行的后续节点不再重复吃冷却**（同一次点击 = 一次有意动作）。
+     * 手动提交不带它（保持原有防抖）。
+     */
+    planRunId?: string;
+  },
 ): Promise<GenerateResponse> {
   return request('/api/generate', GenerateResponseSchema, {
     method: 'POST',
     body,
     idempotencyKey: options.idempotencyKey,
     ...(options.providerKey === undefined ? {} : { providerKey: options.providerKey }),
+    ...(options.planRunId === undefined ? {} : { planRunId: options.planRunId }),
   });
 }
 

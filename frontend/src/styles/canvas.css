@@ -595,3 +595,105 @@
     display: block;
   }
 }
+
+/* ═══════════ 编排模式（V2.26 / 台账 A5 片 A）═══════════════
+   与事实图的视觉区分只有一条原则：**"打算做"与"已经发生"必须一眼分得开** ——
+   编排节点用**虚线边框**（还没发生），事实图节点是实线（已经发生）；
+   已提交的编排节点也转实线 + 成功色（它此刻已经变成事实了）。 */
+
+.cv-plan-hint {
+  max-width: 520px;
+}
+
+.cv-plan-notice {
+  padding: 8px 12px;
+  border: 1px solid var(--line-gold);
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius-control);
+  background-color: var(--gold-tint);
+  color: var(--text);
+  font-size: var(--fs-note);
+}
+
+/* ── 编排节点卡片（复用 `.cv-node` 的骨架，只改边框语义）── */
+.cv-plan-node {
+  border-style: dashed;
+}
+
+.cv-plan-node.cv-plan-selected {
+  border-style: solid;
+  border-color: var(--gold);
+}
+
+.cv-plan-node.cv-plan-submitted {
+  border-style: solid;
+  border-color: var(--success);
+}
+
+.cv-plan-node.cv-plan-failed {
+  border-style: solid;
+  border-color: var(--danger);
+}
+
+.cv-plan-node.cv-plan-skipped {
+  border-color: var(--line-strong);
+}
+
+.cv-plan-ok {
+  color: var(--success);
+}
+
+.cv-plan-bad {
+  color: var(--danger);
+}
+
+.cv-plan-skip {
+  color: var(--muted);
+}
+
+/* ── 编排面板的控件（提示词 / 模式段选 / 数值）── */
+.cv-plan-textarea {
+  width: 100%;
+  min-height: 96px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background-color: var(--panel2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  resize: vertical;
+}
+
+.cv-plan-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cv-plan-seg .cv-tool[aria-pressed='true'] {
+  border-color: var(--gold);
+  background-color: var(--gold-soft);
+  color: var(--gold);
+}
+
+.cv-plan-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: var(--fs-note);
+  color: var(--muted);
+}
+
+.cv-plan-field input {
+  width: 96px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background-color: var(--panel2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: var(--fs-note);
+}

@@ -1,0 +1,54 @@
+import { Handle, Position, type Node, NodeProps } from '@xyflow/react';
+import type { CanvasPlanNode } from '@astrmira/shared';
+import type { PlanNodeRunResult } from '../lib/canvasPlanRunner';
+import { CANVAS_MODE_LABELS } from './labels';
+
+/**
+ * 编排节点卡片（V2.26 / 台账 A5 片 A）。
+ *
+ * 与事实图节点（`NodeCard.tsx`）的区别，一句话：**这张卡画的是"打算做什么"，不是"已经发生了什么"**。
+ * 因此：句柄可交互（能连线）、执行状态来自**本轮运行结果**（不是任务状态）、文案用将来时。
+ *
+ * ⚠️ 句柄必须在这里声明（`Handle` 是 React Flow 找连线锚点的唯一方式）——
+ * `nodesConnectable` 只控制"能不能拖出线"，句柄本身在两种模式下都要渲染，
+ * 否则从只读切到编排模式时锚点会凭空出现/消失。
+ */
+export type PlanFlowNode = Node<
+  { node: CanvasPlanNode; run?: PlanNodeRunResult },
+  'plan'
+>;
+
+export function PlanNodeCard({ data, selected }: NodeProps<PlanFlowNode>) {
+  const { node, run } = data;
+  const state = run?.state ?? 'idle';
+  const prompt = node.prompt.trim() === '' ? '（还没写提示词）' : node.prompt;
+
+  return (
+    <div
+      className={`cv-node cv-plan-node cv-plan-${state}${selected === true ? ' cv-plan-selected' : ''}`}
+      data-node-id={node.id}
+      data-plan-state={state}
+    >
+      <Handle type="target" position={Position.Left} />
+      <div className="cv-node-body">
+        <span className="cv-node-line">
+          <span className="cv-node-dot" />
+          <span className="cv-node-label">{prompt}</span>
+        </span>
+        <span className="cv-node-sub">
+          {CANVAS_MODE_LABELS[node.mode]} · {node.aspectRatio} · {node.durationSec ?? 5}s
+        </span>
+        {run?.state === 'submitted' ? (
+          <span className="cv-node-sub cv-plan-ok">✓ 已提交 {run.taskId?.slice(0, 8)}</span>
+        ) : null}
+        {run?.state === 'failed' ? (
+          <span className="cv-node-sub cv-plan-bad">✗ {run.message}</span>
+        ) : null}
+        {run?.state === 'skipped' ? (
+          <span className="cv-node-sub cv-plan-skip">⏭ {run.message}</span>
+        ) : null}
+      </div>
+      <Handle type="source" position={Position.Right} />
+    </div>
+  );
+}

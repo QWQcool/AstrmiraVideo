@@ -52,6 +52,7 @@ import {
   BurstLimiter,
   CooldownStore,
   LOGS_BURST_MAX,
+  PlanRunRegistry,
   VERIFY_BURST_MAX,
 } from './security/rateLimit.js';
 // V2.18（B23）：操作日志保留策略（定时 + 启动一次；真删了才留痕）
@@ -174,6 +175,8 @@ export async function buildApp() {
       PROVIDER_KEY_HEADER,
       LLM_KEY_HEADER,
       'idempotency-key',
+      // V2.26（A5 片 A）：编排运行的一次动作豁免冷却（见 PlanRunRegistry / generate.ts）
+      'x-plan-run',
       'authorization',
     ],
   });
@@ -221,6 +224,8 @@ export async function buildApp() {
   });
   // 防线 5：60s 防抖冷却（键的构成见 security/rateLimit.ts）
   const cooldown = new CooldownStore(db);
+  // V2.26（台账 A5 片 A）：编排运行（`x-plan-run`）的冷却豁免登记（内存 + TTL，见 rateLimit.ts）
+  const planRuns = new PlanRunRegistry();
   // V2.8（B25）：两条独立限流桶（内存突发窗口；与生成冷却各自计桶、互不影响）
   const verifyLimiter = new BurstLimiter(BURST_WINDOW_MS, VERIFY_BURST_MAX);
   const logsLimiter = new BurstLimiter(BURST_WINDOW_MS, LOGS_BURST_MAX);
@@ -392,6 +397,8 @@ export async function buildApp() {
       cooldown,
       keyVault,
       projects,
+      // V2.26（A5 片 A）：编排运行（`x-plan-run`）的一次动作豁免冷却
+      planRuns,
     }),
   );
   // V2.11（B47）：项目维度（列表 / 新建 / 改名 / 删除空项目）

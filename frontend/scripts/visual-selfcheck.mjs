@@ -472,6 +472,32 @@ if (canvasText === undefined) {
   }
 }
 
+// ── ⑭ 编排模式的两个"会花钱"的约定（V2.26 / 台账 A5 片 A）──
+//
+// 与 ⑪⑫⑬ 同一条理由：不走一遍完全看不出来，而失效方式要么是**真花钱**（随机键 → 重复提交），
+// 要么是功能静默消失（编排模式进不去）。行为断言在冒烟 [7e] 的编排子段（真提交 + 幂等复验）。
+const RUNNER = path.join(SRC, 'lib', 'canvasPlanRunner.ts');
+const runnerText = contents.get(RUNNER);
+
+if (runnerText === undefined) {
+  failures.push('找不到 lib/canvasPlanRunner.ts（A5 片 A 的编排执行器不见了）');
+} else {
+  if (!runnerText.includes('planIdempotencyKey(')) {
+    failures.push(
+      '编排执行器没有用确定性的 `planIdempotencyKey` —— 随机键意味着每次点「运行」都是一次新提交（真花钱）',
+    );
+  }
+  if (runnerText.includes('newIdempotencyKey')) {
+    failures.push(
+      '编排执行器引用了 `newIdempotencyKey`（随机键）—— 那是单次手动提交用的；编排必须用确定性键',
+    );
+  }
+}
+
+if (canvasText !== undefined && !canvasText.includes("query.get('mode') === 'plan'")) {
+  failures.push('CanvasView 没有读 `mode=plan`（A5 片 A 的编排模式入口没了）');
+}
+
 // ── 汇总 ──
 if (failures.length > 0) {
   console.error(`✗ 视觉自检失败（${failures.length} 项）：`);
@@ -485,5 +511,6 @@ console.log(
     `水印 ${watermarkUsers.length} 处、数据路径零 innerHTML、index.html 零跨源资源、` +
     `组件层零硬编码色值、两套主题对比度全部达标（${CONTRAST_RULES.length} 对 × ${THEMES.length} 套）、` +
     `移动端四件套就位（B60：窄屏日志 / hover 兜底 / dvh / 字号下限）、` +
-    `画布规模抓手就位（B44：分页游标 + 视口裁剪）`,
+    `画布规模抓手就位（B44：分页游标 + 视口裁剪）、` +
+    `编排模式的两个花钱约定就位（A5 片 A：确定性幂等键 + mode=plan 入口）`,
 );

@@ -13,7 +13,7 @@ import { createErrorResponse } from '../errors.js';
 import type { JobQueue } from '../queue/JobQueue.js';
 import { fingerprintKey, resolveProviderKey } from '../security/credential.js';
 import type { KeyVault } from '../security/keyVault.js';
-import type { CooldownStore } from '../security/rateLimit.js';
+import type { CooldownStore, PlanRunRegistry } from '../security/rateLimit.js';
 import { rateLimitKey, resolveClientIp } from '../security/rateLimit.js';
 import type { ProjectStore } from '../store/projects.js';
 import type { TaskStore, TrackId } from '../store/taskStore.js';
@@ -47,6 +47,11 @@ export interface GenerateRoutesDeps {
    * 生产装配里**必须**传 —— 见 index.ts）。
    */
   projects?: ProjectStore;
+  /**
+   * V2.26（台账 A5 片 A）：编排运行的冷却豁免登记（`x-plan-run`）；不传 = 不豁免（老行为）。
+   * 语义见 `PlanRunRegistry` 的注释：同一次运行的后续节点不重复吃 60s 冷却。
+   */
+  planRuns?: PlanRunRegistry;
 }
 
 /**
@@ -187,6 +192,20 @@ export const createGenerateRoutes =
         // 否则将来有人改了解析顺序，两处就会算出不同的桶
         const providerKey = resolveProviderKey(request);
 
+        /**
+         * V2.26（台账 A5 片 A）：**编排运行**（`x-plan-run`）的冷却语义。
+         *
+         * 编排的「▶ 运行」一次提交**一串**节点，而 60s 冷却的粒度是"一次提交" ——
+         * 不特判的话第 2 条起全部 429，"编排即可执行"名不副实。
+         * 语义 = **同一次运行算一次有意动作**：该 runId 的第一次照常检查并记录冷却；
+         * 后续节点跳过（它们同属那一次点击）。"连点两次运行"不靠这里防 ——
+         * 确定性幂等键会先命中既有任务（见上面那段的注释），两层都不漏。
+         */
+        const planRunRaw = request.headers['x-plan-run'];
+        const planRunHeader = Array.isArray(planRunRaw) ? planRunRaw[0] : planRunRaw;
+        const planRunId = typeof planRunHeader === 'string' ? planRunHeader.trim() : '';
+        const skipCooldown = planRunId !== '' && deps.planRuns?.firstOf(planRunId) === false;
+
         // 防线 5：60s 防抖。**复合键 = IP + 凭据指纹**（PLAN §9 台账 B8，标注「上线前必须做」）：
         // 只用 IP 的话，共享出口（公司 NAT / 校园网 / 移动网络）下 A 提交会让 B 被冷却挡住，
         // 而 B 完全无法自查原因 —— 防线 5 的本意是防单人刷接口，不是防整栋楼。
@@ -196,14 +215,16 @@ export const createGenerateRoutes =
           ip: resolveClientIp(request),
           ...(providerKey === null ? {} : { keyFingerprint: fingerprintKey(providerKey) }),
         });
-        const decision = deps.cooldown?.check(cooldownKey);
-        if (decision !== undefined && !decision.allowed) {
-          return reply.code(429).send(
-            createErrorResponse(
-              'RATE_LIMITED',
-              `提交过于频繁：请在 ${Math.ceil(decision.retryAfterMs / 1000)}s 后重试`,
-            ),
-          );
+        if (!skipCooldown) {
+          const decision = deps.cooldown?.check(cooldownKey);
+          if (decision !== undefined && !decision.allowed) {
+            return reply.code(429).send(
+              createErrorResponse(
+                'RATE_LIMITED',
+                `提交过于频繁：请在 ${Math.ceil(decision.retryAfterMs / 1000)}s 后重试`,
+              ),
+            );
+          }
         }
 
         const taskId = randomUUID();
@@ -225,8 +246,9 @@ export const createGenerateRoutes =
           submitting: true,
         });
 
-        // 入队成功才进冷却（入队失败不该罚用户等 60s）
-        deps.cooldown?.record(cooldownKey);
+        // 入队成功才进冷却（入队失败不该罚用户等 60s）。
+        // 编排运行的**后续**节点不重复记录：冷却窗口属于"那一次点击"，不该被一串节点不断延长。
+        if (!skipCooldown) deps.cooldown?.record(cooldownKey);
 
         return { taskId };
       },

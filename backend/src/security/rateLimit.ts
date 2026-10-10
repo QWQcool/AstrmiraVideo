@@ -62,6 +62,40 @@ export class BurstLimiter {
   }
 }
 
+/**
+ * 编排运行的冷却豁免登记（V2.26 / 台账 A5 片 A）。
+ *
+ * ## 这是个什么
+ * 画布编排的「▶ 运行」一次会提交**一串**节点，而 60s 冷却（防线 5）的粒度是"**一次提交**"——
+ * 不特判的话第 2 条起全部 429，"编排即可执行"名不副实。
+ *
+ * ## 语义（与防线 5 的意图对齐）
+ * **同一次运行 = 一次有意动作**：客户端在 `x-plan-run` 头里带一个运行 id（每次点「运行」新生成）——
+ * - 该 id 的**第一次**提交照常走冷却检查并记录（"连点运行"仍会被冷却挡住；
+ *   但连点其实先在幂等层被吃掉 —— 确定性键命中既有任务，根本走不到冷却，两层都不漏）；
+ * - 同 id 的**后续**提交（同一次点击里的第 2..N 个节点）跳过冷却。
+ *
+ * ## 为什么可以放内存
+ * 登记表只活在一次运行内（TTL 10 分钟）；进程重启丢失的后果只是"新一轮多等一次冷却"，
+ * 不涉及任何数据正确性 —— 与 `BurstLimiter` 同一条取舍（见本文件头部注释）。
+ */
+export class PlanRunRegistry {
+  private readonly seen = new Map<string, number>();
+
+  constructor(private readonly ttlMs: number = 10 * 60 * 1000) {}
+
+  /** `true` = 这是该 runId 的**第一次**提交（需要走冷却检查与记录） */
+  firstOf(runId: string, now: number = Date.now()): boolean {
+    // 顺手清理过期（无定时器 —— 与 BurstLimiter 同一手法）
+    for (const [key, at] of this.seen) {
+      if (now - at > this.ttlMs) this.seen.delete(key);
+    }
+    if (this.seen.has(runId)) return false;
+    this.seen.set(runId, now);
+    return true;
+  }
+}
+
 export interface RateLimitKeyParts {
   ip: string;
   /** 复合键预留：BYOK Key 指纹（SHA-256 前 8 位）；Step 2 恒传 `undefined` */

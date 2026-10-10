@@ -253,9 +253,23 @@ try {
   });
   const page = await context.newPage();
 
+  /**
+   * **预期内的 429 窗口**（V2.26 / 台账 A5 片 A）。
+   *
+   * 编排段的第一次提交会照常受防线 5 的 60s 冷却约束，撞上时界面把它当正常错误展示
+   * （"请在 Xs 后重试"），冒烟按提示等待重试 —— 浏览器会对那条 429 打 console.error。
+   * 它是**被断言覆盖的预期行为**，不是缺陷；但只在编排段那个窗口里豁免
+   * （其它任何时刻出现 429 仍然会红 —— 不留"全局宽恕"的口子）。
+   */
+  let allowExpected429 = false;
   page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text());
-    else if (message.type() === 'warning') consoleWarnings.push(message.text());
+    if (message.type() === 'error') {
+      const text = message.text();
+      if (allowExpected429 && /429 \(Too Many Requests\)/.test(text)) return;
+      consoleErrors.push(text);
+    } else if (message.type() === 'warning') {
+      consoleWarnings.push(message.text());
+    }
   });
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
@@ -2584,6 +2598,206 @@ try {
 
   await page.screenshot({ path: path.join(SHOT_DIR, 'canvas-paged.png'), fullPage: false });
   note('画布分页截图留档：artifacts/ui-smoke/canvas-paged.png');
+
+  // ⑩ 编排模式：写参数 → 连线 → 运行 → **幂等复验**（V2.26 / 台账 A5 片 A）
+  //
+  // 这一段真提交（节点 provider 被换成夹具 —— 见下面的 localStorage 注入），
+  // 它要钉住三件事：① 编排能提交出真实任务；② **依赖顺序**（v2v 下游带着 `task:` 引用上游）；
+  // ③ **连点两次「运行」不产生第二条任务**（确定性幂等键 —— 本片最值钱的断言）。
+  await page.evaluate(() => { location.hash = '#/canvas?mode=plan'; });
+  await page.waitForSelector('.cv-canvas', { timeout: 10_000 });
+  assert(await page.getByTestId('cv-plan-hint').isVisible(), '进入编排模式（顶部把"重复点不重复计费"说清）');
+
+  // 加两个节点（自动往右下错开，不会叠在一起点不到）
+  await page.getByTestId('cv-add-plan-node').click();
+  await page.waitForFunction(() => document.querySelectorAll('.cv-plan-node').length === 1, undefined, {
+    timeout: 10_000,
+  });
+  await page.getByTestId('cv-add-plan-node').click();
+  await page.waitForFunction(() => document.querySelectorAll('.cv-plan-node').length === 2, undefined, {
+    timeout: 10_000,
+  });
+  assert(true, '「＋ 节点」在编排模式下加了两个节点');
+
+  // 第 1 个节点：写提示词（真实 UI 编辑路径）
+  await page.locator('.cv-plan-node').first().click();
+  await page.getByTestId('cv-plan-prompt').waitFor({ timeout: 5_000 });
+  await page.getByTestId('cv-plan-prompt').fill('冒烟编排 A：雨夜街角，霓虹倒影');
+  await page.waitForFunction(
+    () => document.querySelector('.cv-plan-ok') !== null,
+    undefined,
+    { timeout: 5_000 },
+  );
+  assert(true, '节点 1 写好提示词后面板显示"可以跑"');
+
+  // 第 2 个节点：切成 v2v（要接上游）
+  await page.locator('.cv-plan-node').nth(1).click();
+  await page.getByTestId('cv-plan-mode-v2v').click();
+  await page.getByTestId('cv-plan-prompt').fill('冒烟编排 B：参考 A 的运镜，换场景重拍');
+  assert(
+    (await page.getByTestId('cv-plan-mode-v2v').getAttribute('aria-pressed')) === 'true',
+    'v2v 模式切换生效（无上游时 v2v 本身可跑 —— 上游是"可选参考"，接上后才成为依赖）',
+  );
+
+  // 连线：节点 1 的 source 句柄 → 节点 2 的 target 句柄（真实鼠标路径）
+  {
+    const source = page.locator('.cv-plan-node').first().locator('.react-flow__handle.source');
+    const target = page.locator('.cv-plan-node').nth(1).locator('.react-flow__handle.target');
+    const sourceBox = await source.boundingBox();
+    const targetBox = await target.boundingBox();
+    assert(sourceBox !== null && targetBox !== null, '两个句柄都有可视几何（能连线）');
+    await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, {
+      steps: 12,
+    });
+    await page.mouse.up();
+  }
+  await page.waitForFunction(
+    () => document.querySelectorAll('.cv-canvas .react-flow__edge').length === 1,
+    undefined,
+    { timeout: 10_000 },
+  );
+  assert(true, '拖出一条连线（编排边的数量 = 1）');
+
+  // 把两个节点的 provider 换成夹具（**测试专用手段**：编排不暴露引擎下拉，而冒烟不能真花钱）
+  {
+    const info = await page.evaluate(() => {
+      // 动态找键（不硬编码项目名）：当前项目的编排键 = 前缀 + activeProjectId（缺省 default）
+      const active = localStorage.getItem('astrmira.activeProjectId') ?? '(null)';
+      const keys = Object.keys(localStorage).filter((key) => key.startsWith('astrmira.canvasPlan.'));
+      const key = keys[0];
+      if (key === undefined) return { changed: 0, active, keys };
+      const parsed = JSON.parse(localStorage.getItem(key));
+      const nodes = (parsed.nodes ?? []).map((node) => ({ ...node, provider: 'fixture-local' }));
+      localStorage.setItem(key, JSON.stringify({ ...parsed, nodes }));
+      return { changed: nodes.length, active, keys };
+    });
+    note(`（诊断）activeProjectId=${info.active} planKeys=${info.keys.join(',')}`);
+    assert(info.changed === 2, `编排数据已落本机存储（${info.changed} 个节点，provider 换成夹具）`);
+  }
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.cv-plan-node', { timeout: 10_000 });
+
+  const planTasks = () =>
+    page.evaluate(async () => {
+      const response = await fetch('/api/history?limit=20');
+      const data = await response.json();
+      return data.items
+        .map((item) => ({
+          taskId: item.taskId,
+          prompt: item.requestSnapshot?.prompt ?? '',
+          referenceVideo: item.requestSnapshot?.assets?.referenceVideo ?? null,
+        }))
+        .filter((item) => item.prompt.startsWith('冒烟编排'));
+    });
+
+  const beforeRun = await planTasks();
+  assert(beforeRun.length === 0, '运行前：还没有编排任务（干净起点）');
+  allowExpected429 = true; // 编排段的冷却窗口（见监听器上方的说明）
+
+  /**
+   * 点「运行编排」，撞上防线 5 时就**如实等待再试**（这正是真实用户会做的事）。
+   *
+   * 为什么会撞：本段之前的 [6j] 段刚提交过一条夹具任务（成本口径用的"本地轨 0 元"样本），
+   * 其 60s 冷却窗口可能还没过 —— **编排的第一次提交照常受冷却约束**（"一次有意动作"的豁免
+   * 只作用于同一次运行内的后续节点，见 CONTRACT §11-6）。撞上时卡片与运行条会写出
+   * "请在 Xs 后重试"，本段就按它等 —— 顺带把这条**如实提示**也验了。
+   */
+  const runUntilAccepted = async () => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const previous = await page
+        .getByTestId('cv-plan-notice')
+        .textContent()
+        .catch(() => null);
+      await page.getByTestId('cv-run-plan').click();
+      // 等"运行条出现新文本"（点击后它会先被清空）；编排还会**等上游出片**（夹具几秒）
+      await page.waitForFunction(
+        (before) => {
+          const text = document.querySelector('[data-testid=cv-plan-notice]')?.textContent ?? '';
+          return text !== '' && text !== before;
+        },
+        previous,
+        { timeout: 120_000 },
+      );
+      const text = await page.getByTestId('cv-plan-notice').textContent();
+      const submitted = Number(text?.match(/已提交 (\d+) 条/)?.[1] ?? '0');
+      if (submitted > 0) return text;
+
+      // 没有成功提交：原因写在**节点卡**上（运行条只说"被跳过或失败"）。
+      // 若是防线 5 的冷却（卡片上有"请在 Xs 后重试"）就按它等 —— 这正是真实用户会做的事。
+      const cards = (await page.locator('.cv-plan-node').allTextContents()).join(' ');
+      const retryAfter = Number(cards.match(/请在 (\d+)s 后重试/)?.[1] ?? '0');
+      note(
+        `（如实）本次运行没有成功提交（卡片：${cards.slice(0, 160)}）—— ` +
+          (retryAfter > 0 ? `等 ${retryAfter}s 冷却后重试` : '等 5s 后重试'),
+      );
+      await sleep((retryAfter > 0 ? retryAfter + 2 : 5) * 1000);
+    }
+    return null;
+  };
+
+  await runUntilAccepted();
+  const notice = await page.getByTestId('cv-plan-notice').textContent();
+  if (notice?.includes('已提交 2 条') !== true) {
+    // 失败时把"界面上真实写着的"原因带出来（否则只剩一句"失败了"，等于没有诊断信息）
+    const cards = await page.locator('.cv-plan-node').allTextContents();
+    const stored = await page.evaluate(
+      () => localStorage.getItem('astrmira.canvasPlan.default')?.slice(0, 500) ?? null,
+    );
+    note(`（诊断）运行未全成功：notice=${notice}`);
+    note(`（诊断）节点卡=${JSON.stringify(cards)}`);
+    note(`（诊断）本机 plan=${stored}`);
+  }
+  assert(notice?.includes('已提交 2 条') === true, `运行结果如实：${notice}`);
+
+  const afterRun = await planTasks();
+  assert(afterRun.length === 2, `编排提交出 2 条真实任务（实际 ${afterRun.length}）`);
+  const taskA = afterRun.find((item) => item.prompt.includes('编排 A'));
+  const taskB = afterRun.find((item) => item.prompt.includes('编排 B'));
+  assert(taskA !== undefined && taskB !== undefined, '两条任务都能在 /api/history 里找到');
+  assert(
+    taskB.referenceVideo === `task:${taskA.taskId}`,
+    `下游带着上游产物的 task: 引用（${taskB.referenceVideo}）—— 依赖顺序的硬证据`,
+  );
+  assert(
+    (await page.locator('.cv-plan-node.cv-plan-submitted').count()) === 2,
+    '两个节点都显示"已提交"（卡片状态跟着运行结果）',
+  );
+
+  // ⭐ 幂等复验：**等冷却窗口过去**再点一次「运行编排」——一条新任务都不该出现。
+  // 为什么等：不等的话第二次点击会被 429 挡住（那验的是冷却，不是幂等）；
+  // 等过去之后第二次点击会真的走到提交，命中确定性幂等键 → 返回同一批 taskId。
+  note('（如实）等 60s 冷却窗口过去，再做幂等复验……');
+  await sleep(63_000);
+  const beforeSecondRun = await page.getByTestId('cv-plan-notice').textContent();
+  await page.getByTestId('cv-run-plan').click();
+  // "这一轮真的开始了"的标志：运行条先被清空（或文本立刻变了）——否则"点了没反应"也会
+  // 让后面的等待立刻满足（最终文本与上一次相同），那是假绿。
+  const restarted = await page.evaluate((before) => {
+    const el = document.querySelector('[data-testid=cv-plan-notice]');
+    return el === null || el.textContent !== before;
+  }, beforeSecondRun);
+  assert(restarted, '第二次点击生效（运行条被清空/刷新 —— 不是"点了没反应"）');
+  await page.waitForFunction(
+    () => (document.querySelector('[data-testid=cv-plan-notice]')?.textContent ?? '') !== '',
+    undefined,
+    { timeout: 120_000 },
+  );
+  const afterSecondRun = await planTasks();
+  assert(
+    afterSecondRun.length === 2,
+    `重复点「运行编排」不产生新任务（仍是 ${afterSecondRun.length} 条 —— 确定性幂等键的硬断言）`,
+  );
+  const secondNotice = await page.getByTestId('cv-plan-notice').textContent();
+  assert(
+    secondNotice?.includes('已提交 2 条') === true,
+    `第二次运行照样如实回报（命中的是同两条任务）：${secondNotice}`,
+  );
+  allowExpected429 = false; // 编排段结束：429 不再豁免
+
+  await page.screenshot({ path: path.join(SHOT_DIR, 'canvas-plan.png'), fullPage: false });
+  note('编排模式截图留档：artifacts/ui-smoke/canvas-plan.png');
 
   await page.screenshot({ path: path.join(SHOT_DIR, 'canvas.png'), fullPage: false });
   note('画布截图留档：artifacts/ui-smoke/canvas.png');

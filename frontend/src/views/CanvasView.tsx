@@ -2,19 +2,24 @@ import { useCallback, useEffect, useMemo, useState, type FC } from 'react';
 import {
   Background,
   Controls,
+  MarkerType,
   MiniMap,
   ReactFlow,
   useNodesState,
   useReactFlow,
+  type Connection,
   type Edge,
+  type Node as RFNode,
+  type NodeMouseHandler,
+  type OnNodeDrag,
   type OnSelectionChangeParams,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type {
   AssetListEntry,
+  CanvasPlan,
   CostRecord,
   EventLogEntry,
-  GenerationMode,
   TaskProgress,
 } from '@astrmira/shared';
 import { formatYuan, logActionLabel, parseTaskRef } from '@astrmira/shared';
@@ -24,8 +29,11 @@ import {
   fetchHistory,
   fetchLogs,
   fetchMetrics,
+  fetchTask,
   resolveMediaUrl,
+  submitGenerate,
 } from '../lib/api';
+import { resolveProviderKey } from '../lib/byok';
 import { useShell } from '../lib/shell';
 import {
   assetNodeId,
@@ -39,10 +47,27 @@ import {
   type LineageNode,
 } from '../lib/lineage';
 import { combineHasMore, mergeCanvasTasks, oldestCreatedAt } from '../lib/canvasPaging';
+import {
+  addPlanEdge,
+  addPlanNode,
+  createEmptyPlan,
+  loadCanvasPlan,
+  movePlanNode,
+  newPlanNode,
+  planNodeBlockReason,
+  removePlanEdge,
+  removePlanNode,
+  saveCanvasPlan,
+  updatePlanNode,
+} from '../lib/canvasPlan';
+import { runCanvasPlan, type PlanRunOutcome } from '../lib/canvasPlanRunner';
 import { downloadText } from '../lib/zipStore';
-import { navigate } from '../lib/router';
+import { navigate, useHashRoute } from '../lib/router';
 import { LineageNodeCard, type LineageFlowNode } from '../canvas/NodeCard';
 import { NoteCard, type CanvasNoteNode } from '../canvas/NoteCard';
+import { PlanNodeCard, type PlanFlowNode } from '../canvas/PlanNodeCard';
+import { PlanInspector } from '../canvas/PlanInspector';
+import { CANVAS_MODE_LABELS } from '../canvas/labels';
 import {
   createNote,
   loadCanvasNotes,
@@ -52,8 +77,28 @@ import {
   type CanvasNote,
 } from '../lib/canvasNotes';
 
-/** 画布上的节点 = 数据节点（血缘）| 便签（说明）——两者的类型与生命周期完全不同 */
-type CanvasFlowNode = LineageFlowNode | CanvasNoteNode;
+/**
+ * 画布上的节点 = 数据节点（血缘）/ 便签（说明）/ 编排节点（打算做什么）——
+ * 三者的类型与生命周期完全不同（V2.26 起多了第三类）。
+ */
+type CanvasFlowNode = LineageFlowNode | CanvasNoteNode | PlanFlowNode;
+
+/** 便签节点（两种模式共用同一份构造 —— 便签在编排模式下也在） */
+function noteFlowNodes(
+  notes: CanvasNote[],
+  mutateNotes: (next: CanvasNote[]) => void,
+): CanvasNoteNode[] {
+  return notes.map((note) => ({
+    id: note.id,
+    type: 'note' as const,
+    position: { x: note.x, y: note.y },
+    data: {
+      note,
+      onText: (id: string, text: string) => mutateNotes(updateNote(notes, id, { text })),
+      onDelete: (id: string) => mutateNotes(removeNote(notes, id)),
+    },
+  }));
+}
 
 /**
  * 血缘画布 `#/canvas`（Step 8 · P4 / 台账 B42，L2 只读；决策 = PLAN §6-D40）。
@@ -112,30 +157,97 @@ const CanvasToolbar: FC<{
   hasMore: boolean;
   loadingEarlier: boolean;
   onLoadEarlier: () => void;
-}> = ({ selectedIds, onAddNote, hasMore, loadingEarlier, onLoadEarlier }) => {
+  /** V2.26（A5 片 A）：编排模式 —— 事实图与编排图是**同一张画布的两个模式** */
+  planMode: boolean;
+  onTogglePlan: () => void;
+  onAddPlanNode: (x: number, y: number) => void;
+  onRunPlan: () => void;
+  running: boolean;
+  /** 当前能跑的节点数（空 / 被阻断的不算）—— 按钮上直接写出来，省得点了才发现没东西可跑 */
+  runnableCount: number;
+}> = ({
+  selectedIds,
+  onAddNote,
+  hasMore,
+  loadingEarlier,
+  onLoadEarlier,
+  planMode,
+  onTogglePlan,
+  onAddPlanNode,
+  onRunPlan,
+  running,
+  runnableCount,
+}) => {
   const { fitView, screenToFlowPosition } = useReactFlow();
   const count = selectedIds.length;
+  const viewportCenter = (): { x: number; y: number } =>
+    screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
 
   return (
     <div className="cv-tools">
-      {/* V2.25（台账 B44）：把"能看多少"交给用户 —— 每点一次向前翻一页（50 条），
-          翻完**置灰并写明原因**（不是点了没反应）。 */}
+      {/* V2.26（台账 A5 片 A）：编排 ↔ 事实图 的切换（同一张画布的两个模式） */}
       <button
         type="button"
         className="cv-tool"
-        data-testid="cv-load-earlier"
-        disabled={!hasMore || loadingEarlier}
+        data-testid="cv-toggle-plan"
         title={
-          loadingEarlier
-            ? '正在取更早的任务…'
-            : hasMore
-              ? `把更早的任务也画进来（每次 ${CANVAS_PAGE_SIZE} 条）`
-              : '已经没有更早的任务了'
+          planMode
+            ? '回到只读的事实图（编排本身会保留在本机）'
+            : '进入编排模式：自己摆节点、连线，然后一次提交'
         }
-        onClick={onLoadEarlier}
+        onClick={onTogglePlan}
       >
-        {loadingEarlier ? '⏳ 加载中…' : hasMore ? '⏮ 加载更早' : '⏮ 已全部加载'}
+        {planMode ? '👁 事实图' : '✎ 编排'}
       </button>
+      {planMode ? (
+        <>
+          <button
+            type="button"
+            className="cv-tool"
+            data-testid="cv-add-plan-node"
+            title="在视口中心加一个生成节点（加完在右侧写提示词）"
+            onClick={() => {
+              const center = viewportCenter();
+              onAddPlanNode(center.x, center.y);
+            }}
+          >
+            ＋ 节点
+          </button>
+          <button
+            type="button"
+            className="cv-tool"
+            data-testid="cv-run-plan"
+            disabled={running || runnableCount === 0}
+            title={
+              runnableCount === 0
+                ? '没有能跑的节点（空提示词 / 被阻断的都不能跑 —— 点节点看原因）'
+                : `按依赖顺序提交 ${runnableCount} 条任务（同一编排重复点不会重复计费）`
+            }
+            onClick={onRunPlan}
+          >
+            {running ? '⏳ 运行中…' : `▶ 运行编排${runnableCount === 0 ? '' : `（${runnableCount}）`}`}
+          </button>
+        </>
+      ) : (
+        /* V2.25（台账 B44）：把"能看多少"交给用户 —— 每点一次向前翻一页（50 条），
+           翻完**置灰并写明原因**（不是点了没反应）。 */
+        <button
+          type="button"
+          className="cv-tool"
+          data-testid="cv-load-earlier"
+          disabled={!hasMore || loadingEarlier}
+          title={
+            loadingEarlier
+              ? '正在取更早的任务…'
+              : hasMore
+                ? `把更早的任务也画进来（每次 ${CANVAS_PAGE_SIZE} 条）`
+                : '已经没有更早的任务了'
+          }
+          onClick={onLoadEarlier}
+        >
+          {loadingEarlier ? '⏳ 加载中…' : hasMore ? '⏮ 加载更早' : '⏮ 已全部加载'}
+        </button>
+      )}
       <button
         type="button"
         className="cv-tool"
@@ -188,12 +300,9 @@ const CanvasToolbar: FC<{
   );
 };
 
-const MODE_LABELS: Record<GenerationMode, string> = {
-  t2v: '文生视频',
-  i2v: '图生视频',
-  fl2v: '首尾帧',
-  v2v: '视频参考',
-};
+// V2.26（A5 片 A）：模式文案收口到 `canvas/labels.ts`（编排节点卡片与事实图检查器共用一份，
+// 两处各写一遍必然漂移 —— 同一个模式在两处叫不同名字会让用户以为是两个东西）
+const MODE_LABELS = CANVAS_MODE_LABELS;
 
 const COST_SOURCE_LABEL: Record<CostRecord['source'], string> = {
   estimate: '预估（公开价目）',
@@ -612,7 +721,15 @@ function CanvasInspector({
 
 export function CanvasView() {
   // V2.11（B47）：血缘画布按当前项目取材
-  const { projectId } = useShell();
+  const { projectId, byok } = useShell();
+  const route = useHashRoute();
+  /**
+   * V2.26（台账 A5 片 A）：**编排模式**（`#/canvas?mode=plan`）。
+   *
+   * 为什么用 hash 参数而不是一个组件状态：模式是"你在看哪张图"的一部分 ——
+   * 刷新/分享链接要能落回同一个模式（与 `#/edit?task=` 同一条约定，见 CONTRACT §11-6）。
+   */
+  const planMode = route.query.get('mode') === 'plan';
   const [tasks, setTasks] = useState<TaskProgress[]>([]);
   const [assets, setAssets] = useState<AssetListEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -635,6 +752,17 @@ export function CanvasView() {
     before: null,
   });
   const [loadingEarlier, setLoadingEarlier] = useState(false);
+
+  // ── 编排（V2.26 / 台账 A5 片 A）────────────────────────────────────────────
+  const [plan, setPlan] = useState<CanvasPlan>(() => createEmptyPlan());
+  const [planLoaded, setPlanLoaded] = useState(false);
+  /** 用户是否**真的动过**编排：只有动过才落盘 —— 否则会把"读不出来的旧编排"覆盖掉 */
+  const [planDirty, setPlanDirty] = useState(false);
+  const [planBroken, setPlanBroken] = useState(false);
+  const [selectedPlanNodeId, setSelectedPlanNodeId] = useState<string | null>(null);
+  const [runOutcome, setRunOutcome] = useState<PlanRunOutcome | null>(null);
+  const [running, setRunning] = useState(false);
+  const [planNotice, setPlanNotice] = useState<string | null>(null);
 
   const reload = useCallback(async (): Promise<void> => {
     try {
@@ -687,9 +815,11 @@ export function CanvasView() {
     }
   }, [page.before, loadingEarlier, projectId, tasks]);
 
+  // 事实图数据：首次挂载 / 切项目 / **从编排切回来**都要重拉 ——
+  // 编排刚提交的任务必须能在事实图里看到（否则"提交了但图里没有"像是丢了）
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    if (!planMode) void reload();
+  }, [planMode, reload]);
 
   /**
    * 队列实况（V2.19 / B63 的 E5：排队语义对用户可见）。
@@ -718,6 +848,102 @@ export function CanvasView() {
   useEffect(() => {
     setNotes(loadCanvasNotes(projectId).notes);
   }, [projectId]);
+
+  // ── 编排：加载 / 落盘 / 编辑助手（V2.26 / 台账 A5 片 A）──────────────────────
+  useEffect(() => {
+    const loaded = loadCanvasPlan(projectId);
+    setPlan(loaded.plan ?? createEmptyPlan());
+    setPlanBroken(loaded.broken);
+    setPlanDirty(false);
+    setSelectedPlanNodeId(null);
+    setRunOutcome(null);
+    setPlanNotice(
+      loaded.broken
+        ? '本机有一份读不出来的编排（可能是更新版本写的）—— 原文已保留，你一旦改动就会被覆盖'
+        : null,
+    );
+    setPlanLoaded(true);
+  }, [projectId]);
+
+  /**
+   * 编排落盘：**只在用户真的动过之后**（`planDirty`）。
+   *
+   * 为什么不在加载后立刻保存：那样会把"读不出来的旧编排"用一份空编排覆盖掉 ——
+   * "打开看一眼"不该是破坏性操作（与 §11-2 附 的"坏草稿不静默丢"同一条纪律）。
+   */
+  useEffect(() => {
+    if (!planLoaded || !planDirty) return;
+    saveCanvasPlan(projectId, plan);
+  }, [projectId, plan, planLoaded, planDirty]);
+
+  /** 所有编辑都走这里：标记 dirty + 更新 state（落盘由上面的 effect 统一做） */
+  const mutatePlan = useCallback((updater: (current: CanvasPlan) => CanvasPlan): void => {
+    setPlan(updater);
+    setPlanDirty(true);
+  }, []);
+
+  const runnableCount = useMemo(
+    () =>
+      planMode
+        ? plan.nodes.filter((node) => planNodeBlockReason(plan, node.id) === null).length
+        : 0,
+    [planMode, plan],
+  );
+
+  const selectedPlanNode = useMemo(
+    () => (selectedPlanNodeId === null ? null : (plan.nodes.find((node) => node.id === selectedPlanNodeId) ?? null)),
+    [plan, selectedPlanNodeId],
+  );
+
+  /**
+   * 「▶ 运行编排」（契约 §11-6 的执行语义）：拓扑序提交、幂等键确定性、不猜上游。
+   *
+   * 幂等键由 runner 用 `plan:<planId>:<nodeId>` 生成 —— 所以**连点两次不会重复计费**；
+   * 真正的"重跑"（换键）是 B69 的事（片 B）。
+   */
+  const runPlan = useCallback(async (): Promise<void> => {
+    if (running) return;
+    setRunning(true);
+    setPlanNotice(null);
+    try {
+      const providerKey = resolveProviderKey(byok);
+      const outcome = await runCanvasPlan(plan, {
+        submit: async (body, idempotencyKey, planRunId) => {
+          const created = await submitGenerate(
+            // 与工作台同一条口径：BYOK 的服务端地址与模型名走 options（未识别键由服务端忽略）
+            { ...body, options: { baseUrl: byok.baseUrl, model: byok.model } },
+            {
+              idempotencyKey,
+              // 本轮运行 id：服务端据此把"一串节点"当成一次有意动作（只吃一次 60s 冷却）
+              planRunId,
+              ...(providerKey === undefined ? {} : { providerKey }),
+            },
+          );
+          return { taskId: created.taskId };
+        },
+        // 等上游出片：`task:` 引用要求"已有可用成片"，否则下游提交会被服务端 404 挡回
+        queryTask: (taskId) => fetchTask(taskId),
+      });
+      setRunOutcome(outcome);
+      if (outcome.cycle.length > 0) {
+        setPlanNotice(`图里有环（${outcome.cycle.length} 个节点参与）—— 一个都没提交，先解开环再跑`);
+      } else {
+        const ok = outcome.results.filter((item) => item.state === 'submitted').length;
+        const rest = outcome.results.length - ok;
+        setPlanNotice(
+          rest === 0
+            ? `已提交 ${ok} 条任务（可在视频库与事实图里看到它们）`
+            : `已提交 ${ok} 条，${rest} 条被跳过或失败（原因在节点卡上）`,
+        );
+      }
+      // 提交出来的任务要立刻能在事实图里看到（切回去时不再等一次手动刷新）
+      void reload();
+    } catch (caught) {
+      setPlanNotice(`运行失败：${describeError(caught)}`);
+    } finally {
+      setRunning(false);
+    }
+  }, [plan, running, byok, reload]);
 
   const mutateNotes = useCallback(
     (next: CanvasNote[]): void => {
@@ -797,6 +1023,24 @@ export function CanvasView() {
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<CanvasFlowNode>([]);
 
   useEffect(() => {
+    // 编排模式（V2.26 / A5 片 A）：节点 = 编排节点 + 便签（事实图数据一件不画 ——
+    // "同一张画布的两个模式"是两个**互斥**的视图，混在一起会让人分不清哪张卡会花钱）
+    if (planMode) {
+      setFlowNodes([
+        ...plan.nodes.map((node) => ({
+          id: node.id,
+          type: 'plan' as const,
+          position: node.position,
+          data: {
+            node,
+            run: runOutcome?.results.find((item) => item.nodeId === node.id),
+          },
+        })),
+        ...noteFlowNodes(notes, mutateNotes),
+      ]);
+      return;
+    }
+
     setFlowNodes([
       ...graph.nodes.map((node) => ({
         id: node.id,
@@ -806,18 +1050,9 @@ export function CanvasView() {
       })),
       // 便签与数据节点同住一个 nodes 数组（V2.22 / B67）：这样拖动它同样走 `onNodesChange`，
       // 位置才不会"拖完弹回去"
-      ...notes.map((note) => ({
-        id: note.id,
-        type: 'note' as const,
-        position: { x: note.x, y: note.y },
-        data: {
-          note,
-          onText: (id: string, text: string) => mutateNotes(updateNote(notes, id, { text })),
-          onDelete: (id: string) => mutateNotes(removeNote(notes, id)),
-        },
-      })),
+      ...noteFlowNodes(notes, mutateNotes),
     ]);
-  }, [graph, layout, nearIds, notes, mutateNotes, setFlowNodes]);
+  }, [planMode, plan, runOutcome, graph, layout, nearIds, notes, mutateNotes, setFlowNodes]);
 
   /**
    * 画布快捷键（V2.22 / 台账 B67）：**只做两件在只读图上成立的事** ——
@@ -855,27 +1090,116 @@ export function CanvasView() {
     return () => window.removeEventListener('keydown', onKey);
   }, [setFlowNodes]);
 
-  const flowEdges = useMemo<Edge[]>(
-    () =>
-      graph.edges.map((edge) => {
-        const style = EDGE_STYLE[edge.kind];
-        return {
-          id: edge.id,
-          source: edge.from,
-          target: edge.to,
-          type: 'smoothstep',
-          // B63：正在跑的节点的入边走 `.cv-edge-flowing`（虚线流动 = "数据正流过来"）
-          ...(flowingEdgeIds.has(edge.id) ? { className: 'cv-edge-flowing' } : {}),
-          style: {
-            stroke: style.stroke,
-            ...(style.dash === undefined ? {} : { strokeDasharray: style.dash }),
-          },
-        };
-      }),
-    [graph, flowingEdgeIds],
+  const flowEdges = useMemo<Edge[]>(() => {
+    // 编排模式的边（V2.26）：**带箭头** —— 它是"数据流方向"（from 的产物喂给 to），
+    // 与事实图的"派生关系"方向虽然同向，但语义不同（这边是"我打算这么接"）
+    if (planMode) {
+      return plan.edges.map((edge) => ({
+        id: edge.id,
+        source: edge.from,
+        target: edge.to,
+        type: 'smoothstep',
+        markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: 'var(--gold)' },
+        style: { stroke: 'var(--gold)' },
+      }));
+    }
+
+    return graph.edges.map((edge) => {
+      const style = EDGE_STYLE[edge.kind];
+      return {
+        id: edge.id,
+        source: edge.from,
+        target: edge.to,
+        type: 'smoothstep',
+        // B63：正在跑的节点的入边走 `.cv-edge-flowing`（虚线流动 = "数据正流过来"）
+        ...(flowingEdgeIds.has(edge.id) ? { className: 'cv-edge-flowing' } : {}),
+        style: {
+          stroke: style.stroke,
+          ...(style.dash === undefined ? {} : { strokeDasharray: style.dash }),
+        },
+      };
+    });
+  }, [planMode, plan, graph, flowingEdgeIds]);
+
+  /**
+   * React Flow 的**回调 props 必须稳定**（V2.26 实测教训，值得留痕）。
+   *
+   * 第一版把 `onConnect` / `onNodeClick` / `onSelectionChange` 全写成内联箭头函数 ——
+   * 每次渲染都是新引用，而 React Flow 会把这些 props 同步进它的内部 store（effect 依赖它们）。
+   * **平时看不出问题**，一旦开始**拖拽连线**（connection 状态高频变化）就变成
+   * "props 变 → store 更新 → 重渲染 → props 又变"的循环：浏览器里报
+   * `React error #185`（Maximum update depth exceeded），连线**直接失效**。
+   * 修法：全部 `useCallback` / `useMemo`（依赖只放真正会变的值）。
+   */
+  const handleNodeClick = useCallback<NodeMouseHandler>(
+    (_event, node) => {
+      if (planMode) {
+        // 编排模式：点节点 = 在右侧编辑它（便签不弹面板）
+        if (node.type === 'plan') setSelectedPlanNodeId(node.id);
+        return;
+      }
+      // 便签不是数据（没有 LineageNode）：点它不该弹检查器
+      if (node.type === 'lineage') setSelected((node as LineageFlowNode).data.node);
+    },
+    [planMode],
   );
 
-  const nodeTypes = useMemo(() => ({ lineage: LineageNodeCard, note: NoteCard }), []);
+  const handleNodeDragStop = useCallback<OnNodeDrag<CanvasFlowNode>>(
+    (_event, node) => {
+      // 便签的位置**落存储**（事实图的数据节点位置是会话级的，D40 不变）
+      if (node.type === 'note') {
+        mutateNotes(updateNote(notes, node.id, { x: node.position.x, y: node.position.y }));
+        return;
+      }
+      // 编排节点的位置**持久化**（V2.26：编排是本地产物，位置是它的一部分）
+      if (planMode && node.type === 'plan') {
+        mutatePlan((current) => movePlanNode(current, node.id, node.position));
+      }
+    },
+    [planMode, mutateNotes, notes, mutatePlan],
+  );
+
+  const handleSelectionChange = useCallback((params: OnSelectionChangeParams) => {
+    setSelectedIds(params.nodes.map((node) => node.id));
+  }, []);
+
+  /**
+   * V2.26（台账 A5 片 A）：**编排是唯一允许改结构的模式**。
+   *
+   * 三条连线纪律（与 `lib/canvasPlan.ts` 的 addPlanEdge 一一对应）：
+   * 自环 / 重复边 / 连到不存在的节点都被拒（UI 上表现为"连不上"，不是静默接受）；
+   * 真正"这条线能不能跑"的判定在执行期（`planNodeBlockReason`）——
+   * **连线时不拦**：先让用户把想法画出来，不合法的地方在节点上说明白。
+   *
+   * 用 `useMemo` 包成**稳定对象**：理由同上（React Flow 会把它们同步进 store）。
+   */
+  const planInteractionProps = useMemo(
+    () =>
+      planMode
+        ? {
+            onConnect: (params: Connection) => {
+              if (typeof params.source === 'string' && typeof params.target === 'string') {
+                const { source, target } = params;
+                mutatePlan((current) => addPlanEdge(current, source, target));
+              }
+            },
+            onNodesDelete: (deleted: RFNode[]) => {
+              for (const node of deleted) {
+                if (node.type === 'plan') mutatePlan((current) => removePlanNode(current, node.id));
+              }
+            },
+            onEdgesDelete: (deleted: Edge[]) => {
+              for (const edge of deleted) mutatePlan((current) => removePlanEdge(current, edge.id));
+            },
+          }
+        : {},
+    [planMode, mutatePlan],
+  );
+
+  const nodeTypes = useMemo(
+    () => ({ lineage: LineageNodeCard, note: NoteCard, plan: PlanNodeCard }),
+    [],
+  );
 
   const empty = !loading && tasks.length === 0;
 
@@ -886,18 +1210,40 @@ export function CanvasView() {
       <div className="cv-wrap">
         <header className="cv-head">
           <div>
-            <p className="cr-eyebrow">Lineage Canvas</p>
-            <h2 className="cv-title">血缘画布</h2>
+            <p className="cr-eyebrow">{planMode ? 'Canvas Plan' : 'Lineage Canvas'}</p>
+            <h2 className="cv-title">{planMode ? '画布编排' : '血缘画布'}</h2>
           </div>
-          <div className="cv-legend" aria-label="边的图例">
-            {EDGE_KINDS.map((kind) => (
-              <span key={kind} className="cv-legend-item">
-                <span className="cv-legend-line" style={{ backgroundColor: EDGE_STYLE[kind].stroke }} />
-                {EDGE_STYLE[kind].text}
-              </span>
-            ))}
-          </div>
+          {planMode ? (
+            <p className="wb-note cv-plan-hint" data-testid="cv-plan-hint">
+              连线 = 数据流（只有 v2v 能接上游）；「▶ 运行编排」按依赖顺序一次提交 ——
+              <strong>重复点不会重复计费</strong>（同一编排同一节点用的幂等键是固定的）
+            </p>
+          ) : (
+            <div className="cv-legend" aria-label="边的图例">
+              {EDGE_KINDS.map((kind) => (
+                <span key={kind} className="cv-legend-item">
+                  <span className="cv-legend-line" style={{ backgroundColor: EDGE_STYLE[kind].stroke }} />
+                  {EDGE_STYLE[kind].text}
+                </span>
+              ))}
+            </div>
+          )}
         </header>
+
+        {planMode && planBroken ? (
+          <div className="wb-uncertain cv-alert" data-testid="cv-plan-broken">
+            <span className="wb-uncertain-title">本机的编排读不出来</span>
+            <span className="wb-uncertain-body">
+              它可能是更新版本写的 —— 原文已保留；你一旦改动（加节点 / 连线）就会覆盖它。
+            </span>
+          </div>
+        ) : null}
+
+        {planMode && planNotice !== null ? (
+          <div className="cv-plan-notice" data-testid="cv-plan-notice">
+            {planNotice}
+          </div>
+        ) : null}
 
         {error === null ? null : (
           <div className="wb-uncertain cv-alert">
@@ -920,14 +1266,24 @@ export function CanvasView() {
           </div>
         ) : null}
 
-        {empty || loading ? null : (
+        {planMode ? (
+          <p className="wb-note cv-note" data-testid="cv-plan-count">
+            编排：{plan.nodes.length} 个节点 · {plan.edges.length} 条连线 · {runnableCount} 条可跑
+            （空提示词 / 被阻断的都不会提交 —— 点节点看原因）。位置与参数存在本机浏览器、按项目隔离。
+          </p>
+        ) : null}
+
+        {(planMode ? false : empty || loading) ? null : (
           <>
-            <p className="wb-note cv-note">
-              {graph.nodes.length} 个节点 · {graph.edges.length} 条派生边（列 = 派生顺序，行 = 时间倒序）。
-              只读视图：点节点看详情与动作；拖动只是挪位置，不保存。
-            </p>
+            {planMode ? null : (
+              <p className="wb-note cv-note">
+                {graph.nodes.length} 个节点 · {graph.edges.length} 条派生边（列 = 派生顺序，行 = 时间倒序）。
+                只读视图：点节点看详情与动作；拖动只是挪位置，不保存。
+              </p>
+            )}
 
             {/* V2.19（B63）：异常计数 + 排队实况 —— 把"图里哪里不对"和"为什么要等"都讲出来 */}
+            {planMode ? null : (
             <div className="cv-status" data-testid="cv-status">
               <span className={problemIds.size === 0 ? 'cv-status-ok' : 'cv-status-bad'}>
                 {problemIds.size === 0 ? '✓ 没有失败/待核对的任务' : `⚠ ${problemIds.size} 个节点异常`}
@@ -954,11 +1310,12 @@ export function CanvasView() {
                 </span>
               )}
             </div>
+            )}
 
             <div
               className="cv-canvas"
               data-testid="cv-canvas"
-              data-focus={onlyProblems ? 'problems' : 'all'}
+              data-focus={planMode ? 'plan' : onlyProblems ? 'problems' : 'all'}
               /**
                * V2.25（台账 B44）：**数据层**的已加载节点数（含便签）。
                *
@@ -974,20 +1331,12 @@ export function CanvasView() {
                 edges={flowEdges}
                 onNodesChange={onNodesChange}
                 nodeTypes={nodeTypes}
-                onNodeClick={(_event, node) => {
-                  // 便签不是数据（没有 LineageNode）：点它不该弹检查器
-                  if (node.type === 'lineage') setSelected((node as LineageFlowNode).data.node);
-                }}
-                onNodeDragStop={(_event, node) => {
-                  // 便签的位置**落存储**（数据节点的位置是会话级的，D40 不变）
-                  if (node.type !== 'note') return;
-                  mutateNotes(updateNote(notes, node.id, { x: node.position.x, y: node.position.y }));
-                }}
-                onSelectionChange={(params: OnSelectionChangeParams) =>
-                  setSelectedIds(params.nodes.map((node) => node.id))
-                }
-                nodesConnectable={false}
-                deleteKeyCode={null}
+                onNodeClick={handleNodeClick}
+                onNodeDragStop={handleNodeDragStop}
+                onSelectionChange={handleSelectionChange}
+                {...planInteractionProps}
+                nodesConnectable={planMode}
+                deleteKeyCode={planMode ? 'Delete' : null}
                 fitView
                 minZoom={0.2}
                 maxZoom={1.6}
@@ -1012,6 +1361,26 @@ export function CanvasView() {
                   onLoadEarlier={() => {
                     void loadEarlier();
                   }}
+                  planMode={planMode}
+                  onTogglePlan={() => navigate(planMode ? '#/canvas' : '#/canvas?mode=plan')}
+                  /* 连续加节点自动往右下错开（一整张卡的宽度）：全部叠在视口中心 =
+                     "加了 5 个但看起来只有 1 个"，而且点不到下面那些（V2.26 实测踩到） */
+                  onAddPlanNode={(x, y) =>
+                    mutatePlan((current) =>
+                      addPlanNode(
+                        current,
+                        newPlanNode({
+                          x: x + current.nodes.length * 300,
+                          y: y + current.nodes.length * 40,
+                        }),
+                      ),
+                    )
+                  }
+                  onRunPlan={() => {
+                    void runPlan();
+                  }}
+                  running={running}
+                  runnableCount={runnableCount}
                 />
                 <MiniMap
                   data-testid="cv-minimap"
@@ -1024,6 +1393,8 @@ export function CanvasView() {
                     // 遇到便签时 `data.node` 是 undefined → 抛错 → **整页白屏**（没有 ErrorBoundary）。
                     // 画布上多一种节点类型，所有"按节点取色/取名"的回调都要先问类型。
                     if (node.type === 'note') return 'var(--line-gold)';
+                    // 编排节点（V2.26）：统一主色（它还没有"执行过"的事实可着色）
+                    if (node.type === 'plan') return 'var(--gold)';
                     const data = (node as LineageFlowNode).data.node;
                     if (data === undefined) return 'var(--muted)';
                     if (data.ghost === true) return 'var(--faint)';
@@ -1043,17 +1414,38 @@ export function CanvasView() {
         )}
       </div>
 
-      {selected === null ? null : (
-        <CanvasInspector
-          node={selected}
-          graph={graph}
-          catalog={catalog}
-          upstream={upstreamOf.get(selected.id) ?? []}
-          downstream={downstreamOf.get(selected.id) ?? []}
-          onSelect={setSelected}
-          onClose={() => setSelected(null)}
-        />
-      )}
+      {/* 右侧面板：编排模式 = 编辑节点；事实图 = 只读检查器（V2.26 / A5 片 A） */}
+      {planMode
+        ? selectedPlanNode === null
+          ? null
+          : (
+              <PlanInspector
+                plan={plan}
+                node={selectedPlanNode}
+                run={runOutcome?.results.find((item) => item.nodeId === selectedPlanNode.id)}
+                onChange={(patch) =>
+                  mutatePlan((current) => updatePlanNode(current, selectedPlanNode.id, patch))
+                }
+                onRemove={() => {
+                  mutatePlan((current) => removePlanNode(current, selectedPlanNode.id));
+                  setSelectedPlanNodeId(null);
+                }}
+                onClose={() => setSelectedPlanNodeId(null)}
+              />
+            )
+        : selected === null
+          ? null
+          : (
+              <CanvasInspector
+                node={selected}
+                graph={graph}
+                catalog={catalog}
+                upstream={upstreamOf.get(selected.id) ?? []}
+                downstream={downstreamOf.get(selected.id) ?? []}
+                onSelect={setSelected}
+                onClose={() => setSelected(null)}
+              />
+            )}
     </section>
   );
 }

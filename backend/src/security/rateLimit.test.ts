@@ -8,6 +8,7 @@ import {
   BurstLimiter,
   CooldownStore,
   DEFAULT_COOLDOWN_MS,
+  PlanRunRegistry,
   rateLimitKey,
   VERIFY_BURST_MAX,
 } from './rateLimit.js';
@@ -130,6 +131,28 @@ describe('AC9 · 冷却跨"服务重启"不丢窗口（必须落盘）', () => {
     expect(decision.retryAfterMs).toBeGreaterThan(0);
 
     second.close();
+  });
+});
+
+describe('PlanRunRegistry（V2.26 / A5 片 A：编排运行的一次动作豁免）', () => {
+  it('同一 runId：第一次为 true，后续为 false（同一次运行只吃一次冷却）', () => {
+    const registry = new PlanRunRegistry();
+    expect(registry.firstOf('run-1', 1000)).toBe(true);
+    expect(registry.firstOf('run-1', 1001)).toBe(false);
+    expect(registry.firstOf('run-1', 1002)).toBe(false);
+  });
+
+  it('不同 runId 互不影响（新一轮要重新走冷却检查）', () => {
+    const registry = new PlanRunRegistry();
+    expect(registry.firstOf('run-a', 1000)).toBe(true);
+    expect(registry.firstOf('run-b', 1000)).toBe(true);
+  });
+
+  it('TTL 过后同 id 会被当成新的一轮（顺手清理，不留无界增长）', () => {
+    const registry = new PlanRunRegistry(60_000);
+    expect(registry.firstOf('run-ttl', 0)).toBe(true);
+    expect(registry.firstOf('run-ttl', 30_000)).toBe(false);
+    expect(registry.firstOf('run-ttl', 61_000)).toBe(true);
   });
 });
 
