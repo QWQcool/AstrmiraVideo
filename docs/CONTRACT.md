@@ -1,6 +1,20 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.11 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.12 · 已冻结（变更需先改本文，再改代码）**
+> **V2.12 修订（2026-10-10）**：**成本台账（台账 B48）** —— 向后兼容的扩展：新增一份**只读**的聚合响应，
+>   既有响应只多一个**可选**字段。
+>   ① **§13 新增**：`CostRecord` + `GET /api/costs/summary` 的完整形状与**计价口径**（上游计费公式 + 公开价目表）；
+>      **这是估算，不是账单** —— 固定文案 `COST_DISCLAIMER` 由服务端下发，界面不得改写措辞；
+>   ② **§4**：`TaskProgress` 增**可选** `cost`（**只有成功任务在终态结算时写入**；缺省 = 未结算 ——
+>      "不知道花了多少"与"本地轨 0 元"必须能分开，因此**不给默认值 0**）；
+>   ③ **§5**：新增 `GET /api/costs/summary`（可选 `?project=` / `?from=` / `?to=`）；
+>      **`?project=` 省略 = 默认项目**（与 `history` / `assets` 同口径）、字面量 **`all` = 跨项目汇总**
+>      （唯一刻意允许跨项目的地方："这台机器一共花了多少"是部署方的问题）；
+>   ④ **口径改口（重要）**：V9 时代刻意"不造成本数字"（当时是 C 端定位、怕误导）；
+>      **D41 转 B 端后必须反过来** —— 成本可见是采购的硬要求。因此本版把"预估 + 以账单为准"
+>      写成契约条款，并要求**未结算条数与不确定条数必须与金额并列出现**（只给金额会被读成全量）；
+>   ⑤ **§7**：`tasks` 增 `cost_yuan` / `cost_source` / `cost_detail` 三列（结算一次即入账，
+>      历史单价变动**不改写**已发生的成本）。
 > **V2.11 修订（2026-10-10）**：**项目维度（台账 B47，用户 2026-10-10 拍板"成员角色先不做"）** —— 向后兼容的扩展。
 >   ① **§12 新增**：`ProjectEntry` + 项目 CRUD 四条路由；**默认项目 `default` 永远存在**（老数据的归属，
 >      也是"调用方没传项目"时的落点）—— 因此**老客户端行为不变**；
@@ -324,6 +338,9 @@ export interface TaskProgress {
   outputSizeBytes?: number;        // V2.3：成片字节数（成功且文件仍在磁盘上时，服务端 stat 得出）
                                    // 用途：视频库"按大小排序"、详情抽屉的"文件大小"；
                                    // 文件已被清理时**省略该字段**（不填 0 —— 0 会被读成"空文件"）
+  cost?: CostRecord;               // V2.12：成本记录（见 §13）。**只有成功任务在终态结算时写入**；
+                                   // 缺省 = 未结算（V2.12 之前的老任务 / 无法估算的任务）——
+                                   // "不知道花了多少"与"花了 0 元"（本地轨）必须能分开，故不给默认值 0
   error?: {
     code: ErrorCode;              // 见 §6 错误码字典
     message: string;
@@ -394,6 +411,7 @@ export interface AssetListResponse {
 | `POST` | `/api/prompt/enhance` | 提示词扩写助手（**V2.0 已实现**，凭据经 `X-LLM-Key`，见下方注记段）。**200 → `PromptEnhanceResponse`（§3，含必填 `engine`）**；无 Key → **501 `LLM_NOT_CONFIGURED`**；空 / 超长提示词 → **400 `PROMPT_REJECTED`**；上游拒绝凭据 → **401 `KEY_INVALID`**；其余上游故障（含超时）→ **502 `UPSTREAM_ERROR`**。状态映射的完整口径见 §3 |
 | `POST` | `/api/upload` | 上传参考图/视频/**音频**（multipart，**V2.6 起** ≤100MB × ≤4（**V2.10 起音频 ≤20MB**），**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目）。**V2.9**：落一份 sidecar `<assetId>.json`（`{ name?, uploadedAt }`）—— `name` = 用户原始文件名的 **sanitize 结果**（`basename` + 去控制字符 + 截断 120 字符），**只落本地**：不进上游请求、不进操作日志、不进任务快照；写失败不阻断上传（元数据是增强，不是事实源）。**V2.10（B57）**：白名单新增 **mp3 / wav / m4a**（`audio/mpeg` / `audio/wav` / 容器为 `video/mp4` 的纯音频文件），音频体积上限 **20MB**（`MAX_AUDIO_BYTES`，超限 413）、**原样落盘**（不走防线 4 图像清洗）；判 `audio` 的口径 = 容器嗅探 + **ffprobe 流类型复核**（见上「V2.10 修订」①，容器嗅探对 m4a 不可靠）；sidecar 增**可选** `kind`（`image`/`video`/`audio`，供 `/api/assets` 免探测复读）。**V2.11（B47）**：新增可选 multipart 字段 `projectId`（缺省 = 默认项目）→ 写进 sidecar 的项目归属；**显式给了不存在的项目 → 400 `INVALID_REQUEST` + 撤回本次已落盘的媒体文件**（不留孤儿）。⚠️ 字段可能在文件之后到达（multipart 顺序由客户端决定），因此 sidecar **统一在字段读完后写**（不支持"边收边写"会产生"资产在 A 项目、sidecar 写着默认项目"的错位） |
 | `GET` | `/api/assets` | **V2.7 新增**：**资产库清单（只读）**。**200 → `AssetListResponse`（§4 末尾）**（最近 200 个，新的在前；`mime` 为**魔数嗅探事实**，与 `/api/upload` 同口径；`url` 为同源 `/media/assets/<文件>` 直链；`createdAt` = 文件 mtime）。**V2.9**：条目新增可选 `name`（来自 sidecar；抽帧产物没有原始文件名 → 无该字段），弹层据此"按名字认素材"。**目录不存在**（从未上传过）→ 200 + 空数组，**不是 404**。用途：`@` 提及素材弹层（B41）与后续资产管理视图；不改变任何生命周期与清理规则（见 §7）。**V2.10（B57）**：`kind` 扩展为 `image|video|audio` —— **优先读 sidecar 的 `kind`**（上传时已由 ffprobe 算准，免去逐文件探测），sidecar 缺失 / 无该字段时按容器嗅探兜底（`audio/*` → audio、`video/*` → video；**不猜**——老资产与抽帧产物走这条，其中 `.m4a` 老资产会被兜底判为 video，属如实边界）。**V2.11（B47）**：条目新增**必填** `projectId`（sidecar 的 `projectId` 缺失即默认项目 —— 如实归属，不猜）；可选 `?project=<projectId>` 过滤，**省略 = 默认项目**（与 `/api/history` 同口径） |
+| `GET` | `/api/costs/summary` | **V2.12 新增（台账 B48）**：**成本台账汇总（只读）**。`?project=` —— **省略 = 默认项目**（与 `history` / `assets` 同口径）、字面量 **`all` = 跨项目汇总**（唯一刻意允许跨项目的读端点）；`?from=` / `?to=`（epoch ms，含端点）。**200 → `CostSummaryResponse`（§13）**：项目 / 按天 / 按模型三个维度的桶 + `uncertainCount`（`disposition='uncertain'` 的条数，**可能已产生费用**）+ `unsettledCount`（成功但无成本记录）+ `budget`（仅 `all` 档且配了 `MONTHLY_BUDGET_YUAN` 时非 null）+ `disclaimer`。**金额是预估**（公开价目 × 上游计费式），口径见 §13。扫描上界 20000 行，触界时 `truncated: true`（此时金额只是**部分之和**）；查询参数非法 → **400 `INVALID_REQUEST`**；无新错误码 |
 | `GET` | `/api/projects` | **V2.11 新增（台账 B47）**：**项目清单（含用量）**。**200 → `ProjectListResponse`（§12）** —— 默认项目永远在列表里且排最前。`taskCount` 走 SQL、`assetCount` 读资产 sidecar 的项目归属（与 `/api/assets` 同一口径）。用途：项目切换器、项目级用量视图 |
 | `POST` | `/api/projects` | **V2.11 新增**：新建项目（body `{ name }`，1~60 字符）。**200 → `{ project: ProjectEntry }`**（id 为服务端生成的 UUID）；名字为空 → **400 `INVALID_REQUEST`**；**重名 → 400 `INVALID_REQUEST`**（切换器里两个同名项目认不出来，这是可用性问题不是洁癖） |
 | `PATCH` | `/api/projects/:projectId` | **V2.11 新增**：改项目名（body `{ name }`）。**200 → `{ project: ProjectEntry }`**；不存在 → **404 `PROJECT_NOT_FOUND`**；空名 / 重名 → **400 `INVALID_REQUEST`** |
@@ -795,4 +813,104 @@ export interface DeleteProjectResponse { deleted: boolean; projectId: string }
 启动引导 `bootstrapProjects` **幂等**地建默认项目并回填 NULL 归属，因此**升级不需要人工步骤**。
 资产不走数据库：归属写在 sidecar（`outputs/assets/<assetId>.json` 的 `projectId`），
 **没有 sidecar 的老资产按默认项目算** —— 这是如实的归属，不是猜一个。
+
+---
+
+## 13. 成本台账 `CostRecord` 与计价口径（V2.12 新增；台账 B48）
+
+> **定位（先说清楚它不是什么）**：这是**预估**，不是账单。金额 = 公开价目 × 上游计费公式，
+> **从未与我方方舟账单核对过**（PLAN §8 的单价一律标【待验证】）。所以：
+> **每个金额旁边必须站着一句"以方舟账单为准"**（`COST_DISCLAIMER`，服务端下发，界面不得改写措辞）。
+>
+> **为什么现在做（口径改口）**：V9 时代刻意"不造成本数字"（当时 C 端定位，怕误导用户）；
+> **D41 转 B 端后必须反过来** —— 成本可见是采购的硬要求。这不是加功能，是**改口径**，
+> 因此它写进契约而不是写进界面文案。
+
+```ts
+export const COST_BILLING_FPS = 24;          // 上游计费式里的帧率（**不是**工程帧率 30）
+export const COST_DEFAULT_USD_TO_CNY = 7.1;  // 可由部署参数 COST_USD_TO_CNY 覆盖
+export const COST_DISCLAIMER =                // 固定文案；服务端下发，界面不许自己写一版
+  '预估金额（按公开价目 × 上游计费公式折算），未与我方账单核对；实际扣费以火山方舟控制台账单为准。';
+
+export interface CostRecord {
+  yuan: number;                    // 预估金额（元）；本地轨为 0
+  usd: number;                     // 折算前（美元）
+  tokens: number;                  // 计费 token 量（上游计费式的输出）
+  source: 'estimate' | 'local-free' | 'upstream';
+                                   // estimate = 按公开价目估算（当前唯一在用的云端值）
+                                   // local-free = 本地轨 / 浏览器内渲染，**无 API 费用**（显式记 0）
+                                   // upstream = 上游返回的真实 usage（**保留位，尚未接线**）
+  modelId: string;                 // 用于计价的模型（自定义档原样保留）
+  fromPriceTable: boolean;         // false = 命中不了单价表（自定义 ep-…）→ 按兜底价估算，界面要标注
+  usdPerMillionTokens: number;
+  usdToCny: number;
+  outputSeconds: number;           // 计费用的时长口径（来自请求 params.durationSec）
+  inputSeconds: number;            // 参考视频输入时长（当前一律 0 —— 未落库，见下"如实边界"）
+  width: number; height: number; fps: number;
+  formula: string;                 // 人类可读算式（审计要能倒推；不参与计算）
+  notes: string[];                 // 如实标注这次估算漏了什么（如"未计入参考视频输入时长"）
+}
+
+export interface CostBucket {      // 按项目 / 按天 / 按模型共用同一形状
+  key: string;                     // projectId / 'YYYY-MM-DD' / modelId
+  label: string;                   // 项目名 / 日期 / 档位标签
+  yuan: number;
+  taskCount: number;
+  unsettledCount: number;          // **必须与 yuan 并列** —— 只给金额会被读成全量
+}
+
+export interface CostSummaryResponse {
+  range: { from: number | null; to: number | null };
+  projectId: string | null;        // null = 跨项目汇总（?project=all）
+  totalYuan: number;
+  taskCount: number;               // 区间内成功任务总数（含未结算）
+  pricedTaskCount: number;         // 其中有成本记录的条数（totalYuan 是它们之和）
+  unsettledCount: number;          // 成功但无成本记录（V2.12 之前的老任务）
+  uncertainCount: number;          // disposition='uncertain' —— **可能已产生费用**（最容易被漏）
+  byProject: CostBucket[];
+  byDay: CostBucket[];
+  byModel: CostBucket[];
+  truncated: boolean;              // true = 触到扫描上界，金额只是**部分之和**
+  budget: { monthlyYuan: number; monthToDateYuan: number; ratio: number; over: boolean } | null;
+  disclaimer: string;              // = COST_DISCLAIMER
+}
+```
+
+**计价口径（唯一一处详写；算式实现见 `packages/shared/src/cost.ts`）**：
+
+```
+token = (输入时长 + 输出时长) × 宽 × 高 × 帧率 ÷ 1024        // 帧率 = 24（上游计费式）
+费用(元) = token ÷ 1e6 × 单价($/M token) × 汇率(USD→CNY)
+```
+
+验收基线（PLAN §8 已实测的样本）：**5s / 1280×720 / 24fps ≈ 108,000 token**，
+按 mini 档 $3.24/M 与 7.1 汇率 ≈ **¥2.4844**。公式算错，后面所有金额都是错的，所以它是一条硬断言。
+
+**五条口径（都是"不静默"的具体化）**：
+
+1. **结算一次、聚合多次**：单条成本在**终态成功**那一刻算好并落库（`queue/SqliteJobQueue.complete`
+   + `pricing.settleTaskCost`），汇总只做聚合。两处各算一套 = 早晚对不上。
+   顺带的好处：**历史单价变动不改写已发生的成本**（"当时花了多少"是事实）。
+2. **结算早于读取**：`cost` 在 `TaskProgress` 上是**可选**字段，缺省 = **未结算**。
+   **绝不用 0 兜底** —— "不知道花了多少"与"本地轨 0 元"是两件不同的事，
+   而后者（`local-free`）是真实的 0。
+3. **失败任务不结算**：上游在参数校验阶段拒绝不产生费用（PLAN §8 实测）。
+   但**已提交后结果不明**的任务（`disposition='uncertain'`）**可能已经花了钱** ——
+   所以 `uncertainCount` 单独计数，且**跨项目 / 单项目档都给**（它不属于"某个项目的花销"，
+   而是"这台部署的敞口"）。
+4. **跨项目汇总只在显式的 `?project=all` 档**：界面的心智模型是"我在哪个项目里"，
+   但"这台机器一共花了多少"是部署方的问题，与前者不冲突。
+   **月度预算也只在 `all` 档给出**：项目花费 vs 全局预算是两个口径的数字，放一起只会误导。
+5. **未配置就是 null**：没有 `MONTHLY_BUDGET_YUAN` 就不显示预算（不编一个默认预算 ——
+   预算是客户的经营参数，不是我们的默认值）。
+
+**如实边界（当前版本做不到的，**不要**读成已实现）**：
+
+- **单价一律【待验证】**：除 mini 档（§8 口径）外，其余档位由官方/第三方的**定性描述折算**得出，
+  每条单价在代码里都写了 `basis`（折算过程）。拿到真实账单后**逐行替换**即可，形状不变。
+- **上游真实 usage 未接线**：`source: 'upstream'` 是保留位。当前一律 `estimate`。
+- **参考视频（V2V）输入时长未计入**：它没有落库，所以 `inputSeconds` 一律 0 →
+  此类任务的估算**偏低**，`notes` 里会明说。修它要先把参考视频时长入库（独立小活）。
+- **本地轨的 0 元不含电费与设备折旧**：口径写在 `formula` 里，不假装它是"全成本"。
+- **按天分桶用服务端本地时区**（不是 UTC）：跨时区部署时"今天"的定义会随机器走。
 

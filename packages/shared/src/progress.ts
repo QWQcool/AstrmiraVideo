@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { EditScriptSchema } from './edit.js';
 import { EditProjectSchema } from './editProject.js';
 import { VideoGenerateRequestSchema } from './request.js';
+import { CostRecordSchema } from './cost.js';
 import type { ProviderType, VideoGenerateRequest } from './request.js';
 
 /**
@@ -98,6 +99,16 @@ export const TaskProgressSchema = z.object({
    * 它们与上传达的资产同目录同规则，可直接作为下一次 I2V / FL2V 的首帧或尾帧（D38 闭环）。
    */
   extractedAssetIds: z.array(z.string()).optional(),
+  /**
+   * V2.12（台账 B48，CONTRACT §4 / §12）：这条任务的**成本记录**（预估）。
+   *
+   * 三条口径：
+   * ① 只有**成功**的任务在终态结算时写入（本地轨显式记 0 元，`source: 'local-free'`）；
+   * ② **缺省 = 未结算**（V2.12 之前的老任务、或无法估算的任务）——
+   *    "不知道花了多少"与"花了 0 元"必须能分开，所以不给默认值 0；
+   * ③ 金额是**预估**（公开价目 × 上游计费式），口径与免责声明见 `COST_DISCLAIMER`。
+   */
+  cost: CostRecordSchema.optional(),
   error: TaskErrorSchema.optional(),
 });
 

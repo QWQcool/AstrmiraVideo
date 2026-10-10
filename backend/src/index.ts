@@ -23,6 +23,7 @@ import { createAssetRoutes } from './routes/assets.js';
 import { createEnhanceRoutes } from './routes/enhance.js';
 import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
+import { createCostRoutes } from './routes/costs.js';
 import { createHistoryRoutes } from './routes/history.js';
 import { createKeyVerifyRoutes } from './routes/keysVerify.js';
 import { createLogRoutes } from './routes/logs.js';
@@ -325,6 +326,8 @@ export async function buildApp() {
   await app.register(createKeyVerifyRoutes({ limiter: verifyLimiter }));
   await app.register(createTaskRoutes({ store }));
   await app.register(createHistoryRoutes({ store }));
+  // V2.12（B48）：成本台账汇总（只读；金额为预估，口径见 COST_DISCLAIMER）
+  await app.register(createCostRoutes({ store, projects }));
   await app.register(createLogRoutes({ store: eventLog, limiter: logsLimiter }));
   await registerStaticOutputs(app);
 

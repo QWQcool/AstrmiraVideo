@@ -11,6 +11,7 @@ import {
 } from '@astrmira/shared';
 import { createErrorResponse } from '../errors.js';
 import { createTaskThumbnail } from '../pipeline/thumbnail.js';
+import { settleTaskCost } from '../pricing.js';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
 import type { TaskStore } from '../store/taskStore.js';
 
@@ -204,6 +205,9 @@ export const createEditRenderRoutes =
           track: 'local',
           provider: 'browser-remotion',
           status: 'succeeded',
+          // V2.12（B48）：剪辑入库**显式结算 0 元**（浏览器内渲染，不产生 API 费用）——
+          // 不结算的话它会在成本报表里落进"未结算"，而"没花钱"与"不知道花了多少"是两件事
+          cost: settleTaskCost(source.requestSnapshot, 'local') ?? undefined,
           progressPercent: 100,
           // 复用源片快照：渲染产物没有新的生成参数，画廊回填要用一份完整请求
           requestSnapshot: source.requestSnapshot,
