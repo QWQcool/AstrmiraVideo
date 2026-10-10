@@ -190,4 +190,62 @@ export class EventLogStore {
     const { sql, params } = buildWhere(filter);
     return this.db.prepare(`DELETE FROM event_log${sql}`).run(...params).changes;
   }
+
+  countAll(): number {
+    return (
+      this.db.prepare('SELECT COUNT(*) AS count FROM event_log').get() as { count: number }
+    ).count;
+  }
+
+  /**
+   * 保留策略（V2.18 / 台账 B23）：**按时间**与**按条数**两条判据，删的都是最旧的。
+   *
+   * ## 三条口径
+   * 1. **只删操作日志** —— 任务表 / 项目 / Webhook 流水是用户与业务数据，一条都不动
+   *    （这是本方法写在 `EventLogStore` 里、而不是写成通用 SQL 的原因）；
+   * 2. **条数用"水位"而不是"删到刚好 maxRows"**：删到 `maxRows × ratio` 以下就停。
+   *    否则每天跑一次时每来一条新日志就会触发一次删除（读写放大），
+   *    而运维真正想要的是"库不要无限长"，不是"永远精确等于 20 万条"；
+   * 3. **两条判据的删除量取并集**（先按时间删超期的，再按条数删最旧的），返回**实际删了多少** ——
+   *    调用方据此决定要不要留痕（噪声纪律：没删就不写日志）。
+   */
+  prune(options: { maxAgeDays?: number; maxRows?: number; now?: number; ratio?: number }): {
+    deleted: number;
+    remaining: number;
+    deletedByAge: number;
+    deletedByCount: number;
+  } {
+    const now = options.now ?? Date.now();
+    let deletedByAge = 0;
+    let deletedByCount = 0;
+
+    if (options.maxAgeDays !== undefined && options.maxAgeDays > 0) {
+      const cutoff = now - options.maxAgeDays * 24 * 60 * 60 * 1000;
+      deletedByAge = this.db.prepare('DELETE FROM event_log WHERE ts < ?').run(cutoff).changes;
+    }
+
+    if (options.maxRows !== undefined && options.maxRows > 0) {
+      const ratio = options.ratio ?? 0.8;
+      const target = Math.floor(options.maxRows * (ratio > 0 && ratio < 1 ? ratio : 0.8));
+      const remaining = this.countAll();
+      if (remaining > options.maxRows) {
+        // 按 id 升序（= 时间顺序）删掉最旧的那些，直到剩余 ≤ 水位线
+        const excess = remaining - target;
+        deletedByCount = this.db
+          .prepare(
+            `DELETE FROM event_log WHERE id IN (
+               SELECT id FROM event_log ORDER BY id ASC LIMIT ?
+             )`,
+          )
+          .run(excess).changes;
+      }
+    }
+
+    return {
+      deleted: deletedByAge + deletedByCount,
+      remaining: this.countAll(),
+      deletedByAge,
+      deletedByCount,
+    };
+  }
 }

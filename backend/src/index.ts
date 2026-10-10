@@ -54,6 +54,12 @@ import {
   LOGS_BURST_MAX,
   VERIFY_BURST_MAX,
 } from './security/rateLimit.js';
+// V2.18（B23）：操作日志保留策略（定时 + 启动一次；真删了才留痕）
+import {
+  isRetentionDisabled,
+  resolveRetentionPolicy,
+  startLogRetention,
+} from './server/logRetention.js';
 import { registerRequestLog } from './server/requestLog.js';
 import { registerSecurityHeaders } from './server/securityHeaders.js';
 import { registerSpa } from './server/spa.js';
@@ -313,6 +319,37 @@ export async function buildApp() {
     onError: (err) => app.log.warn({ err }, '容量淘汰扫描异常（不影响服务）'),
   });
 
+  // V2.18（B23）：操作日志保留策略（默认 90 天 / 20 万行；两条判据各自可用 0 关闭）。
+  // 真删了才写 `log.prune`（噪声纪律，与 `storage.evict` 同一条）；两条都关时**启动即警告** ——
+  // 那种配置下先被吃掉的会是日志，而运维往往直到冒烟才发现。
+  const logRetention = startLogRetention({
+    store: eventLog,
+    policy: resolveRetentionPolicy(),
+    onPrune: (outcome) => {
+      eventLog.append({
+        ts: Date.now(),
+        method: 'LOG',
+        path: '/api/logs/prune',
+        action: 'log.prune',
+        statusCode: 200,
+        detail: {
+          deleted: outcome.deleted,
+          deletedByAge: outcome.deletedByAge,
+          deletedByCount: outcome.deletedByCount,
+          remaining: outcome.remaining,
+          policy: { maxAgeDays: outcome.maxAgeDays, maxRows: outcome.maxRows },
+        },
+      });
+    },
+    onError: (err) => app.log.warn({ err }, '日志保留策略执行异常（不影响服务）'),
+  });
+  if (isRetentionDisabled(logRetention.policy())) {
+    app.log.warn(
+      { policy: logRetention.policy() },
+      '日志保留策略已关闭（LOG_RETENTION_DAYS=0 且 LOG_MAX_ROWS=0）：操作日志将无限增长，数据库会持续变大',
+    );
+  }
+
   // V2.15（B51）：Webhook 终态回调 —— 扫描补投 + 投递循环（默认 2s 一轮）。
   // 为什么是扫描而不是"终态时立刻推"：见 store/webhooks.ts 的文件头（一处覆盖全部终态写入点 + 重启补投）。
   const webhookDispatcher = new WebhookDispatcher({
@@ -326,10 +363,12 @@ export async function buildApp() {
   webhookDispatcher.start();
 
   app.addHook('onClose', async () => {
-    // 先排空后台任务（淘汰器 + 调度器 + Webhook 投递：停表 + 等在飞的一轮）**再关库**：
+    // 先排空后台任务（淘汰器 + 调度器 + Webhook 投递 + 日志保留：停表 + 等在飞的一轮）**再关库**：
     // 关早了，在飞的扫描会在关闭后的连接上读写 → unhandled rejection（2026-09-24 CI 实测）
+    logRetention.stop();
     webhookDispatcher.stop();
     await storageEvictor.drain();
+    await logRetention.drain();
     await dispatcher.drain();
     await webhookDispatcher.drain();
     db.close();
