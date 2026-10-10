@@ -183,8 +183,12 @@ export function readZipEntryNames(buffer: Uint8Array): string[] {
 }
 
 /** 触发浏览器下载（唯一碰 DOM 的函数，其余都是纯函数） */
-export function downloadBytes(bytes: Uint8Array, fileName: string): void {
-  const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: 'application/zip' });
+export function downloadBytes(
+  bytes: Uint8Array,
+  fileName: string,
+  mime = 'application/zip',
+): void {
+  const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: mime });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -192,4 +196,14 @@ export function downloadBytes(bytes: Uint8Array, fileName: string): void {
   anchor.click();
   // 下载链接是瞬时的：给浏览器留出触发时间后立刻释放（与导出面板同纪律）
   window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/**
+ * 下载一段文本（V2.20 / 台账 B65 画布配方包）。
+ *
+ * 与 `downloadBytes` 同一纪律（唯一碰 DOM 的地方），但走 `application/json` ——
+ * 有些浏览器/系统会按 MIME 决定"用什么打开"，配方包被当成 zip 打开会莫名其妙。
+ */
+export function downloadText(text: string, fileName: string, mime = 'application/json'): void {
+  downloadBytes(new TextEncoder().encode(text), fileName, mime);
 }

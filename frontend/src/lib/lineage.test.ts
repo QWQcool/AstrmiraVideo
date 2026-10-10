@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { AssetListEntry, TaskProgress, VideoGenerateRequest } from '@astrmira/shared';
 import {
   LINEAGE_COLUMN_WIDTH,
+  RECIPE_PACK_VERSION,
   assetNodeId,
   buildLineage,
+  buildRecipePack,
   isProblemNode,
   layoutLineage,
   lineageStatusClass,
@@ -231,6 +233,86 @@ describe('layoutLineage · 分层布局', () => {
  * 如果血缘层"另抄一份字段"，每加一个任务字段就要同步两处（迟早漏）。
  * 断言用 `toBe`（同一引用）而不是 `toMatchObject`，就是为了钉住"不复制"这件事。
  */
+/**
+ * V2.20（台账 B65）：配方包导出。
+ *
+ * 盯三件事：① **只导上游闭包**（下游是别的片子，不该进归档）；
+ * ② **不导 `options`**（`baseUrl` 可能是内网地址，而配方包是要发出去的）；
+ * ③ **ghost 如实进 `omitted`**，不编造元数据。
+ */
+describe('buildRecipePack（B65 画布导出配方包）', () => {
+  const snapshotWithOptions: VideoGenerateRequest = {
+    prompt: '雨夜街头',
+    mode: 'i2v',
+    aspectRatio: '16:9',
+    provider: 'cloud-volcano-seedance',
+    assets: { firstFrameImage: 'asset-img' },
+    // ⚠️ BYOK 私有参数：里面有可能是内网地址，导出必须剔除
+    options: { baseUrl: 'http://10.1.2.3:8080', model: 'doubao-x' },
+    params: { durationSec: 5, seed: 42 },
+  };
+
+  it('只导上游闭包：根 + 它的依赖，下游不进包', () => {
+    const graph = buildLineage({
+      tasks: [
+        task({ taskId: 'gen-a', requestSnapshot: { ...snapshotWithOptions, mode: 't2v', assets: undefined } }),
+        // 下游：剪辑自 gen-a
+        task({
+          taskId: 'edit-b',
+          origin: { kind: 'edit', sourceTaskId: 'gen-a', project: { version: 1, fps: 30, width: 1280, height: 720, tracks: [] } },
+        }),
+      ],
+    });
+
+    const pack = buildRecipePack(graph, taskNodeId('gen-a'), { now: 123 });
+    expect(pack.kind).toBe('astrmira.recipe-pack');
+    expect(pack.version).toBe(RECIPE_PACK_VERSION);
+    expect(pack.exportedAt).toBe(123);
+    expect(pack.rootTaskId).toBe('gen-a');
+    expect(pack.tasks.map((item) => item.taskId)).toEqual(['gen-a']);
+    expect(pack.tasks.some((item) => item.taskId === 'edit-b')).toBe(false);
+  });
+
+  it('**剔除 options（内网 baseUrl）**，但保留 params 与素材引用', () => {
+    const graph = buildLineage({
+      tasks: [task({ taskId: 'i2v-1', requestSnapshot: snapshotWithOptions })],
+      assets: [asset({ assetId: 'asset-img' })],
+    });
+    const pack = buildRecipePack(graph, taskNodeId('i2v-1'));
+    const text = JSON.stringify(pack);
+
+    // 断言"值没漏"（而不是"字符串没出现" —— notes 里会**说明**这件事，那是有意写给接收方的）
+    expect(text).not.toContain('10.1.2.3');
+    expect(text).not.toContain('http://10.1.2.3:8080');
+    for (const item of pack.tasks) {
+      expect('options' in item).toBe(false);
+      expect('baseUrl' in item).toBe(false);
+    }
+    // params 与素材引用**要在**（它们是配方的核心）
+    expect(pack.tasks[0]?.params?.seed).toBe(42);
+    expect(pack.tasks[0]?.assets?.firstFrameImage).toBe('asset-img');
+    // 资产一起进包（只记 id 与元数据）
+    expect(pack.assets.map((item) => item.assetId)).toEqual(['asset-img']);
+  });
+
+  it('ghost（引用了但不在画布上）→ 如实进 omitted，不编造元数据', () => {
+    const graph = buildLineage({
+      tasks: [task({ taskId: 'i2v-1', requestSnapshot: { ...snapshotWithOptions, assets: { firstFrameImage: 'gone-asset' } } })],
+      // 注意：assets 故意不给 → 'gone-asset' 成为 ghost
+    });
+    const pack = buildRecipePack(graph, taskNodeId('i2v-1'));
+    expect(pack.assets).toEqual([]);
+    expect(pack.omitted).toEqual([assetNodeId('gone-asset')]);
+    // 指向 ghost 的边也不该出现在包里（节点都不在，边就是悬空的）
+    expect(pack.edges.every((edge) => edge.to !== assetNodeId('gone-asset'))).toBe(true);
+  });
+
+  it('节点不在图上 → 明确报错（不静默导出一个空包）', () => {
+    const graph = buildLineage({ tasks: [] });
+    expect(() => buildRecipePack(graph, taskNodeId('nope'))).toThrow('画布上没有这个节点');
+  });
+});
+
 /**
  * V2.19（台账 B63）：执行态分类。
  *

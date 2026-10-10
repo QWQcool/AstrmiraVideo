@@ -2264,6 +2264,33 @@ try {
     note('这张图上没有可跳的相邻节点（夹具任务较少），跳过血缘跳转断言');
   }
 
+  // V2.20（台账 B65）：导出配方包 —— **真下载、真解析、真校验内容**
+  const packFile = path.join(tmpdir(), `astrmira-recipe-pack-${Date.now()}.json`);
+  const [packDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByTestId('cv-export-pack').click(),
+  ]);
+  await packDownload.saveAs(packFile);
+  const pack = JSON.parse(readFileSync(packFile, 'utf8'));
+  assert(
+    pack.kind === 'astrmira.recipe-pack' && typeof pack.version === 'number',
+    `配方包可下载且带格式版本（kind=${pack.kind} · v${pack.version}）`,
+  );
+  assert(
+    Array.isArray(pack.tasks) && pack.tasks.length >= 1 && typeof pack.rootTaskId === 'string',
+    `配方包含根任务与链上任务（${pack.tasks.length} 条 · root=${String(pack.rootTaskId).slice(0, 8)}）`,
+  );
+  // 断言"字段不在"（而不是"字符串不出现"：notes 里会**说明**这件事，那是有意写给接收方的）
+  assert(
+    pack.tasks.every((item) => !('options' in item) && !('baseUrl' in item)),
+    '配方包不含 provider 私有参数（options.baseUrl 可能是内网地址，不外泄）',
+  );
+  assert(
+    (await page.getByTestId('cv-export-result').innerText()).includes('已导出'),
+    '界面上如实反馈导出结果（多少条任务 / 多少个资产）',
+  );
+  rmSync(packFile, { force: true });
+
   // V2.19（台账 B64）：画布导航 —— 小地图 + 「缩放到选区」（设计参考 n8n，独立实现）
   assert(
     (await page.locator('.cv-canvas .react-flow__minimap').count()) === 1,

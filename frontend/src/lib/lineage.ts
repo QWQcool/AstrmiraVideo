@@ -134,6 +134,157 @@ export function isProblemNode(node: LineageNode): boolean {
   return status === 'failed' || status === 'uncertain';
 }
 
+/** 配方包里的任务：**只含有复用价值与归档价值的字段** */
+export interface RecipePackTask {
+  taskId: string;
+  prompt: string;
+  mode: TaskProgress['requestSnapshot']['mode'];
+  aspectRatio: TaskProgress['requestSnapshot']['aspectRatio'];
+  provider: TaskProgress['requestSnapshot']['provider'];
+  params?: TaskProgress['requestSnapshot']['params'];
+  /** 输入素材的引用值（`task:<id>` 或资产 id）——**原样**，语义与血缘同源 */
+  assets?: TaskProgress['requestSnapshot']['assets'];
+  status: TaskProgress['status'];
+  createdAt: number;
+  isEdit: boolean;
+  outputVideoUrl?: string;
+  warnings?: string[];
+}
+
+export interface RecipePackAsset {
+  assetId: string;
+  kind: AssetListEntry['kind'];
+  name?: string;
+  mime: string;
+  size: number;
+  createdAt: number;
+  url?: string;
+}
+
+export interface RecipePack {
+  kind: 'astrmira.recipe-pack';
+  /** 文件格式版本（B66 会加迁移；这里先立住"有版本"这件事） */
+  version: number;
+  exportedAt: number;
+  rootTaskId: string;
+  tasks: RecipePackTask[];
+  assets: RecipePackAsset[];
+  edges: Array<{ from: string; to: string; kind: LineageEdgeKind }>;
+  /** 引用了但不在包里的对象 id（ghost）——**如实列出**，不静默丢 */
+  omitted: string[];
+  notes: string[];
+}
+
+export const RECIPE_PACK_KIND = 'astrmira.recipe-pack';
+export const RECIPE_PACK_VERSION = 1;
+
+/**
+ * 把"这条片子的完整配方链"打成一个可复用 / 可归档的 JSON（V2.20 / 台账 B65）。
+ *
+ * ## 三条口径
+ * 1. **只导出上游闭包**：根节点 + 它依赖的一切。**不含下游** —— 下游是别的片子，
+ *    把整张图倒出去等于把项目里无关的东西也塞进归档；
+ * 2. **不导出 `options`（provider 私有参数）与任何凭据**：`options.baseUrl` 可能是**内网地址**，
+ *    而配方包是要发给别人 / 存进交付包的。凭据本来就不在服务端，但"不导出"要写成显式约定；
+ * 3. **不回填、不猜测**：ghost（引用了但不在列表里的对象）只登记 id 到 `omitted`，
+ *    不编造它的元数据 —— 归档的价值恰恰在于"它当时就是这样"。
+ */
+export function buildRecipePack(
+  graph: LineageGraph,
+  rootNodeId: string,
+  options: { now?: number } = {},
+): RecipePack {
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  const root = byId.get(rootNodeId);
+  if (root === undefined) throw new Error(`画布上没有这个节点：${rootNodeId}`);
+
+  // 反向 BFS：从根沿"上游"走（邻接表由边反推）
+  const incoming = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    const list = incoming.get(edge.to);
+    if (list === undefined) incoming.set(edge.to, [edge.from]);
+    else list.push(edge.from);
+  }
+
+  const keep = new Set<string>([rootNodeId]);
+  const queue = [rootNodeId];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const upstream of incoming.get(current) ?? []) {
+      if (keep.has(upstream)) continue;
+      keep.add(upstream);
+      queue.push(upstream);
+    }
+  }
+
+  const tasks: RecipePackTask[] = [];
+  const assets: RecipePackAsset[] = [];
+  const omitted: string[] = [];
+
+  for (const id of keep) {
+    const node = byId.get(id);
+    if (node === undefined) continue;
+
+    if (node.kind === 'task') {
+      const task = node.task;
+      if (task === undefined) {
+        omitted.push(id);
+        continue;
+      }
+      tasks.push({
+        taskId: task.taskId,
+        prompt: task.requestSnapshot.prompt,
+        mode: task.requestSnapshot.mode,
+        aspectRatio: task.requestSnapshot.aspectRatio,
+        provider: task.requestSnapshot.provider,
+        ...(task.requestSnapshot.params === undefined ? {} : { params: task.requestSnapshot.params }),
+        ...(task.requestSnapshot.assets === undefined ? {} : { assets: task.requestSnapshot.assets }),
+        status: task.status,
+        createdAt: task.createdAt,
+        isEdit: task.origin?.kind === 'edit',
+        ...(task.outputVideoUrl === undefined ? {} : { outputVideoUrl: task.outputVideoUrl }),
+        ...(task.warnings === undefined ? {} : { warnings: task.warnings }),
+      });
+      continue;
+    }
+
+    const asset = node.asset;
+    if (asset === undefined) {
+      omitted.push(id);
+      continue;
+    }
+    assets.push({
+      assetId: asset.assetId,
+      kind: asset.kind,
+      ...(asset.name === undefined ? {} : { name: asset.name }),
+      mime: asset.mime,
+      size: asset.size,
+      createdAt: asset.createdAt,
+      ...(asset.url === undefined ? {} : { url: asset.url }),
+    });
+  }
+
+  tasks.sort((a, b) => a.createdAt - b.createdAt);
+  assets.sort((a, b) => a.createdAt - b.createdAt);
+
+  return {
+    kind: RECIPE_PACK_KIND,
+    version: RECIPE_PACK_VERSION,
+    exportedAt: options.now ?? Date.now(),
+    rootTaskId: root.kind === 'task' ? (root.taskId ?? root.id) : root.id,
+    tasks,
+    assets,
+    edges: graph.edges
+      .filter((edge) => keep.has(edge.from) && keep.has(edge.to))
+      .map((edge) => ({ from: edge.from, to: edge.to, kind: edge.kind })),
+    omitted,
+    notes: [
+      '本文件只含生成配方与血缘关系：不含凭据，也不含 provider 私有参数（options.baseUrl 可能是内网地址）。',
+      '资产与成片只记 id 与相对路径；换一台部署要复现，需要把对应的媒体文件一起带上。',
+    ],
+  };
+}
+
 export function buildLineage(input: LineageInput): LineageGraph {
   const nodes = new Map<string, LineageNode>();
   const edges: LineageEdge[] = [];

@@ -30,12 +30,15 @@ import { useShell } from '../lib/shell';
 import {
   assetNodeId,
   buildLineage,
+  buildRecipePack,
   isProblemNode,
   layoutLineage,
   taskNodeId,
   type LineageEdgeKind,
+  type LineageGraph,
   type LineageNode,
 } from '../lib/lineage';
+import { downloadText } from '../lib/zipStore';
 import { navigate } from '../lib/router';
 import { LineageNodeCard, type LineageFlowNode } from '../canvas/NodeCard';
 
@@ -227,6 +230,7 @@ const NodeLogList: FC<{ taskId: string }> = ({ taskId }) => {
  */
 function CanvasInspector({
   node,
+  graph,
   catalog,
   upstream,
   downstream,
@@ -234,6 +238,8 @@ function CanvasInspector({
   onClose,
 }: {
   node: LineageNode;
+  /** 全图（导出配方包要沿血缘回溯上游闭包） */
+  graph: LineageGraph;
   /** 当前画布上的全部节点（按 id 索引）—— 用来判断"引用能不能跳"，以及跳到哪里 */
   catalog: Map<string, LineageNode>;
   upstream: LineageNode[];
@@ -248,6 +254,24 @@ function CanvasInspector({
   const asset = node.asset;
   const request = task?.requestSnapshot;
   const sizeText = formatBytes(task?.outputSizeBytes);
+  /** 导出配方包的结果反馈（成功给计数、失败给原因 —— 不静默） */
+  const [exportResult, setExportResult] = useState<string | null>(null);
+
+  const exportPack = (): void => {
+    try {
+      const pack = buildRecipePack(graph, node.id);
+      downloadText(
+        `${JSON.stringify(pack, null, 2)}\n`,
+        `recipe-pack-${(node.taskId ?? node.id).slice(0, 8)}.json`,
+      );
+      setExportResult(
+        `已导出：${pack.tasks.length} 条任务 · ${pack.assets.length} 个资产` +
+          (pack.omitted.length === 0 ? '' : ` · ${pack.omitted.length} 个对象已不在画布上（记在 omitted）`),
+      );
+    } catch (caught) {
+      setExportResult(`导出失败：${describeError(caught)}`);
+    }
+  };
 
   /** 输入素材（首帧 / 尾帧 / 视频参考）→ 引用值转成节点 id（能不能跳由 catalog 决定） */
   const inputs: Array<{ label: string; value: string; nodeId: string }> = [];
@@ -482,6 +506,21 @@ function CanvasInspector({
           >
             🎬 设为视频参考
           </button>
+          {/* V2.20（台账 B65）：把"这条片子的完整配方链"导出成可复用 / 可归档的 JSON */}
+          <button
+            type="button"
+            className="wb-btn"
+            data-testid="cv-export-pack"
+            title="把这条片子的上游配方链导出为 JSON（不含凭据与 provider 私有参数）"
+            onClick={exportPack}
+          >
+            ⤓ 导出配方包
+          </button>
+          {exportResult === null ? null : (
+            <p className="wb-note cv-insp-warn" data-testid="cv-export-result">
+              {exportResult}
+            </p>
+          )}
         </div>
       )}
 
@@ -801,6 +840,7 @@ export function CanvasView() {
       {selected === null ? null : (
         <CanvasInspector
           node={selected}
+          graph={graph}
           catalog={catalog}
           upstream={upstreamOf.get(selected.id) ?? []}
           downstream={downstreamOf.get(selected.id) ?? []}
