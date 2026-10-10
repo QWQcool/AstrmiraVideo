@@ -427,6 +427,87 @@
   color: var(--danger);
 }
 
+/* ── 项目切换器（V2.11 / 台账 B47）─────────────────────────────────
+   位置：顶栏品牌名右侧（"我在哪个项目里"必须在第一屏被回答）。
+   三条交互约束见 components/ProjectSwitcher.tsx 的文件头。 */
+.proj-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.proj-select {
+  min-width: 148px;
+  max-width: 220px;
+}
+
+.proj-manage {
+  padding: 4px 9px;
+}
+
+.proj-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 380px;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background-color: var(--panel);
+  box-shadow: 0 18px 40px rgb(0 0 0 / 30%);
+}
+
+.proj-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.proj-pop-close {
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.proj-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.proj-row .wb-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.proj-row-danger {
+  flex-wrap: wrap;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.proj-error {
+  margin: 0;
+  color: var(--danger);
+}
+
+/* 窄屏：顶栏放不下"项目名 + 服务徽章"两件东西 —— 项目名收窄 */
+@media (max-width: 768px) {
+  .proj-select {
+    min-width: 96px;
+    max-width: 132px;
+  }
+}
+
 .wb-dot {
   width: 8px;
   height: 8px;

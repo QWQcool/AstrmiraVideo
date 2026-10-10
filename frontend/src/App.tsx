@@ -1,9 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ProviderStatus } from '@astrmira/shared';
+import type { ProjectEntry, ProviderStatus } from '@astrmira/shared';
 import { ByokDrawer } from './components/ByokDrawer';
 import { Eyebrow } from './components/Eyebrow';
+import { ProjectSwitcher } from './components/ProjectSwitcher';
 import { Sidebar } from './components/Sidebar';
-import { ApiError, fetchLogs, fetchProviderStatus, verifyTrackKey } from './lib/api';
+import {
+  ApiError,
+  fetchLogs,
+  fetchProjects,
+  fetchProviderStatus,
+  verifyTrackKey,
+} from './lib/api';
+import {
+  readActiveProjectId,
+  resolveActiveProjectId,
+  writeActiveProjectId,
+} from './lib/projects';
 import type { ByokConfig } from './lib/byok';
 import {
   clearByok,
@@ -79,6 +91,25 @@ export default function App() {
    */
   const [errorLogCount, setErrorLogCount] = useState(0);
 
+  // ── 项目维度（V2.11 / 台账 B47）：当前项目 + 清单 + 就地错误 ──
+  const [projects, setProjects] = useState<ProjectEntry[]>([]);
+  const [projectId, setProjectId] = useState<string>(() => readActiveProjectId(storage));
+  const [projectError, setProjectError] = useState<string | null>(null);
+  /** 清单刷新信号：ProjectSwitcher 在新建 / 改名 / 删除后自增（避免把 refresh 函数穿进 Context 太深） */
+  const [projectRefreshTick, setProjectRefreshTick] = useState(0);
+
+  const handleSetActiveProject = useCallback(
+    (nextProjectId: string): void => {
+      setProjectId(nextProjectId);
+      writeActiveProjectId(storage, nextProjectId);
+    },
+    [storage],
+  );
+
+  const handleRefreshProjects = useCallback((): void => {
+    setProjectRefreshTick((tick) => tick + 1);
+  }, []);
+
   // 主题：偏好变化（或系统主题变化、且当前跟随系统时）同步到 <html data-theme>
   useEffect(() => {
     const sync = (): void => applyTheme(resolveTheme(themePref, systemPrefersDark()));
@@ -121,6 +152,34 @@ export default function App() {
   useEffect(() => {
     if (window.location.hash === '') window.location.replace(DEFAULT_VIEW);
   }, []);
+
+  /**
+   * 项目清单（V2.11 / B47）：挂载时拉一次，`projectRefreshTick` 变化时再拉
+   * （ProjectSwitcher 在新建 / 改名 / 删除后调 `refreshProjects()`）。
+   *
+   * 两条口径：
+   * ① 拉到清单后**把"记住的项目"收敛成真实存在的那个**（项目被删 / 换了部署 / 存储脏值
+   *    → 回落默认项目），与后端"省略 = 默认项目"同口径；
+   * ② 清单拉不到（接口失败）**不动** `projectId` —— 不能因为一次网络抖动改用户的项目。
+   */
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchProjects()
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setProjects(data.projects);
+        setProjectId((prev) => {
+          const next = resolveActiveProjectId(data.projects, prev);
+          if (next !== prev) writeActiveProjectId(storage, next);
+          return next;
+        });
+      })
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted) return;
+        setProjectError(describeError(caught));
+      });
+    return () => controller.abort();
+  }, [projectRefreshTick, storage]);
 
   // 侧栏红点：挂载时统计一次最近的失败请求数（见 errorLogCount 的注释）
   useEffect(() => {
@@ -214,8 +273,24 @@ export default function App() {
       byokPersist,
       providerStatus,
       openByok: () => setByokOpen(true),
+      // V2.11（B47）：项目上下文 —— 视图只读这一个值（不再各自记一份）
+      projectId,
+      projects,
+      setActiveProject: handleSetActiveProject,
+      refreshProjects: handleRefreshProjects,
+      projectError,
+      reportProjectError: setProjectError,
     }),
-    [byok, byokPersist, providerStatus],
+    [
+      byok,
+      byokPersist,
+      providerStatus,
+      projectId,
+      projects,
+      handleSetActiveProject,
+      handleRefreshProjects,
+      projectError,
+    ],
   );
 
   const ActiveView = view?.component;
@@ -242,6 +317,8 @@ export default function App() {
           </div>
 
           <div className="wb-header-right">
+            {/* 项目切换器（V2.11 / B47）：全局上下文，与"服务在线"同排 */}
+            <ProjectSwitcher />
             {serviceError !== null ? (
               <span className="wb-badge wb-badge-bad" title={serviceError}>
                 <span className="wb-dot wb-dot-bad" />

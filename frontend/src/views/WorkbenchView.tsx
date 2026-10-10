@@ -73,7 +73,8 @@ const SLOT_KEYS = ['firstFrame', 'lastFrame', 'referenceVideo'] as const satisfi
  * 顶栏与凭据抽屉、日志弹层是**壳**的职责，不在这里。
  */
 export function WorkbenchView() {
-  const { byok, byokPersist, providerStatus, openByok } = useShell();
+  // V2.11（B47）：出片与上传都归属当前项目（相册 / 剪辑候选也按它过滤）
+  const { byok, byokPersist, providerStatus, openByok, projectId } = useShell();
   const storage = useMemo(() => browserStorage(), []);
   /**
    * 每个槽一份 object URL。换图 / 清空时必须 revoke，否则一张张泄漏到会话结束
@@ -134,7 +135,10 @@ export function WorkbenchView() {
     try {
       // B37：剪辑产物一并拉取（V2.6 `?kind=edit` 全量）——只喂给"参考视频候选"，
       // 画廊仍只展示生成产物（V2.4 口径不动）
-      const [main, edits] = await Promise.all([fetchHistory(), fetchHistory({ kind: 'edit' })]);
+      const [main, edits] = await Promise.all([
+        fetchHistory({ project: projectId }),
+        fetchHistory({ kind: 'edit', project: projectId }),
+      ]);
       setHistory(main.items);
       setEditProducts(edits.items);
       setHistoryError(null);
@@ -143,7 +147,7 @@ export function WorkbenchView() {
     } finally {
       setLoadingHistory(false);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     void refreshHistory();
@@ -312,7 +316,7 @@ export function WorkbenchView() {
     replacePreview(slot, objectUrl);
     setSlot(slot, { assetId: '', meta: null, previewUrl: objectUrl });
 
-    void uploadAssets([file])
+    void uploadAssets([file], projectId)
       .then((result) => {
         const first = result.assets[0];
         if (first === undefined) {
@@ -431,6 +435,8 @@ export function WorkbenchView() {
       provider,
       // provider 私有参数：BYOK 的服务端地址与模型名（未识别键由服务端忽略）
       options: { baseUrl: byok.baseUrl, model: byok.model },
+      // V2.11（B47）：出到当前项目（同时进幂等指纹，见 CONTRACT §1）
+      projectId,
       ...(referenceAssets === undefined ? {} : { assets: referenceAssets }),
       params: {
         durationSec,

@@ -10,6 +10,7 @@ import { ExportPanel } from '../edit/ExportPanel';
 import { InspectorPanel } from '../edit/InspectorPanel';
 import { loadEditDraft, saveEditDraft } from '../edit/draft';
 import { probeVideoMeta } from '../edit/mediaProbe';
+import { useShell } from '../lib/shell';
 import { togglePlayback } from '../edit/playerRef';
 import { EditStore, useEditStore } from '../edit/store';
 import { Timeline } from '../edit/Timeline';
@@ -60,6 +61,8 @@ function describeError(caught: unknown): string {
 export function EditView() {
   const route = useHashRoute();
   const sourceId = route.query.get('task');
+  // V2.11（B47）：剪辑台的候选素材 / 剪辑历史 / 音频素材都按当前项目过滤
+  const { projectId } = useShell();
 
   const [history, setHistory] = useState<TaskProgress[]>([]);
   const [allEdits, setAllEdits] = useState<TaskProgress[]>([]);
@@ -76,10 +79,12 @@ export function EditView() {
       // 四路并发：生成产物（源片 + 候选素材）、全部剪辑产物（B37：素材候选合并）、
       // 本片剪辑历史（V2.4 口径，剪辑产物不进主历史）、资产库（B57：音频素材）
       const [main, edits, sourceEdits, assetList] = await Promise.all([
-        fetchHistory(),
-        fetchHistory({ kind: 'edit' }),
-        sourceId === null ? Promise.resolve(null) : fetchHistory({ kind: 'edit', source: sourceId }),
-        fetchAssets(),
+        fetchHistory({ project: projectId }),
+        fetchHistory({ kind: 'edit', project: projectId }),
+        sourceId === null
+          ? Promise.resolve(null)
+          : fetchHistory({ kind: 'edit', source: sourceId, project: projectId }),
+        fetchAssets(projectId),
       ]);
       setHistory(main.items);
       setAllEdits(edits.items);
@@ -89,7 +94,7 @@ export function EditView() {
     } catch (caught) {
       setLoadError(describeError(caught));
     }
-  }, [sourceId]);
+  }, [sourceId, projectId]);
 
   useEffect(() => {
     void reload();

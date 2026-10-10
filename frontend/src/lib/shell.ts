@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { ProviderStatus } from '@astrmira/shared';
+import type { ProjectEntry, ProviderStatus } from '@astrmira/shared';
 import type { ByokConfig } from './byok';
 
 /**
@@ -16,6 +16,22 @@ export interface ShellServices {
   providerStatus: ProviderStatus | null;
   /** 打开凭据抽屉（侧栏底部"凭据设置"与工作台里的入口共用同一个抽屉） */
   openByok(): void;
+
+  // ── 项目维度（V2.11 / 台账 B47；CONTRACT §12）──────────────────────────────
+  /**
+   * 当前项目（缺省 = 默认项目）。**所有**列表与提交都带它：
+   * 视图只读这一个值，不再各自记一份（否则"界面显示 A、请求发 B"迟早发生）。
+   */
+  projectId: string;
+  /** 项目清单（含用量）；接口失败时为最后一次成功的列表（可能为空） */
+  projects: ProjectEntry[];
+  /** 切换项目：写 localStorage + 广播（视图的 useEffect 依赖它重新拉数据） */
+  setActiveProject(projectId: string): void;
+  /** 新建 / 改名 / 删除之后刷新清单（并保证"当前项目"仍指向存在的那个） */
+  refreshProjects(): void;
+  /** 最近一次项目操作失败的原因（就地显示，**不用原生对话框** —— 项目红线） */
+  projectError: string | null;
+  reportProjectError(message: string | null): void;
 }
 
 const ShellContext = createContext<ShellServices | null>(null);

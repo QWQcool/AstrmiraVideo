@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Eyebrow } from '../components/Eyebrow';
 import { uploadAssets } from '../lib/api';
+import { useShell } from '../lib/shell';
 import { navigate } from '../lib/router';
 import { formatBytes } from '../lib/overviewStats';
 import { exportDurationFrames, exportFileName } from './exportMeta';
@@ -54,6 +55,8 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
   sourceTaskId,
 }) => {
   const project = useEditStore(store, (s) => s.project);
+  // V2.11（B47）：入库产物与抽帧资产都归属当前项目
+  const { projectId } = useShell();
   const [state, setState] = useState<ExportState>({ kind: 'idle' });
   const [archiving, setArchiving] = useState(false);
   const [archivedTaskId, setArchivedTaskId] = useState<string | null>(null);
@@ -145,14 +148,15 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
     setActionError(null);
     try {
       const { submitEditRender } = await import('../lib/api');
-      const created = await submitEditRender({ file: blob, sourceTaskId, project });
+      // V2.11（B47）：剪辑产物与当前项目同归属（缺省 = 默认项目）
+      const created = await submitEditRender({ file: blob, sourceTaskId, project, projectId });
       setArchivedTaskId(created.taskId);
     } catch (caught) {
       setActionError(describeFailure(caught));
     } finally {
       setArchiving(false);
     }
-  }, [project, sourceTaskId]);
+  }, [project, sourceTaskId, projectId]);
 
   /**
    * 抽帧 → 参考资产（D38 闭环）：渲染**播放头那一帧**（与预览同构图，含字幕/转场）→
@@ -169,7 +173,7 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
         frame: store.getState().playheadFrame,
       });
       const file = new File([still.blob], `frame-${still.frame}.png`, { type: 'image/png' });
-      const uploaded = await uploadAssets([file]);
+      const uploaded = await uploadAssets([file], projectId);
       const asset = uploaded.assets[0];
       if (asset === undefined) {
         setActionError('抽帧上传未返回任何资产');
@@ -183,7 +187,7 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
     } finally {
       setFrameBusy(false);
     }
-  }, [project, store]);
+  }, [project, store, projectId]);
 
   const exportFrames = exportDurationFrames(project);
 

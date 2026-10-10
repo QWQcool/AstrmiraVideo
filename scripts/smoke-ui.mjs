@@ -334,6 +334,115 @@ try {
   await page.evaluate(() => { location.hash = '#/workbench'; });
   await page.waitForSelector('.wb-main', { timeout: 5_000 });
 
+  console.log('\n[1c] 项目切换器（V2.11 / 台账 B47：单库内多项目）');
+  await page.waitForSelector('.proj-switch .proj-select', { timeout: 10_000 });
+  assert(true, '顶栏渲染项目切换器（"我在哪个项目里"在第一屏被回答）');
+
+  const defaultLabel = await page.evaluate(
+    () => document.querySelector('.proj-select option[value="default"]')?.textContent ?? '',
+  );
+  assert(
+    defaultLabel.includes('默认项目') && defaultLabel.includes('默认'),
+    `默认项目在列表里并标注「默认」（实际「${defaultLabel}」）`,
+  );
+
+  // 默认项目不可删：按钮置灰 **且写明原因**（灰而无提示等于没解释）
+  await page.locator('.proj-manage').click();
+  await page.waitForSelector('.proj-pop', { timeout: 5_000 });
+  assert(
+    await page.getByRole('button', { name: '删除当前项目' }).isDisabled(),
+    '默认项目的「删除当前项目」置灰（与后端同一套护栏）',
+  );
+  assert(
+    (await page.locator('.proj-pop').innerText()).includes('默认项目不可删'),
+    '置灰同时给出原因（默认项目是老数据与未指定项目的落点）',
+  );
+
+  // 新建 → 自动切过去（用户的意图就是"到新项目里干活"）
+  await page.locator('.proj-pop input[placeholder^="新项目名"]').fill('冒烟项目');
+  await page.getByRole('button', { name: '新建', exact: true }).click();
+  await page.waitForFunction(
+    () => document.querySelector('.proj-select')?.value !== 'default',
+    null,
+    { timeout: 10_000 },
+  );
+  const smokeProjectId = await page.locator('.proj-select').inputValue();
+  assert(
+    /^[0-9a-f-]{36}$/.test(smokeProjectId),
+    `新建后立即切到新项目（id=${smokeProjectId.slice(0, 8)}…）`,
+  );
+  const newLabel = await page.evaluate(
+    (id) => document.querySelector(`.proj-select option[value="${id}"]`)?.textContent ?? '',
+    smokeProjectId,
+  );
+  assert(newLabel.includes('冒烟项目'), `下拉显示新项目名（实际「${newLabel}」）`);
+
+  // 刷新后仍停在新项目：记忆 + 清单收敛（缺了任一半都会掉回默认项目）
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(
+    (id) => document.querySelector('.proj-select')?.value === id,
+    smokeProjectId,
+    { timeout: 10_000 },
+  );
+  assert(
+    (await page.evaluate(() => localStorage.getItem('astrmira.activeProjectId'))) === smokeProjectId,
+    '刷新后当前项目保持（记忆的 id 在清单里真实存在 → 不被收敛回默认项目）',
+  );
+
+  // 隔离（真实 API，同源同路由）：新项目是干净的，默认项目不受影响
+  const isolation = await page.evaluate(async (id) => {
+    const [newTasks, defaultTasks, newAssets, defaultAssets] = await Promise.all([
+      (await fetch(`/api/history?project=${id}`)).json(),
+      (await fetch('/api/history')).json(),
+      (await fetch(`/api/assets?project=${id}`)).json(),
+      (await fetch('/api/assets')).json(),
+    ]);
+    return {
+      newTasks: newTasks.items.length,
+      defaultTasks: defaultTasks.items.length,
+      newAssets: newAssets.assets.length,
+      defaultAssets: defaultAssets.assets.length,
+    };
+  }, smokeProjectId);
+  assert(
+    isolation.newTasks === 0 && isolation.newAssets === 0,
+    `新项目是干净的（${isolation.newTasks} 片 / ${isolation.newAssets} 素材）`,
+  );
+  assert(
+    isolation.defaultTasks >= 0 && isolation.defaultAssets >= 0,
+    `默认项目仍可独立枚举（${isolation.defaultTasks} 片 / ${isolation.defaultAssets} 素材）——「省略 = 默认项目」`,
+  );
+
+  // 删除（两步确认，不用原生对话框）：删空项目成功 → 当前项目回到默认项目
+  await page.locator('.proj-manage').click();
+  await page.waitForSelector('.proj-pop', { timeout: 5_000 });
+  assert(
+    await page.getByRole('button', { name: '删除当前项目' }).isEnabled(),
+    '空项目的「删除当前项目」可用（只有空项目可删）',
+  );
+  await page.getByRole('button', { name: '删除当前项目' }).click();
+  await page.getByRole('button', { name: '确认删除' }).click();
+  await page.waitForFunction(
+    () => document.querySelector('.proj-select')?.value === 'default',
+    null,
+    { timeout: 10_000 },
+  );
+  assert(true, '删除空项目成功并**自动切回默认项目**（界面不会停在一个不存在的项目上）');
+  assert(
+    (await page.evaluate(() => localStorage.getItem('astrmira.activeProjectId'))) === 'default',
+    '删除后记忆同步回落默认项目',
+  );
+  const gone = await page.evaluate(
+    (id) => document.querySelector(`.proj-select option[value="${id}"]`) === null,
+    smokeProjectId,
+  );
+  assert(gone, '被删项目从下拉里消失');
+  await page.locator('.proj-pop-close').click();
+
+  // 回到工作台（后续 [2] 起的检查按原假设从工作台开始）
+  await page.evaluate(() => { location.hash = '#/workbench'; });
+  await page.waitForSelector('.wb-main', { timeout: 5_000 });
+
   console.log('\n[2] 首屏与后端真的通了（同源 /api/providers/status）');
   await page.getByText('服务在线').waitFor({ timeout: 10_000 });
   assert(true, '头部徽章进入「服务在线」（说明 /api 请求成功了：CSP + 鉴权都没拦）');

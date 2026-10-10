@@ -3,6 +3,7 @@ import { Background, Controls, ReactFlow, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { AssetListEntry, TaskProgress } from '@astrmira/shared';
 import { ApiError, fetchAssets, fetchHistory, resolveMediaUrl } from '../lib/api';
+import { useShell } from '../lib/shell';
 import {
   buildLineage,
   layoutLineage,
@@ -124,6 +125,8 @@ function CanvasDrawer({ node, onClose }: { node: LineageNode; onClose: () => voi
 }
 
 export function CanvasView() {
+  // V2.11（B47）：血缘画布按当前项目取材
+  const { projectId } = useShell();
   const [tasks, setTasks] = useState<TaskProgress[]>([]);
   const [assets, setAssets] = useState<AssetListEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,10 +136,11 @@ export function CanvasView() {
   const reload = useCallback(async (): Promise<void> => {
     try {
       // 三个既有只读接口，零契约变更（生成产物 + 剪辑产物 + 资产库）
+      // V2.11（B47）：三者都按当前项目过滤（血缘图是"这个项目里的片子怎么长出来的"）
       const [generated, edits, assetList] = await Promise.all([
-        fetchHistory(),
-        fetchHistory({ kind: 'edit' }),
-        fetchAssets(),
+        fetchHistory({ project: projectId }),
+        fetchHistory({ kind: 'edit', project: projectId }),
+        fetchAssets(projectId),
       ]);
       setTasks([...generated.items, ...edits.items]);
       setAssets(assetList.assets);
@@ -146,7 +150,7 @@ export function CanvasView() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     void reload();

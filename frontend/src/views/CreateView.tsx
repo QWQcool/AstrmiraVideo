@@ -127,7 +127,7 @@ function refFromAsset(asset: RefAsset): MentionRef {
 }
 
 export function CreateView() {
-  const { byok, providerStatus, openByok } = useShell();
+  const { byok, providerStatus, openByok, projectId } = useShell();
 
   // ── 意图与素材 ──
   const [prompt, setPrompt] = useState('');
@@ -162,10 +162,11 @@ export function CreateView() {
 
   const reloadPools = useCallback(async (): Promise<void> => {
     try {
+      // V2.11（B47）：素材池只装当前项目的资产与成片（切项目即重拉）
       const [assets, generated, edits] = await Promise.all([
-        fetchAssets(),
-        fetchHistory(),
-        fetchHistory({ kind: 'edit' }),
+        fetchAssets(projectId),
+        fetchHistory({ project: projectId }),
+        fetchHistory({ kind: 'edit', project: projectId }),
       ]);
       setAssetPool(assets.assets.filter(isRefAsset));
       setTaskPool(
@@ -177,7 +178,7 @@ export function CreateView() {
     } catch (caught) {
       setPoolError(describeError(caught));
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     void reloadPools();
@@ -246,7 +247,7 @@ export function CreateView() {
         setRefs((prev) => [...prev, { id, ref: '', kind, previewUrl: objectUrl, label: file.name }]);
         setUploadingCount((count) => count + 1);
 
-        uploadAssets([file])
+        uploadAssets([file], projectId)
           .then((result) => {
             const asset = result.assets[0];
             if (asset === undefined) throw new Error('上传未返回任何资产');
@@ -268,7 +269,7 @@ export function CreateView() {
           .finally(() => setUploadingCount((count) => count - 1));
       }
     },
-    [reloadPools],
+    [reloadPools, projectId],
   );
 
   /** 打开提及弹层（顺手刷新素材池：刚生成/刚剪完的成片应当立刻可 @ —— 常驻视图不重挂载） */
@@ -314,6 +315,8 @@ export function CreateView() {
       resolution: resolveTargetSize(aspectRatio, resolutionTier),
       provider,
       options: { baseUrl: byok.baseUrl, model: byok.model },
+      // V2.11（B47）：出到当前项目（它同时进幂等指纹 —— 见 CONTRACT §1）
+      projectId,
       ...(assets === undefined ? {} : { assets }),
       params: {
         durationSec,

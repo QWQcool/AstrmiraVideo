@@ -3,6 +3,7 @@ import { logActionLabel } from '@astrmira/shared';
 import type { EventLogEntry, HistoryResponse, StorageUsage } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
 import { ApiError, fetchHistory, fetchLogs } from '../lib/api';
+import { useShell } from '../lib/shell';
 import { staggerStyle } from '../lib/motion';
 import {
   buildActivityFeed,
@@ -41,6 +42,8 @@ function describeError(caught: unknown): string {
 }
 
 export function OverviewView() {
+  // V2.11（B47）：总览也按项目统计（"我在哪个项目里"是全局上下文，见 lib/shell.ts）
+  const { projectId } = useShell();
   const [history, setHistory] = useState<HistoryResponse | null>(null);
   const [logs, setLogs] = useState<EventLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,7 +53,10 @@ export function OverviewView() {
   const reload = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
-      const [historyData, logsData] = await Promise.all([fetchHistory(), fetchLogs({ limit: 50 })]);
+      const [historyData, logsData] = await Promise.all([
+        fetchHistory({ project: projectId }),
+        fetchLogs({ limit: 50 }),
+      ]);
       setHistory(historyData);
       setLogs(logsData.items);
       setError(null);
@@ -61,7 +67,7 @@ export function OverviewView() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     void reload();

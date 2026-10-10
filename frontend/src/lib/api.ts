@@ -1,5 +1,6 @@
 import {
   AssetListResponseSchema,
+  DeleteProjectResponseSchema,
   ErrorResponseSchema,
   GenerateResponseSchema,
   HealthResponseSchema,
@@ -8,6 +9,8 @@ import {
   LogDeleteResponseSchema,
   LogListResponseSchema,
   OperationResultSchema,
+  ProjectListResponseSchema,
+  ProjectResponseSchema,
   PromptEnhanceResponseSchema,
   ProviderStatusSchema,
   TaskProgressSchema,
@@ -15,6 +18,7 @@ import {
 } from '@astrmira/shared';
 import type {
   AssetListResponse,
+  DeleteProjectResponse,
   EditProject,
   EditScript,
   ErrorCode,
@@ -28,6 +32,8 @@ import type {
   LogListResponse,
   LogQuery,
   OperationResult,
+  ProjectListResponse,
+  ProjectResponse,
   PromptEnhanceRequest,
   PromptEnhanceResponse,
   ProviderStatus,
@@ -77,7 +83,8 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'DELETE';
+  // V2.11（B47）：项目改名走 PATCH（`/api/projects/:projectId`）
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   /** 仅用于请求头；`undefined` 表示不带（服务端回落到 env 兜底 Key） */
   providerKey?: string;
@@ -286,20 +293,48 @@ export function clearLogs(query: LogQuery = {}): Promise<LogDeleteResponse> {
  * 资产库清单（V2.7 / 台账 B41；CONTRACT §5）。
  * 只读枚举，含抽帧产物（同目录同规则）；空目录返回空数组（不是 404）。
  */
-export function fetchAssets(): Promise<AssetListResponse> {
-  return request('/api/assets', AssetListResponseSchema);
+export function fetchAssets(projectId?: string): Promise<AssetListResponse> {
+  // V2.11（B47）：`?project=` 省略 = 默认项目（不是"全部项目"，见 CONTRACT §12）
+  const suffix = projectId === undefined ? '' : `?project=${encodeURIComponent(projectId)}`;
+  return request(`/api/assets${suffix}`, AssetListResponseSchema);
 }
 
-export function fetchHistory(filter?: { kind: 'edit'; source?: string }): Promise<HistoryResponse> {
+export function fetchHistory(filter?: {
+  kind?: 'edit';
+  source?: string;
+  project?: string;
+}): Promise<HistoryResponse> {
   // V9 修复：剪辑产物默认不进历史成片；剪辑台用 `?kind=edit&source=<id>` 查某源片的剪辑历史。
   // V2.6（B37）：`kind:'edit'` 不带 source → 全部剪辑产物（时间轴素材候选合并用）。
-  const suffix =
-    filter === undefined
-      ? ''
-      : filter.source === undefined
-        ? '?kind=edit'
-        : `?kind=edit&source=${encodeURIComponent(filter.source)}`;
+  // V2.11（B47）：`project` 省略 = 默认项目。
+  const params = new URLSearchParams();
+  if (filter?.kind === 'edit') params.set('kind', 'edit');
+  if (filter?.source !== undefined) params.set('source', filter.source);
+  if (filter?.project !== undefined) params.set('project', filter.project);
+  const suffix = params.size === 0 ? '' : `?${params.toString()}`;
   return request(`/api/history${suffix}`, HistoryResponseSchema);
+}
+
+/** 项目清单（V2.11 / B47，CONTRACT §12）：含用量（任务条数 / 资产个数） */
+export function fetchProjects(): Promise<ProjectListResponse> {
+  return request('/api/projects', ProjectListResponseSchema);
+}
+
+export function createProject(name: string): Promise<ProjectResponse> {
+  return request('/api/projects', ProjectResponseSchema, { method: 'POST', body: { name } });
+}
+
+export function renameProject(projectId: string, name: string): Promise<ProjectResponse> {
+  return request(`/api/projects/${encodeURIComponent(projectId)}`, ProjectResponseSchema, {
+    method: 'PATCH',
+    body: { name },
+  });
+}
+
+export function deleteProject(projectId: string): Promise<DeleteProjectResponse> {
+  return request(`/api/projects/${encodeURIComponent(projectId)}`, DeleteProjectResponseSchema, {
+    method: 'DELETE',
+  });
 }
 
 export function deleteHistory(taskId: string): Promise<OperationResult> {
@@ -309,8 +344,11 @@ export function deleteHistory(taskId: string): Promise<OperationResult> {
 }
 
 /** 上传：multipart 由浏览器自动决定 boundary，**不要**手写 content-type */
-export async function uploadAssets(files: File[]): Promise<UploadResponse> {
+export async function uploadAssets(files: File[], projectId?: string): Promise<UploadResponse> {
   const form = new FormData();
+  // V2.11（B47）：项目字段**放在文件之前** —— 服务端虽然"攒完字段再写 sidecar"（顺序无关），
+  // 但先发字段能让失败的请求更早发现"项目不存在"，少传几个 MB。
+  if (projectId !== undefined) form.append('projectId', projectId);
   for (const file of files) form.append('files', file);
 
   let response: Response;
@@ -354,8 +392,11 @@ export async function submitEditRender(input: {
   file: Blob;
   sourceTaskId: string;
   project: EditProject;
+  /** V2.11（B47）：剪辑产物归属的项目（缺省 = 默认项目） */
+  projectId?: string;
 }): Promise<GenerateResponse> {
   const form = new FormData();
+  if (input.projectId !== undefined) form.append('projectId', input.projectId);
   form.append('file', input.file, 'render.mp4');
   form.append('sourceTaskId', input.sourceTaskId);
   form.append('project', JSON.stringify(input.project));

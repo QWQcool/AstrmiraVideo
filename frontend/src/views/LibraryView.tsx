@@ -3,6 +3,7 @@ import { EDIT_OPERATION_LABELS, describeEditOrigin } from '@astrmira/shared';
 import type { HistoryResponse, TaskProgress } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
 import { ApiError, deleteHistory, fetchHistory, resolveMediaUrl } from '../lib/api';
+import { useShell } from '../lib/shell';
 import {
   LIBRARY_SORT_LABELS,
   LIBRARY_STATUS_LABELS,
@@ -61,6 +62,8 @@ function mediaHref(url: string | undefined): string | undefined {
 
 export function LibraryView() {
   const route = useHashRoute();
+  // V2.11（B47）：视频库按当前项目过滤（切项目即重拉）
+  const { projectId } = useShell();
   const [history, setHistory] = useState<HistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +77,8 @@ export function LibraryView() {
   const reload = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
-      const data = await fetchHistory();
+      // V2.11（B47）：视频库只列当前项目的成片
+      const data = await fetchHistory({ project: projectId });
       setHistory(data);
       setError(null);
     } catch (caught) {
@@ -82,7 +86,7 @@ export function LibraryView() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     void reload();
