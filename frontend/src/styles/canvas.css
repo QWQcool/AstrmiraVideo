@@ -107,10 +107,12 @@
    皮肤全部走 tokens（默认小地图是白底浅灰，暗色主题下刺眼）。
    ⚠️ 画布是**只读**视图（D40）：这里只做"看图的姿势"（缩放到选区/全部），
    不引入任何编辑语义。 */
+/* ⚠️ 放**左上**而不是右上（2026-10-10 实测的坑）：检查器是 `position: fixed` 的右侧抽屉，
+   右上角的工具条会被它压住 → 按钮"看得见点不到"（UI 冒烟当场抓到）。左上角永远空着。 */
 .cv-tools {
   position: absolute;
   top: 10px;
-  right: 10px;
+  left: 10px;
   z-index: 5;
   display: flex;
   gap: 6px;
@@ -291,6 +293,91 @@
   width: 100%;
   border-radius: var(--radius-control);
   background-color: var(--canvas);
+}
+
+/* ── 执行态与失败链（V2.19 / 台账 B63）────────────────────────────────────
+   三件事：① 状态点（成功=绿 / 失败与不确定=红 / 排队与生成中=金 + 呼吸）；
+   ② 「只看异常」把非异常节点调暗（**不删图** —— 删了就看不出"这是谁的邻居"）；
+   ③ 正在跑的节点的**入边**流动（复用 tokens 的 `flow`，只改 dashoffset）。
+   ⚠️ 语义差别如实说明：n8n 的图是"待执行的步骤"（失败会阻断下游），
+   我们的图是"已发生的事实"（失败节点本来就没有下游产物），所以"失败链"在这里
+   = **异常节点 + 与它直接相连的边**，而不是一条被阻断的流水线。 */
+.cv-node-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cv-node-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--muted);
+}
+
+.cv-status-succeeded .cv-node-dot {
+  background-color: var(--success);
+}
+
+.cv-status-queued .cv-node-dot,
+.cv-status-running .cv-node-dot {
+  background-color: var(--gold);
+  animation: breathe-glow 1.8s ease-in-out infinite;
+}
+
+.cv-status-failed .cv-node-dot,
+.cv-status-uncertain .cv-node-dot {
+  background-color: var(--danger);
+}
+
+.cv-status-ghost .cv-node-dot {
+  background-color: var(--faint);
+}
+
+.cv-status-asset .cv-node-dot {
+  background-color: var(--blue);
+}
+
+/* 异常节点：红边框。`:not(.cv-node-selected)` 是为了让"选中"始终更显眼（选中优先于异常） */
+.cv-node-problem:not(.cv-node-selected) {
+  border-color: var(--danger-line-strong);
+  box-shadow: 0 0 0 1px var(--danger-line);
+}
+
+/* 「只看异常」：调暗无关节点（异常本身与其直接邻居保持正常亮度） */
+.cv-canvas[data-focus='problems'] .cv-node:not(.cv-node-problem):not(.cv-node-near) {
+  opacity: 0.25;
+}
+
+/* 正在跑的节点的入边：虚线流动 = 数据正流过来。
+   dasharray 的周期必须能整除 `flow` 的 -140px，否则循环处会"跳一下"
+   （14+14=28 → 140÷28=5 ✓；成片参考边的 6+4=10 → 14 ✓）。 */
+.cv-canvas .react-flow__edge.cv-edge-flowing path.react-flow__edge-path {
+  stroke-dasharray: 14 14;
+  animation: flow 2s linear infinite;
+}
+
+/* 状态条：异常计数 + 「只看异常」+ 排队实况 */
+.cv-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: var(--fs-note);
+}
+
+.cv-status-ok {
+  color: var(--success);
+}
+
+.cv-status-bad {
+  color: var(--danger);
+}
+
+.cv-status-queue {
+  color: var(--muted);
 }
 
 /* ── 节点检查器（V2.19 / 台账 B62）────────────────────────────────────────

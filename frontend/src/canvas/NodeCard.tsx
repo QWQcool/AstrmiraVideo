@@ -1,5 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
-import type { LineageNode } from '../lib/lineage';
+import { isProblemNode, lineageStatusClass, type LineageNode } from '../lib/lineage';
 
 /**
  * 画布节点卡（P4 / B42）。两类节点共用一张卡：任务（成片 / 剪辑产物）与资产。
@@ -9,21 +9,31 @@ import type { LineageNode } from '../lib/lineage';
  * 再配合 `nodesConnectable={false}` 与不注册 `onConnect`，连线在画布上不可能被创建（D40）。
  */
 
-export type LineageFlowNode = Node<{ node: LineageNode }, 'lineage'>;
+/** `near` = 与某个异常节点直接相连（B63「只看异常」时它保持正常亮度，好认出"是谁的邻居"） */
+export type LineageFlowNode = Node<{ node: LineageNode; near?: boolean }, 'lineage'>;
 
 export function LineageNodeCard({ data, selected }: NodeProps<LineageFlowNode>) {
   const { node } = data;
+  const status = lineageStatusClass(node);
   const classes = [
     'cv-node',
     `cv-node-${node.kind}`,
+    `cv-status-${status}`,
     node.ghost === true ? 'cv-node-ghost' : '',
+    isProblemNode(node) ? 'cv-node-problem' : '',
+    data.near === true ? 'cv-node-near' : '',
     selected === true ? 'cv-node-selected' : '',
   ]
     .filter((value) => value !== '')
     .join(' ');
 
   return (
-    <div className={classes} data-node-id={node.id} data-ghost={node.ghost === true ? '1' : '0'}>
+    <div
+      className={classes}
+      data-node-id={node.id}
+      data-ghost={node.ghost === true ? '1' : '0'}
+      data-status={status}
+    >
       <Handle type="target" position={Position.Left} isConnectable={false} className="cv-handle" />
 
       <div className="cv-node-thumb">
@@ -37,9 +47,12 @@ export function LineageNodeCard({ data, selected }: NodeProps<LineageFlowNode>) 
       </div>
 
       <div className="cv-node-body">
-        <span className="cv-node-label">
-          {node.isEdit === true ? <span className="cv-node-badge">✂</span> : null}
-          {node.label}
+        <span className="cv-node-line">
+          <span className="cv-node-dot" aria-hidden="true" />
+          <span className="cv-node-label">
+            {node.isEdit === true ? <span className="cv-node-badge">✂</span> : null}
+            {node.label}
+          </span>
         </span>
         <span className="cv-node-sub">{node.sublabel}</span>
       </div>

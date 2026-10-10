@@ -102,6 +102,38 @@ const STATUS_LABEL: Record<TaskProgress['status'], string> = {
   cancelled: '已取消',
 };
 
+/**
+ * 节点的**执行态分类**（V2.19 / 台账 B63）—— 画布上那个状态点用什么颜色，由它决定。
+ *
+ * 为什么单独抽出来（而不是在组件里写 if）：它是**产品语义**，不是样式细节 ——
+ * 尤其 `uncertain`（`error.disposition === 'uncertain'`）意味着"结果不明、**可能已产生费用**"，
+ * 这条判断必须与成本台账（CONTRACT §13）同一口径，所以放在纯函数层并被单测钉住。
+ */
+export type LineageStatusClass =
+  | 'succeeded'
+  | 'running'
+  | 'queued'
+  | 'failed'
+  | 'cancelled'
+  | 'uncertain'
+  | 'ghost'
+  | 'asset';
+
+export function lineageStatusClass(node: LineageNode): LineageStatusClass {
+  if (node.ghost === true) return 'ghost';
+  if (node.kind === 'asset') return 'asset';
+  // ⚠️ 顺序有讲究：`uncertain` 优先于 `failed` —— 它的 status 就是 failed，
+  // 但"可能已计费"是更重的信息，必须盖过普通失败（否则用户会以为这条没花钱）。
+  if (node.task?.error?.disposition === 'uncertain') return 'uncertain';
+  return node.status ?? 'queued';
+}
+
+/** 是不是"需要人看一眼"的节点（失败 / 不确定）—— "只看异常"与失败计数共用它 */
+export function isProblemNode(node: LineageNode): boolean {
+  const status = lineageStatusClass(node);
+  return status === 'failed' || status === 'uncertain';
+}
+
 export function buildLineage(input: LineageInput): LineageGraph {
   const nodes = new Map<string, LineageNode>();
   const edges: LineageEdge[] = [];

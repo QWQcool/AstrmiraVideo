@@ -18,11 +18,19 @@ import type {
   TaskProgress,
 } from '@astrmira/shared';
 import { formatYuan, logActionLabel, parseTaskRef } from '@astrmira/shared';
-import { ApiError, fetchAssets, fetchHistory, fetchLogs, resolveMediaUrl } from '../lib/api';
+import {
+  ApiError,
+  fetchAssets,
+  fetchHistory,
+  fetchLogs,
+  fetchMetrics,
+  resolveMediaUrl,
+} from '../lib/api';
 import { useShell } from '../lib/shell';
 import {
   assetNodeId,
   buildLineage,
+  isProblemNode,
   layoutLineage,
   taskNodeId,
   type LineageEdgeKind,
@@ -511,6 +519,10 @@ export function CanvasView() {
   const [selected, setSelected] = useState<LineageNode | null>(null);
   /** 当前选中的节点 id（V2.19 / B64）：只用于"缩放到选区"，不参与任何编辑语义 */
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  /** 「只看异常」（V2.19 / B63）：把非异常节点调暗，而不是把图删成只剩几条 */
+  const [onlyProblems, setOnlyProblems] = useState(false);
+  /** 队列实况（来自 `/api/metrics` 的 `queue`，V2.16 / B53）—— 把"为什么要等"如实讲出来 */
+  const [queue, setQueue] = useState<{ queued: number; oldestAgeSec: number | null } | null>(null);
 
   const reload = useCallback(async (): Promise<void> => {
     try {
@@ -535,53 +547,33 @@ export function CanvasView() {
     void reload();
   }, [reload]);
 
+  /**
+   * 队列实况（V2.19 / B63 的 E5：排队语义对用户可见）。
+   *
+   * 读 `/api/metrics` 的 `queue`（V2.16 / B53 已有）—— **零新接口**。
+   * 本地轨并发为 1（防线 1）是硬约束："让你干等"和"告诉你为什么在等"是两种体验。
+   * 拉不到就**不显示**（它是锦上添花的信息，不该让画布报错）。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    fetchMetrics()
+      .then((data) => {
+        if (!cancelled) {
+          setQueue({ queued: data.queue.queued, oldestAgeSec: data.queue.oldestQueuedAgeSec });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setQueue(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, tasks.length]);
+
   const graph = useMemo(() => buildLineage({ tasks, assets }), [tasks, assets]);
   const layout = useMemo(() => layoutLineage(graph), [graph]);
 
-  /**
-   * 节点走 `useNodesState`（**受控 + 变更回写**），而不是直接塞 `nodes={...}` 常量。
-   *
-   * ⚠️ **这是 2026-10-10 发现的一个真缺陷的修复**（B64 实施时暴露）：
-   * 原先只传 `nodes` / `edges`、**没有 `onNodesChange`** —— 而 React Flow 的
-   * "拖摆位"与"选中"都靠 `onNodesChange` 把变更写回节点数组。缺了它，
-   * 文档里写的"节点可拖摆位（会话内）"**其实一直没生效**，选中态也落不下来
-   * （直接后果：B64 的「缩放到选区」永远是灰的）。
-   * 画布仍是**只读**：回写的只有位置与选中（`nodesConnectable=false` / `deleteKeyCode=null` 不变）。
-   */
-  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<LineageFlowNode>([]);
-
-  useEffect(() => {
-    setFlowNodes(
-      graph.nodes.map((node) => ({
-        id: node.id,
-        type: 'lineage' as const,
-        position: layout.positions[node.id] ?? { x: 0, y: 0 },
-        data: { node },
-      })),
-    );
-  }, [graph, layout, setFlowNodes]);
-
-  const flowEdges = useMemo<Edge[]>(
-    () =>
-      graph.edges.map((edge) => {
-        const style = EDGE_STYLE[edge.kind];
-        return {
-          id: edge.id,
-          source: edge.from,
-          target: edge.to,
-          type: 'smoothstep',
-          style: {
-            stroke: style.stroke,
-            ...(style.dash === undefined ? {} : { strokeDasharray: style.dash }),
-          },
-        };
-      }),
-    [graph],
-  );
-
-  const nodeTypes = useMemo(() => ({ lineage: LineageNodeCard }), []);
-
-  /** 节点索引（检查器判断"引用能不能跳"）+ 上下游邻接表（跳转入口） */
+  /** 节点索引（检查器判断"引用能不能跳"）+ 上下游邻接表（跳转入口 / "只看异常"的邻居判定） */
   const catalog = useMemo(
     () => new Map(graph.nodes.map((node) => [node.id, node])),
     [graph.nodes],
@@ -605,6 +597,80 @@ export function CanvasView() {
     }
     return { upstreamOf: upstream, downstreamOf: downstream };
   }, [graph.edges, catalog]);
+
+  // ── 执行态（V2.19 / 台账 B63）─────────────────────────────────────────────
+  /** 需要人看一眼的节点：失败 / 不确定（后者 = 可能已产生费用） */
+  const problemIds = useMemo(
+    () => new Set(graph.nodes.filter((node) => isProblemNode(node)).map((node) => node.id)),
+    [graph.nodes],
+  );
+  /** 异常节点的**直接邻居**：`只看异常`时它们保持正常亮度（好认出"这是谁的邻居"） */
+  const nearIds = useMemo(() => {
+    const near = new Set<string>();
+    for (const id of problemIds) {
+      for (const node of upstreamOf.get(id) ?? []) near.add(node.id);
+      for (const node of downstreamOf.get(id) ?? []) near.add(node.id);
+    }
+    return near;
+  }, [problemIds, upstreamOf, downstreamOf]);
+  /** 正在跑的节点的**入边**：让数据"流进来"（复用 tokens 里的 `flow`，只改 dashoffset） */
+  const flowingEdgeIds = useMemo(
+    () =>
+      new Set(
+        graph.edges
+          .filter((edge) => {
+            const target = catalog.get(edge.to);
+            return target?.status === 'running' || target?.status === 'queued';
+          })
+          .map((edge) => edge.id),
+      ),
+    [graph.edges, catalog],
+  );
+
+  /**
+   * 节点走 `useNodesState`（**受控 + 变更回写**），而不是直接塞 `nodes={...}` 常量。
+   *
+   * ⚠️ **这是 2026-10-10 发现的一个真缺陷的修复**（B64 实施时暴露）：
+   * 原先只传 `nodes` / `edges`、**没有 `onNodesChange`** —— 而 React Flow 的
+   * "拖摆位"与"选中"都靠 `onNodesChange` 把变更写回节点数组。缺了它，
+   * 文档里写的"节点可拖摆位（会话内）"**其实一直没生效**，选中态也落不下来
+   * （直接后果：B64 的「缩放到选区」永远是灰的）。
+   * 画布仍是**只读**：回写的只有位置与选中（`nodesConnectable=false` / `deleteKeyCode=null` 不变）。
+   */
+  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<LineageFlowNode>([]);
+
+  useEffect(() => {
+    setFlowNodes(
+      graph.nodes.map((node) => ({
+        id: node.id,
+        type: 'lineage' as const,
+        position: layout.positions[node.id] ?? { x: 0, y: 0 },
+        data: { node, near: nearIds.has(node.id) },
+      })),
+    );
+  }, [graph, layout, nearIds, setFlowNodes]);
+
+  const flowEdges = useMemo<Edge[]>(
+    () =>
+      graph.edges.map((edge) => {
+        const style = EDGE_STYLE[edge.kind];
+        return {
+          id: edge.id,
+          source: edge.from,
+          target: edge.to,
+          type: 'smoothstep',
+          // B63：正在跑的节点的入边走 `.cv-edge-flowing`（虚线流动 = "数据正流过来"）
+          ...(flowingEdgeIds.has(edge.id) ? { className: 'cv-edge-flowing' } : {}),
+          style: {
+            stroke: style.stroke,
+            ...(style.dash === undefined ? {} : { strokeDasharray: style.dash }),
+          },
+        };
+      }),
+    [graph, flowingEdgeIds],
+  );
+
+  const nodeTypes = useMemo(() => ({ lineage: LineageNodeCard }), []);
 
   const empty = !loading && tasks.length === 0;
 
@@ -655,7 +721,40 @@ export function CanvasView() {
               {graph.nodes.length} 个节点 · {graph.edges.length} 条派生边（列 = 派生顺序，行 = 时间倒序）。
               只读视图：点节点看详情与动作；拖动只是挪位置，不保存。
             </p>
-            <div className="cv-canvas" data-testid="cv-canvas">
+
+            {/* V2.19（B63）：异常计数 + 排队实况 —— 把"图里哪里不对"和"为什么要等"都讲出来 */}
+            <div className="cv-status" data-testid="cv-status">
+              <span className={problemIds.size === 0 ? 'cv-status-ok' : 'cv-status-bad'}>
+                {problemIds.size === 0 ? '✓ 没有失败/待核对的任务' : `⚠ ${problemIds.size} 个节点异常`}
+              </span>
+              {problemIds.size === 0 ? null : (
+                <button
+                  type="button"
+                  className="cv-tool"
+                  data-testid="cv-focus-problems"
+                  aria-pressed={onlyProblems}
+                  title="把非异常节点调暗（不删图），方便一眼看出哪里不对"
+                  onClick={() => setOnlyProblems((value) => !value)}
+                >
+                  {onlyProblems ? '显示全部' : '只看异常'}
+                </button>
+              )}
+              {queue === null || queue.queued === 0 ? null : (
+                <span className="cv-status-queue">
+                  队列中 {queue.queued} 条
+                  {queue.oldestAgeSec === null
+                    ? ''
+                    : `（最久已等 ${Math.round(queue.oldestAgeSec)}s）`}
+                  · 本机一次只跑 1 条
+                </span>
+              )}
+            </div>
+
+            <div
+              className="cv-canvas"
+              data-testid="cv-canvas"
+              data-focus={onlyProblems ? 'problems' : 'all'}
+            >
               <ReactFlow
                 nodes={flowNodes}
                 edges={flowEdges}

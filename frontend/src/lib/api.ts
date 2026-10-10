@@ -5,6 +5,7 @@ import {
   ErrorResponseSchema,
   GenerateResponseSchema,
   HealthResponseSchema,
+  MetricsResponseSchema,
   HistoryResponseSchema,
   KeyVerifyResponseSchema,
   LogDeleteResponseSchema,
@@ -33,6 +34,7 @@ import type {
   LogDeleteResponse,
   LogListResponse,
   LogQuery,
+  MetricsResponse,
   OperationResult,
   ProjectListResponse,
   ProjectResponse,
@@ -334,6 +336,16 @@ export function fetchCostSummary(query: {
   if (query.to !== undefined) params.set('to', String(query.to));
   const suffix = params.size === 0 ? '' : `?${params.toString()}`;
   return request(`/api/costs/summary${suffix}`, CostSummaryResponseSchema);
+}
+
+/**
+ * 运维快照（V2.16 / 台账 B53，CONTRACT §16）。
+ *
+ * 画布只用它的一小块（`queue`）—— 把"前面还有几条、最久等了多久"如实讲出来。
+ * 本地轨并发为 1（防线 1）是硬约束，"让你干等"与"告诉你为什么等"是两种体验。
+ */
+export function fetchMetrics(): Promise<MetricsResponse> {
+  return request('/api/metrics', MetricsResponseSchema);
 }
 
 /** 项目清单（V2.11 / B47，CONTRACT §12）：含用量（任务条数 / 资产个数） */

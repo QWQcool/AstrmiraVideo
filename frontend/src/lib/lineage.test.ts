@@ -4,7 +4,9 @@ import {
   LINEAGE_COLUMN_WIDTH,
   assetNodeId,
   buildLineage,
+  isProblemNode,
   layoutLineage,
+  lineageStatusClass,
   taskNodeId,
 } from './lineage';
 
@@ -229,6 +231,67 @@ describe('layoutLineage · 分层布局', () => {
  * 如果血缘层"另抄一份字段"，每加一个任务字段就要同步两处（迟早漏）。
  * 断言用 `toBe`（同一引用）而不是 `toMatchObject`，就是为了钉住"不复制"这件事。
  */
+/**
+ * V2.19（台账 B63）：执行态分类。
+ *
+ * 最要紧的一条：**不确定（可能已计费）必须盖过普通失败** —— 它的 status 也是 `failed`，
+ * 但"这条可能花了钱"是更重的信息（与成本台账 CONTRACT §13 同一口径）。
+ */
+describe('执行态分类（B63 执行态与失败链）', () => {
+  it('按 status 分类；ghost 与 asset 各有自己的类', () => {
+    const graph = buildLineage({
+      tasks: [
+        task({ taskId: 'ok', status: 'succeeded' }),
+        task({ taskId: 'bad', status: 'failed' }),
+        task({ taskId: 'run', status: 'running' }),
+        task({ taskId: 'wait', status: 'queued' }),
+        task({
+          taskId: 'ghost-user',
+          requestSnapshot: { ...SNAPSHOT, mode: 'i2v', assets: { firstFrameImage: 'gone' } },
+        }),
+      ],
+      assets: [asset({ assetId: 'asset-1' })],
+    });
+    const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+
+    expect(lineageStatusClass(byId.get(taskNodeId('ok'))!)).toBe('succeeded');
+    expect(lineageStatusClass(byId.get(taskNodeId('bad'))!)).toBe('failed');
+    expect(lineageStatusClass(byId.get(taskNodeId('run'))!)).toBe('running');
+    expect(lineageStatusClass(byId.get(taskNodeId('wait'))!)).toBe('queued');
+    expect(lineageStatusClass(byId.get(assetNodeId('gone'))!)).toBe('ghost');
+    expect(lineageStatusClass(byId.get(assetNodeId('asset-1'))!)).toBe('asset');
+  });
+
+  it('**不确定盖过失败**：disposition=uncertain 时即使 status=failed 也归 uncertain', () => {
+    const uncertain = task({
+      taskId: 'u',
+      status: 'failed',
+      error: { code: 'UNCERTAIN_RESULT', message: '结果不明', disposition: 'uncertain' },
+    });
+    const terminal = task({
+      taskId: 'f',
+      status: 'failed',
+      error: { code: 'UPSTREAM_ERROR', message: '上游 500', disposition: 'terminal' },
+    });
+    const graph = buildLineage({ tasks: [uncertain, terminal] });
+    const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+
+    expect(lineageStatusClass(byId.get(taskNodeId('u'))!)).toBe('uncertain');
+    expect(lineageStatusClass(byId.get(taskNodeId('f'))!)).toBe('failed');
+
+    // 两者都算"需要人看一眼"（画布的红点与「只看异常」用它）
+    expect(isProblemNode(byId.get(taskNodeId('u'))!)).toBe(true);
+    expect(isProblemNode(byId.get(taskNodeId('f'))!)).toBe(true);
+
+    // 正常任务与资产都不是问题节点
+    const normal = buildLineage({
+      tasks: [task({ taskId: 'ok' })],
+      assets: [asset({ assetId: 'asset-1' })],
+    });
+    for (const node of normal.nodes) expect(isProblemNode(node)).toBe(false);
+  });
+});
+
 describe('节点带上原始对象（B62 节点检查器）', () => {
   it('task 节点带原始 TaskProgress（同一引用，不是深拷贝）', () => {
     const source = task({ taskId: 'gen-a' });

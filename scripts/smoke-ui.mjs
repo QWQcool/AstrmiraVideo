@@ -34,6 +34,7 @@
  * 用法：`pnpm smoke:ui`（可选 `--headed` 观察浏览器、`--keep` 保留临时目录）
  */
 import { execFile, execFileSync, spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import {
   existsSync,
   mkdirSync,
@@ -88,6 +89,8 @@ async function frameLumaStdDev(file, atSec) {
 }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+/** 用于按显式路径加载后端依赖（`better-sqlite3` 只在 backend 的 node_modules 里） */
+const require = createRequire(import.meta.url);
 const BACKEND_ENTRY = path.join(ROOT, 'backend', 'dist', 'index.js');
 const FRONTEND_DIST = path.join(ROOT, 'frontend', 'dist');
 const SHOT_DIR = path.join(ROOT, 'artifacts', 'ui-smoke');
@@ -2083,6 +2086,69 @@ try {
   note('创作入口截图留档：artifacts/ui-smoke/create.png');
 
   console.log('\n[7e] 血缘画布（P4 / B42：L2 只读 DAG）');
+  // V2.19（台账 B63）：注入一条**失败**与一条**不确定**任务，用来验"执行态与失败链"。
+  //
+  // 为什么直接写临时库而不是走 HTTP 提交：生成路由有 **60s 防抖冷却**（防线 5），
+  // 而这里要验的是"画布怎么画异常节点"，不是生成链路 —— 再等 60s 只为了让第二个任务走同一条链路，
+  // 对这条断言毫无增益。**只动本脚本自己的临时库**（`DATA_DIR` 是 mkdtemp 出来的，跑完即弃）。
+  {
+    const Database = require(path.join(ROOT, 'backend', 'node_modules', 'better-sqlite3'));
+    const db = new Database(path.join(DATA_DIR, 'app.db'));
+    const now = Date.now();
+    const insert = db.prepare(
+      `INSERT OR REPLACE INTO tasks (task_id, track, provider, status, progress_percent,
+                                     request_snapshot, warnings, error, submitting, project_id,
+                                     created_at, updated_at)
+       VALUES (?, 'cloud', 'cloud-volcano-seedance', 'failed', 0, ?, ?, ?, 0, 'default', ?, ?)`,
+    );
+    const snapshot = JSON.stringify({
+      prompt: '冒烟：这条注定失败（用于验证画布的执行态）',
+      mode: 't2v',
+      aspectRatio: '16:9',
+      provider: 'cloud-volcano-seedance',
+    });
+    insert.run(
+      'smoke-failed-task',
+      snapshot,
+      JSON.stringify(['冒烟注入：上游返回 500']),
+      JSON.stringify({ code: 'UPSTREAM_ERROR', message: '上游 500（冒烟注入）', disposition: 'terminal' }),
+      now,
+      now,
+    );
+    insert.run(
+      'smoke-uncertain-task',
+      snapshot,
+      '[]',
+      // ⚠️ 错误码必须是契约 §6 字典里的值（12 个）：这里第一版写了 `UPSTREAM_TIMEOUT`，
+      // 结果读路径的 schema 校验直接把它挡了（画布拿到 500 → 一个节点都画不出来）。
+      // "已提交但无法确认结果"的**正确**取值是 `UNCERTAIN_RESULT`。
+      JSON.stringify({
+        code: 'UNCERTAIN_RESULT',
+        message: '上游超时，结果不明（冒烟注入）',
+        disposition: 'uncertain',
+      }),
+      now - 1000,
+      now - 1000,
+    );
+    // 两条终态留痕：真实链路里 `SqliteJobQueue` 到终态**一定会写**（CONTRACT §10 V2.4），
+    // 所以这里补上 —— 既是给画布检查器断言用，也是"注入了异常任务却不留痕"这种不自洽的避免
+    const log = db.prepare(
+      `INSERT INTO event_log (ts, method, path, action, status_code, task_id, disposition)
+       VALUES (?, 'TASK', ?, ?, ?, ?, ?)`,
+    );
+    log.run(now, '/api/tasks/smoke-failed-task', 'task.fail', 200, 'smoke-failed-task', 'terminal');
+    log.run(
+      now - 1000,
+      '/api/tasks/smoke-uncertain-task',
+      'task.uncertain',
+      200,
+      'smoke-uncertain-task',
+      'uncertain',
+    );
+    db.close();
+    note('已注入 1 条失败 + 1 条不确定任务（验证执行态与失败链；只动临时库）');
+  }
+
   await page.goto(`${baseUrl}/#/canvas`, { waitUntil: 'load' });
   await page.waitForFunction(() => document.querySelectorAll('.cv-node').length >= 1, {
     timeout: 15_000,
@@ -2131,6 +2197,38 @@ try {
   assert(
     (await page.locator('.cv-drawer-actions .wb-btn').count()) >= 1,
     '抽屉里有动作入口（复用参数 / 送剪辑台 / 设为视频参考…）',
+  );
+
+  // V2.19（台账 B63）：执行态与失败链（上面注入的失败/不确定任务必须被画出来）
+  const statusLine = page.getByTestId('cv-status');
+  assert((await statusLine.count()) === 1, '状态条渲染（异常计数 + 只看异常 + 排队实况）');
+  assert(
+    (await statusLine.innerText()).includes('2 个节点异常'),
+    `异常计数正确（实际「${(await statusLine.innerText()).replace(/\n/g, ' ')}」）`,
+  );
+  assert(
+    (await page.locator('.cv-node[data-status="failed"]').count()) >= 1 &&
+      (await page.locator('.cv-node[data-status="uncertain"]').count()) >= 1,
+    '失败与不确定两类节点都如实标出（不确定 = 可能已产生费用）',
+  );
+  assert(
+    (await page.locator('.cv-node-problem').count()) === 2,
+    '异常节点带 .cv-node-problem（红边框 + 红状态点）',
+  );
+
+  // 「只看异常」：不删图，只把无关节点调暗
+  const focusToggle = page.getByTestId('cv-focus-problems');
+  await focusToggle.click();
+  await page.waitForTimeout(250);
+  assert(
+    (await page.locator('.cv-canvas').getAttribute('data-focus')) === 'problems',
+    '点「只看异常」→ 画布进入聚焦态（data-focus=problems）',
+  );
+  await focusToggle.click();
+  await page.waitForTimeout(250);
+  assert(
+    (await page.locator('.cv-canvas').getAttribute('data-focus')) === 'all',
+    '再点一次 → 回到全部（可逆，不删节点）',
   );
 
   // V2.19（台账 B62）：节点检查器 —— 点节点能看到"这条片子的一切"
