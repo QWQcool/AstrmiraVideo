@@ -914,3 +914,67 @@ token = (输入时长 + 输出时长) × 宽 × 高 × 帧率 ÷ 1024        // 
 - **本地轨的 0 元不含电费与设备折旧**：口径写在 `formula` 里，不假装它是"全成本"。
 - **按天分桶用服务端本地时区**（不是 UTC）：跨时区部署时"今天"的定义会随机器走。
 
+---
+
+## 14. 交付物：命名、平台规格与归档清单（V2.13 新增；台账 B49）
+
+> **没有新路由** —— 交付包**完全在浏览器端组装**（契约层面只约定"包长什么样"）：
+> 成片与封面本来就在同源 `/media/*`，让 4 核小服务器去内存里拼几十 MB 的 zip 是拿服务器换客户的本机 CPU
+> （与 §11-2 的"渲染在浏览器"同一取向）。因此本节是**格式契约**，不是接口契约。
+
+**三项口径（都是"不假装"）**：
+
+1. **不转码**。平台规格预设在这里是**命名与校验**（画幅是否匹配、时长是否超限、分辨率是否偏低），
+   不是"帮你把 16:9 压成 9:16"。告警**只提示、不阻断**（客户有权按自己的判断交付）。
+2. **每条预设都带 `basis`**（口径从哪来），与 §13 的单价表同一条纪律：**未经我方实测的数字不许当结论**。
+3. **清单如实标注缺什么**：`packaged: false`（清单里有、包里没有）、`warnings[]`（规格提示）、
+   `notes[]`（金额口径 + 未转码声明）。**交付包最糟糕的形态是"少了一条但没人知道"。**
+
+**命名模板**（`buildDeliverableFileName` / `buildDeliverablePackageName`）：
+
+```
+成片：  <项目>-<YYYYMMDD>-<序号>-<档位标签>-<语义>.<ext>
+包：    <项目>-<YYYYMMDD>-<档位标签>-<N>条.zip
+清单：  交付清单.json
+```
+
+- **日期进文件名**：交付最常见的返工理由是"哪一版是最新的"，而文件系统只保证"修改时间"，
+  客户把文件拷来拷去、用微信传之后时间戳早就没有意义了；
+- **序号宽度按总数自适应**（9 条 → `1`；12 条 → `01`）→ 文件管理器按名字排序就是交付顺序；
+- **归一化规则**：一段连续的"非字母非数字"折成单个 `-`（`\p{L}` / `\p{N}` 之外的一切，
+  含 Windows 非法字符、空格、各类中英文标点），首尾横线与点去掉、超长截断 ——
+  保证文件名**直接落进 Windows 与 macOS 都不报错**，且不会出现 `双十一-·-主推片` 这种别扭结果。
+
+**ZIP 子集**（`frontend/src/lib/zipStore.ts`）：**store-only（不压缩）** + UTF-8 文件名标志（`0x0800`）+
+DOS 时间戳（1980~2107 夹紧）+ 同名自动去重（`a (2).mp4`）。**不做 ZIP64**：单文件与总量超 4GB 时
+**如实报错**，而不是写一个坏包。
+
+```ts
+export interface DeliverableManifest {   // 契约形状；schema = DeliverableManifestSchema
+  manifestVersion: 1;
+  generatedAt: number;
+  project: { projectId: string; name: string };
+  preset: { presetId: string; label: string; aspectRatio: string; width: number; height: number; maxDurationSec: number };
+  items: Array<{
+    taskId: string;
+    fileName: string;          // 包内成片文件名（与 §14 模板一致）
+    prompt: string;
+    mode: string;
+    aspectRatio: string;
+    durationSec: number;       // 请求时长（与 §13 成本口径同一来源）
+    createdAt: number | null;
+    packaged: boolean;         // 视频是否真的进了包
+    projectIncluded: boolean;  // 剪辑工程 JSON 是否随包（仅剪辑产物）
+    assets: string[];          // requestSnapshot.assets 的原样快照（可复现的关键）
+    extractedAssetCount: number;
+    costYuan: number | null;   // 来自 §13；null = 未结算（**不是 0**）
+    warnings: string[];        // 规格提示（只提示不阻断）
+  }>;
+  notes: string[];             // 金额口径 + "未做平台转码" + 清单/包条数差异
+}
+```
+
+**本版不做（如实登记）**：① **水印开关**（成片水印在上游侧由 `--watermark` 控制、当前固定 `false`；
+剪辑台导出的水印需要渲染链路加一层，属独立小活）；② **转码**（改画幅/码率/时长对齐平台）；
+③ 交付包的**断点续传 / 分片**（大包一次性内存拼装，几十 MB 量级够用）。
+

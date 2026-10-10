@@ -321,3 +321,68 @@ describe('终态结算（SqliteJobQueue.complete）', () => {
     db.close();
   });
 });
+
+/**
+ * 时间区间的**上界**（`?to=` / `options.to`）。
+ *
+ * 为什么单独一组：下界（`from`）被"近 N 天"用得很多，上界只有"导出某段区间"才用得上 ——
+ * 于是它成了覆盖率门禁里唯一挂着的分支（`taskStore.ts` 的 `to` 两条 if）。
+ * 这里把 store 与路由两层都钉住：**少了它，区间过滤就只剩半边**。
+ */
+describe('时间区间上界（to）', () => {
+  let db: Db;
+
+  beforeEach(() => {
+    db = openDatabase(':memory:');
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('store 层：listCostRows 与 countUncertain 都按 to 截断', async () => {
+    const { store } = await buildApp(db);
+    const early = NOW - 2 * 86_400_000;
+    seed(store, { taskId: 'old', projectId: 'default', cost: cloudCost(), createdAt: early });
+    seed(store, {
+      taskId: 'new',
+      projectId: 'default',
+      cost: cloudCost(),
+      createdAt: NOW,
+      uncertain: true,
+    });
+
+    // 上界卡在"早"与"新"之间 → 只剩下早的那条
+    const bounded = store.listCostRows({ from: 0, to: early + 1000, limit: 10 });
+    expect(bounded).toHaveLength(1);
+    expect(bounded[0]!.projectId).toBe('default');
+    expect(store.countUncertain({ from: 0, to: early + 1000 })).toBe(0);
+    // 只给下界 → 两条都在（新那条是 uncertain，但仍是 succeeded=false，故不进 listCostRows）
+    expect(store.countUncertain({ from: 0 })).toBe(1);
+    expect(store.listCostRows({ from: 0, limit: 10 })).toHaveLength(1);
+  });
+
+  it('路由层：?from 与 ?to 一起下发，且 range 原样回显（客户端能确认它按什么区间统计的）', async () => {
+    const { app, store } = await buildApp(db);
+    const early = NOW - 2 * 86_400_000;
+    seed(store, { taskId: 'old', projectId: 'default', cost: cloudCost(), createdAt: early });
+    seed(store, {
+      taskId: 'new',
+      projectId: 'default',
+      cost: cloudCost(),
+      createdAt: NOW,
+      uncertain: true,
+    });
+
+    const payload = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/costs/summary?from=0&to=${early + 1000}`,
+      })
+    ).json();
+    expect(payload.range).toEqual({ from: 0, to: early + 1000 });
+    expect(payload.taskCount).toBe(1);
+    expect(payload.pricedTaskCount).toBe(1);
+    expect(payload.uncertainCount).toBe(0);
+  });
+});

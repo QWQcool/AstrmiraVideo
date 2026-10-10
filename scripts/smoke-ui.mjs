@@ -1496,6 +1496,99 @@ try {
     `界面上未结算显示 0 条（实际「${costHeadline.unsettled}」）`,
   );
 
+  console.log('\n[6k] 交付包（V2.13 / 台账 B49：多选 + 命名模板 + 规格校验 + 归档清单）');
+
+  /** 最小 ZIP 读回（中央目录条目名）—— 与前端 zipStore 的写入口径对拍 */
+  function readZipNames(buffer) {
+    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    for (let i = buffer.length - 22; i >= 0; i -= 1) {
+      if (view.getUint32(i, true) !== 0x0605_4b50) continue;
+      const count = view.getUint16(i + 10, true);
+      let cursor = view.getUint32(i + 16, true);
+      const names = [];
+      for (let index = 0; index < count; index += 1) {
+        if (view.getUint32(cursor, true) !== 0x0201_4b50) throw new Error('中央目录损坏');
+        const length = view.getUint16(cursor + 28, true);
+        names.push(new TextDecoder().decode(buffer.subarray(cursor + 46, cursor + 46 + length)));
+        cursor += 46 + length;
+      }
+      return names;
+    }
+    throw new Error('不是有效的 ZIP');
+  }
+
+  await page.evaluate(() => { location.hash = '#/library'; });
+  await page.waitForSelector('.lib-card', { timeout: 15_000 });
+  const cardCount = await page.locator('.lib-card').count();
+  assert(cardCount >= 1, `视频库有可交付的成片（${cardCount} 条）`);
+
+  // 未勾选时入口置灰（灰按钮上写明"为什么要先勾选"）
+  assert(
+    await page.locator('.dl-open').isDisabled(),
+    '未勾选任何成片时「📦 交付包」置灰',
+  );
+
+  const picks = page.locator('.lib-card .dl-pick');
+  const pickTargets = Math.min(cardCount, 2);
+  for (let index = 0; index < pickTargets; index += 1) {
+    await picks.nth(index).click();
+  }
+  const pickedCount = await page.evaluate(
+    () => document.querySelectorAll('.lib-card .dl-pick[data-picked="1"]').length,
+  );
+  assert(pickedCount === pickTargets, `勾选 ${pickTargets} 条（渲染事实 data-picked=1 有 ${pickedCount} 个）`);
+  assert(await page.locator('.dl-open').isEnabled(), '勾选后「📦 交付包」可用');
+
+  await page.locator('.dl-open').click();
+  await page.waitForSelector('.dl-panel', { timeout: 5_000 });
+  assert(true, '交付面板打开（预设 / 项目前缀 / 四项内容 / 命名示例）');
+  assert(
+    (await page.locator('.dl-preset option').count()) === 5,
+    `平台规格预设五档齐全（实际 ${await page.locator('.dl-preset option').count()}）`,
+  );
+  const nameHint = await page.locator('.dl-hint').innerText();
+  assert(
+    nameHint.includes('命名示例') && nameHint.includes('抖音竖屏'),
+    `命名示例按模板展示（「${nameHint}」）`,
+  );
+
+  const deliverDownload = page.waitForEvent('download', { timeout: 60_000 });
+  await page.locator('[data-testid="dl-build"]').click();
+  const deliverFile = await deliverDownload;
+  const deliverPath = path.join(EXPORT_DIR, 'deliverable.zip');
+  await deliverFile.saveAs(deliverPath);
+  const suggested = deliverFile.suggestedFilename();
+  assert(
+    /^.+-\d{8}-抖音竖屏-\d+条\.zip$/.test(suggested),
+    `包名符合模板（实际「${suggested}」）`,
+  );
+
+  const zipBytes = readFileSync(deliverPath);
+  const zipNames = readZipNames(new Uint8Array(zipBytes));
+  assert(zipNames.length >= 2, `包里有 ${zipNames.length} 个条目`);
+  assert(
+    zipNames.includes('交付清单.json'),
+    `归档清单随包（${zipNames.slice(0, 4).join(' / ')}）`,
+  );
+  assert(
+    zipNames.filter((name) => name.endsWith('.mp4')).length === pickTargets,
+    `成片数量与勾选一致（${zipNames.filter((name) => name.endsWith('.mp4')).length} / ${pickTargets}）`,
+  );
+  assert(
+    zipNames.some((name) => /-\d{8}-0?1-抖音竖屏-/.test(name)),
+    '成片命名带日期戳与序号（交付顺序按名字排序即可读）',
+  );
+  await page.waitForFunction(
+    () => document.body.innerText.includes('交付包已生成'),
+    null,
+    { timeout: 10_000 },
+  );
+  assert(true, '界面回报「交付包已生成」（含包名与文件数）');
+  assert(
+    (await page.locator('.dl-panel').count()) === 0,
+    '打包成功后交付面板自动收起（界面不会停在过期计划上）',
+  );
+
   console.log('\n[7] 操作日志（V2.1，CONTRACT §10）');
   // 上面 [6] 段用界面真的提交过一条任务 → 它必须已经躺在操作日志里。
   // 这条断言把"界面动作 → 服务端留痕"整条链钉住（也是这次故障排错最需要的能力）。

@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { EDIT_OPERATION_LABELS, describeEditOrigin } from '@astrmira/shared';
+import {
+  DEFAULT_PLATFORM_PRESET_ID,
+  EDIT_OPERATION_LABELS,
+  PLATFORM_PRESETS,
+  describeEditOrigin,
+  findPlatformPreset,
+} from '@astrmira/shared';
 import type { HistoryResponse, TaskProgress } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
 import { ApiError, deleteHistory, fetchHistory, resolveMediaUrl } from '../lib/api';
+import {
+  buildDeliverableZip,
+  planDeliverablePackage,
+  saveDeliverable,
+} from '../lib/deliverablePackage';
 import { useShell } from '../lib/shell';
 import {
   LIBRARY_SORT_LABELS,
@@ -63,7 +74,19 @@ function mediaHref(url: string | undefined): string | undefined {
 export function LibraryView() {
   const route = useHashRoute();
   // V2.11（B47）：视频库按当前项目过滤（切项目即重拉）
-  const { projectId } = useShell();
+  const { projectId, projects } = useShell();
+  // ── 交付包（V2.13 / 台账 B49）：多选 + 规格预设 + 命名 + 归档清单 ──
+  const [pickedIds, setPickedIds] = useState<string[]>([]);
+  const [deliverOpen, setDeliverOpen] = useState(false);
+  const [presetId, setPresetId] = useState<string>(DEFAULT_PLATFORM_PRESET_ID);
+  const [deliverProjectName, setDeliverProjectName] = useState('');
+  const [includeVideo, setIncludeVideo] = useState(true);
+  const [includeProject, setIncludeProject] = useState(true);
+  const [includeCover, setIncludeCover] = useState(true);
+  const [includeManifest, setIncludeManifest] = useState(true);
+  const [deliverBusy, setDeliverBusy] = useState(false);
+  const [deliverProgress, setDeliverProgress] = useState<string | null>(null);
+  const [deliverError, setDeliverError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -107,6 +130,74 @@ export function LibraryView() {
 
   // 抽屉内容从**全量**里找：改筛选不该把已经打开的详情弄丢
   const selected = allItems.find((item) => item.taskId === selectedId) ?? null;
+
+  // ── 交付包（V2.13 / B49）──
+  // 勾选的是"当前列表里选中的那些"（筛掉已删除 / 已不在列表的 id —— 陈旧勾选不该让打包失败）
+  const pickedTasks = useMemo(
+    () => items.filter((item) => pickedIds.includes(item.taskId)),
+    [items, pickedIds],
+  );
+  const activeProject = projects.find((project) => project.projectId === projectId) ?? null;
+  const effectiveProjectName = deliverProjectName.trim() === ''
+    ? (activeProject?.name ?? '交付')
+    : deliverProjectName.trim();
+  const chosenPreset = findPlatformPreset(presetId) ?? PLATFORM_PRESETS[0]!;
+  const deliverPlan = useMemo(
+    () =>
+      planDeliverablePackage(pickedTasks, {
+        preset: chosenPreset,
+        projectName: effectiveProjectName,
+        projectId,
+        includeVideo,
+        includeProject,
+        includeCover,
+        includeManifest,
+      }),
+    [
+      pickedTasks,
+      chosenPreset,
+      effectiveProjectName,
+      projectId,
+      includeVideo,
+      includeProject,
+      includeCover,
+      includeManifest,
+    ],
+  );
+  /** 有条目带规格提示时如实汇总（**不阻断**：客户有权按自己的判断交付） */
+  const warnedItems = deliverPlan.items.filter((item) => item.warnings.length > 0);
+
+  function togglePick(taskId: string): void {
+    setPickedIds((prev) =>
+      prev.includes(taskId) ? prev.filter((id) => id !== taskId) : [...prev, taskId],
+    );
+  }
+
+  async function handleBuildDeliverable(): Promise<void> {
+    if (deliverBusy) return;
+    setDeliverBusy(true);
+    setDeliverError(null);
+    setDeliverProgress('准备中…');
+    try {
+      const built = await buildDeliverableZip(
+        deliverPlan,
+        { includeVideo, includeProject, includeCover, includeManifest },
+        (progress) => setDeliverProgress(progress.label),
+      );
+      saveDeliverable(built);
+      setNotice(
+        `交付包已生成：${built.packageName}（${built.entryNames.length} 个文件，含 ${
+          includeManifest ? '交付清单' : '无清单'
+        }）。`,
+      );
+      setDeliverOpen(false);
+    } catch (caught) {
+      setDeliverError(describeError(caught));
+    } finally {
+      setDeliverBusy(false);
+      setDeliverProgress(null);
+    }
+  }
 
   async function handleDelete(taskId: string): Promise<void> {
     setDeletingId(taskId);
@@ -193,7 +284,158 @@ export function LibraryView() {
           {items.length} / {allItems.length} 条
           {history === null ? '' : ` · 共 ${formatBytes(history.storage.totalBytes)}`}
         </span>
+
+        {/* 交付包入口（V2.13 / B49）：勾选 ≥1 条才可用 —— 灰按钮上写明为什么要先勾选 */}
+        <button
+          type="button"
+          className="wb-btn wb-btn-gold dl-open"
+          disabled={pickedTasks.length === 0}
+          title={
+            pickedTasks.length === 0
+              ? '先在卡片上勾选要交付的成片（卡片右下角的 ☐）'
+              : '把选中的成片打成交付包（命名 + 规格校验 + 归档清单）'
+          }
+          onClick={() => {
+            setDeliverError(null);
+            setDeliverOpen(true);
+          }}
+        >
+          📦 交付包{pickedTasks.length === 0 ? '' : `（${pickedTasks.length}）`}
+        </button>
       </div>
+
+      {deliverOpen && pickedTasks.length > 0 ? (
+        <section className="wb-panel dl-panel" role="dialog" aria-label="交付包">
+          <div className="wb-field-head">
+            <Eyebrow tone="gold" as="h2">
+              交付包
+            </Eyebrow>
+            <span className="wb-note">
+              {pickedTasks.length} 条 · 包内 {deliverPlan.plannedEntryCount} 个文件 ·{' '}
+              {deliverPlan.packageName}
+            </span>
+            <button
+              type="button"
+              className="wb-btn lib-icon"
+              aria-label="关闭交付面板"
+              onClick={() => setDeliverOpen(false)}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="dl-row">
+            <label className="wb-field">
+              <span className="wb-label">平台规格</span>
+              <select
+                className="wb-input dl-preset"
+                value={presetId}
+                aria-label="平台规格预设"
+                onChange={(event) => setPresetId(event.target.value)}
+              >
+                {PLATFORM_PRESETS.map((preset) => (
+                  <option key={preset.presetId} value={preset.presetId}>
+                    {preset.label}（{preset.aspectRatio} · {preset.width}×{preset.height} · ≤
+                    {preset.maxDurationSec}s）
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="wb-field">
+              <span className="wb-label">项目前缀（命名用）</span>
+              <input
+                className="wb-input dl-project"
+                value={deliverProjectName}
+                maxLength={30}
+                placeholder={activeProject?.name ?? '交付'}
+                aria-label="项目前缀"
+                onChange={(event) => setDeliverProjectName(event.target.value)}
+              />
+            </label>
+          </div>
+
+          <p className="wb-note dl-note">
+            {chosenPreset.note} —— 本工具**只做命名与规格校验，不转码**（口径：{chosenPreset.basis}）。
+          </p>
+
+          <div className="dl-checks">
+            <label>
+              <input
+                type="checkbox"
+                checked={includeVideo}
+                onChange={(event) => setIncludeVideo(event.target.checked)}
+              />
+              成片 MP4
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={includeProject}
+                onChange={(event) => setIncludeProject(event.target.checked)}
+              />
+              剪辑工程 JSON（仅剪辑产物有）
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={includeCover}
+                onChange={(event) => setIncludeCover(event.target.checked)}
+              />
+              封面图
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={includeManifest}
+                onChange={(event) => setIncludeManifest(event.target.checked)}
+              />
+              交付清单.json
+            </label>
+          </div>
+
+          {warnedItems.length === 0 ? null : (
+            <div className="wb-uncertain dl-warn">
+              <span className="wb-uncertain-title">
+                {warnedItems.length} 条与所选规格不一致（**只提示，不阻断**）
+              </span>
+              <ul className="dl-warn-list">
+                {warnedItems.slice(0, 3).map((item) => (
+                  <li key={item.task.taskId}>
+                    {item.videoFileName}：{item.warnings.join('；')}
+                  </li>
+                ))}
+              </ul>
+              {warnedItems.length > 3 ? (
+                <span className="wb-note">另有 {warnedItems.length - 3} 条，同类提示见交付清单。</span>
+              ) : null}
+            </div>
+          )}
+
+          {deliverError === null ? null : (
+            <div className="wb-uncertain dl-warn">
+              <span className="wb-uncertain-title">打包失败</span>
+              <span className="wb-uncertain-body">{deliverError}</span>
+            </div>
+          )}
+
+          <div className="dl-actions">
+            <span className="wb-note dl-hint">
+              {deliverProgress === null
+                ? `命名示例：${deliverPlan.items[0]?.videoFileName ?? '—'}`
+                : deliverProgress}
+            </span>
+            <button
+              type="button"
+              className="wb-btn wb-btn-gold"
+              data-testid="dl-build"
+              disabled={deliverBusy || deliverPlan.plannedEntryCount === 0}
+              onClick={() => void handleBuildDeliverable()}
+            >
+              {deliverBusy ? '打包中…' : '📦 生成并下载'}
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <div className="lib-body" data-drawer={selected === null ? '0' : '1'}>
         <div className="lib-grid">
@@ -243,6 +485,17 @@ export function LibraryView() {
                     {STATUS_TEXT[task.status]} · {formatRelativeTime(task.createdAt, Date.now())}
                   </span>
                   <span className="lib-acts">
+                    {/* 交付包多选（V2.13 / B49）：data-picked 是给冒烟读的渲染事实 */}
+                    <button
+                      type="button"
+                      className={`wb-btn lib-icon dl-pick${pickedIds.includes(task.taskId) ? ' dl-pick-on' : ''}`}
+                      aria-pressed={pickedIds.includes(task.taskId)}
+                      data-picked={pickedIds.includes(task.taskId) ? '1' : '0'}
+                      title="加入 / 移出交付包"
+                      onClick={() => togglePick(task.taskId)}
+                    >
+                      {pickedIds.includes(task.taskId) ? '☑' : '☐'}
+                    </button>
                     <button
                       type="button"
                       className="wb-btn lib-icon"
