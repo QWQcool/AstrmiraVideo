@@ -13,7 +13,15 @@ import { resolveClientIp } from './rateLimit.js';
  * 生产护栏：`NODE_ENV=production` 且未配置 Token → **启动即拒绝**（不允许匿名刷付费接口）。
  */
 
-export const ALWAYS_PUBLIC_PATHS: readonly string[] = ['/api/health'];
+/**
+ * 免鉴权名单（**任何来源**均可访问）。
+ *
+ * V2.16（台账 B53）新增 `/api/health/live`：**存活探针必须能被编排器无凭据访问**
+ * （K8s 的 livenessProbe 不会带 Bearer）。`/api/health/ready` 与 `/api/metrics`
+ * **刻意不在名单里** —— 它们会暴露部署内部细节（磁盘、数据库体积、积压），
+ * 探针自己带上 `Authorization: Bearer <PUBLIC_API_TOKEN>` 即可（写在 GUIDE §十一）。
+ */
+export const ALWAYS_PUBLIC_PATHS: readonly string[] = ['/api/health', '/api/health/live'];
 
 export function isLoopbackIp(ip: string): boolean {
   return (

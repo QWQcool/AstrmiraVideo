@@ -23,9 +23,14 @@ import { createAssetRoutes } from './routes/assets.js';
 import { createEnhanceRoutes } from './routes/enhance.js';
 import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
+// V2.16（B53）：告警阈值走 shared 的**同一份**解析（env 变量名也定义在那边，一处改、两处生效）
+import { readThresholdsFromEnv, resolveThresholds } from '@astrmira/shared';
 import { createCostRoutes } from './routes/costs.js';
+import { createObservabilityRoutes } from './routes/observability.js';
 import { createWebhookRoutes } from './routes/webhooks.js';
 import { createHistoryRoutes } from './routes/history.js';
+// V2.16（B53）：readiness 的媒体工具自检（ffmpeg/ffprobe 缺失不降级，但如实陈述）
+import { assertMediaToolsAvailable } from './lib/ffmpeg.js';
 import { createKeyVerifyRoutes } from './routes/keysVerify.js';
 import { createLogRoutes } from './routes/logs.js';
 import { createProjectRoutes } from './routes/projects.js';
@@ -50,7 +55,7 @@ import { registerRequestLog } from './server/requestLog.js';
 import { registerSecurityHeaders } from './server/securityHeaders.js';
 import { registerSpa } from './server/spa.js';
 import { registerStaticOutputs, resolveOutputsDir } from './server/staticOutputs.js';
-import { startStorageEvictor } from './server/storageEvict.js';
+import { resolveOutputsMaxBytes, startStorageEvictor } from './server/storageEvict.js';
 import { createAssetUrlResolver, createTaskVideoUrlResolver } from './store/assets.js';
 import { openDatabase } from './store/db.js';
 import { EventLogStore } from './store/eventLog.js';
@@ -349,6 +354,28 @@ export async function buildApp() {
   await app.register(createCostRoutes({ store, projects }));
   // V2.15（B51 片 A）：Webhook 订阅管理（终态回调；secret 只回显一次，URL 过 SSRF 准入）
   await app.register(createWebhookRoutes({ webhooks, projects }));
+  // V2.16（B53）：可观测 —— live/ready 分级 + 运维快照（告警阈值可 env 覆盖）
+  await app.register(
+    createObservabilityRoutes({
+      tasks: store,
+      webhooks,
+      outputsDir: resolveOutputsDir(),
+      // 与淘汰器**共用同一个上限解析**（否则会出现"面板说没超、淘汰器已经在删"）
+      maxBytes: resolveOutputsMaxBytes(),
+      thresholds: resolveThresholds(readThresholdsFromEnv(process.env)),
+      checkMediaTools: async () => {
+        try {
+          await assertMediaToolsAvailable();
+          return { ok: true, detail: 'ffmpeg / ffprobe 可用（本地轨、缩略图、抽帧依赖它）' };
+        } catch (error) {
+          return {
+            ok: false,
+            detail: `ffmpeg / ffprobe 不可用：${error instanceof Error ? error.message : String(error)}（云端轨不受影响；本地轨与缩略图会失败）`,
+          };
+        }
+      },
+    }),
+  );
   await app.register(createLogRoutes({ store: eventLog, limiter: logsLimiter }));
   await registerStaticOutputs(app);
 

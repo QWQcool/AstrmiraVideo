@@ -513,6 +513,53 @@ try {
   await page.evaluate(() => { location.hash = '#/workbench'; });
   await page.waitForSelector('.wb-main', { timeout: 5_000 });
 
+  console.log('\n[1e] 可观测（V2.16 / 台账 B53：live / ready / metrics 三端点分工）');
+  const liveRes = await fetch(`${baseUrl}/api/health/live`);
+  const live = await liveRes.json();
+  assert(
+    liveRes.ok && live.status === 'ok' && live.uptimeSec >= 0,
+    `存活探针秒回且带 uptime（uptimeSec=${live.uptimeSec}）`,
+  );
+
+  const readyRes = await fetch(`${baseUrl}/api/health/ready`);
+  const ready = await readyRes.json();
+  assert(
+    readyRes.status === 200 && ready.status === 'ready',
+    `就绪探针 200 ready（${ready.checks.length} 项检查）`,
+  );
+  const readyIds = ready.checks.map((item) => item.id);
+  assert(
+    readyIds.includes('database') && readyIds.includes('storage.writable'),
+    `就绪检查含数据库可读与输出目录可写（${readyIds.join(' / ')}）`,
+  );
+  assert(
+    ready.checks.every((item) => typeof item.required === 'boolean'),
+    '每项检查都标了 required（决定"失败是否该停止导流"）',
+  );
+
+  const metricsRes = await fetch(`${baseUrl}/api/metrics`);
+  const metrics = await metricsRes.json();
+  assert(
+    metricsRes.ok &&
+      typeof metrics.tasks.byStatus.succeeded === 'number' &&
+      Array.isArray(metrics.alerts),
+    `指标快照可读（任务 ${metrics.tasks.byStatus.succeeded + metrics.tasks.byStatus.failed} 条终态 · 告警 ${metrics.alerts.length} 条）`,
+  );
+  assert(
+    metrics.thresholds.storageWarnRatio > 0 && metrics.storage.maxBytes > 0,
+    `快照回显生效阈值与容量上限（storageWarnRatio=${metrics.thresholds.storageWarnRatio} · maxBytes=${metrics.storage.maxBytes}）`,
+  );
+  assert(
+    metrics.alerts.every((alert) => alert.value !== null && alert.threshold !== null),
+    '每条告警都带可复核的 value / threshold',
+  );
+
+  // 探针不该拖慢：live 端点必须在极短时间内回（它零依赖，是"进程活着"的唯一判据）
+  const liveStart = Date.now();
+  await fetch(`${baseUrl}/api/health/live`);
+  const liveMs = Date.now() - liveStart;
+  assert(liveMs < 1000, `存活探针足够快（${liveMs}ms < 1000ms，零依赖）`);
+
   console.log('\n[2] 首屏与后端真的通了（同源 /api/providers/status）');
   await page.getByText('服务在线').waitFor({ timeout: 10_000 });
   assert(true, '头部徽章进入「服务在线」（说明 /api 请求成功了：CSP + 鉴权都没拦）');

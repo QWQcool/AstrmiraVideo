@@ -6,6 +6,7 @@ import type {
   TaskProgress,
   VideoGenerateRequest,
 } from '@astrmira/shared';
+import { statSync } from 'node:fs';
 import { DEFAULT_PROJECT_ID } from '@astrmira/shared';
 import type { Db } from './db.js';
 
@@ -496,6 +497,66 @@ export class TaskStore {
       .prepare('SELECT * FROM tasks WHERE status = ? ORDER BY created_at ASC LIMIT ?')
       .all(status, limit) as TaskRow[];
     return rows.map(rowToRecord);
+  }
+
+  /**
+   * 按状态计数（V2.16 / 台账 B53）：给 `since` 就只统计窗口内的（近 24h 成功率用）。
+   * **五种状态永远都在结果里**（0 也要出现）—— 缺键会让调用方写出 `?? 0`，
+   * 而那正是"同一个数字有两种写法"的开端。
+   */
+  countByStatus(options: { since?: number } = {}): Record<TaskProgress['status'], number> {
+    const rows = (
+      options.since === undefined
+        ? this.db.prepare('SELECT status, COUNT(*) AS count FROM tasks GROUP BY status').all()
+        : this.db
+            .prepare(
+              'SELECT status, COUNT(*) AS count FROM tasks WHERE created_at >= ? GROUP BY status',
+            )
+            .all(options.since)
+    ) as Array<{ status: string; count: number }>;
+
+    const result: Record<TaskProgress['status'], number> = {
+      queued: 0,
+      running: 0,
+      succeeded: 0,
+      failed: 0,
+      cancelled: 0,
+    };
+    // 用集合查而不是五连 `||`：一是可读，二是**分支覆盖**上的实话 ——
+    // 五连或会让"最后那个状态没被数据命中"变成一条永远走不到的分支。
+    const known: readonly string[] = ['queued', 'running', 'succeeded', 'failed', 'cancelled'];
+    for (const row of rows) {
+      if (known.includes(row.status)) {
+        result[row.status as TaskProgress['status']] = row.count;
+      }
+    }
+    return result;
+  }
+
+  /** 某状态里**最老的**一条的创建时间（队列积压 / 任务卡住的判据；没有则 null） */
+  oldestCreatedAt(status: TaskProgress['status']): number | null {
+    const row = this.db
+      .prepare('SELECT MIN(created_at) AS oldest FROM tasks WHERE status = ?')
+      .get(status) as { oldest: number | null };
+    return row.oldest;
+  }
+
+  /**
+   * 数据库文件占用（V2.16 / B53）：库 + WAL 共两个文件。
+   * 用 `this.db.name`（better-sqlite3 给的**实际**路径）而不是重新解析 env ——
+   * 测试用内存库时它是 `:memory:`，两处 size 都如实为 0，不会去 stat 一个奇怪的文件名。
+   */
+  databaseFileBytes(): { fileBytes: number; walBytes: number } {
+    const file = this.db.name;
+    const sizeOfFile = (target: string): number => {
+      try {
+        const info = statSync(target);
+        return info.isFile() ? info.size : 0;
+      } catch {
+        return 0; // 还没落盘 / 内存库：0 是事实，不抛
+      }
+    };
+    return { fileBytes: sizeOfFile(file), walBytes: sizeOfFile(`${file}-wal`) };
   }
 
   /** 某轨当前 running 数量（防线 1：local 轨必须恒 ≤ 1） */

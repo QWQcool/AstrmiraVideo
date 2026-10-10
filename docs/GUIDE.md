@@ -284,6 +284,53 @@ H3 只识别直角双引号 `"` 包裹的对白；中文引号 `“”` 或无�
 
 **本版不做**：码率 / 编码参数对齐（只对画幅与帧率）、大包分片。
 
+## （十一）运维巡检：探针与指标（V2.16 / B53）
+
+**三个端点分工不同，别混用**（完整口径见 [CONTRACT §16](CONTRACT.md)）：
+
+```bash
+# ① 存活（不需要凭据）：进程还在吗？—— 零依赖，永远秒回
+curl -s http://127.0.0.1:3000/api/health/live
+
+# ② 就绪（需要凭据）：能干活吗？—— 数据库可读 + 输出目录真写一次
+#    required 检查失败会返回 503，但响应体里照样有完整 checks（排错看原因，不是只看状态码）
+curl -s -H "Authorization: Bearer $PUBLIC_API_TOKEN" http://127.0.0.1:3000/api/health/ready
+
+# ③ 指标快照（需要凭据）：现在具体什么状况
+curl -s -H "Authorization: Bearer $PUBLIC_API_TOKEN" http://127.0.0.1:3000/api/metrics | jq
+```
+
+**编排器（K8s / Docker）怎么配**：
+
+```yaml
+livenessProbe:            # 失败 → 重启容器
+  httpGet: { path: /api/health/live, port: 3000 }
+  initialDelaySeconds: 5
+  periodSeconds: 10
+readinessProbe:           # 失败 → 暂时不导流（**不重启**）
+  httpGet:
+    path: /api/health/ready
+    port: 3000
+    httpHeaders: [{ name: Authorization, value: "Bearer <PUBLIC_API_TOKEN>" }]
+  periodSeconds: 15
+  # 说明：探针带凭据是刻意的 —— ready 会暴露部署内部细节（磁盘、数据库体积），
+  # 所以它不进入免鉴权名单；只有 /api/health 与 /api/health/live 任何来源可访问。
+```
+
+**看什么**（`/api/metrics` 的几个关键数字）：
+
+| 字段 | 什么时候要当心 |
+| :--- | :--- |
+| `queue.oldestQueuedAgeSec` | 持续增长 = 消费不过来（本地轨并发为 1，这是它的正常代价） |
+| `tasks.running.local` | **恒应 ≤ 1**（防线 1：本地推理互斥） |
+| `tasks.uncertain` | 不为 0 = 有"已提交但结果不明"的任务，**可能已产生费用**（去成本台账看） |
+| `storage.usageRatio` | ≥ 0.85 提醒、≥ 0.95 会开始淘汰最旧的成片（任务记录与血缘不受影响） |
+| `webhooks.pending` / `failed` | 积压 = 客户系统可能挂了；`failed` = 重试用尽，客户需自己拉历史补 |
+| `alerts[]` | **有内容就是有事**（每条带 `value` 与 `threshold`，可复核） |
+
+**告警不用外发通道也能用**：`alerts[]` 就是"越线的事实"。想接邮件 / IM，
+轮询这个端点并转出去即可（我们不做外发通道的第二个实现，见 CONTRACT §16「本版不做」）。
+
 ## （十）对接客户系统：Webhook 回调（V2.15 / B51 片 A）
 
 **它解决什么**：客户系统不必再轮询 `/api/tasks/:id` —— 任务到终态时我们主动 `POST` 一条事件过去。

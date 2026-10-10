@@ -87,14 +87,26 @@ describe('鉴权钩子（两层免鉴权）', () => {
     expect(state.payload).toBeUndefined();
   });
 
-  it('② 任何来源的 /api/health 均免鉴权（存活探针）', async () => {
+  it('② 任何来源的存活探针均免鉴权（/api/health 与 /api/health/live）', async () => {
     const { reply, state } = fakeReply();
 
     await hook(fakeRequest({ url: '/api/health', ip: '203.0.113.9' }), reply);
+    await hook(fakeRequest({ url: '/api/health/live', ip: '203.0.113.9' }), reply);
 
     expect(state.statusCode).toBe(200);
     expect(state.payload).toBeUndefined();
-    expect(ALWAYS_PUBLIC_PATHS).toEqual(['/api/health']);
+    // 名单是**闸门**：加一条必须同时改这里与 CONTRACT §16（两处都改才算数）。
+    // 判据是"探针本身能不能被无凭据访问"：live 必须可以（编排器不带 Bearer）；
+    // ready / metrics **刻意不进去** —— 它们会暴露部署内部细节（磁盘、数据库体积、积压）。
+    expect(ALWAYS_PUBLIC_PATHS).toEqual(['/api/health', '/api/health/live']);
+  });
+
+  it('② ready 与 metrics **不在**免鉴权名单（公网无令牌 → 401）', async () => {
+    for (const url of ['/api/health/ready', '/api/metrics']) {
+      const { reply, state } = fakeReply();
+      await hook(fakeRequest({ url, ip: '203.0.113.9' }), reply);
+      expect(state.statusCode, `${url} 不该免鉴权`).toBe(401);
+    }
   });
 
   it('公网来源 + 无令牌 → 401（复用 KEY_MISSING）', async () => {

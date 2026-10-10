@@ -63,8 +63,17 @@ function readPositiveNumber(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
+/**
+ * 触发阈值（bytes）：env `OUTPUTS_MAX_BYTES` → 缺省 4GiB。
+ * **淘汰器与指标快照（B53）共用这一个函数** —— 两处各读一次 env 迟早会出现
+ * "面板说没超、淘汰器已经在删"这种互相打脸的场面。
+ */
+export function resolveOutputsMaxBytes(env: NodeJS.ProcessEnv = process.env): number {
+  return readPositiveNumber(env.OUTPUTS_MAX_BYTES) ?? DEFAULT_MAX_BYTES;
+}
+
 function resolveMaxBytes(options: StorageEvictOptions): number {
-  return options.maxBytes ?? readPositiveNumber(process.env.OUTPUTS_MAX_BYTES) ?? DEFAULT_MAX_BYTES;
+  return options.maxBytes ?? resolveOutputsMaxBytes();
 }
 
 function resolveTargetRatio(options: StorageEvictOptions): number {

@@ -1,6 +1,14 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.15 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.16 · 已冻结（变更需先改本文，再改代码）**
+> **V2.16 修订（2026-10-10）**：**可观测与 SLA 基线（台账 B53）** —— 纯增量：三个新端点 + 一个新章节，
+>   **既有 `/api/health` 的响应一字不改**（它是 V1.7 起的存活探针，CI/CD 与免鉴权名单都依赖它）。
+>   ① **§16 新增**：live / ready 分级、`MetricsResponse` 快照、告警阈值与判定口径（`METRICS_*` env 可覆盖）；
+>   ② **§5**：新增 `GET /api/health/live`、`/api/health/ready`、`/api/metrics`；
+>   ③ **§8**：明确 `/api/health` = **存活（liveness）**语义（不含依赖检查）；
+>   ④ **免鉴权名单**只放开 `/api/health` 与 `/api/health/live`；ready 与 metrics **刻意要鉴权**。
+>
+> **状态（上一版）：V2.15 · 已冻结**
 > **V2.15 修订（2026-10-10）**：**Webhook 终态回调（台账 B51 片 A）** —— 纯增量：五个新路由 +
 >   一个新错误码，**不改任何既有响应**。
 >   ① **§15 新增**：事件与签名口径（`task.terminal`；`X-Astrmira-Signature: sha256=<hex>` 对**原始请求体**）；
@@ -430,6 +438,9 @@ export interface AssetListResponse {
 | `PATCH` | `/api/webhooks/:webhookId` | **V2.15 新增**：改地址 / 启停（body `{ url?, enabled? }`，至少给一项）。**200 → `{ webhook: WebhookView }`**（同样**不回显**明文 secret）；订阅不存在 → **404 `WEBHOOK_NOT_FOUND`**；新 URL 不过 SSRF 准入 → **400 `INVALID_REQUEST`** |
 | `DELETE` | `/api/webhooks/:webhookId` | **V2.15 新增**：删订阅（**连带删掉它的投递流水** —— 留着一堆指向已删订阅的记录会让人以为"还有回调在跑"）。**200 → `{ deleted: true }`**；不存在 → **404 `WEBHOOK_NOT_FOUND`** |
 | `GET` | `/api/webhooks/:webhookId/deliveries` | **V2.15 新增**：**投递流水**（最近 N 条，`?limit=` 1~200，默认 50）。**200 → `{ deliveries: WebhookDeliveryView[] }`**（`status` / `attempts` / `lastStatusCode` / `lastError` / `nextAttemptAt` / `deliveredAt`）—— 它是"客户到底收到没有"的唯一证据，也是排错入口。**空列表是 200 而不是 404**（订阅存在但还没到终态任务）；订阅不存在 → **404 `WEBHOOK_NOT_FOUND`** |
+| `GET` | `/api/health/live` | **V2.16 新增（台账 B53）**：**存活探针**（与 `/api/health` **同语义**，新路径为了与 ready 成对）。**任何来源免鉴权**（编排器的 livenessProbe 不会带 Bearer）。**零依赖**：不碰数据库、不扫目录 —— 探针若在依赖故障时也变慢/失败，编排器会把"数据库卡住"当成"进程死了"并重启，把一次依赖故障放大成服务不可用。**200 → `HealthLiveResponse`（§16）** |
+| `GET` | `/api/health/ready` | **V2.16 新增**：**就绪探针**（进程活着 ≠ 能干活）。检查项：数据库可读、输出目录**真写一次**、容量余量、媒体工具（见 §16）。**需鉴权**（回环免；它暴露部署内部细节 —— 探针自己带 `Authorization: Bearer <PUBLIC_API_TOKEN>`）。`required` 检查失败 → **503**（响应体**照样**给完整 `checks`：排错要看原因，不是只看状态码）；**非 required** 失败（ffmpeg 缺失、容量接近阈值、凭据未配）**不降级** —— BYOK / 纯云端部署下它们不影响力 |
+| `GET` | `/api/metrics` | **V2.16 新增**：**运维快照**（任务按状态 / 队列积压 / 存储 / 数据库体积 / Webhook 投递 / 告警 / 生效阈值）。**需鉴权**（回环免）。**200 → `MetricsResponse`（§16）**。⚠️ 它含**一次目录扫描**（毫秒级，本项目规模下），因此**不做服务端自动轮询** —— 调用方自己决定频率（建议 15~60s）。无新错误码 |
 | `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage }`**（`items` 最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾）。**V2.4 起**：默认只返回**生成产物**（剪辑产物不进历史，避免提示词与源片相同造成的"重复"观感）；查询参数 `?kind=edit`：**V2.6 起 `source` 可选** —— 带 `source=<taskId>` 返回某源片的剪辑产物（剪辑台"本片剪辑历史"用）；**不带 `source` 返回全部剪辑产物**（剪辑台素材候选 / L2 血缘画布用，同样受最近 50 条上限约束）。**V2.11（B47）**：可选 `?project=<projectId>` —— **省略 = 默认项目**（不是"全部项目"：界面的心智模型是"我在哪个项目里"）；`storage` 聚合仍是**目录级全局**（它描述磁盘，不描述项目） |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
 | `POST` | `/api/providers/keys/verify` | **V2.1 新增（原【规划·B2】）**：凭据与模型校验，**零费用**。请求头按轨取（视频 `X-Provider-Key` / 文本 `X-LLM-Key`）；**200 → `KeyVerifyResponse`（§9）**；未带 Key → **501 `KEY_MISSING`**；凭据被上游拒绝 → **401 `KEY_INVALID`**；上游不可达 → **502 `UPSTREAM_ERROR`**；**V2.8 起**：独立限流桶 `verify`（同一来源 IP **10 秒内最多 5 次**，内存突发窗口）→ 429 `RATE_LIMITED` + `Retry-After`。为什么：本端点**会向上游发真实请求**（`/models` + 空 content 探针），没有限流时被刷等于把部署者的服务器当免费探针——与生成任务的 60s 冷却（防线 5）分开计桶，互不影响。**为什么是"窗口 N 次"而不是"最小间隔"**：间隔语义会误伤正常交互（连点两次"测试连接"切轨道验证），窗口语义对"人"无感、对"脚本"生效；它是底线防护，真正的防线仍是 Caddy 登录 + `PUBLIC_API_TOKEN` |
@@ -527,6 +538,11 @@ export interface HealthResponse {
 ```
 
 > 该类型同样以 `packages/shared` 的 zod schema 为唯一事实源（`HealthResponseSchema`），本节代码块为文档投影。
+>
+> **⚠️ 语义澄清（V2.16 / 台账 B53）**：`/api/health` 是**存活（liveness）**探针 ——
+> 它**刻意不检查任何依赖**（不碰数据库、不扫目录），只要进程能响应就返回 `ok`。
+> "能不能干活"由 **`/api/health/ready`** 回答（见 §16）；两者不要混用：
+> 把依赖检查塞进存活探针，会让"数据库卡住"被编排器读成"进程死了"并触发重启。
 
 ---
 
@@ -1074,4 +1090,68 @@ B 端私有部署里"回调到客户内网"是真实需求，因此留了 **`WEB
 
 **存储**（细则见 §7）：`webhooks`（订阅）+ `webhook_deliveries`（投递流水）；
 `(webhook_id, task_id, event)` **唯一索引**保证幂等（重复扫描不会重复投递）。
+
+---
+
+## 16. 可观测：live / ready 分级与运维快照（V2.16 新增；台账 B53）
+
+> **它解决什么**：私有化交付后，"服务是不是还行"必须有**可查的数字**，而不是"客户说卡"。
+> 三个端点分工明确、**不许混用**：
+
+| 端点 | 回答的问题 | 依赖 | 鉴权 |
+|---|---|---|---|
+| `GET /api/health` | 进程还在吗 | **零**（不碰数据库） | 任何来源免鉴权 |
+| `GET /api/health/live` | 同上（与 ready 成对的新路径） | **零** | 任何来源免鉴权 |
+| `GET /api/health/ready` | **能干活吗** | DB 可读 + 目录可写 | 需鉴权（回环免） |
+| `GET /api/metrics` | 现在具体什么状况 | 全部（含一次目录扫描） | 需鉴权（回环免） |
+
+**为什么 live 与 ready 必须分开**：探针若在依赖故障时也变慢或失败，编排器会把"数据库卡住"
+当成"进程死了"并重启 —— 那会把一次依赖故障**放大**成服务不可用。
+
+**readiness 检查项**（`MetricCheck`：`{ id, ok, required, detail }`）：
+
+| id | required | 判据 |
+|---|---|---|
+| `database` | ✅ | 任务表可读（`countByStatus` 成功） |
+| `storage.writable` | ✅ | **真写一个探针文件再删掉**（`stat` 成功 ≠ `write` 成功：只读挂载 / 磁盘满 / 权限位） |
+| `storage.headroom` | ❌ | 是否已超 `OUTPUTS_MAX_BYTES`（超了淘汰器会动手，但服务仍能干活） |
+| `media.tools` | ❌ | ffmpeg / ffprobe 是否可用（云端轨不需要它；本地轨与缩略图需要） |
+
+`required` 里任一失败 → **503 + `status: 'degraded'`**，且响应体**照样给完整 `checks`**（排错要看原因）。
+**非 required 失败不降级** —— BYOK 部署（服务端没有 Key）、纯云端部署（没装 ffmpeg）都不该被判"不健康"。
+
+**告警阈值**（`alerts[]`，**没越线就不出现** —— 噪声纪律：常年挂着一条 info 的告警等于没有告警）：
+
+| 告警 id | 默认阈值 | env 覆盖 |
+|---|---|---|
+| `storage.warn` / `storage.critical` | 用量 ≥ 85% / ≥ 95%（或已超 `OUTPUTS_MAX_BYTES`） | `METRICS_STORAGE_WARN_RATIO` / `METRICS_STORAGE_CRITICAL_RATIO` |
+| `webhook.pending` | 存在超过 300s 未投出的终态事件 | `METRICS_WEBHOOK_PENDING_WARN_SEC` |
+| `webhook.failed` | 有 ≥ 1 条永久失败的投递 | `METRICS_WEBHOOK_FAILED_WARN_COUNT` |
+| `task.stuck` | 有任务 `running` 超过 1800s（上游挂住 / 本地卡死） | `METRICS_TASK_STUCK_WARN_SEC` |
+| `database.size` | 库 + WAL ≥ 512MB | `METRICS_DATABASE_WARN_BYTES` |
+
+每条告警都带 `value` 与 `threshold`（**可复核**）；`status: 'degraded'` 只表示"有告警"，
+**不表示进程不健康**（那是 ready 的职责）。
+
+```ts
+export interface MetricsResponse {
+  generatedAt: number; uptimeSec: number;
+  status: 'ok' | 'degraded';
+  service: { name; version; nodeVersion; pid; cpuCount; rssBytes; heapUsedBytes };
+  tasks: { byStatus: Record<string, number>; running: { cloud; local }; uncertain: number;
+           window24h: { succeeded; failed; total } };   // uncertain = 可能已产生费用（§13 同口径）
+  queue: { queued: number; running: number; oldestQueuedAgeSec: number | null };
+  storage: { totalBytes; videoBytes; thumbBytes; assetBytes; maxBytes; usageRatio; overThreshold };
+  database: { fileBytes; walBytes };                     // **只给体积，不给路径**（快照会被贴进工单）
+  webhooks: { enabled; pending; failed; oldestPendingAgeSec: number | null };
+  alerts: SystemAlert[]; thresholds: Record<string, number>;
+}
+```
+
+**本版不做（如实登记）**：
+① **Prometheus / OpenMetrics 文本导出** —— 形态选择：JSON 快照能被 `curl`/`jq`/客户脚本直接消费，
+且与其它端点同一套鉴权；真要接 Prometheus，用一个外部 exporter 抓 `/api/metrics` 转换即可（无需我们改约定）；
+② **告警外发通道**（邮件 / IM / 再发一条 Webhook）—— 本版只把"越线的事实"暴露在快照里；
+③ **历史趋势**（时序库）—— 本版是**当前快照**，趋势由调用方自己存；
+④ **链路追踪**（OpenTelemetry）—— 操作日志（§10）+ `requestId` 已能回答"这一次请求发生了什么"。
 

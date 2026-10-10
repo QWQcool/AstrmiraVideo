@@ -320,4 +320,33 @@ export class WebhookStore {
   static maxAttempts(): number {
     return WEBHOOK_DELIVERY_MAX_ATTEMPTS;
   }
+
+  /**
+   * 全局投递统计（V2.16 / 台账 B53）：指标快照用。
+   * `oldestPendingAt` 是"投递积压多久了"的判据（客户系统可能已宕机），没有积压时为 null。
+   */
+  statsAll(): {
+    enabled: number;
+    pending: number;
+    failed: number;
+    oldestPendingAt: number | null;
+  } {
+    const enabled = this.db
+      .prepare('SELECT COUNT(*) AS count FROM webhooks WHERE enabled = 1')
+      .get() as { count: number };
+    const grouped = this.db
+      .prepare('SELECT status, COUNT(*) AS count FROM webhook_deliveries GROUP BY status')
+      .all() as Array<{ status: string; count: number }>;
+    const oldest = this.db
+      .prepare("SELECT MIN(created_at) AS oldest FROM webhook_deliveries WHERE status = 'pending'")
+      .get() as { oldest: number | null };
+
+    let pending = 0;
+    let failed = 0;
+    for (const row of grouped) {
+      if (row.status === 'pending') pending = row.count;
+      if (row.status === 'failed') failed = row.count;
+    }
+    return { enabled: enabled.count, pending, failed, oldestPendingAt: oldest.oldest };
+  }
 }

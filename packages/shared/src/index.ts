@@ -32,3 +32,4 @@ export * from './projects.js';
 export * from './cost.js';
 export * from './deliverables.js';
 export * from './webhooks.js';
+export * from './metrics.js';
