@@ -30,6 +30,8 @@ export const STORAGE_KEYS = {
   editDraftPrefix: 'astrmira.editDraft.',
   /** 剪辑台**草稿版本历史**前缀（V2.21 / 台账 B66）：同一个源任务下面存最近几份快照 */
   editDraftHistoryPrefix: 'astrmira.editDraftHistory.',
+  /** 画布**便签**前缀（V2.22 / 台账 B67）：实际键 = 前缀 + 项目 id（便签属于这个项目的这张图） */
+  canvasNotesPrefix: 'astrmira.canvasNotes.',
   /** 当前项目（V2.11 / B47）：缺省 = 默认项目（见 lib/projects.ts 的读取口径） */
   activeProjectId: 'astrmira.activeProjectId',
 } as const;

@@ -380,6 +380,61 @@
   color: var(--muted);
 }
 
+/* ── 画布便签（V2.22 / 台账 B67）──────────────────────────────────────────
+   它不是数据，是一段贴在画布上的说明：故意用"便签纸"的观感（金色虚线 + 暖底），
+   与数据节点（实线框 + 缩略图）一眼可分。
+   ⚠️ 类名是 `cv-sticky` 而不是 `cv-note`：后者**早就被画布顶部那句说明文字占用了**
+   （`.cv-note { text-align: center }`）—— 一开始同名，结果便签样式改到了说明文字身上，
+   冒烟也匹配到了错的元素（2026-10-10 实测踩到）。 */
+.cv-sticky {
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px dashed var(--line-gold);
+  border-radius: var(--radius-control);
+  background-color: var(--gold-tint);
+  font-size: var(--fs-note);
+  color: var(--text);
+}
+
+.cv-sticky-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cv-sticky-glyph {
+  color: var(--gold);
+}
+
+.cv-sticky-input {
+  width: 100%;
+  min-height: 76px;
+  resize: vertical;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background-color: var(--panel2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-note);
+}
+
+.cv-sticky-text {
+  width: 100%;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: var(--fs-note);
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+}
+
 /* ── 节点检查器（V2.19 / 台账 B62）────────────────────────────────────────
    设计参考 n8n 的 NDV（节点详情视图）的分区方式：提示词 / 输入 / 成本 / 警告 /
    错误 / 留痕 / 血缘，**独立实现**（PLAN §6-D48）。信息密度高但不折叠 ——

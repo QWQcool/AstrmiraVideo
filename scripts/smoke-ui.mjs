@@ -2237,6 +2237,9 @@ try {
     `画布占据整幅宽度（实际 ${canvasBox === null ? 'null' : Math.round(canvasBox.width)}px）`,
   );
 
+  // ⚠️ 各块**自备前置**（2026-10-10：B67 的 Esc 取消选择曾让下游的"选中后按钮可用"失败）——
+  // 断言不要依赖"上一段刚好留下了什么状态"（见下面 B64 段开头的那次点击）
+
   // 点节点 → 详情抽屉（动作按钮指向既有 hash 参数）
   await canvasNodes.first().click();
   await page.waitForSelector('.cv-drawer', { timeout: 5_000 });
@@ -2338,12 +2341,43 @@ try {
   );
   rmSync(packFile, { force: true });
 
+  // V2.22（台账 B67）：便签 + 快捷键
+  await page.getByTestId('cv-add-note').click();
+  await page.waitForSelector('.cv-sticky', { timeout: 5_000 });
+  assert(true, '「＋ 便签」在画布上贴出一张便签');
+  await page.getByTestId('cv-note-input').fill('冒烟：这是给客户 A 的广告片链');
+  await page.keyboard.press('Tab'); // 失焦提交（编辑期间只存本地，失焦才写回）
+  await page.waitForTimeout(300);
+  await page.reload();
+  await page.waitForSelector('.cv-sticky', { timeout: 15_000 });
+  assert(
+    (await page.locator('.cv-sticky').innerText()).includes('客户 A'),
+    '便签文本写回本机存储（刷新后仍在）—— 按项目隔离，不上传服务端',
+  );
+
+  // 快捷键：Ctrl/Cmd+A 全选（配合「缩放到选区」）· Esc 取消
+  await page.keyboard.press('Control+a');
+  await page.waitForTimeout(300);
+  assert(
+    await page.getByTestId('cv-zoom-selection').isEnabled(),
+    'Ctrl/Cmd+A 全选 → 「缩放到选区」变为可用',
+  );
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  assert(
+    await page.getByTestId('cv-zoom-selection').isDisabled(),
+    'Esc 取消选择 → 按钮回到置灰（与全选对称）',
+  );
+
   // V2.19（台账 B64）：画布导航 —— 小地图 + 「缩放到选区」（设计参考 n8n，独立实现）
   assert(
     (await page.locator('.cv-canvas .react-flow__minimap').count()) === 1,
     '小地图（MiniMap）已渲染 —— 长血缘图能一眼看出自己在哪',
   );
   const zoomSelection = page.getByTestId('cv-zoom-selection');
+  // 自备前置：先明确选中一个节点（上一段 B67 以 Esc 收尾，不能依赖"残留的选中态"）
+  await page.locator('.cv-canvas .react-flow__node').first().click();
+  await page.waitForTimeout(250);
   const viewportBefore = await page
     .locator('.cv-canvas .react-flow__viewport')
     .getAttribute('style');

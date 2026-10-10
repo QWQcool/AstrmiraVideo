@@ -41,6 +41,18 @@ import {
 import { downloadText } from '../lib/zipStore';
 import { navigate } from '../lib/router';
 import { LineageNodeCard, type LineageFlowNode } from '../canvas/NodeCard';
+import { NoteCard, type CanvasNoteNode } from '../canvas/NoteCard';
+import {
+  createNote,
+  loadCanvasNotes,
+  removeNote,
+  saveCanvasNotes,
+  updateNote,
+  type CanvasNote,
+} from '../lib/canvasNotes';
+
+/** 画布上的节点 = 数据节点（血缘）| 便签（说明）——两者的类型与生命周期完全不同 */
+type CanvasFlowNode = LineageFlowNode | CanvasNoteNode;
 
 /**
  * 血缘画布 `#/canvas`（Step 8 · P4 / 台账 B42，L2 只读；决策 = PLAN §6-D40）。
@@ -84,8 +96,11 @@ function describeError(caught: unknown): string {
  * ⚠️ 必须渲染在 `<ReactFlow>` 内部（`useReactFlow` 依赖它的 Provider）。
  * 参考 n8n 的画布导航交互，本组件为独立实现（PLAN §6-D48）。
  */
-const CanvasToolbar: FC<{ selectedIds: string[] }> = ({ selectedIds }) => {
-  const { fitView } = useReactFlow();
+const CanvasToolbar: FC<{ selectedIds: string[]; onAddNote: (x: number, y: number) => void }> = ({
+  selectedIds,
+  onAddNote,
+}) => {
+  const { fitView, screenToFlowPosition } = useReactFlow();
   const count = selectedIds.length;
 
   return (
@@ -110,6 +125,22 @@ const CanvasToolbar: FC<{ selectedIds: string[] }> = ({ selectedIds }) => {
         }}
       >
         ◎ 缩放到选区{count === 0 ? '' : `（${count}）`}
+      </button>
+      {/* V2.22（台账 B67）：便签落在**当前视口中心**（落在看不见的地方等于没建） */}
+      <button
+        type="button"
+        className="cv-tool"
+        data-testid="cv-add-note"
+        title="在视口中心贴一张便签（写清「这是哪条链、为什么这么做」）"
+        onClick={() => {
+          const center = screenToFlowPosition({
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+          });
+          onAddNote(center.x, center.y);
+        }}
+      >
+        ＋ 便签
       </button>
       <button
         type="button"
@@ -562,6 +593,8 @@ export function CanvasView() {
   const [onlyProblems, setOnlyProblems] = useState(false);
   /** 队列实况（来自 `/api/metrics` 的 `queue`，V2.16 / B53）—— 把"为什么要等"如实讲出来 */
   const [queue, setQueue] = useState<{ queued: number; oldestAgeSec: number | null } | null>(null);
+  /** 画布便签（V2.22 / B67）：按项目存本机，零契约 */
+  const [notes, setNotes] = useState<CanvasNote[]>([]);
 
   const reload = useCallback(async (): Promise<void> => {
     try {
@@ -608,6 +641,19 @@ export function CanvasView() {
       cancelled = true;
     };
   }, [projectId, tasks.length]);
+
+  // 便签：进画布读一次（按项目），之后每次改动就地写回（量小，不做防抖）
+  useEffect(() => {
+    setNotes(loadCanvasNotes(projectId).notes);
+  }, [projectId]);
+
+  const mutateNotes = useCallback(
+    (next: CanvasNote[]): void => {
+      setNotes(next);
+      saveCanvasNotes(projectId, next);
+    },
+    [projectId],
+  );
 
   const graph = useMemo(() => buildLineage({ tasks, assets }), [tasks, assets]);
   const layout = useMemo(() => layoutLineage(graph), [graph]);
@@ -676,18 +722,66 @@ export function CanvasView() {
    * （直接后果：B64 的「缩放到选区」永远是灰的）。
    * 画布仍是**只读**：回写的只有位置与选中（`nodesConnectable=false` / `deleteKeyCode=null` 不变）。
    */
-  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<LineageFlowNode>([]);
+  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<CanvasFlowNode>([]);
 
   useEffect(() => {
-    setFlowNodes(
-      graph.nodes.map((node) => ({
+    setFlowNodes([
+      ...graph.nodes.map((node) => ({
         id: node.id,
         type: 'lineage' as const,
         position: layout.positions[node.id] ?? { x: 0, y: 0 },
         data: { node, near: nearIds.has(node.id) },
       })),
-    );
-  }, [graph, layout, nearIds, setFlowNodes]);
+      // 便签与数据节点同住一个 nodes 数组（V2.22 / B67）：这样拖动它同样走 `onNodesChange`，
+      // 位置才不会"拖完弹回去"
+      ...notes.map((note) => ({
+        id: note.id,
+        type: 'note' as const,
+        position: { x: note.x, y: note.y },
+        data: {
+          note,
+          onText: (id: string, text: string) => mutateNotes(updateNote(notes, id, { text })),
+          onDelete: (id: string) => mutateNotes(removeNote(notes, id)),
+        },
+      })),
+    ]);
+  }, [graph, layout, nearIds, notes, mutateNotes, setFlowNodes]);
+
+  /**
+   * 画布快捷键（V2.22 / 台账 B67）：**只做两件在只读图上成立的事** ——
+   * `Ctrl/Cmd+A` 全选、`Esc` 取消选择（配合 B64 的「缩放到选区」才有意义）。
+   *
+   * ⚠️ n8n 的另外两条快捷键在本画布上**不成立**，刻意不做（如实登记）：
+   * `F2 改名`（我们的节点名来自提示词快照，不是可编辑字段）与 `Ctrl+D 复制`
+   * （节点是**已发生的事实**，复制一条生成任务没有语义）。
+   * 另外：正在写便签时不抢键（输入框里的 Ctrl+A 该是"全选文本"）。
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target !== null &&
+        (target.tagName === 'TEXTAREA' ||
+          target.tagName === 'INPUT' ||
+          target.isContentEditable === true);
+      if (typing) return;
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        setFlowNodes((nodes) => nodes.map((node) => ({ ...node, selected: true })));
+        return;
+      }
+      if (event.key === 'Escape') {
+        setFlowNodes((nodes) =>
+          nodes.some((node) => node.selected === true)
+            ? nodes.map((node) => ({ ...node, selected: false }))
+            : nodes,
+        );
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [setFlowNodes]);
 
   const flowEdges = useMemo<Edge[]>(
     () =>
@@ -709,7 +803,7 @@ export function CanvasView() {
     [graph, flowingEdgeIds],
   );
 
-  const nodeTypes = useMemo(() => ({ lineage: LineageNodeCard }), []);
+  const nodeTypes = useMemo(() => ({ lineage: LineageNodeCard, note: NoteCard }), []);
 
   const empty = !loading && tasks.length === 0;
 
@@ -799,7 +893,15 @@ export function CanvasView() {
                 edges={flowEdges}
                 onNodesChange={onNodesChange}
                 nodeTypes={nodeTypes}
-                onNodeClick={(_event, node) => setSelected((node as LineageFlowNode).data.node)}
+                onNodeClick={(_event, node) => {
+                  // 便签不是数据（没有 LineageNode）：点它不该弹检查器
+                  if (node.type === 'lineage') setSelected((node as LineageFlowNode).data.node);
+                }}
+                onNodeDragStop={(_event, node) => {
+                  // 便签的位置**落存储**（数据节点的位置是会话级的，D40 不变）
+                  if (node.type !== 'note') return;
+                  mutateNotes(updateNote(notes, node.id, { x: node.position.x, y: node.position.y }));
+                }}
                 onSelectionChange={(params: OnSelectionChangeParams) =>
                   setSelectedIds(params.nodes.map((node) => node.id))
                 }
@@ -811,7 +913,10 @@ export function CanvasView() {
               >
                 <Background gap={24} />
                 <Controls showInteractive={false} />
-                <CanvasToolbar selectedIds={selectedIds} />
+                <CanvasToolbar
+                  selectedIds={selectedIds}
+                  onAddNote={(x, y) => mutateNotes(createNote(notes, { x, y }))}
+                />
                 <MiniMap
                   data-testid="cv-minimap"
                   position="bottom-right"
@@ -819,7 +924,12 @@ export function CanvasView() {
                   zoomable
                   maskColor="var(--canvas-veil)"
                   nodeColor={(node) => {
+                    // ⚠️ 这个回调会拿到**所有**节点，包括便签（B67）—— 第一版直接读 `data.node.ghost`，
+                    // 遇到便签时 `data.node` 是 undefined → 抛错 → **整页白屏**（没有 ErrorBoundary）。
+                    // 画布上多一种节点类型，所有"按节点取色/取名"的回调都要先问类型。
+                    if (node.type === 'note') return 'var(--line-gold)';
                     const data = (node as LineageFlowNode).data.node;
+                    if (data === undefined) return 'var(--muted)';
                     if (data.ghost === true) return 'var(--faint)';
                     return data.isEdit === true ? 'var(--blue)' : 'var(--gold)';
                   }}
