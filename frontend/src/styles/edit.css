@@ -543,6 +543,95 @@
 }
 
 /* ── 移动端（≤768px）：上下堆叠，时间轴横滚 ── */
+/* ── 草稿版本历史（V2.21 / 台账 B66）────────────────────────────────────
+   入口在剪辑台页头右侧；浮层用绝对定位（与项目切换器的管理面板同一形态）。
+   历史**只存在本机浏览器**：这条在文案里写明，避免用户以为它跟着片子走。 */
+.ed-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ed-hist {
+  position: relative;
+}
+
+.ed-hist-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: 320px;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  background-color: var(--panel);
+  box-shadow: var(--shadow-pop);
+}
+
+.ed-hist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ed-hist-title {
+  font-family: var(--serif);
+  font-size: var(--fs-title);
+  color: var(--text);
+}
+
+.ed-hist-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ed-hist-actions .wb-btn {
+  flex: 1 1 auto;
+}
+
+.ed-hist-feedback {
+  color: var(--gold);
+}
+
+.ed-hist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.ed-hist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-note);
+  color: var(--text);
+}
+
+.ed-hist-time {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.ed-hist-item .wb-note {
+  flex: 1 1 auto;
+}
+
+.ed-hist-item .wb-btn {
+  padding: 2px 8px;
+}
+
 @media (max-width: 768px) {
   .ed-page {
     height: auto;

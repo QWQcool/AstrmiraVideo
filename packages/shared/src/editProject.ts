@@ -263,6 +263,87 @@ export const EditProjectSchema = z.object({
 });
 export type EditProject = z.infer<typeof EditProjectSchema>;
 
+// ── 版本迁移（V2.21 / 台账 B66）─────────────────────────────────────────────
+
+export interface EditProjectMigrationOk {
+  ok: true;
+  project: EditProject;
+  /** 来自哪个版本（与当前版本相同 = null，表示没迁移过） */
+  migratedFrom: number | null;
+  /** 迁移过程中做了什么（**给人看的**，会出现在界面上） */
+  notes: string[];
+}
+
+export interface EditProjectMigrationFail {
+  ok: false;
+  /** 给用户看的原因（含"该怎么做"） */
+  reason: string;
+  /** 来自更新的版本时带上它（调用方可以据此显示 vN > vM） */
+  futureVersion?: number;
+}
+
+/**
+ * 把一份**来路不明**的工程 JSON 迁到当前版本（n8n 的 node type versioning 思路，独立实现）。
+ *
+ * ## 为什么必须有它
+ * 草稿是**存在浏览器里**的，而 schema 会随版本演进。没有迁移函数时，
+ * `version: z.literal(1)` 一旦升到 2，**所有老草稿会全部读不出来** ——
+ * 用户看到的现象是"我的剪辑怎么没了"。这也是"旧文件必须能被打开"这条 B 端硬要求的落点。
+ *
+ * ## 三条口径
+ * 1. **只做前向兼容**：来自**更新**版本的文件明确拒绝，并说清"请升级后再打开"
+ *    （假装能读一份未来格式 = 悄悄丢字段）；
+ * 2. **每一步都要留痕**：做过什么迁移写进 `notes`，界面上如实展示；
+ * 3. **失败不抛异常、不返回半成品**：给出原因字符串，调用方决定"保留原文 / 提示用户"。
+ *
+ * 加字段时的动作：把 `EDIT_PROJECT_VERSION` 加一，然后在下面的链里补一步
+ * `if (version < N) { …改数据…; version = N; notes.push('…') }`，并补一条"老文件能打开"的测试。
+ */
+export function migrateEditProject(raw: unknown): EditProjectMigrationOk | EditProjectMigrationFail {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return { ok: false, reason: '这不是一份剪辑工程（顶层不是对象）' };
+  }
+
+  const notes: string[] = [];
+  // 结构上只复制一层：迁移步骤改的都是浅字段，深拷贝没必要（且要 JSON 往返，反而丢 undefined）
+  const draft: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+  const rawVersion = draft['version'];
+
+  if (typeof rawVersion !== 'number' || !Number.isInteger(rawVersion) || rawVersion < 1) {
+    // 没有版本号：早期手写/被改过的文件。按 v1 试一遍，**并如实标注**
+    draft['version'] = 1;
+    notes.push('文件没有版本号，按 v1 处理');
+  } else if (rawVersion > EDIT_PROJECT_VERSION) {
+    return {
+      ok: false,
+      futureVersion: rawVersion,
+      reason: `这份工程来自更新的版本（v${rawVersion} > 本机 v${EDIT_PROJECT_VERSION}）：请升级本机版本后再打开`,
+    };
+  }
+
+  let version = typeof draft['version'] === 'number' ? (draft['version'] as number) : 1;
+  const migratedFrom = version === EDIT_PROJECT_VERSION ? null : version;
+
+  // ── 迁移链（目前只有 v1，所以这里是空的；加版本时在这里补步）──
+  // 例：if (version < 2) { draft.someNewField = default; version = 2; notes.push('v1 → v2：补 someNewField'); }
+
+  const parsed = EditProjectSchema.safeParse(draft);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    return {
+      ok: false,
+      reason: `工程内容不完整或格式不对${first === undefined ? '' : `：${first.path.join('.')} ${first.message}`}`,
+    };
+  }
+
+  if (version !== EDIT_PROJECT_VERSION) {
+    // 走到这里说明迁移链没把它带到当前版本（加版本时忘了补步）—— 明确报错而不是"装作成功"
+    return { ok: false, reason: `内部错误：迁移链没把 v${version} 带到 v${EDIT_PROJECT_VERSION}` };
+  }
+
+  return { ok: true, project: parsed.data, migratedFrom, notes };
+}
+
 /** 剪辑来源摘要（`TaskProgress.origin` 的 edit 分支；两代剪辑产物共用一句人话） */
 export type EditOriginLike = {
   sourceTaskId: string;

@@ -9,6 +9,7 @@ import { DEFAULT_PROJECT_FPS, createProjectFromSource } from '../edit/model';
 import { ExportPanel } from '../edit/ExportPanel';
 import { InspectorPanel } from '../edit/InspectorPanel';
 import { loadEditDraft, saveEditDraft } from '../edit/draft';
+import { DraftHistory } from '../edit/DraftHistory';
 import { probeVideoMeta } from '../edit/mediaProbe';
 import { useShell } from '../lib/shell';
 import { togglePlayback } from '../edit/playerRef';
@@ -73,6 +74,10 @@ export function EditView() {
 
   const [store, setStore] = useState<EditStore | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
+  /** V2.21（B66）：草稿读不出来时的原因（原文保留在 localStorage 里，**不静默丢**） */
+  const [draftProblem, setDraftProblem] = useState<string | null>(null);
+  /** V2.21（B66）：草稿迁移过程做了什么（如"没有版本号，按 v1 处理"） */
+  const [draftNotes, setDraftNotes] = useState<string[]>([]);
 
   const reload = useCallback(async (): Promise<void> => {
     try {
@@ -142,9 +147,13 @@ export function EditView() {
     probeVideoMeta(sourceUrl, DEFAULT_PROJECT_FPS)
       .then((meta) => {
         if (cancelled) return;
+        // V2.21（B66）：读草稿走迁移函数 —— 读不出来时**保留原文**并把原因摆到界面上，
+        // 而不是静默删掉（那是数据丢失：用户只会看到"我的剪辑怎么没了"）
         const draft = loadEditDraft(sourceId);
+        setDraftProblem(draft.problem);
+        setDraftNotes(draft.notes);
         const project =
-          draft ??
+          draft.project ??
           createProjectFromSource(
             { taskId: sourceId, url: sourceUrl, durationFrames: meta.durationFrames },
             { fps: DEFAULT_PROJECT_FPS, width: meta.width, height: meta.height, label: '源片' },
@@ -237,10 +246,29 @@ export function EditView() {
           <h1 className="wb-page-title">剪辑 · {sourceId.slice(0, 8)}</h1>
           <Eyebrow tone="gold">Editing Desk</Eyebrow>
         </div>
-        <a className="wb-btn" href="#/library">
-          ← 返回视频库
-        </a>
+        <div className="ed-head-actions">
+          {/* V2.21（B66）：草稿版本历史（只存在本机浏览器，零契约） */}
+          {store === null ? null : <DraftHistory sourceTaskId={sourceId} store={store} />}
+          <a className="wb-btn" href="#/library">
+            ← 返回视频库
+          </a>
+        </div>
       </div>
+
+      {draftProblem === null ? null : (
+        <div className="wb-uncertain" style={{ marginBottom: 14 }} data-testid="ed-draft-problem">
+          <span className="wb-uncertain-title">草稿读不出来，已保留原文</span>
+          <span className="wb-uncertain-body">
+            {draftProblem} —— 这份草稿**没有被删掉**（可在浏览器存储里找到），
+            本次按新工程打开；想放弃它就到「草稿历史」里清空后刷新。
+          </span>
+        </div>
+      )}
+      {draftNotes.length === 0 ? null : (
+        <p className="wb-note" data-testid="ed-draft-notes">
+          草稿迁移说明：{draftNotes.join('；')}
+        </p>
+      )}
 
       {loadError === null ? null : (
         <div className="wb-uncertain" style={{ marginBottom: 14 }}>

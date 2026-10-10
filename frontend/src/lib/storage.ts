@@ -28,6 +28,8 @@ export const STORAGE_KEYS = {
   sidebarRail: 'astrmira.sidebarRail',
   /** 剪辑台工程草稿前缀（B34 · P3）：实际键 = 前缀 + 源任务 id（每片一份草稿） */
   editDraftPrefix: 'astrmira.editDraft.',
+  /** 剪辑台**草稿版本历史**前缀（V2.21 / 台账 B66）：同一个源任务下面存最近几份快照 */
+  editDraftHistoryPrefix: 'astrmira.editDraftHistory.',
   /** 当前项目（V2.11 / B47）：缺省 = 默认项目（见 lib/projects.ts 的读取口径） */
   activeProjectId: 'astrmira.activeProjectId',
 } as const;

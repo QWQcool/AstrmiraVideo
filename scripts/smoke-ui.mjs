@@ -1387,6 +1387,53 @@ try {
     '刷新后草稿恢复：字幕 + 转场都在（编辑成果不丢）',
   );
 
+  // V2.21（台账 B66）：草稿版本历史 —— 存一个版本 → 列表出现 → 恢复
+  await page.getByTestId('ed-hist-toggle').click();
+  await page.waitForSelector('.ed-hist-pop', { timeout: 5_000 });
+  assert(true, '剪辑台页头能打开「草稿历史」浮层');
+  await page.getByTestId('ed-hist-save').click();
+  await page.waitForSelector('.ed-hist-list .ed-hist-item', { timeout: 5_000 });
+  const draftHistoryCount = await page.locator('.ed-hist-list .ed-hist-item').count();
+  assert(draftHistoryCount >= 1, `点「＋ 存一个版本」后历史里出现快照（${draftHistoryCount} 份）`);
+  assert(
+    (await page.getByTestId('ed-hist-feedback').innerText()).includes('已存一个版本'),
+    '界面如实反馈"已存一个版本"',
+  );
+  await page.getByTestId('ed-hist-restore').first().click();
+  assert(
+    (await page.getByTestId('ed-hist-feedback').innerText()).includes('已恢复'),
+    '点「恢复」有明确反馈（且恢复前会先保底存一份当前状态）',
+  );
+  await page.getByTestId('ed-hist-toggle').click(); // 收起来，别挡住后面的断言
+
+  // V2.21（台账 B66）：**坏草稿不静默丢** —— 原文保留 + 界面如实说明
+  //
+  // ⚠️ 顺序有讲究（第一版在这里踩到）：**不能在剪辑台上直接刷新**——
+  // 离开页面时 `pagehide` 兜底会把当前工程写回草稿（那是防"刚编辑完就刷新丢最后一笔"的），
+  // 于是"改坏的草稿"会被立刻覆盖成合法草稿，问题面板永远不会出现。
+  // 正确姿势：先离开剪辑台（切到别的视图）→ 此时改坏草稿 → 用 **hash 导航**回剪辑台（页面不卸载）。
+  const badDraftKey = `astrmira.editDraft.${sourceTask}`;
+  await page.evaluate(() => { location.hash = '#/library'; });
+  await page.waitForTimeout(600);
+  await page.evaluate((key) => localStorage.setItem(key, '{ 这不是 JSON'), badDraftKey);
+  await page.evaluate((task) => { location.hash = `#/edit?task=${task}`; }, sourceTask);
+  await page.waitForSelector('[data-testid="ed-draft-problem"]', { timeout: 15_000 });
+  assert(true, '坏草稿 → 明确提示「草稿读不出来，已保留原文」（不再静默删）');
+  const keptRaw = await page.evaluate((key) => localStorage.getItem(key), badDraftKey);
+  assert(keptRaw === '{ 这不是 JSON', '坏草稿原文**仍在** localStorage（用户还有救回来的机会）');
+
+  // 清掉坏草稿，并用**历史快照**把编辑成果找回来（顺带验"恢复真的带回了内容"）
+  await page.evaluate((key) => localStorage.removeItem(key), badDraftKey);
+  await page.getByTestId('ed-hist-toggle').click();
+  await page.waitForSelector('.ed-hist-list .ed-hist-item', { timeout: 10_000 });
+  await page.getByTestId('ed-hist-restore').first().click();
+  await page.waitForSelector('.ed-clip[data-clip-kind="caption"]', { timeout: 10_000 });
+  assert(
+    (await page.locator('.ed-clip[data-clip-kind="caption"]').count()) >= 1,
+    '从历史快照恢复 → 字幕/转场等编辑成果回来了（草稿损坏也能救）',
+  );
+  await page.getByTestId('ed-hist-toggle').click();
+
   // 含字幕与转场的工程再次导出：时长与内容一致、画面非空白（转场/字幕真的被渲染）
   const expectedSec2 = (await readContentEnd()) / projectFps;
   await page.getByRole('button', { name: /导出成片/ }).click();

@@ -107,6 +107,16 @@ export class EditStore {
     if (this.state.notice !== notice) this.set({ notice });
   };
 
+  /**
+   * **整份替换工程**（V2.21 / 台账 B66）—— 恢复历史快照用。
+   *
+   * 为什么不是"逐条对齐"：历史快照就是**当时那份工程**，逐条 diff 出"该怎么改"本身就是伪需求。
+   * 恢复后把选择与播放头复位（它们指向的片段可能已经不在了）—— 这比"保留一个悬空选择"诚实。
+   */
+  replaceProject = (project: EditProject, notice: string | null = null): void => {
+    this.set({ project, selectedClipId: null, playheadFrame: 0, playing: false, notice });
+  };
+
   // ── 工程编辑（约束全部收口在 model 纯函数里，这里只做派发与附带状态清理） ──
 
   /** 编辑动作统一入口：清掉上一条提示（提示只描述"刚刚发生的那一下"） */
