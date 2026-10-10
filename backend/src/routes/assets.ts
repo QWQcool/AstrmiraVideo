@@ -1,8 +1,9 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { z } from 'zod';
 import { fileTypeFromFile } from 'file-type';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
-import { AssetListResponseSchema } from '@astrmira/shared';
+import { AssetListResponseSchema, normalizeProjectId } from '@astrmira/shared';
 import type { AssetListEntry } from '@astrmira/shared';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
 import { isSafeAssetId } from '../store/assets.js';
@@ -35,6 +36,8 @@ export interface AssetRoutesDeps {
 export interface AssetSidecar {
   name?: string;
   kind?: 'image' | 'video' | 'audio';
+  /** V2.11（台账 B47）：资产归属的项目（缺失 = 默认项目） */
+  projectId?: string;
 }
 
 /**
@@ -47,16 +50,58 @@ export interface AssetSidecar {
 async function readAssetSidecar(assetsDir: string, assetId: string): Promise<AssetSidecar> {
   try {
     const raw = await readFile(path.join(assetsDir, `${assetId}.json`), 'utf8');
-    const parsed = JSON.parse(raw) as { name?: unknown; kind?: unknown };
+    const parsed = JSON.parse(raw) as { name?: unknown; kind?: unknown; projectId?: unknown };
     const meta: AssetSidecar = {};
     if (typeof parsed.name === 'string' && parsed.name !== '') meta.name = parsed.name;
     if (parsed.kind === 'image' || parsed.kind === 'video' || parsed.kind === 'audio') {
       meta.kind = parsed.kind;
     }
+    // V2.11：项目 id 也走"认得才收"——sidecar 是本地文件，被人为改坏时不猜、不填占位
+    if (typeof parsed.projectId === 'string' && parsed.projectId !== '') {
+      meta.projectId = parsed.projectId;
+    }
     return meta;
   } catch {
     return {};
   }
+}
+
+/**
+ * 按项目统计资产个数（V2.11 / 台账 B47）。
+ *
+ * 口径与 `GET /api/assets` **逐条一致**：没有 sidecar（或 sidecar 里没有 projectId）的资产
+ * 算**默认项目**。项目列表的 `assetCount` 与资产列表的过滤因此不会互相打脸。
+ *
+ * 代价是一次目录扫描 + 每个资产读一个几十字节的 sidecar —— 与 `/api/assets` 同级，
+ * 在"资产上千"之前不值得加缓存（届时参照 `server/storageUsage.ts` 的 5s 缓存套路）。
+ */
+export async function countAssetsByProject(outputsDir: string): Promise<Map<string, number>> {
+  const assetsDir = path.join(outputsDir, 'assets');
+  const counts = new Map<string, number>();
+
+  let names: string[];
+  try {
+    names = await readdir(assetsDir);
+  } catch {
+    return counts; // 目录不存在 = 没有资产
+  }
+
+  const seen = new Set<string>();
+  for (const name of names) {
+    const dot = name.lastIndexOf('.');
+    if (dot <= 0) continue;
+    const assetId = name.slice(0, dot);
+    if (!isSafeAssetId(assetId) || seen.has(assetId)) continue;
+    // sidecar 自己也要被跳过（`<assetId>.json` 与媒体文件同前缀，靠扩展名区分）
+    if (name.slice(dot + 1).toLowerCase() === 'json') continue;
+    seen.add(assetId);
+
+    const sidecar = await readAssetSidecar(assetsDir, assetId);
+    const projectId = normalizeProjectId(sidecar.projectId);
+    counts.set(projectId, (counts.get(projectId) ?? 0) + 1);
+  }
+
+  return counts;
 }
 
 /**
@@ -86,9 +131,16 @@ export const createAssetRoutes =
 
     app.get(
       '/api/assets',
-      { schema: { response: { 200: AssetListResponseSchema } } },
-      async () => {
+      {
+        schema: {
+          // V2.11（B47）：`?project=<id>` 只列该项目的资产；**省略 = 默认项目**
+          querystring: z.object({ project: z.string().optional() }),
+          response: { 200: AssetListResponseSchema },
+        },
+      },
+      async (request) => {
         const assetsDir = path.join(outputsDir, 'assets');
+        const projectFilter = normalizeProjectId(request.query.project);
 
         let names: string[];
         try {
@@ -120,6 +172,10 @@ export const createAssetRoutes =
             const kind = resolveAssetKind(sidecar.kind, sniffed.mime);
             if (kind === null) continue;
 
+            // V2.11（B47）：归属项目 —— sidecar 缺省即默认项目
+            const projectId = normalizeProjectId(sidecar.projectId);
+            if (projectId !== projectFilter) continue;
+
             entries.push({
               assetId,
               kind,
@@ -127,6 +183,7 @@ export const createAssetRoutes =
               size: info.size,
               url: `/media/assets/${name}`,
               createdAt: Math.round(info.mtimeMs),
+              projectId,
               ...(sidecar.name === undefined ? {} : { name: sidecar.name }),
             });
           } catch {

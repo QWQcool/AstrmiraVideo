@@ -63,6 +63,8 @@ export class SqliteJobQueue implements JobQueue {
       submitting: job.submitting,
       // V9 · B9：剪辑任务的 EDL 随任务落库 —— 它同时是"这条任务是不是剪辑产物"的判据
       ...(job.editScript === undefined ? {} : { editScript: job.editScript }),
+      // V2.11（台账 B47）：项目归属随任务落库（缺省由 store 收敛成默认项目）
+      ...(job.projectId === undefined ? {} : { projectId: job.projectId }),
     });
     this.store.putIdempotencyKey(job.idempotencyKey, job.taskId);
 

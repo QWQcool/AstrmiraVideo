@@ -3,10 +3,16 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { fileTypeFromBuffer } from 'file-type';
-import { ErrorResponseSchema, UploadResponseSchema } from '@astrmira/shared';
+import {
+  DEFAULT_PROJECT_ID,
+  ErrorResponseSchema,
+  UploadResponseSchema,
+  normalizeProjectId,
+} from '@astrmira/shared';
 import type { UploadedAsset } from '@astrmira/shared';
 import { createErrorResponse } from '../errors.js';
 import { probeMedia } from '../lib/ffmpeg.js';
+import type { ProjectStore } from '../store/projects.js';
 import {
   ImageSanitizeError,
   sanitizeImage,
@@ -76,12 +82,16 @@ async function writeAssetMeta(
   assetId: string,
   originalName: string | undefined,
   kind: UploadKind,
+  projectId: string,
 ): Promise<void> {
-  if (originalName === undefined) return;
+  // V2.11（B47）：项目归属也要落盘 —— 因此"没名字但属于非默认项目"的资产**必须**写 sidecar
+  // （否则它会被读成默认项目的资产，等于上传到了错误的项目里）。
+  // 无名字且属默认项目时仍不写：与 V2.9/V2.10 的行为保持一致（少一个文件、少一次 IO）。
+  if (originalName === undefined && projectId === DEFAULT_PROJECT_ID) return;
   try {
     await writeFile(
       path.join(assetsDir, `${assetId}.json`),
-      JSON.stringify({ name: originalName, uploadedAt: Date.now(), kind }),
+      JSON.stringify({ name: originalName, uploadedAt: Date.now(), kind, projectId }),
       'utf8',
     );
   } catch {
@@ -132,6 +142,11 @@ export interface UploadRoutesOptions {
   outputsDir?: string;
   /** 测试注入：容器流类型复核（默认 = 真实 ffprobe；返回 null 表示复核不可用） */
   probeStreams?: (filePath: string) => Promise<ContainerStreams | null>;
+  /**
+   * V2.11（台账 B47）：项目校验。**传了就校验** `projectId` 存在（不存在 → 400 + 撤回本次落盘）。
+   * 不传则不校验（老测试零改动）；生产装配必须传（见 index.ts）。
+   */
+  projects?: ProjectStore;
 }
 
 export const createUploadRoutes =
@@ -163,12 +178,26 @@ export const createUploadRoutes =
         const assets: UploadedAsset[] = [];
         let fileCount = 0;
 
+        // V2.11（B47）：项目归属。
+        //  ① 字段可能在文件**之后**到达（multipart 顺序由客户端决定）→ 不边读边写 sidecar，
+        //     先把元数据攒起来，等字段齐了再写（否则会出现"资产在项目 X、sidecar 写着默认项目"）；
+        //  ② 校验不过要**撤回本次已落盘的媒体文件** —— 不留孤儿（不静默降级）。
+        let projectIdRaw: string | null = null;
+        const writtenPaths: string[] = [];
+        const pendingMeta: Array<{ assetId: string; name: string | undefined; kind: UploadKind }> = [];
+
         try {
           // 文件**数量**上限由本函数自己计数控制，**不交给** multipart 的 `limits.files`：
           // 超限时 multipart 会直接中止请求流并抛 `ERR_STREAM_PREMATURE_CLOSE`（500），
           // 给不出干净的 413。体积（fileSize）仍交给 multipart 做流式保护。
           for await (const part of request.parts({ limits: { fileSize: MAX_FILE_BYTES } })) {
-            if (part.type !== 'file') continue;
+            if (part.type !== 'file') {
+              // V2.11：项目字段（可选；缺省 = 默认项目）
+              if (part.fieldname === 'projectId' && typeof part.value === 'string') {
+                projectIdRaw = part.value;
+              }
+              continue;
+            }
 
             fileCount += 1;
             if (fileCount > MAX_FILES) {
@@ -219,8 +248,14 @@ export const createUploadRoutes =
                 return reply.code(415).send(createErrorResponse('INVALID_ASSET', message));
               }
 
-              await writeFile(path.join(assetsDir, `${assetId}.${sanitized.ext}`), sanitized.buffer);
-              await writeAssetMeta(assetsDir, assetId, sanitizeOriginalName(part.filename), 'image');
+              const imagePath = path.join(assetsDir, `${assetId}.${sanitized.ext}`);
+              await writeFile(imagePath, sanitized.buffer);
+              writtenPaths.push(imagePath);
+              pendingMeta.push({
+                assetId,
+                name: sanitizeOriginalName(part.filename),
+                kind: 'image',
+              });
               assets.push({
                 assetId,
                 kind: 'image',
@@ -235,6 +270,7 @@ export const createUploadRoutes =
             // 先落盘再复核：ffprobe 需要文件路径（见文件头第 5 条）。
             const mediaPath = path.join(assetsDir, `${assetId}.${sniffed.ext}`);
             await writeFile(mediaPath, buffer);
+            writtenPaths.push(mediaPath);
 
             let kind: UploadKind = sniffed.mime.startsWith('audio/') ? 'audio' : 'video';
             if (kind === 'video') {
@@ -256,7 +292,11 @@ export const createUploadRoutes =
                 );
             }
 
-            await writeAssetMeta(assetsDir, assetId, sanitizeOriginalName(part.filename), kind);
+            pendingMeta.push({
+              assetId,
+              name: sanitizeOriginalName(part.filename),
+              kind,
+            });
             assets.push({ assetId, kind, mime: sniffed.mime, size: buffer.length });
           }
         } catch (err) {
@@ -277,6 +317,23 @@ export const createUploadRoutes =
 
         if (assets.length === 0) {
           return reply.code(400).send(createErrorResponse('INVALID_ASSET', '没有收到任何文件'));
+        }
+
+        // V2.11（B47）：项目归属校验（字段已全读完，顺序无关）。
+        // 显式给了不存在的项目 → 400 + **撤回本次落盘的媒体文件**（不留孤儿）。
+        const projectId = normalizeProjectId(projectIdRaw);
+        if (options.projects !== undefined && options.projects.get(projectId) === null) {
+          await Promise.all(
+            writtenPaths.map((filePath) => rm(filePath, { force: true }).catch(() => undefined)),
+          );
+          return reply
+            .code(400)
+            .send(createErrorResponse('INVALID_REQUEST', `项目不存在：${projectId}`));
+        }
+
+        // 元数据（原始文件名 / 类别 / 项目）统一在最后写 —— 此时项目已确定
+        for (const meta of pendingMeta) {
+          await writeAssetMeta(assetsDir, meta.assetId, meta.name, meta.kind, projectId);
         }
 
         return { assets };

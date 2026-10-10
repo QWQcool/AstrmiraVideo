@@ -1,6 +1,21 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.10 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.11 · 已冻结（变更需先改本文，再改代码）**
+> **V2.11 修订（2026-10-10）**：**项目维度（台账 B47，用户 2026-10-10 拍板"成员角色先不做"）** —— 向后兼容的扩展。
+>   ① **§12 新增**：`ProjectEntry` + 项目 CRUD 四条路由；**默认项目 `default` 永远存在**（老数据的归属，
+>      也是"调用方没传项目"时的落点）—— 因此**老客户端行为不变**；
+>   ② **§1**：`VideoGenerateRequest` 增**可选** `projectId`（**我们的元数据、不透传给上游**），
+>      且必须进幂等指纹（否则同一提示词在两个项目会被去重成同一条任务）；
+>   ③ **§5**：`POST /api/upload` 新增可选 multipart 字段 `projectId`、`GET /api/history` 与
+>      `GET /api/assets` 新增可选 `?project=`；**三者省略一律 = 默认项目**（不是"全部项目"）；
+>      `POST /api/edits/renders` 新增可选 multipart 字段 `projectId`（剪辑产物与其源片同属一个项目）；
+>   ④ **§5 / §4**：`AssetListEntry` 增**必填** `projectId`（sidecar 缺失即默认项目 —— 如实归属，不猜）；
+>      sidecar（`<assetId>.json`）相应增可选 `projectId` 与必填 `kind` 的写入口径（见 §7）；
+>   ⑤ **§6**：新增 `PROJECT_NOT_FOUND`（`terminal`）—— 显式指定了不存在的项目时**报错而不是静默落到默认项目**；
+>      `INVALID_REQUEST` 复用为「项目名为空 / 重名 / 删除非空项目 / 删除默认项目」四种请求级拒绝；
+>   ⑥ **§7**：`projects` 表与 `tasks.project_id` 的迁移口径（`bootstrapProjects`：建默认项目 + 回填 NULL，幂等）；
+>   ⑦ **角色（管理员/创作者/查看者）不在本版**：没有用户身份系统就做角色只是假门禁（违反"不假装可用"），
+>      登记为独立待办（与 §B50 协作审批同批）。
 > **V2.10 修订（2026-10-09）**：**音频素材与 BGM（台账 B57）** —— 向后兼容的扩展（新增一类资产，不改既有语义）。
 >   ① **§5**：`POST /api/upload` 白名单新增 **mp3 / wav / m4a**（魔数嗅探 + **ffprobe 流类型复核**）；
 >      **实测事实（2026-10-09）**：`file-type` 对 `.m4a` 与 `.mp4` **都返回 `video/mp4`**（无论 brand 怎么写），
@@ -174,6 +189,13 @@ export interface VideoGenerateRequest {
   // 背景：2026-09-23 线上故障正是"请求里的 model 无人消费、被 env 覆盖"导致的 404，
   // 因此"请求优先"这条是**契约级**要求，不是实现细节。
   options?: Record<string, unknown>;
+
+  // V2.11（台账 B47）：任务归属的项目（见 §12）。
+  // ⚠️ 这是**我们的元数据**，**不透传给上游**（provider 必须忽略它）。
+  // 缺省 = 默认项目（`DEFAULT_PROJECT_ID = 'default'`）；显式给了不存在的项目 → 404 PROJECT_NOT_FOUND。
+  // 它**必须进幂等指纹**：否则"同一提示词在两个项目各提交一次"会被去重成同一条任务，
+  // 用户在第二个项目里将看不到自己刚提交的东西。
+  projectId?: string;
 }
 ```
 
@@ -366,13 +388,17 @@ export interface AssetListResponse {
 | `GET` | `/api/health` | 存活探针（响应形状见 §8；**任何来源**均免鉴权，见 PLAN §7-4） |
 | `GET` | `/api/providers/status` | **本服务本地引擎配置状态**（V1.8：纯配置事实陈述，非硬件探测；**旧名 `/api/system/probe` 已废弃**） |
 | `GET` | `/media/*` | **V1.8 新增**：`outputs/` 静态媒体服务（成片直链，播放器与下载的 **206 Range** 载体）；路径只含服务端生成的随机 ID，不含任何用户输入 |
-| `POST` | `/api/generate` | 创建视频生成任务（凭据经 `X-Provider-Key`，见下方注记段）。**200 → `{ taskId }`**（幂等：同一 `Idempotency-Key` 或缺省指纹重复提交返回同一 `taskId`）；提示词为空或超过 2000 字符 → **400 `PROMPT_REJECTED`**（terminal）；引擎未实现 / 未启用 → **503 `PROVIDER_UNAVAILABLE`**；60s 防抖限流 → 429 |
+| `POST` | `/api/generate` | 创建视频生成任务（凭据经 `X-Provider-Key`，见下方注记段）。**200 → `{ taskId }`**（幂等：同一 `Idempotency-Key` 或缺省指纹重复提交返回同一 `taskId`）；提示词为空或超过 2000 字符 → **400 `PROMPT_REJECTED`**（terminal）；引擎未实现 / 未启用 → **503 `PROVIDER_UNAVAILABLE`**；60s 防抖限流 → 429。**V2.11（B47）**：body 可带可选 `projectId`（缺省 = 默认项目）；**显式给了不存在的项目 → 404 `PROJECT_NOT_FOUND`**（不静默落到默认项目）；`projectId` 进幂等指纹 |
 | `GET` | `/api/tasks/:taskId` | 轮询任务状态与结果。**200 → `TaskProgress`（§4）**；不存在或已清理 → **404 `TASK_NOT_FOUND`** |
 | `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消；已在终态 → `{ ok: false }`）。**200 → `{ ok, taskId }`**。语义是**尽力而为**：服务端把任务置 `cancelled`（此后调度器**不再推进**、也不会被 heartbeat 覆盖），并**通知上游停止**；上游是否真的停止、是否已产生费用，本服务无法代上游保证 —— 前端文案必须如实说明并指向服务商后台核对 |
 | `POST` | `/api/prompt/enhance` | 提示词扩写助手（**V2.0 已实现**，凭据经 `X-LLM-Key`，见下方注记段）。**200 → `PromptEnhanceResponse`（§3，含必填 `engine`）**；无 Key → **501 `LLM_NOT_CONFIGURED`**；空 / 超长提示词 → **400 `PROMPT_REJECTED`**；上游拒绝凭据 → **401 `KEY_INVALID`**；其余上游故障（含超时）→ **502 `UPSTREAM_ERROR`**。状态映射的完整口径见 §3 |
-| `POST` | `/api/upload` | 上传参考图/视频/**音频**（multipart，**V2.6 起** ≤100MB × ≤4（**V2.10 起音频 ≤20MB**），**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目）。**V2.9**：落一份 sidecar `<assetId>.json`（`{ name?, uploadedAt }`）—— `name` = 用户原始文件名的 **sanitize 结果**（`basename` + 去控制字符 + 截断 120 字符），**只落本地**：不进上游请求、不进操作日志、不进任务快照；写失败不阻断上传（元数据是增强，不是事实源）。**V2.10（B57）**：白名单新增 **mp3 / wav / m4a**（`audio/mpeg` / `audio/wav` / 容器为 `video/mp4` 的纯音频文件），音频体积上限 **20MB**（`MAX_AUDIO_BYTES`，超限 413）、**原样落盘**（不走防线 4 图像清洗）；判 `audio` 的口径 = 容器嗅探 + **ffprobe 流类型复核**（见上「V2.10 修订」①，容器嗅探对 m4a 不可靠）；sidecar 增**可选** `kind`（`image`/`video`/`audio`，供 `/api/assets` 免探测复读） |
-| `GET` | `/api/assets` | **V2.7 新增**：**资产库清单（只读）**。**200 → `AssetListResponse`（§4 末尾）**（最近 200 个，新的在前；`mime` 为**魔数嗅探事实**，与 `/api/upload` 同口径；`url` 为同源 `/media/assets/<文件>` 直链；`createdAt` = 文件 mtime）。**V2.9**：条目新增可选 `name`（来自 sidecar；抽帧产物没有原始文件名 → 无该字段），弹层据此"按名字认素材"。**目录不存在**（从未上传过）→ 200 + 空数组，**不是 404**。用途：`@` 提及素材弹层（B41）与后续资产管理视图；不改变任何生命周期与清理规则（见 §7）。**V2.10（B57）**：`kind` 扩展为 `image|video|audio` —— **优先读 sidecar 的 `kind`**（上传时已由 ffprobe 算准，免去逐文件探测），sidecar 缺失 / 无该字段时按容器嗅探兜底（`audio/*` → audio、`video/*` → video；**不猜**——老资产与抽帧产物走这条，其中 `.m4a` 老资产会被兜底判为 video，属如实边界） |
-| `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage }`**（`items` 最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾）。**V2.4 起**：默认只返回**生成产物**（剪辑产物不进历史，避免提示词与源片相同造成的"重复"观感）；查询参数 `?kind=edit`：**V2.6 起 `source` 可选** —— 带 `source=<taskId>` 返回某源片的剪辑产物（剪辑台"本片剪辑历史"用）；**不带 `source` 返回全部剪辑产物**（剪辑台素材候选 / L2 血缘画布用，同样受最近 50 条上限约束） |
+| `POST` | `/api/upload` | 上传参考图/视频/**音频**（multipart，**V2.6 起** ≤100MB × ≤4（**V2.10 起音频 ≤20MB**），**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目）。**V2.9**：落一份 sidecar `<assetId>.json`（`{ name?, uploadedAt }`）—— `name` = 用户原始文件名的 **sanitize 结果**（`basename` + 去控制字符 + 截断 120 字符），**只落本地**：不进上游请求、不进操作日志、不进任务快照；写失败不阻断上传（元数据是增强，不是事实源）。**V2.10（B57）**：白名单新增 **mp3 / wav / m4a**（`audio/mpeg` / `audio/wav` / 容器为 `video/mp4` 的纯音频文件），音频体积上限 **20MB**（`MAX_AUDIO_BYTES`，超限 413）、**原样落盘**（不走防线 4 图像清洗）；判 `audio` 的口径 = 容器嗅探 + **ffprobe 流类型复核**（见上「V2.10 修订」①，容器嗅探对 m4a 不可靠）；sidecar 增**可选** `kind`（`image`/`video`/`audio`，供 `/api/assets` 免探测复读）。**V2.11（B47）**：新增可选 multipart 字段 `projectId`（缺省 = 默认项目）→ 写进 sidecar 的项目归属；**显式给了不存在的项目 → 400 `INVALID_REQUEST` + 撤回本次已落盘的媒体文件**（不留孤儿）。⚠️ 字段可能在文件之后到达（multipart 顺序由客户端决定），因此 sidecar **统一在字段读完后写**（不支持"边收边写"会产生"资产在 A 项目、sidecar 写着默认项目"的错位） |
+| `GET` | `/api/assets` | **V2.7 新增**：**资产库清单（只读）**。**200 → `AssetListResponse`（§4 末尾）**（最近 200 个，新的在前；`mime` 为**魔数嗅探事实**，与 `/api/upload` 同口径；`url` 为同源 `/media/assets/<文件>` 直链；`createdAt` = 文件 mtime）。**V2.9**：条目新增可选 `name`（来自 sidecar；抽帧产物没有原始文件名 → 无该字段），弹层据此"按名字认素材"。**目录不存在**（从未上传过）→ 200 + 空数组，**不是 404**。用途：`@` 提及素材弹层（B41）与后续资产管理视图；不改变任何生命周期与清理规则（见 §7）。**V2.10（B57）**：`kind` 扩展为 `image|video|audio` —— **优先读 sidecar 的 `kind`**（上传时已由 ffprobe 算准，免去逐文件探测），sidecar 缺失 / 无该字段时按容器嗅探兜底（`audio/*` → audio、`video/*` → video；**不猜**——老资产与抽帧产物走这条，其中 `.m4a` 老资产会被兜底判为 video，属如实边界）。**V2.11（B47）**：条目新增**必填** `projectId`（sidecar 的 `projectId` 缺失即默认项目 —— 如实归属，不猜）；可选 `?project=<projectId>` 过滤，**省略 = 默认项目**（与 `/api/history` 同口径） |
+| `GET` | `/api/projects` | **V2.11 新增（台账 B47）**：**项目清单（含用量）**。**200 → `ProjectListResponse`（§12）** —— 默认项目永远在列表里且排最前。`taskCount` 走 SQL、`assetCount` 读资产 sidecar 的项目归属（与 `/api/assets` 同一口径）。用途：项目切换器、项目级用量视图 |
+| `POST` | `/api/projects` | **V2.11 新增**：新建项目（body `{ name }`，1~60 字符）。**200 → `{ project: ProjectEntry }`**（id 为服务端生成的 UUID）；名字为空 → **400 `INVALID_REQUEST`**；**重名 → 400 `INVALID_REQUEST`**（切换器里两个同名项目认不出来，这是可用性问题不是洁癖） |
+| `PATCH` | `/api/projects/:projectId` | **V2.11 新增**：改项目名（body `{ name }`）。**200 → `{ project: ProjectEntry }`**；不存在 → **404 `PROJECT_NOT_FOUND`**；空名 / 重名 → **400 `INVALID_REQUEST`** |
+| `DELETE` | `/api/projects/:projectId` | **V2.11 新增**：删除**空**项目。**200 → `{ deleted: true, projectId }`**；不存在 → **404 `PROJECT_NOT_FOUND`**；**默认项目 → 400 `INVALID_REQUEST`**（它是老数据与"未指定项目"的落点）；**项目非空 → 400 `INVALID_REQUEST`**（本项目**不做级联删除** —— 那会把任务与资产变成孤儿） |
+| `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage }`**（`items` 最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾）。**V2.4 起**：默认只返回**生成产物**（剪辑产物不进历史，避免提示词与源片相同造成的"重复"观感）；查询参数 `?kind=edit`：**V2.6 起 `source` 可选** —— 带 `source=<taskId>` 返回某源片的剪辑产物（剪辑台"本片剪辑历史"用）；**不带 `source` 返回全部剪辑产物**（剪辑台素材候选 / L2 血缘画布用，同样受最近 50 条上限约束）。**V2.11（B47）**：可选 `?project=<projectId>` —— **省略 = 默认项目**（不是"全部项目"：界面的心智模型是"我在哪个项目里"）；`storage` 聚合仍是**目录级全局**（它描述磁盘，不描述项目） |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
 | `POST` | `/api/providers/keys/verify` | **V2.1 新增（原【规划·B2】）**：凭据与模型校验，**零费用**。请求头按轨取（视频 `X-Provider-Key` / 文本 `X-LLM-Key`）；**200 → `KeyVerifyResponse`（§9）**；未带 Key → **501 `KEY_MISSING`**；凭据被上游拒绝 → **401 `KEY_INVALID`**；上游不可达 → **502 `UPSTREAM_ERROR`**；**V2.8 起**：独立限流桶 `verify`（同一来源 IP **10 秒内最多 5 次**，内存突发窗口）→ 429 `RATE_LIMITED` + `Retry-After`。为什么：本端点**会向上游发真实请求**（`/models` + 空 content 探针），没有限流时被刷等于把部署者的服务器当免费探针——与生成任务的 60s 冷却（防线 5）分开计桶，互不影响。**为什么是"窗口 N 次"而不是"最小间隔"**：间隔语义会误伤正常交互（连点两次"测试连接"切轨道验证），窗口语义对"人"无感、对"脚本"生效；它是底线防护，真正的防线仍是 Caddy 登录 + `PUBLIC_API_TOKEN` |
 | `GET` | `/api/logs` | **V2.1 新增**：操作日志查询（筛选 + 分页，见 §10）。**200 → `{ items, total }`**；**V2.8 起**：独立限流桶 `logs`（同一来源 IP **10 秒内最多 30 次**，内存突发窗口）→ 429 `RATE_LIMITED` + `Retry-After`。为什么：日志页挂载 + 轮询 + 连续筛选的请求量远低于该配额（正常使用**完全无感**），但脚本级高频扫描会被挡住（读接口也要有一道底线）；同样独立计桶。**两个 DELETE 刻意不挂桶**（写操作、频率天然低，避免误伤"连续手删"） |
@@ -422,6 +448,7 @@ export type ErrorDisposition =
 | `LLM_NOT_CONFIGURED` | 扩写未配置 LLM（V2.0 起：请求未携带 `X-LLM-Key`，或自定义端点没配全 → `/api/prompt/enhance` 返回 `501`；服务端**不设**文本侧兜底 Key，见 §3） | `terminal` |
 | `KEY_INVALID` | 凭据被上游拒绝（真实调用与 `POST /api/providers/keys/verify` 两处产生，见 §9） | `terminal` |
 | `KEY_MISSING` | 需要凭据的端点既未收到 `X-Provider-Key`，服务端也无 env 兜底 Key（也用于访问令牌缺失） | `terminal` |
+| `PROJECT_NOT_FOUND` | **V2.11 新增（台账 B47）**：请求显式指定的 `projectId`（正文 / 查询参数）在项目表里不存在。用于 `POST /api/generate` 与 `PATCH` / `DELETE /api/projects/:projectId`。**刻意不静默落到默认项目** —— 那会让用户在"默认项目"里看到本不属于它的东西，而他以为自己选中的项目并没有接住这条任务 | `terminal`（改 id 或先建项目） |
 | `INVALID_REQUEST` | **V2.3 登记（V9 · B9 落地时补齐）**：请求**形状合法但值/组合不合法** —— 如剪辑台 `endSec ≤ startSec`、连续两次「拼接」、转场未跟在拼接之后。⚠️ 本码在 V2.2 的 §11-2 里就被引用过，但当时**没有登记进本字典**（契约内部不自洽）；B9 实现时按"契约优先且必须自洽"补齐，契约测试的双向校验（实现 ↔ 文档）会一直盯着这件事 | `terminal` |
 
 **V1.3 三条硬规则**：
@@ -438,6 +465,7 @@ export type ErrorDisposition =
 | 数据 | 存储 | 生命周期 |
 | :--- | :--- | :--- |
 | 任务状态 + 参数快照 + 画廊元数据 | SQLite（`data/app.db`，better-sqlite3） | 持久，服务重启可恢复 |
+| **项目（V2.11 落地，台账 B47）** | SQLite（同上）：`projects(project_id, name, created_at, updated_at)`；任务归属 = `tasks.project_id` | **默认项目 `default` 由启动引导保证存在**（`bootstrapProjects`：`INSERT ... ON CONFLICT DO NOTHING`），并**回填** `project_id IS NULL` 的老行为 `default`（幂等，每次启动跑一次）。删除只允许**空项目**且**默认项目不可删**（§5 / §12）；**不做级联删除** —— 任务与资产不随项目消失 |
 | 幂等键 → taskId 映射 | SQLite（同上） | 持久；同一键重复提交返回同一任务（§5） |
 | 任务告警 `warnings[]` | SQLite（同上） | 随任务记录持久化，画廊 / 结果卡展示（V1.4 §4）；**仅写服务端日志不算告警** |
 | `submitting` 提交标记 | SQLite（同上） | 提交前写入、成功后写回上游 taskId；重启后据此判定是否已提交（§5，防线 7 前提） |
@@ -720,3 +748,51 @@ export interface EditScript {
 - **失败归类**：输入非法 → `400 INVALID_REQUEST`；源任务不存在/无成 → `404 TASK_NOT_FOUND`；ffmpeg 不存在 → `503 PROVIDER_UNAVAILABLE`；执行失败 → `500 UPSTREAM_ERROR`。**没有 `uncertain`**：本地操作没有"不知道结果"的状态。
 
 **生命周期**：剪辑产物与原片同规则（`outputs/`、画廊可见、删除即物理删除）；**EDL 随任务落库**（`tasks.edit_script` 列），删任务连 EDL 一起删。
+
+---
+
+## 12. 项目维度 `Project`（V2.11 新增；台账 B47）
+
+> **定位**：交付形态是**一家客户一套私有部署**（PLAN §6-D42），所以**没有** tenant / 跨租户隔离。
+> 需要隔离的单位是**一个客户内部的多条片子 / 产品线** —— 那就是项目。
+> **角色（管理员 / 创作者 / 查看者）不在本版**（用户 2026-10-10 拍板"先不做"）：
+> 没有用户身份系统就做角色只是假门禁（违反"不许假装可用"），它需要独立的身份系统，登记为待办。
+
+```ts
+// 默认项目：**永远存在**，也是"调用方没传 projectId"时的落点。
+// 老数据（V2.11 之前的任务）在启动时被回填到它 —— 因此老客户端与老测试的行为完全不变。
+export const DEFAULT_PROJECT_ID = 'default';
+
+export interface ProjectEntry {
+  projectId: string;      // 'default' 或服务端生成的 UUID
+  name: string;           // 1~60 字符，trim 后不得为空、**不得重名**
+  createdAt: number;      // epoch ms
+  updatedAt: number;
+  isDefault: boolean;     // 默认项目：不可删除
+  taskCount: number;      // 用量：项目内的任务条数（含剪辑产物与失败记录）
+  assetCount: number;     // 用量：项目内的资产个数（口径 = sidecar 的 projectId，缺失算默认项目）
+}
+
+export interface ProjectListResponse { projects: ProjectEntry[] }   // 默认项目排最前
+export interface ProjectResponse { project: ProjectEntry }
+export interface CreateProjectRequest { name: string }              // POST 与 PATCH 同形
+export interface DeleteProjectResponse { deleted: boolean; projectId: string }
+```
+
+**四条口径（都是"不静默"的具体化）**：
+
+1. **缺失即默认项目**：`POST /api/generate` 的 body、`POST /api/upload` / `POST /api/edits/renders` 的 multipart 字段、
+   `GET /api/history` / `GET /api/assets` 的查询参数 —— **省略一律 = 默认项目**（不是"全部项目"）。
+   界面的心智模型是"我在哪个项目里"，而"跨项目看全部"不是一个需要在界面上出现的能力。
+2. **显式给了不存在的项目 → 报错**：生成任务 **404 `PROJECT_NOT_FOUND`**、
+   上传 **400 `INVALID_REQUEST` + 撤回本次已落盘的媒体文件**。绝不静默落到默认项目 ——
+   那会让用户在"默认项目"里看到本不属于它的东西，而他以为自己选中的项目并没有接住它。
+3. **删除只允许空项目**，且**默认项目不可删**：本项目**不做级联删除**（删一个还有任务/资产的项目
+   等于把数据变成孤儿）。用量非零 → `400 INVALID_REQUEST`，文案报出真实的 `taskCount` / `assetCount`。
+4. **项目名去重**：同名项目在切换器里根本认不出来（可用性问题，不是洁癖）→ `400 INVALID_REQUEST`。
+
+**存储与迁移**（细则见 §7）：`projects` 表 + `tasks.project_id` 列；
+启动引导 `bootstrapProjects` **幂等**地建默认项目并回填 NULL 归属，因此**升级不需要人工步骤**。
+资产不走数据库：归属写在 sidecar（`outputs/assets/<assetId>.json` 的 `projectId`），
+**没有 sidecar 的老资产按默认项目算** —— 这是如实的归属，不是猜一个。
+

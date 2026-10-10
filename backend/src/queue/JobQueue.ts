@@ -37,6 +37,11 @@ export interface QueueJob {
   kind?: 'generate' | 'edit';
   /** `kind: 'edit'` 时必填：要执行的编辑决策清单（随任务落库，见 CONTRACT §11-2） */
   editScript?: EditScript;
+  /**
+   * V2.11（台账 B47）：任务归属的项目。缺省 = 默认项目（`DEFAULT_PROJECT_ID`）——
+   * 与 `VideoGenerateRequest.projectId` 同源，由调用方（路由层）收敛成一个值后传进来。
+   */
+  projectId?: string;
 }
 
 /**

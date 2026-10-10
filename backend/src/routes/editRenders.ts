@@ -3,7 +3,12 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { fileTypeFromBuffer } from 'file-type';
-import { EditProjectSchema, ErrorResponseSchema, GenerateResponseSchema } from '@astrmira/shared';
+import {
+  EditProjectSchema,
+  ErrorResponseSchema,
+  GenerateResponseSchema,
+  normalizeProjectId,
+} from '@astrmira/shared';
 import { createErrorResponse } from '../errors.js';
 import { createTaskThumbnail } from '../pipeline/thumbnail.js';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
@@ -64,6 +69,9 @@ export const createEditRenderRoutes =
         let fileBuffer: Buffer | null = null;
         let sourceTaskId: string | null = null;
         let projectRaw: string | null = null;
+        // V2.11（B47）：项目归属。字段名是 `projectId` —— 与工程 JSON 的 `project` 字段
+        // 刻意区分开（两个东西都叫 project 但一个是"工程"、一个是"项目"）。
+        let projectIdRaw: string | null = null;
 
         try {
           for await (const part of request.parts({ limits: { fileSize: MAX_RENDER_BYTES } })) {
@@ -90,6 +98,7 @@ export const createEditRenderRoutes =
             if (typeof value !== 'string') continue;
             if (part.fieldname === 'sourceTaskId') sourceTaskId = value;
             if (part.fieldname === 'project') projectRaw = value;
+            if (part.fieldname === 'projectId') projectIdRaw = value;
           }
         } catch (err) {
           const code = (err as { code?: string }).code;
@@ -184,9 +193,13 @@ export const createEditRenderRoutes =
           thumbnailUrl = undefined;
         }
 
+        // V2.11（B47）：项目归属 —— 缺省即默认项目（剪辑产物与它的源片同属一个项目）
+        const projectId = normalizeProjectId(projectIdRaw);
+
         const now = Date.now();
         deps.store.insert({
           taskId,
+          projectId,
           // 与 legacy 剪辑一致：走 local 轨（它不是上游产物；track 只影响调度口径，不影响展示）
           track: 'local',
           provider: 'browser-remotion',

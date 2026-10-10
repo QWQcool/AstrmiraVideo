@@ -39,6 +39,8 @@ function asset(partial: Partial<AssetListEntry> & { assetId: string }): AssetLis
     size: 100,
     url: `/media/assets/${partial.assetId}.jpg`,
     createdAt: 1,
+    // V2.11（B47）：资产永远有项目归属（缺省 = 默认项目）
+    projectId: 'default',
     ...partial,
   };
 }

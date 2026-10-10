@@ -142,6 +142,8 @@ describe('弹层候选过滤（V2.9 / 台账 B43）', () => {
     kind: 'image',
     mime: 'image/png',
     size: 1,
+    // V2.11（B47）：资产永远有项目归属（缺省 = 默认项目）
+    projectId: 'default',
     url: `/media/assets/${assetId}.png`,
     createdAt: 1,
     ...(name === undefined ? {} : { name }),

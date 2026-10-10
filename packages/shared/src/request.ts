@@ -73,6 +73,16 @@ export const VideoGenerateRequestSchema = z.object({
   // provider 私有参数：仅对声明支持该字段的 provider 生效；
   // 未识别的键必须被忽略而非报错（默认引擎不得因该字段而改变行为）。
   options: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * **我们的元数据，不透传给上游**（V2.11 / 台账 B47）：任务归属的项目。
+   *
+   * 为什么放在请求体而不是请求头：它与请求是**同一个决策的组成部分**（在哪个项目里出片），
+   * 且要让幂等指纹把它算进去 —— 否则"同一个提示词在两个项目各提交一次"会被幂等去重成
+   * 同一条任务（用户会在项目 B 里看不到自己刚提交的东西）。
+   *
+   * 缺省 = 默认项目（`DEFAULT_PROJECT_ID`），因此老客户端行为不变。
+   */
+  projectId: z.string().optional(),
 });
 
 export type GenerationMode = z.infer<typeof GenerationModeSchema>;

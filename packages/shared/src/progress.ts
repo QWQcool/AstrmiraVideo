@@ -35,6 +35,8 @@ export const ErrorCodeSchema = z.enum([
   // 说明：CONTRACT §11-2 早在 V2.2 就引用了 `INVALID_REQUEST`，但那次的错误码字典（§6）
   // **没有登记它** —— 契约内部不自洽。B9 实现时把它补进字典（详见 CONTRACT §6 / §11-2）。
   'INVALID_REQUEST', // 请求**形状合法但值/组合不合法**（如剪辑的 endSec ≤ startSec、连续两次拼接）
+  // ── V2.11 追加（台账 B47 项目维度）──
+  'PROJECT_NOT_FOUND', // 指定的项目不存在（不静默落到默认项目 —— 否则用户会在"默认项目"里看到本不属于它的东西）
 ]);
 
 export const TaskErrorSchema = z.object({

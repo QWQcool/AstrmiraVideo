@@ -28,6 +28,8 @@ export const ERROR_DISPOSITION = {
   KEY_MISSING: 'terminal',
   // V2.3（V9 · B9）：请求形状合法但值/组合不合法 —— 重试无意义，必须改参数
   INVALID_REQUEST: 'terminal',
+  // V2.11（台账 B47）：项目不存在 —— 重试无意义（要么改 id，要么先建项目）
+  PROJECT_NOT_FOUND: 'terminal',
 } satisfies Record<ErrorCode, ErrorDisposition>;
 
 /** 全部错误码（供契约层穷举断言使用，避免测试里手写第二份清单） */
@@ -129,6 +131,8 @@ function defaultMessageOf(code: ErrorCode): string {
       return '提示词不合规';
     case 'INVALID_REQUEST':
       return '请求参数不合法（形状没问题，但取值或组合不被接受）';
+    case 'PROJECT_NOT_FOUND':
+      return '项目不存在或已被删除';
     case 'UPSTREAM_ERROR':
       return '上游返回错误';
     case 'UNCERTAIN_RESULT':

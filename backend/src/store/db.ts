@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { DEFAULT_PROJECT_ID } from '@astrmira/shared';
 
 /**
  * SQLite 存储（CONTRACT §7）：任务状态 / 参数快照 / 画廊元数据 / 幂等键 / 防线 5 冷却
@@ -32,6 +33,16 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_status  ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
+
+-- 项目维度（V2.11 / 台账 B47）：任务与资产都归属一个项目。
+-- 默认项目（id = 'default'）由 bootstrapProjects 保证存在 —— 它是老数据的归属，
+-- 也是"调用方没传 projectId"时的落点（见 CONTRACT §12）。
+CREATE TABLE IF NOT EXISTS projects (
+  project_id TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS idempotency_keys (
   key        TEXT PRIMARY KEY,
@@ -106,6 +117,9 @@ const COLUMN_MIGRATIONS: ReadonlyArray<{ table: string; column: string; ddl: str
   // V2.5（B34 · P4）：多轨工程产物（CONTRACT §11-2）——JSON { sourceTaskId, project }。
   // 与 edit_script 并列：旧记录用 script、新记录用 project，二者都是"这条是剪辑产物"的判据。
   { table: 'tasks', column: 'edit_origin', ddl: 'TEXT' },
+  // V2.11（台账 B47）：任务归属的项目。NULL = V2.11 之前建的行 → 启动时回填成默认项目
+  // （`bootstrapProjects`）。回填而不是"查询时用 coalesce"：让按项目过滤能吃到索引。
+  { table: 'tasks', column: 'project_id', ddl: 'TEXT' },
 ];
 
 function applyColumnMigrations(db: Db): void {
@@ -114,6 +128,38 @@ function applyColumnMigrations(db: Db): void {
     if (columns.some((column) => column.name === migration.column)) continue;
     db.exec(`ALTER TABLE ${migration.table} ADD COLUMN ${migration.column} ${migration.ddl}`);
   }
+}
+
+/**
+ * 迁移之后才能建的索引（V2.11）。
+ *
+ * 为什么不能写进 `SCHEMA`：`SCHEMA` 在 `applyColumnMigrations` **之前**执行 ——
+ * 线上老库此时还没有 `project_id` 列，`CREATE INDEX ... (project_id)` 会直接报
+ * 「no such column」（这正是"改表必须走 ALTER"那条经验的下半句）。
+ */
+const POST_MIGRATION_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, created_at DESC);
+`;
+
+/**
+ * 项目维度的**启动引导**（V2.11 / 台账 B47）——幂等，可反复跑：
+ * 1. 保证默认项目存在（老数据与"未指定项目"的落点）；
+ * 2. 把 V2.11 之前建的、`project_id` 为空的任务**回填**成默认项目。
+ *
+ * 为什么不静默留着 NULL：留着的话每个查询都要写 `coalesce(project_id,'default')`
+ * （索引失效、且"缺失"就有两种写法），回填一次让**模型里只有一个真相**。
+ */
+function bootstrapProjects(db: Db): void {
+  const now = Date.now();
+  db.prepare(
+    `INSERT INTO projects (project_id, name, created_at, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(project_id) DO NOTHING`,
+  ).run(DEFAULT_PROJECT_ID, '默认项目', now, now);
+
+  db.prepare(
+    `UPDATE tasks SET project_id = ? WHERE project_id IS NULL OR project_id = ''`,
+  ).run(DEFAULT_PROJECT_ID);
 }
 
 export function openDatabase(filePath: string = resolveDatabasePath()): Db {
@@ -127,5 +173,7 @@ export function openDatabase(filePath: string = resolveDatabasePath()): Db {
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
   applyColumnMigrations(db);
+  db.exec(POST_MIGRATION_INDEXES);
+  bootstrapProjects(db);
   return db;
 }

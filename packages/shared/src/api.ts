@@ -80,6 +80,13 @@ export const AssetListEntrySchema = UploadedAssetSchema.extend({
    * ⚠️ 它**只落本地**：不进上游请求、不进操作日志、不进任务快照（见 CONTRACT §5 / §7）。
    */
   name: z.string().optional(),
+  /**
+   * V2.11（台账 B47）：资产所属项目。
+   *
+   * **永远有值** —— 上传时把 projectId 写进 sidecar；没有 sidecar 的老资产按**默认项目**算
+   * （缺失 = 默认项目，是如实的归属而不是猜一个）。界面按当前项目过滤素材池靠它。
+   */
+  projectId: z.string(),
 });
 
 /** `GET /api/assets` 的 200 响应（最近 200 个，新的在前；空目录 → 空数组，不是 404） */

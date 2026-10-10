@@ -2,7 +2,12 @@ import { readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
-import { ErrorResponseSchema, HistoryResponseSchema, OperationResultSchema } from '@astrmira/shared';
+import {
+  ErrorResponseSchema,
+  HistoryResponseSchema,
+  OperationResultSchema,
+  normalizeProjectId,
+} from '@astrmira/shared';
 import { THUMBNAIL_DIR_NAME } from '../pipeline/thumbnail.js';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
 import { readStorageUsage, withOutputFileFacts } from '../server/storageUsage.js';
@@ -25,6 +30,12 @@ const TaskIdParamsSchema = z.object({ taskId: z.string() });
 const HistoryQuerySchema = z.object({
   kind: z.literal('edit').optional(),
   source: z.string().optional(),
+  /**
+   * V2.11（台账 B47）：只返回该项目的任务。**省略 = 默认项目**（不是"全部项目"）——
+   * 这样 V2.11 之前的客户端（与既有测试）行为完全不变，而"跨项目看全部"不是一个
+   * 需要出现在界面上的能力（界面的心智模型是"我在哪个项目里"）。
+   */
+  project: z.string().optional(),
 });
 
 /** 快照里被引用的参考资产 id（首帧 / 尾帧 / 参考视频三格） */
@@ -78,13 +89,16 @@ export const createHistoryRoutes =
         // V9 修复：`?kind=edit` 查剪辑产物（剪辑台用）；缺省只返回生成产物。
         // V2.6（B37）：`source` 可选 —— 不带时返回全部剪辑产物（素材候选 / L2 画布用）。
         const { kind, source } = request.query;
+        // V2.11（B47）：项目过滤 —— 省略即默认项目（见 HistoryQuerySchema 的注释）
+        const projectId = normalizeProjectId(request.query.project);
         const records = (
           kind === 'edit'
-            ? deps.store.listRecent(
-                50,
-                source === undefined ? { kind: 'edit' } : { kind: 'edit', sourceTaskId: source },
-              )
-            : deps.store.listRecent(50)
+            ? deps.store.listRecent(50, {
+                kind: 'edit',
+                projectId,
+                ...(source === undefined ? {} : { sourceTaskId: source }),
+              })
+            : deps.store.listRecent(50, { projectId })
         ).map(toTaskProgress);
 
         // V2.3（CONTRACT §4/§5）：逐条补落盘事实（体积 / V2.8 起"文件不存在即省略直链"）

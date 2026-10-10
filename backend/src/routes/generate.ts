@@ -5,6 +5,7 @@ import {
   ErrorResponseSchema,
   GenerateResponseSchema,
   VideoGenerateRequestSchema,
+  normalizeProjectId,
   parseTaskRef,
 } from '@astrmira/shared';
 import type { ProviderType, VideoGenerateRequest, VideoProvider } from '@astrmira/shared';
@@ -14,6 +15,7 @@ import { fingerprintKey, resolveProviderKey } from '../security/credential.js';
 import type { KeyVault } from '../security/keyVault.js';
 import type { CooldownStore } from '../security/rateLimit.js';
 import { rateLimitKey, resolveClientIp } from '../security/rateLimit.js';
+import type { ProjectStore } from '../store/projects.js';
 import type { TaskStore, TrackId } from '../store/taskStore.js';
 
 /**
@@ -39,6 +41,12 @@ export interface GenerateRoutesDeps {
    * 不传 = 不做交接，云端任务会在提交阶段报 `KEY_MISSING`（fail loud，不静默）。
    */
   keyVault?: KeyVault;
+  /**
+   * V2.11（台账 B47）：项目校验。**传了就校验 projectId 存在**（不存在 → 404 `PROJECT_NOT_FOUND`），
+   * 不传则不校验（老测试与老调用点零改动；代价是"项目不存在"会以孤儿归属落地，
+   * 生产装配里**必须**传 —— 见 index.ts）。
+   */
+  projects?: ProjectStore;
 }
 
 /**
@@ -59,6 +67,9 @@ export function fingerprintRequest(request: VideoGenerateRequest): string {
     assets: request.assets ?? null,
     params: request.params ?? null,
     provider: request.provider,
+    // V2.11（B47）：项目**必须进指纹** —— 否则"同一个提示词在两个项目各提交一次"
+    // 会被幂等去重成同一条任务（用户会在第二个项目里看不到刚提交的东西）。
+    projectId: normalizeProjectId(request.projectId),
   });
   return `fp-${createHash('sha256').update(normalized).digest('hex').slice(0, 32)}`;
 }
@@ -116,6 +127,16 @@ export const createGenerateRoutes =
                 `提示词过长：上限 ${MAX_PROMPT_CHARS} 字符，当前 ${prompt.length} 字符`,
               ),
             );
+        }
+
+        // V2.11（B47）：项目归属 —— 缺省即默认项目。**显式给了不存在的项目就报 404**，
+        // 不静默落到默认项目（否则用户会在"默认项目"里看到本不属于它的东西，
+        // 而且他以为自己建过/选过的项目并没有接住这条任务）。
+        const projectId = normalizeProjectId(body.projectId);
+        if (deps.projects !== undefined && deps.projects.get(projectId) === null) {
+          return reply
+            .code(404)
+            .send(createErrorResponse('PROJECT_NOT_FOUND', `项目不存在：${projectId}`));
         }
 
         // V2.6（B37）：`task:` 引用**同步**校验 —— 契约承诺"任务不存在 / 无成片 → 404"。
@@ -199,6 +220,7 @@ export const createGenerateRoutes =
           track: trackFor(body.provider),
           request: body,
           idempotencyKey,
+          projectId,
           // 「即将提交」标记：在真正触达上游之前先落库（CONTRACT §5，防线 7 前提）
           submitting: true,
         });

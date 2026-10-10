@@ -26,6 +26,7 @@ import { healthRoutes } from './routes/health.js';
 import { createHistoryRoutes } from './routes/history.js';
 import { createKeyVerifyRoutes } from './routes/keysVerify.js';
 import { createLogRoutes } from './routes/logs.js';
+import { createProjectRoutes } from './routes/projects.js';
 import { providerRoutes, setLocalEngineSelfCheck } from './routes/providers.js';
 import { createTaskRoutes } from './routes/tasks.js';
 import { createUploadRoutes, MAX_FILE_BYTES } from './routes/upload.js';
@@ -51,6 +52,7 @@ import { startStorageEvictor } from './server/storageEvict.js';
 import { createAssetUrlResolver, createTaskVideoUrlResolver } from './store/assets.js';
 import { openDatabase } from './store/db.js';
 import { EventLogStore } from './store/eventLog.js';
+import { ProjectStore } from './store/projects.js';
 import { reconcileOrphanTasks } from './store/reconciliation.js';
 import { TaskStore } from './store/taskStore.js';
 
@@ -168,6 +170,8 @@ export async function buildApp() {
   // ── 公共链路（S2）：SQLite 存储 + 队列 + 双轨调度器 + 静态媒体（206 载体）─────────
   const db = openDatabase();
   const store = new TaskStore(db);
+  // V2.11（B47）：项目维度（默认项目由 openDatabase 的 bootstrapProjects 保证存在）
+  const projects = new ProjectStore(db);
   const eventLog = new EventLogStore(db);
   // V9 修复：任务终态（complete / fail / uncertain）也进操作日志 —— 否则异步任务的失败
   // 不产生新的 HTTP 请求，操作日志里无迹可查（剪辑失败但日志全是 200 的缺口）。
@@ -298,9 +302,18 @@ export async function buildApp() {
   });
 
   await app.register(
-    createGenerateRoutes({ store, queue, resolveProvider: getProvider, cooldown, keyVault }),
+    createGenerateRoutes({
+      store,
+      queue,
+      resolveProvider: getProvider,
+      cooldown,
+      keyVault,
+      projects,
+    }),
   );
-  await app.register(createUploadRoutes());
+  // V2.11（B47）：项目维度（列表 / 新建 / 改名 / 删除空项目）
+  await app.register(createProjectRoutes({ projects }));
+  await app.register(createUploadRoutes({ projects }));
   // V2.7（B41）：资产库清单（只读；`@` 提及素材弹层用）
   await app.register(createAssetRoutes());
   await app.register(createEnhanceRoutes());

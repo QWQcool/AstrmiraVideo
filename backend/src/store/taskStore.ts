@@ -5,6 +5,7 @@ import type {
   TaskProgress,
   VideoGenerateRequest,
 } from '@astrmira/shared';
+import { DEFAULT_PROJECT_ID } from '@astrmira/shared';
 import type { Db } from './db.js';
 
 /**
@@ -44,6 +45,12 @@ export interface TaskRecord {
   editOrigin?: { sourceTaskId: string; project: EditProject };
   /** 抽帧产物的资产 id（可能多个） */
   extractedAssetIds?: string[];
+  /**
+   * V2.11（台账 B47）：任务归属的项目。
+   * 可选是**为了兼容 V2.11 之前建的行**：`rowToRecord` 会把 NULL 读成默认项目，
+   * 而 `bootstrapProjects` 在启动时已把老行回填 —— 两条路都指向同一个真相。
+   */
+  projectId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -65,6 +72,7 @@ interface TaskRow {
   edit_script: string | null;
   edit_origin: string | null;
   extracted_asset_ids: string | null;
+  project_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -91,6 +99,8 @@ function rowToRecord(row: TaskRow): TaskRecord {
     ...(row.extracted_asset_ids === null
       ? {}
       : { extractedAssetIds: JSON.parse(row.extracted_asset_ids) as string[] }),
+    // V2.11：NULL 读作默认项目（回填之前建的行；回填之后理论上不会再出现 NULL）
+    projectId: row.project_id ?? DEFAULT_PROJECT_ID,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -159,10 +169,11 @@ export class TaskStore {
         `INSERT INTO tasks (task_id, track, provider, status, progress_percent, request_snapshot,
                             output_video_url, thumbnail_url, warnings, error, upstream_task_id,
                             submitting, message, edit_script, edit_origin, extracted_asset_ids,
-                            created_at, updated_at)
+                            project_id, created_at, updated_at)
          VALUES (@taskId, @track, @provider, @status, @progressPercent, @requestSnapshot,
                  @outputVideoUrl, @thumbnailUrl, @warnings, @error, @upstreamTaskId, @submitting,
-                 @message, @editScript, @editOrigin, @extractedAssetIds, @createdAt, @updatedAt)`,
+                 @message, @editScript, @editOrigin, @extractedAssetIds, @projectId,
+                 @createdAt, @updatedAt)`,
       )
       .run({
         taskId: record.taskId,
@@ -182,6 +193,8 @@ export class TaskStore {
         editOrigin: record.editOrigin === undefined ? null : JSON.stringify(record.editOrigin),
         extractedAssetIds:
           record.extractedAssetIds === undefined ? null : JSON.stringify(record.extractedAssetIds),
+        // V2.11：入库时缺省即默认项目（调用方不传也不会留下 NULL）
+        projectId: record.projectId ?? DEFAULT_PROJECT_ID,
         createdAt: now,
         updatedAt: now,
       });
@@ -250,36 +263,44 @@ export class TaskStore {
    *
    * V2.5：剪辑产物有两代 —— 旧记录 `edit_script`、新记录 `edit_origin`（浏览器端渲染入库），
    * 两条判据都要算（`coalesce` 取 sourceTaskId，两代各自的 JSON 结构不同但字段名一致）。
+   *
+   * V2.11（台账 B47）：新增可选 `projectId` —— **传了才过滤**。所有调用方都显式传
+   * （路由层把"省略"收敛成默认项目，见 `normalizeProjectId`），此处不设隐式默认：
+   * 存储层"悄悄按默认项目过滤"会让别的调用点（测试、脚本）拿到意料之外的空列表。
    */
-  listRecent(limit = 50, filter?: { kind: 'edit'; sourceTaskId?: string }): TaskRecord[] {
-    if (filter !== undefined) {
-      if (filter.sourceTaskId === undefined) {
-        const rows = this.db
-          .prepare(
-            `SELECT * FROM tasks
-              WHERE (edit_script IS NOT NULL OR edit_origin IS NOT NULL)
-              ORDER BY created_at DESC LIMIT ?`,
-          )
-          .all(limit) as TaskRow[];
-        return rows.map(rowToRecord);
-      }
+  listRecent(
+    limit = 50,
+    options: { kind?: 'edit'; sourceTaskId?: string; projectId?: string } = {},
+  ): TaskRecord[] {
+    const projectClause = options.projectId === undefined ? '' : ' AND project_id = @projectId';
+    const params: Record<string, unknown> = { limit };
+    if (options.projectId !== undefined) params['projectId'] = options.projectId;
+
+    if (options.kind === 'edit') {
+      const sourceClause =
+        options.sourceTaskId === undefined
+          ? ''
+          : ` AND coalesce(json_extract(edit_script, '$.sourceTaskId'),
+                           json_extract(edit_origin, '$.sourceTaskId')) = @sourceTaskId`;
+      if (options.sourceTaskId !== undefined) params['sourceTaskId'] = options.sourceTaskId;
+
       const rows = this.db
         .prepare(
           `SELECT * FROM tasks
-            WHERE (edit_script IS NOT NULL OR edit_origin IS NOT NULL)
-              AND coalesce(json_extract(edit_script, '$.sourceTaskId'),
-                           json_extract(edit_origin, '$.sourceTaskId')) = ?
-            ORDER BY created_at DESC LIMIT ?`,
+            WHERE (edit_script IS NOT NULL OR edit_origin IS NOT NULL)${sourceClause}${projectClause}
+            ORDER BY created_at DESC LIMIT @limit`,
         )
-        .all(filter.sourceTaskId, limit) as TaskRow[];
+        .all(params) as TaskRow[];
       return rows.map(rowToRecord);
     }
 
     const rows = this.db
       .prepare(
-        'SELECT * FROM tasks WHERE edit_script IS NULL AND edit_origin IS NULL ORDER BY created_at DESC LIMIT ?',
+        `SELECT * FROM tasks
+          WHERE edit_script IS NULL AND edit_origin IS NULL${projectClause}
+          ORDER BY created_at DESC LIMIT @limit`,
       )
-      .all(limit) as TaskRow[];
+      .all(params) as TaskRow[];
     return rows.map(rowToRecord);
   }
 
