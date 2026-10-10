@@ -84,6 +84,8 @@ export function LibraryView() {
   const [includeProject, setIncludeProject] = useState(true);
   const [includeCover, setIncludeCover] = useState(true);
   const [includeManifest, setIncludeManifest] = useState(true);
+  // V2.14（B49 片 B）：按预设重新渲染（画幅对齐）—— 默认关：它慢，且客户可能只想改名打包
+  const [transcode, setTranscode] = useState(false);
   const [deliverBusy, setDeliverBusy] = useState(false);
   const [deliverProgress, setDeliverProgress] = useState<string | null>(null);
   const [deliverError, setDeliverError] = useState<string | null>(null);
@@ -152,6 +154,7 @@ export function LibraryView() {
         includeProject,
         includeCover,
         includeManifest,
+        transcode,
       }),
     [
       pickedTasks,
@@ -162,6 +165,7 @@ export function LibraryView() {
       includeProject,
       includeCover,
       includeManifest,
+      transcode,
     ],
   );
   /** 有条目带规格提示时如实汇总（**不阻断**：客户有权按自己的判断交付） */
@@ -181,7 +185,14 @@ export function LibraryView() {
     try {
       const built = await buildDeliverableZip(
         deliverPlan,
-        { includeVideo, includeProject, includeCover, includeManifest },
+        {
+          includeVideo,
+          includeProject,
+          includeCover,
+          includeManifest,
+          transcode,
+          preset: chosenPreset,
+        },
         (progress) => setDeliverProgress(progress.label),
       );
       saveDeliverable(built);
@@ -390,6 +401,18 @@ export function LibraryView() {
                 onChange={(event) => setIncludeManifest(event.target.checked)}
               />
               交付清单.json
+            </label>
+            <label
+              className="dl-transcode"
+              title={`在浏览器内把成片重新渲染成 ${chosenPreset.width}×${chosenPreset.height}（画幅按 cover 裁切，不拉伸；时长不变；耗时与片长成正比）`}
+            >
+              <input
+                type="checkbox"
+                checked={transcode}
+                data-testid="dl-transcode"
+                onChange={(event) => setTranscode(event.target.checked)}
+              />
+              按预设重新渲染（{chosenPreset.width}×{chosenPreset.height}）
             </label>
           </div>
 

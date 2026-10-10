@@ -965,6 +965,7 @@ export interface DeliverableManifest {   // 契约形状；schema = DeliverableM
     createdAt: number | null;
     packaged: boolean;         // 视频是否真的进了包
     projectIncluded: boolean;  // 剪辑工程 JSON 是否随包（仅剪辑产物）
+    transcoded: boolean;       // 是否**按平台规格重新渲染过**（V2.14 / 片 B）
     assets: string[];          // requestSnapshot.assets 的原样快照（可复现的关键）
     extractedAssetCount: number;
     costYuan: number | null;   // 来自 §13；null = 未结算（**不是 0**）
@@ -974,7 +975,25 @@ export interface DeliverableManifest {   // 契约形状；schema = DeliverableM
 }
 ```
 
-**本版不做（如实登记）**：① **水印开关**（成片水印在上游侧由 `--watermark` 控制、当前固定 `false`；
-剪辑台导出的水印需要渲染链路加一层，属独立小活）；② **转码**（改画幅/码率/时长对齐平台）；
-③ 交付包的**断点续传 / 分片**（大包一次性内存拼装，几十 MB 量级够用）。
+**规格转码（V2.14 / 片 B）—— 复用导出链路，不引新依赖**：
+
+转码 = 构造一个**目标画幅的单镜头工程**（`createProjectFromSource` + 预设的 width/height）再渲染一遍，
+复用剪辑台的导出链路（Remotion composition → `@remotion/web-renderer` → WebCodecs → mediabunny 封装）。
+**零新依赖、零服务器 CPU**；代价是耗时与片长成正比（进度条如实显示）。
+
+四条口径：
+1. **裁切而不是拉伸**：画幅不一致时按 `cover` 裁掉多余部分（`.ed-comp-media { object-fit: cover }`）。
+   正常剪辑流程里工程画幅 = 源片画幅，`cover` 与 `fill` 等价 —— 只有转码这条路会走到裁切；
+2. **时长不截断**：只对齐画幅与帧率，**不动时长**（截断是内容决定，工具不替客户剪；
+   超过平台上限由 `presetWarnings` 提示）；
+3. **帧率归一到工程帧率**（默认 30）—— 转码必然重采样，说清口径比假装没变化好；
+4. **探测真实时长与尺寸**（`probeVideoMeta`），**不用**请求参数里的 `durationSec`
+   （实测成片 5.09s vs 请求 5s，用请求值会把尾巴切掉 —— "看起来对、其实少帧"的那种错）。
+   已对齐（尺寸与帧率都命中）→ **跳过渲染**，原文件进包并如实说明。
+
+**水印：明确不做（D45，用户 2026-10-10 拍板）**。因此交付包与剪辑台导出**都没有水印开关**；
+上游侧的 `--watermark` 仍固定 `false`（成片本身不带平台水印）。
+
+**本版不做（如实登记）**：① **码率 / 编码参数对齐**（只对齐画幅与帧率，不按平台调码率）；
+② 交付包的**断点续传 / 分片**（大包一次性内存拼装，几十 MB 量级够用）。
 

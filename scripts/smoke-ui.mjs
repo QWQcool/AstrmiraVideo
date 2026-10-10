@@ -34,7 +34,15 @@
  * 用法：`pnpm smoke:ui`（可选 `--headed` 观察浏览器、`--keep` 保留临时目录）
  */
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -1587,6 +1595,84 @@ try {
   assert(
     (await page.locator('.dl-panel').count()) === 0,
     '打包成功后交付面板自动收起（界面不会停在过期计划上）',
+  );
+
+  console.log('\n[6l] 交付包 · 按预设转码（V2.14 / B49 片 B：画幅 cover 对齐，ffprobe 复核）');
+  // 口径：复用剪辑台导出链路（Remotion composition → web-renderer → WebCodecs），
+  // **不引新依赖、不占服务器 CPU**；这里用 ffprobe 复核产物尺寸 —— 渲染说"我转了"不算数，文件说了算。
+  await page.locator('.dl-open').click();
+  await page.waitForSelector('.dl-panel', { timeout: 5_000 });
+  const transcodeBox = page.locator('[data-testid="dl-transcode"]');
+  assert(await transcodeBox.isVisible(), '交付面板出现「按预设重新渲染」开关（默认关）');
+  assert((await transcodeBox.isChecked()) === false, '转码默认关闭（它慢，客户可能只想改名打包）');
+  await transcodeBox.check();
+
+  const transcodeDownload = page.waitForEvent('download', { timeout: 240_000 });
+  await page.locator('[data-testid="dl-build"]').click();
+  const transcodeFile = await transcodeDownload;
+  const transcodePath = path.join(EXPORT_DIR, 'deliverable-transcoded.zip');
+  await transcodeFile.saveAs(transcodePath);
+  assert(true, `转码交付包已下载（${transcodeFile.suggestedFilename()}）`);
+
+  const transcodeZip = new Uint8Array(readFileSync(transcodePath));
+  const transcodeNames = readZipNames(transcodeZip);
+  const mp4Name = transcodeNames.find((name) => name.endsWith('.mp4'));
+  assert(mp4Name !== undefined, `包里有成片（${transcodeNames.join(' / ')}）`);
+
+  const extractEntry = (buffer, wanted) => {
+    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    const decoder = new TextDecoder();
+    let cursor = 0;
+    while (cursor + 30 <= buffer.length) {
+      if (view.getUint32(cursor, true) !== 0x0403_4b50) break;
+      const size = view.getUint32(cursor + 18, true);
+      const nameLength = view.getUint16(cursor + 26, true);
+      const extraLength = view.getUint16(cursor + 28, true);
+      const name = decoder.decode(buffer.subarray(cursor + 30, cursor + 30 + nameLength));
+      const start = cursor + 30 + nameLength + extraLength;
+      if (name === wanted) return buffer.subarray(start, start + size);
+      cursor = start + size;
+    }
+    return null;
+  };
+
+  const mp4Bytes = extractEntry(transcodeZip, mp4Name);
+  assert(mp4Bytes !== null && mp4Bytes.length > 0, `从包里取出成片（${mp4Bytes?.length ?? 0} 字节）`);
+  const transcodeOut = path.join(EXPORT_DIR, 'transcoded.mp4');
+  writeFileSync(transcodeOut, mp4Bytes);
+  const transcodeProbe = await ffprobeJson(transcodeOut);
+  const videoStreamOut = transcodeProbe.streams.find((stream) => stream.codec_type === 'video');
+  const sourceProbeForSize = await ffprobeJson(
+    `${baseUrl}${await page.evaluate(async () => {
+      const data = await (await fetch('/api/history')).json();
+      return (data.items ?? [])[0]?.outputVideoUrl ?? '/api/health';
+    })}`,
+  );
+  const sourceVideo = sourceProbeForSize.streams.find((stream) => stream.codec_type === 'video');
+  assert(
+    videoStreamOut?.width === 1080 && videoStreamOut?.height === 1920,
+    `转码产物画幅 = 抖音竖屏（${videoStreamOut?.width}×${videoStreamOut?.height}，期望 1080×1920）`,
+  );
+  assert(
+    videoStreamOut?.width !== sourceVideo?.width,
+    `产物的确重新渲染过（源片 ${sourceVideo?.width}×${sourceVideo?.height} → ${videoStreamOut?.width}×${videoStreamOut?.height}）`,
+  );
+  const sourceDuration = Number(sourceProbeForSize.format.duration);
+  const outDuration = Number(transcodeProbe.format.duration);
+  assert(
+    Math.abs(outDuration - sourceDuration) <= 0.3,
+    `时长未被改动（源 ${sourceDuration.toFixed(2)}s → 产物 ${outDuration.toFixed(2)}s）`,
+  );
+
+  const manifestBytes = extractEntry(transcodeZip, '交付清单.json');
+  const manifestJson = JSON.parse(new TextDecoder().decode(manifestBytes));
+  assert(
+    manifestJson.items.every((item) => item.transcoded === true),
+    '清单逐条标了 transcoded: true（客户系统据此知道哪些是重编码产物）',
+  );
+  assert(
+    manifestJson.notes.some((note) => note.includes('按平台规格重新渲染过')),
+    '清单口径说明了转码含义（cover 裁切 / 帧率归一 / 时长未改动）',
   );
 
   console.log('\n[7] 操作日志（V2.1，CONTRACT §10）');

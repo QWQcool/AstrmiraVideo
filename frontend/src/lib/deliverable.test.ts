@@ -11,6 +11,7 @@ import {
   type TaskProgress,
 } from '@astrmira/shared';
 import { planDeliverablePackage } from './deliverablePackage';
+import { planTranscode } from './presetTranscode';
 import { buildZipStore, crc32, readZipEntryNames, uniqueName } from './zipStore';
 
 /**
@@ -185,6 +186,7 @@ describe('§14-③ 规格对齐（只提示，不转码）与交付计划', () =
         includeProject: false,
         includeCover: true,
         includeManifest: true,
+        transcode: false,
         date: new Date(2026, 9, 10),
       },
     );
@@ -209,13 +211,14 @@ describe('§14-③ 规格对齐（只提示，不转码）与交付计划', () =
       includeProject: false,
       includeCover: false,
       includeManifest: true,
+      transcode: false,
     });
     expect(plan.plannedEntryCount).toBe(1);
     expect(plan.manifest.items[0]!.packaged).toBe(false);
     expect(plan.manifest.notes.join(' ')).toContain('清单内引用');
   });
 
-  it('清单带着口径说明（金额是预估 + 未做转码）', () => {
+  it('清单带着口径说明（金额是预估 + 转码与否逐条看 transcoded）', () => {
     const manifest = buildDeliverableManifest({
       project: { projectId: 'default', name: 'P' },
       preset,
@@ -223,7 +226,38 @@ describe('§14-③ 规格对齐（只提示，不转码）与交付计划', () =
       generatedAt: 0,
     });
     expect(manifest.notes.join(' ')).toContain('以火山方舟控制台账单为准');
-    expect(manifest.notes.join(' ')).toContain('未做平台转码');
+    // 刻意不写"已/未转码"：勾选转码后逐条不同，一句总的话会变成假话
+    expect(manifest.notes.join(' ')).toContain('transcoded');
     expect(manifest.manifestVersion).toBe(1);
+  });
+
+  it('V2.14（片 B）：勾了转码 → 清单里有转码说明，且意图写进 transcoded', () => {
+    const plan = planDeliverablePackage([task({ taskId: 'aaaaaaaa-1' })], {
+      preset,
+      projectName: 'P',
+      projectId: 'default',
+      includeVideo: true,
+      includeProject: false,
+      includeCover: false,
+      includeManifest: true,
+      transcode: true,
+    });
+    expect(plan.manifest.items[0]!.transcoded).toBe(true);
+    expect(plan.manifest.notes.join(' ')).toContain('按平台规格重新渲染过');
+    expect(plan.manifest.notes.join(' ')).toContain('时长未改动');
+  });
+
+  it('V2.14：planTranscode 只在"真的不一致"时才说要转（画幅帧率都对齐 → 跳过）', () => {
+    expect(planTranscode(null, preset).needed).toBe(true);
+    expect(planTranscode({ width: 1280, height: 720, fps: 30 }, preset).needed).toBe(true);
+    const aligned = planTranscode({ width: preset.width, height: preset.height, fps: 30 }, preset);
+    expect(aligned.needed).toBe(false);
+    expect(aligned.reason).toContain('跳过转码');
+    // 画幅一致但帧率不同 → 仍要重采样（口径说清，不假装没变化）
+    const fpsOnly = planTranscode({ width: preset.width, height: preset.height, fps: 24 }, preset);
+    expect(fpsOnly.needed).toBe(true);
+    expect(fpsOnly.reason).toContain('重采样');
+    // 转码口径必须说"裁切不拉伸"
+    expect(planTranscode({ width: 1280, height: 720, fps: 30 }, preset).reason).toContain('不拉伸');
   });
 });

@@ -8,6 +8,7 @@ import {
   type TaskProgress,
 } from '@astrmira/shared';
 import { resolveMediaUrl } from './api';
+import { transcodeToPreset } from './presetTranscode';
 import { buildZipStore, downloadBytes, type ZipEntry } from './zipStore';
 
 /**
@@ -35,6 +36,11 @@ export interface DeliverableOptions {
   includeCover: boolean;
   /** 归档清单（默认开；关掉就没有"这包是什么"的说明书） */
   includeManifest: boolean;
+  /**
+   * 按预设**重新渲染**成目标画幅（V2.14 / 片 B）。
+   * 关掉 = 原文件进包（快，但画幅与预设不一致时平台会自己裁/压）；开 = 浏览器内渲染一遍（慢，但规格对齐）。
+   */
+  transcode: boolean;
   date?: Date;
 }
 
@@ -116,6 +122,8 @@ export function planDeliverablePackage(
       createdAt: item.task.createdAt,
       packaged: options.includeVideo,
       projectIncluded: options.includeProject && item.task.origin?.kind === 'edit',
+      // 这里是**意图**；`buildDeliverableZip` 会按渲染结果把实际值写回清单再入包
+      transcoded: options.transcode,
       assets: Object.values(item.task.requestSnapshot.assets ?? {}),
       extractedAssetCount: item.task.extractedAssetIds?.length ?? 0,
       ...(item.task.cost === undefined ? {} : { costYuan: item.task.cost.yuan }),
@@ -164,12 +172,17 @@ export interface BuiltDeliverable {
  */
 export async function buildDeliverableZip(
   plan: DeliverablePlan,
-  options: Pick<DeliverableOptions, 'includeVideo' | 'includeProject' | 'includeCover' | 'includeManifest'>,
+  options: Pick<
+    DeliverableOptions,
+    'includeVideo' | 'includeProject' | 'includeCover' | 'includeManifest' | 'transcode'
+  > & { preset: PlatformPreset },
   onProgress?: (progress: DeliverableProgress) => void,
 ): Promise<BuiltDeliverable> {
   const entries: ZipEntry[] = [];
   const total = plan.plannedEntryCount;
   let done = 0;
+  /** 逐条的**实际**转码结果（写回清单用；意图 ≠ 事实 —— 已对齐的片子会被跳过） */
+  const actualTranscoded = new Map<string, boolean>();
 
   const fetchBytes = async (url: string, what: string): Promise<Uint8Array> => {
     const response = await fetch(url);
@@ -181,11 +194,32 @@ export async function buildDeliverableZip(
 
   for (const item of plan.items) {
     if (options.includeVideo) {
-      onProgress?.({ done, total, label: `读取成片 ${item.videoFileName}` });
-      entries.push({
-        name: item.videoFileName,
-        data: await fetchBytes(mediaUrlOf(item.task), '成片'),
-      });
+      if (options.transcode) {
+        // 转码输出 = 目标画幅的新文件（画幅 cover 裁切、帧率归一到工程帧率、时长不动）
+        const result = await transcodeToPreset(
+          { url: mediaUrlOf(item.task), taskId: item.task.taskId },
+          options.preset,
+          {
+            onProgress: (message, ratio) =>
+              onProgress?.({
+                done,
+                total,
+                label: `${message}（${Math.round(ratio * 100)}%）`,
+              }),
+          },
+        );
+        actualTranscoded.set(item.task.taskId, result.transcoded);
+        entries.push({
+          name: item.videoFileName,
+          data: new Uint8Array(await result.blob.arrayBuffer()),
+        });
+      } else {
+        onProgress?.({ done, total, label: `读取成片 ${item.videoFileName}` });
+        entries.push({
+          name: item.videoFileName,
+          data: await fetchBytes(mediaUrlOf(item.task), '成片'),
+        });
+      }
       done += 1;
     }
     if (options.includeProject && item.task.origin?.kind === 'edit') {
@@ -208,10 +242,18 @@ export async function buildDeliverableZip(
 
   if (options.includeManifest) {
     onProgress?.({ done, total, label: '写入交付清单' });
+    // 清单里的 `transcoded` 用**实际结果**覆盖计划里的意图：已对齐的片子不写"转过"（不谎报）
+    const manifest = {
+      ...plan.manifest,
+      items: plan.manifest.items.map((item) => ({
+        ...item,
+        transcoded: actualTranscoded.get(item.taskId) ?? item.transcoded,
+      })),
+    };
     entries.push({
       name: plan.manifestFileName,
       // 缩进两格：客户可能直接打开看，JSON 也要"能读"
-      data: new TextEncoder().encode(JSON.stringify(plan.manifest, null, 2)),
+      data: new TextEncoder().encode(JSON.stringify(manifest, null, 2)),
     });
     done += 1;
   }

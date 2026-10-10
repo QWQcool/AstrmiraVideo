@@ -237,6 +237,11 @@ export const DeliverableManifestSchema = z.object({
       packaged: z.boolean(),
       /** 工程 JSON 是否随包（剪辑产物才有） */
       projectIncluded: z.boolean(),
+      /**
+       * 这条成片是否**按平台规格重新渲染过**（V2.14 / 片 B）。
+       * `false` = 原文件直接进包（已对齐，或用户没勾转码）—— 客户系统据此知道"哪几条是重编码产物"。
+       */
+      transcoded: z.boolean(),
       /** 引用的素材（`requestSnapshot.assets` 的原样快照 —— 可复现的关键） */
       assets: z.array(z.string()),
       extractedAssetCount: z.number().int(),
@@ -259,6 +264,7 @@ export interface DeliverableManifestItemInput {
   createdAt?: number;
   packaged: boolean;
   projectIncluded: boolean;
+  transcoded?: boolean;
   assets?: string[];
   extractedAssetCount?: number;
   costYuan?: number;
@@ -274,10 +280,18 @@ export function buildDeliverableManifest(input: {
   const packaged = input.items.filter((item) => item.packaged).length;
   const notes = [
     '金额为**预估**（公开价目 × 上游计费公式），未与我方账单核对；实际扣费以火山方舟控制台账单为准。',
-    '本包含成片原文件与工程/素材清单，**未做平台转码**；画幅与时长是否合平台要求见每条 warnings。',
+    // 措辞刻意不写"已/未转码"：转码与否**逐条不同**（`transcoded` 字段才是权威），
+    // 一句总的"没转码"会在勾了转码时变成假话
+    '成片是否按平台规格重新渲染过，见每条 `transcoded`；画幅与时长是否合平台要求见每条 `warnings`。',
   ];
   if (packaged < input.items.length) {
     notes.push(`清单里 ${input.items.length} 条，其中 ${packaged} 条的视频已随包（其余为清单内引用）。`);
+  }
+  const transcoded = input.items.filter((item) => item.transcoded === true).length;
+  if (transcoded > 0) {
+    notes.push(
+      `${transcoded} 条成片按平台规格重新渲染过：画幅按 cover 裁切（不拉伸）、帧率归一到工程帧率、**时长未改动**。`,
+    );
   }
 
   return {
@@ -302,6 +316,7 @@ export function buildDeliverableManifest(input: {
       createdAt: item.createdAt ?? null,
       packaged: item.packaged,
       projectIncluded: item.projectIncluded,
+      transcoded: item.transcoded ?? false,
       assets: item.assets ?? [],
       extractedAssetCount: item.extractedAssetCount ?? 0,
       costYuan: item.costYuan ?? null,
