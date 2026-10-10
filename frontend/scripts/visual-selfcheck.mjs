@@ -305,7 +305,7 @@ for (const theme of THEMES) {
   }
 }
 
-// ── ⑪ 崩溃兜底层还在（V2.24 / 台账 B61）──
+// ── ⑪ 崩溃兜底层还在（台账 B61）──
 //
 // 为什么静态查得动：兜底层是**不可见**的 —— 它不渲染任何东西（没出错时），
 // 因此"被摘掉"不会有任何视觉回归、不会有类型错误、测试也不会红。
@@ -352,6 +352,100 @@ if (boundaryUses < 3) {
   );
 }
 
+/**
+ * 从 `marker` 起取出**平衡大括号**包住的那一段（CSS 块体）。
+ * 用平衡计数而不是正则 —— 媒体查询块里还会嵌规则块，正则数不清嵌套。
+ * 返回**全部**匹配（同一文件里可能有多个同名断点块）。
+ */
+function cssBlocks(text, marker) {
+  const blocks = [];
+  let from = 0;
+  for (;;) {
+    const start = text.indexOf(marker, from);
+    if (start < 0) return blocks;
+    const open = text.indexOf('{', start);
+    if (open < 0) return blocks;
+    let depth = 0;
+    for (let i = open; i < text.length; i += 1) {
+      if (text[i] === '{') depth += 1;
+      else if (text[i] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          blocks.push(text.slice(open + 1, i));
+          from = i + 1;
+          break;
+        }
+      }
+    }
+    if (from <= start) return blocks; // 防御：不应发生（块未闭合时避免死循环）
+  }
+}
+
+// ── ⑫ 移动端四件套（台账 B60）──
+//
+// 与第 ⑪ 条同一条理由：这四项全是**不可见**的 CSS 规则（窄屏断点覆盖 / 触屏 hover 兜底 /
+// dvh 兜底 / 字号下限）—— 在桌面浏览器上看不出差别、删掉也不会有任何测试变红。
+// 静态钉住"它们还在，且形状正确"，真正的行为断言在 UI 冒烟的 [7c] 段（390×844）。
+const workbenchText = contents.get(path.join(SRC, 'styles', 'workbench.css'));
+
+if (workbenchText === undefined) {
+  failures.push('找不到 styles/workbench.css（B60 的四项收口都在这里与 tokens.css）');
+}
+
+const hoverBlock = cssBlocks(workbenchText ?? '', '@media (hover: none)')[0] ?? '';
+
+if (hoverBlock === '') {
+  failures.push('workbench.css 缺 @media (hover: none) 块（B60：触屏没有 hover，靠它点亮操作入口）');
+} else {
+  for (const selector of ['.lib-acts', '.wb-card-play']) {
+    if (!hoverBlock.includes(selector)) {
+      failures.push(`@media (hover: none) 块里缺 ${selector}（B60：触屏下它必须常显）`);
+    }
+  }
+}
+
+/** ② 日志行窄屏覆盖：六列在 375px 必溢出 → 必须在某个 ≤768 块里改成两列 */
+const narrowBlocks = cssBlocks(workbenchText ?? '', '@media (max-width: 768px)');
+if (!narrowBlocks.some((block) => block.includes('.wb-log-row-main'))) {
+  failures.push('workbench.css 的 768 断点未覆盖 .wb-log-row-main（B60：六列在手机上横向溢出会被剪掉）');
+}
+
+/** ③ 字号下限：≤768 时 --fs-note / --fs-micro 必须 ≥12px（10~11px 档在手机上不可读） */
+const tokenNarrow = cssBlocks(tokensText, '@media (max-width: 768px)')[0] ?? '';
+if (tokenNarrow === '') {
+  failures.push('tokens.css 缺 ≤768 的字号覆盖块（B60：小字号档在手机上不可读）');
+} else {
+  for (const token of ['--fs-note', '--fs-micro']) {
+    const matched = tokenNarrow.match(new RegExp(`${token}\\s*:\\s*(\\d+)px`));
+    if (matched === null) {
+      failures.push(`tokens.css 的 ≤768 块未重定义 ${token}（B60）`);
+    } else if (Number(matched[1]) < 12) {
+      failures.push(`${token} 的移动端值 ${matched[1]}px < 12px（B60 的可读性下限）`);
+    }
+  }
+}
+
+/** ④ dvh 兜底：每个 `100vh` 的下一行必须是同前缀的 `100dvh`（旧浏览器忽略 dvh 用 vh） */
+for (const [file, text] of contents) {
+  if (!file.endsWith('.css')) continue;
+  const lines = text.split('\n');
+  lines.forEach((line, index) => {
+    if (!line.includes('100vh')) return;
+    const next = lines[index + 1] ?? '';
+    if (!next.includes('100dvh')) {
+      failures.push(`${rel(file)}:${index + 1} 的 100vh 没有 100dvh 兜底行（B60）`);
+    }
+  });
+}
+
+/** ⑤ 触屏点击高亮必须被关掉（否则移动浏览器给一层与主题不符的蓝框） */
+const hasTapHighlight = [...contents.values()].some((text) =>
+  text.includes('-webkit-tap-highlight-color: transparent'),
+);
+if (!hasTapHighlight) {
+  failures.push('没有任何 CSS 关掉 -webkit-tap-highlight-color（B60：触屏点击高亮与主题不符）');
+}
+
 // ── 汇总 ──
 if (failures.length > 0) {
   console.error(`✗ 视觉自检失败（${failures.length} 项）：`);
@@ -363,5 +457,6 @@ console.log(
   `✓ 视觉自检通过：${REQUIRED_KEYFRAMES.length} 个 keyframes 均有功能位、` +
     `无硬编码字号/字距、${PANELS_EXPECTING_EYEBROW.length} 处分区标题走 eyebrow 体系、` +
     `水印 ${watermarkUsers.length} 处、数据路径零 innerHTML、index.html 零跨源资源、` +
-    `组件层零硬编码色值、两套主题对比度全部达标（${CONTRAST_RULES.length} 对 × ${THEMES.length} 套）`,
+    `组件层零硬编码色值、两套主题对比度全部达标（${CONTRAST_RULES.length} 对 × ${THEMES.length} 套）、` +
+    `移动端四件套就位（B60：窄屏日志 / hover 兜底 / dvh / 字号下限）`,
 );

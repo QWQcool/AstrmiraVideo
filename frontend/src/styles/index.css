@@ -14,10 +14,16 @@ html, body {
   font-family: var(--sans);
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  /* 移动端点击时浏览器自带的蓝色高亮块与两套主题都不符 —— 全局关掉，
+     交互反馈由组件自己给（B60：触屏兜底）。 */
+  -webkit-tap-highlight-color: transparent;
 }
 
 #root {
+  /* B60：`dvh` 兜底 —— 移动浏览器地址栏收放会改视口高度，`vh` 会把底部顶掉；
+     先写 `vh`（旧浏览器忽略下一行）再写 `dvh`（新浏览器覆盖）。下同。 */
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }

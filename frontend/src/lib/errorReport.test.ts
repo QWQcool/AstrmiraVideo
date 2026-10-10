@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildCrashReport, describeThrown, stackOf } from './errorReport';
 
 /**
- * 崩溃报告的纯函数部分（V2.24 / 台账 B61 · 片 A）。
+ * 崩溃报告的纯函数部分（台账 B61 · 片 A）。
  *
  * 为什么这些用例值得写：兜底层**只会在别人已经出事时被执行**。
  * 如果它自己在那一刻抛错（比如对非 Error 的抛出物取 `.message` 得到 undefined、

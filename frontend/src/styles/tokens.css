@@ -249,3 +249,13 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* 移动端可读性下限（B60）：10~11px 档在手机上不可读（50+ 处引用这两个 token）。
+   D47 已定"移动端 = 浏览态"，但"能看"是底线 —— 统一抬到 12px。
+   只覆盖 token，组件层零改动（这正是把字号收进 token 的收益）。 */
+@media (max-width: 768px) {
+  :root {
+    --fs-note: 12px;
+    --fs-micro: 12px;
+  }
+}

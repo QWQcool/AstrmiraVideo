@@ -2,7 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { buildCrashReport, type CrashReport } from '../lib/errorReport';
 
 /**
- * 视图级兜底（V2.24 / 台账 B61 · 片 A）。
+ * 视图级兜底（台账 B61 · 片 A）。
  *
  * ## ⚠️ 为什么必须是 class 组件
  * React **至今只有 class 组件能做 error boundary**（`getDerivedStateFromError` / `componentDidCatch`，

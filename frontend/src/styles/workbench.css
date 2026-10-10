@@ -12,6 +12,7 @@
 
 .wb-shell {
   min-height: 100vh;
+  min-height: 100dvh; /* B60：地址栏收放不顶掉底部（旧浏览器用上一行 vh 兜底） */
   display: flex;
   flex-direction: column;
   background-color: var(--bg);
@@ -1039,7 +1040,7 @@
   line-height: 1.7;
 }
 
-/* 崩溃兜底面板（V2.24 / B61）：借用 danger 色系（它确实是"出事了"），
+/* 崩溃兜底面板（B61）：借用 danger 色系（它确实是"出事了"），
    但**不做全屏遮罩** —— 旁边还留着侧栏，用户应当能直接切走（那正是这层的价值）。 */
 .wb-crash {
   border: 1px solid var(--danger-line-strong);
@@ -1349,6 +1350,7 @@
   grid-template-rows: 64px 1fr;
   grid-template-columns: auto minmax(0, 1fr);
   height: 100vh;
+  height: 100dvh; /* B60：同上 */
 }
 
 .app .wb-header {
@@ -1593,6 +1595,7 @@
    列表在**面板内部**滚动（页面本身不滚，翻日志时位置稳定）。 */
 .wb-page .wb-log-panel {
   height: calc(100vh - 64px - 128px);
+  height: calc(100dvh - 64px - 128px); /* B60：dvh 兜底（同上） */
   min-height: 320px;
   animation: none;
 }
@@ -2372,5 +2375,35 @@
   .wb-page .wb-log-panel {
     height: auto;
     max-height: calc(100vh - 64px - 96px);
+    max-height: calc(100dvh - 64px - 96px); /* B60：dvh 兜底（同上） */
+  }
+
+  /* 日志行（B60）：六列固定宽合计 ≥650px 在 375px 上必横溢，
+     而全局 `overflow-x: hidden` 会把它**剪掉**（不是可横滑）→ 两列 + 长路径换行。
+     配对关系（DOM 顺序逐格填充）：时间│状态 / 动作│路径 / IP│meta。 */
+  .wb-log-row-main {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 2px;
+  }
+
+  .wb-log-path {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* ── 触屏（无 hover）：hover-only 的操作入口必须常显（B60）──────────────
+   触屏没有 hover —— 靠 `:hover` 才"点亮"的操作对触屏用户等于隐藏（或永远偏淡）。
+   只兜"内容被藏起来"的那些；纯背景高亮类的 hover（行悬停变色…）不需要替代。 */
+@media (hover: none) {
+  /* 视频库卡片的操作区：默认 0.65 的透明是给鼠标的"克制"，触屏下直接拉满 */
+  .lib-acts {
+    opacity: 1;
+  }
+
+  /* 画廊封面的播放角标：鼠标是"悬停放大"，触屏没有悬停 → 常驻放大态 */
+  .wb-card-play {
+    opacity: 1;
+    transform: scale(1.08);
   }
 }

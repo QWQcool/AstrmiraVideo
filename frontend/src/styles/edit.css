@@ -10,6 +10,7 @@
   display: flex;
   flex-direction: column;
   height: calc(100vh - 64px);
+  height: calc(100dvh - 64px); /* B60：dvh 兜底（旧浏览器用上一行 vh） */
   min-height: 480px;
   padding-bottom: 16px;
 }
@@ -636,6 +637,7 @@
   .ed-page {
     height: auto;
     min-height: calc(100vh - 64px);
+    min-height: calc(100dvh - 64px); /* B60：dvh 兜底（同上） */
   }
 
   .ed-body {

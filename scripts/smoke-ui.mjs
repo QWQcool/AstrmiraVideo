@@ -1975,12 +1975,16 @@ try {
   assert(glowRuleExists, '生成中微光晕的挂接规则存在（data-status=running → breathe-glow）');
   await motionContext.close();
 
-  console.log('\n[7c] 移动端（V9 · B7：390×844，Step 6-AC7 的第二档）');
+  console.log('\n[7c] 移动端（V9 · B7：390×844，Step 6-AC7 的第二档；B60：触屏四件套）');
   const mobileContext = await browser.newContext({
     viewport: { width: 390, height: 844 },
     deviceScaleFactor: 2,
     colorScheme: 'dark',
     reducedMotion: 'reduce',
+    // `isMobile + hasTouch` 才会让 `(hover: none) / (pointer: coarse)` 命中（B60 的触屏断言
+    // 依赖它；实测仅设 viewport 时两个媒体特性都是 false —— 桌面浏览器语义）
+    isMobile: true,
+    hasTouch: true,
   });
   const mobile = await mobileContext.newPage();
   await mobile.goto(`${baseUrl}/#/workbench`, { waitUntil: 'load' });
@@ -2038,6 +2042,49 @@ try {
     () => getComputedStyle(document.querySelector('.lib-grid')).gridTemplateColumns.split(' ').length,
   );
   assert(columnCount === 1, `窄屏画廊单列（实际 ${columnCount} 列）`);
+
+  // ⑤ 触屏兜底（B60）：hover:none 命中 + hover-only 操作常显 + 点击高亮关闭 + 字号下限
+  // 前提：`isMobile + hasTouch` 的 emulation 才会让 `(hover: none)` 命中（实测：仅 viewport 不命中）
+  const touchFacts = await mobile.evaluate(() => {
+    const acts = document.querySelector('.lib-acts');
+    return {
+      hoverNone: matchMedia('(hover: none)').matches,
+      pointerCoarse: matchMedia('(pointer: coarse)').matches,
+      actsOpacity: acts === null ? '(缺 .lib-acts)' : getComputedStyle(acts).opacity,
+      tapHighlight: getComputedStyle(document.documentElement).webkitTapHighlightColor,
+      fsNote: getComputedStyle(document.documentElement).getPropertyValue('--fs-note').trim(),
+    };
+  });
+  assert(
+    touchFacts.hoverNone && touchFacts.pointerCoarse,
+    '移动 emulation 下 (hover: none) / (pointer: coarse) 命中（触屏兜底的前提）',
+  );
+  assert(
+    touchFacts.actsOpacity === '1',
+    `触屏下视频库操作区常显（hover-only 不再对触屏隐藏；opacity=${touchFacts.actsOpacity}）`,
+  );
+  assert(
+    touchFacts.tapHighlight === 'rgba(0, 0, 0, 0)',
+    `触屏点击高亮已关闭（实际 ${touchFacts.tapHighlight}）`,
+  );
+  assert(touchFacts.fsNote === '12px', `≤768 的小字号档抬到 12px（--fs-note 实际 ${touchFacts.fsNote}）`);
+
+  // ⑥ 日志页窄屏不再横向溢出（B60：六列固定宽在 375px 必溢出，且会被全局 overflow-x:hidden 剪掉）
+  await mobile.evaluate(() => { location.hash = '#/logs'; });
+  await mobile.waitForSelector('.wb-log-row-main', { timeout: 10_000 });
+  const logFacts = await mobile.evaluate(() => {
+    const row = document.querySelector('.wb-log-row-main');
+    return {
+      columns: getComputedStyle(row).gridTemplateColumns.split(' ').length,
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    };
+  });
+  assert(logFacts.columns <= 2, `日志行窄屏收成两列（实际 ${logFacts.columns} 列）`);
+  assert(
+    logFacts.scrollWidth <= logFacts.clientWidth + 1,
+    `日志页无横向溢出（scrollWidth=${logFacts.scrollWidth} ≤ clientWidth=${logFacts.clientWidth}）`,
+  );
 
   await mobile.screenshot({ path: path.join(SHOT_DIR, 'mobile.png'), fullPage: false });
   note('移动端截图留档：artifacts/ui-smoke/mobile.png');

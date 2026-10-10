@@ -10,7 +10,7 @@ import './styles/create.css';
 import './styles/canvas.css';
 
 /**
- * 顶层兜底（V2.24 / 台账 B61）。
+ * 顶层兜底（台账 B61）。
  *
  * 这是**最后一道**：App 里的每一个视图已经各包了一层（`App.tsx`），
  * 而这一层兜的是"**壳自身**渲染抛错"（顶栏 / 侧栏 / 路由解析 / Provider）。

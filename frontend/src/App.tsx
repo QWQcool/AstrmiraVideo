@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ProjectEntry, ProviderStatus } from '@astrmira/shared';
 import { ByokDrawer } from './components/ByokDrawer';
-// V2.24（B61）：视图级兜底（崩的是这一块，而不是整页）
+// B61：视图级兜底（崩的是这一块，而不是整页）
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Eyebrow } from './components/Eyebrow';
 import { ProjectSwitcher } from './components/ProjectSwitcher';
@@ -371,7 +371,7 @@ export default function App() {
           )}
 
           {/* 工作台常驻隐藏（hidden 切换）：提示词/参数/资产/进度在切视图后不丢，轮询继续跑 */}
-          {/* V2.24（B61）：**每个视图各包一层兜底** —— 崩的只是这一块，侧栏与导航仍在，用户能切走。
+          {/* B61：**每个视图各包一层兜底** —— 崩的只是这一块，侧栏与导航仍在，用户能切走。
               包在 keep-alive 里面而不是外面：这两个视图常驻，包外面会让"隐藏的那一个"的崩溃
               连当前视图一起吃掉。 */}
           <div className="wb-keepalive" hidden={view?.path !== '#/workbench'}>

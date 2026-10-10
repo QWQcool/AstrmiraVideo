@@ -4,7 +4,7 @@ import type { AssetListEntry, TaskProgress } from '@astrmira/shared';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Eyebrow } from '../components/Eyebrow';
 import { ApiError, fetchAssets, fetchHistory, resolveMediaUrl } from '../lib/api';
-// V2.24（B61）：懒加载失败的兜底要能说清"到底抛了什么"
+// B61：懒加载失败的兜底要能说清"到底抛了什么"
 import { describeThrown } from '../lib/errorReport';
 import { navigate, useHashRoute } from '../lib/router';
 import { formatBytes, formatRelativeTime } from '../lib/overviewStats';
@@ -292,7 +292,7 @@ export function EditView() {
           {store === null ? (
             <div className="wb-skeleton ed-stage-skeleton" />
           ) : (
-            // V2.24（B61）：懒加载失败（分包 404 / 网络断）也会抛错 → 必须有 error 分支。
+            // B61：懒加载失败（分包 404 / 网络断）也会抛错 → 必须有 error 分支。
             // 只包 `Suspense` 的话，`PlayerStage` 的 chunk 拉不下来就是**整页白屏**（B61 的原缺口）。
             <ErrorBoundary
               label="剪辑台预览"
