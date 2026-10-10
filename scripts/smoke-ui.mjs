@@ -33,7 +33,7 @@
  *
  * 用法：`pnpm smoke:ui`（可选 `--headed` 观察浏览器、`--keep` 保留临时目录）
  */
-import { execFile, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -559,6 +559,66 @@ try {
   await fetch(`${baseUrl}/api/health/live`);
   const liveMs = Date.now() - liveStart;
   assert(liveMs < 1000, `存活探针足够快（${liveMs}ms < 1000ms，零依赖）`);
+
+  console.log('\n[1f] 运维 CLI（V2.17 / 台账 B52 片 A：备份 / 校验 / 恢复的安全闸门）');
+  // 用**正在运行的服务**的数据目录跑真 CLI（backend/dist/ops/cli.js）：
+  // 这正是要验证的两条语义 —— 备份允许在服务运行时做，恢复**必须**在服务停止后做。
+  // 自己开一个临时目录（不要借 [6f] 的 EXPORT_DIR —— 那时还没定义，会踩 TDZ）
+  const opsDir = mkdtempSync(path.join(tmpdir(), 'astrmira-smoke-ops-'));
+  const opsCli = path.join(ROOT, 'backend', 'dist', 'ops', 'cli.js');
+  const opsEnv = { ...process.env, DATA_DIR, OUTPUT_DIR: OUTPUTS_DIR };
+  const runOps = (args) => {
+    try {
+      const stdout = execFileSync(process.execPath, [opsCli, ...args], {
+        cwd: ROOT,
+        env: opsEnv,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      return { code: 0, output: stdout };
+    } catch (error) {
+      return {
+        code: typeof error.status === 'number' ? error.status : 1,
+        output: `${error.stdout ?? ''}${error.stderr ?? ''}`,
+      };
+    }
+  };
+
+  const backupRun = runOps(['backup', '--out', opsDir, '--no-outputs']);
+  assert(backupRun.code === 0, `服务运行时可以备份（输出目录：${path.basename(opsDir)}）`);
+  assert(
+    existsSync(path.join(opsDir, 'manifest.json')),
+    '备份产出 manifest.json（"这一份是完整的"的标记）',
+  );
+
+  const verifyRun = runOps(['verify', opsDir]);
+  assert(
+    verifyRun.code === 0 && verifyRun.output.includes('校验通过'),
+    '校验通过（sha256 与逐文件字节数都对得上）',
+  );
+
+  // ⭐ 安全闸门：服务还在跑 → 恢复必须被拒绝（半途被写会得到一个坏库）
+  const guardedRestore = runOps(['restore', opsDir, '--yes']);
+  assert(
+    guardedRestore.code !== 0 && guardedRestore.output.includes('服务还在跑'),
+    `服务运行时恢复被拒绝（exit=${guardedRestore.code}｜${guardedRestore.output.trim().slice(0, 160)}）`,
+  );
+  assert(
+    runOps(['restore', opsDir]).output.includes('--yes'),
+    '缺少 --yes 时拒绝恢复（不可逆动作要显式确认）',
+  );
+
+  // 快照被改坏 → 校验必须失败（否则"备份能不能用"只能等真要恢复那天才知道）
+  writeFileSync(
+    path.join(opsDir, 'app.db'),
+    Buffer.concat([readFileSync(path.join(opsDir, 'app.db')), Buffer.from('tampered')]),
+  );
+  const tamperedVerify = runOps(['verify', opsDir]);
+  assert(
+    tamperedVerify.code !== 0 && tamperedVerify.output.includes('✗'),
+    '快照被改坏后校验失败（不通过就不许恢复）',
+  );
+  rmSync(opsDir, { recursive: true, force: true });
 
   console.log('\n[2] 首屏与后端真的通了（同源 /api/providers/status）');
   await page.getByText('服务在线').waitFor({ timeout: 10_000 });

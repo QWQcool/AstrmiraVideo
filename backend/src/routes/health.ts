@@ -2,8 +2,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { HealthResponseSchema } from '@astrmira/shared';
 import type { HealthResponse } from '@astrmira/shared';
 
-const SERVICE_NAME = 'AstrmiraVideo Backend';
-const SERVICE_VERSION = '0.1.0';
+import { SERVICE_NAME, SERVICE_VERSION } from '../version.js';
 
 /**
  * 存活探针。

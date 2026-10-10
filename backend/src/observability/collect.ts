@@ -11,6 +11,7 @@ import {
   type StorageUsage,
 } from '@astrmira/shared';
 import { readStorageUsage } from '../server/storageUsage.js';
+import { SERVICE_NAME, SERVICE_VERSION } from '../version.js';
 import type { TaskStore } from '../store/taskStore.js';
 import type { WebhookStore } from '../store/webhooks.js';
 
@@ -56,8 +57,6 @@ export interface ObservabilityDeps {
   checkMediaTools?: () => Promise<{ ok: boolean; detail: string }>;
 }
 
-const SERVICE_NAME = 'AstrmiraVideo Backend';
-const SERVICE_VERSION = '0.1.0';
 const WINDOW_24H_MS = 24 * 60 * 60 * 1000;
 
 function processInfo(): NonNullable<ObservabilityDeps['processInfo']> {

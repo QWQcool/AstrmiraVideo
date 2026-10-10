@@ -31,6 +31,9 @@ import { createWebhookRoutes } from './routes/webhooks.js';
 import { createHistoryRoutes } from './routes/history.js';
 // V2.16（B53）：readiness 的媒体工具自检（ffmpeg/ffprobe 缺失不降级，但如实陈述）
 import { assertMediaToolsAvailable } from './lib/ffmpeg.js';
+// V2.17（B52）：服务进程锁（备份 CLI 判断"能不能恢复"的权威判据）
+import { acquireServerLock } from './ops/serverLock.js';
+import { SERVICE_VERSION } from './version.js';
 import { createKeyVerifyRoutes } from './routes/keysVerify.js';
 import { createLogRoutes } from './routes/logs.js';
 import { createProjectRoutes } from './routes/projects.js';
@@ -57,7 +60,7 @@ import { registerSpa } from './server/spa.js';
 import { registerStaticOutputs, resolveOutputsDir } from './server/staticOutputs.js';
 import { resolveOutputsMaxBytes, startStorageEvictor } from './server/storageEvict.js';
 import { createAssetUrlResolver, createTaskVideoUrlResolver } from './store/assets.js';
-import { openDatabase } from './store/db.js';
+import { openDatabase, resolveDatabasePath } from './store/db.js';
 import { EventLogStore } from './store/eventLog.js';
 import { ProjectStore } from './store/projects.js';
 import { WebhookStore } from './store/webhooks.js';
@@ -178,6 +181,12 @@ export async function buildApp() {
 
   // ── 公共链路（S2）：SQLite 存储 + 队列 + 双轨调度器 + 静态媒体（206 载体）─────────
   const db = openDatabase();
+  // V2.17（B52）：服务进程锁 —— 备份 CLI 靠它判断"现在能不能恢复"。
+  // 为什么不由数据库锁推断：**空闲的服务不持有写锁**，那条路子会在 Linux 上静默地把库换掉（见 serverLock.ts 的文件头）。
+  const serverLock = acquireServerLock(path.dirname(resolveDatabasePath()), {
+    version: SERVICE_VERSION,
+  });
+  if (serverLock.warn !== null) app.log.warn({ lock: serverLock.warn }, '服务锁提示');
   const store = new TaskStore(db);
   // V2.11（B47）：项目维度（默认项目由 openDatabase 的 bootstrapProjects 保证存在）
   const projects = new ProjectStore(db);
@@ -324,6 +333,8 @@ export async function buildApp() {
     await dispatcher.drain();
     await webhookDispatcher.drain();
     db.close();
+    // V2.17（B52）：释放服务进程锁（备份 CLI 靠它判断"能不能恢复"）
+    serverLock.release();
   });
 
   await app.register(

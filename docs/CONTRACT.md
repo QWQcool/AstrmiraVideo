@@ -1,6 +1,12 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.16 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.17 · 已冻结（变更需先改本文，再改代码）**
+> **V2.17 修订（2026-10-10）**：**备份与恢复（台账 B52 片 A）** —— 无新路由，但新增了一份
+>   **运维契约**（§17）：数据布局（含 `data/server.lock` 服务进程锁）、备份产物形状（`manifest.json`）、
+>   恢复的三道安全闸门。为什么它值得进契约：备份/恢复的**语义**决定了"客户的片子会不会丢"，
+>   而它比任何接口都更难事后补救。
+>
+> **状态（上一版）：V2.16 · 已冻结**
 > **V2.16 修订（2026-10-10）**：**可观测与 SLA 基线（台账 B53）** —— 纯增量：三个新端点 + 一个新章节，
 >   **既有 `/api/health` 的响应一字不改**（它是 V1.7 起的存活探针，CI/CD 与免鉴权名单都依赖它）。
 >   ① **§16 新增**：live / ready 分级、`MetricsResponse` 快照、告警阈值与判定口径（`METRICS_*` env 可覆盖）；
@@ -1154,4 +1160,66 @@ export interface MetricsResponse {
 ② **告警外发通道**（邮件 / IM / 再发一条 Webhook）—— 本版只把"越线的事实"暴露在快照里；
 ③ **历史趋势**（时序库）—— 本版是**当前快照**，趋势由调用方自己存；
 ④ **链路追踪**（OpenTelemetry）—— 操作日志（§10）+ `requestId` 已能回答"这一次请求发生了什么"。
+
+---
+
+## 17. 备份与恢复（V2.17 新增；台账 B52 片 A）
+
+> **为什么进契约**：备份/恢复的语义决定"客户的片子会不会丢"，而它比任何接口都更难事后补救。
+
+**数据布局**（部署者只需知道这四样）：
+
+| 路径 | 是什么 | 备注 |
+|---|---|---|
+| `data/app.db` | 任务 / 项目 / 日志 / Webhook 订阅与投递流水 | WAL 模式（`-wal` / `-shm` 是**派生文件**） |
+| `data/server.lock` | **服务进程锁**（`{ pid, startedAt, version }`） | 服务启动时写、`onClose` 释放；备份 CLI 靠它判断"能不能恢复" |
+| `outputs/` | 成片 / 缩略图 / 参考资产 | 见 §7 的生命周期与淘汰规则 |
+| `data/backups/`（约定位置） | 备份产物 | 默认落在这里；可用 `--out` 改 |
+
+**备份产物 = 一个目录**（不是 tar/zip）：
+
+```
+backups/backup-20261010-160000/
+├── app.db            # VACUUM INTO 的**一致性快照**
+├── manifest.json     # 见下（"这一份是完整的"的标记，最后才写）
+└── outputs/…         # 成片与资产（--no-outputs 时没有这一层）
+```
+
+```ts
+export interface BackupManifest {
+  backupVersion: number;      // > 本机版本 → 恢复前必须升级服务（明确报这句话）
+  createdAt: number; appVersion: string;
+  includeOutputs: boolean;
+  database: { path: 'app.db'; bytes: number; sha256: string };
+  outputs: Array<{ path: string; bytes: number }>;   // 大文件只记字节数（逐字节 hash 代价与收益不成比例）
+  counts: { tasks: number; projects: number; webhooks: number };
+}
+```
+
+**为什么必须是 `VACUUM INTO` 而不是 `cp data/app.db`**：WAL 模式下直接拷库可能拿到
+**缺了最近事务、甚至内部不一致**的文件（最新数据还在 `-wal` 里）。`VACUUM INTO` 是 SQLite 原生的
+一致性快照 —— 这是"备份能不能用来恢复"的分界线，而一份拷出来的坏库只有真要恢复的那天才会被发现。
+
+**恢复的三道安全闸门**（缺一不可）：
+
+1. **服务进程锁**：检测到 `server.lock` 里那个 PID **还活着** → 拒绝恢复（消息里带上 PID 与启动时间）。
+   ⚠️ **这道闸门不能省**（实测教训）：第一版只检查"数据库写锁"，而**空闲的服务不持有写锁** →
+   判定放行 → 在 Windows 上 `EBUSY`（响亮失败），在 **Linux（部署目标）上 unlink 会成功**，
+   服务继续往被删除的 inode 写 —— 运维以为恢复成功，实际"新库"与"跑着的服务"从此刻起各写各的。
+   **陈旧锁**（PID 已不存在，异常退出留下的）→ 明确提示并放行（拿一把陈旧锁挡住灾难恢复更糟）。
+2. **`--yes`**：恢复是**不可逆的整体替换**，必须显式确认。
+3. **校验不通过不动数据**：`manifest` 可解析 + 版本兼容 + `app.db` 的 sha256 + 逐文件字节数。
+   另外恢复前**自动把当前状态备一份**（`pre-restore-*`）—— 恢复错了还能回去。
+
+**⚠️ 一条运维必读**：**用服务打开一份备份快照会改写它**（`openDatabase` 的幂等迁移 + 启动引导会写库、
+还会生成 `-wal`）→ 之后 sha256 校验必然失败。**先 `verify`，再决定要不要打开看**。
+
+**CLI**（先 `pnpm build`）：`node backend/dist/ops/cli.js <backup|verify|restore>`，
+或 `pnpm --filter backend ops:backup` / `ops:verify` / `ops:restore`。备份**可以在服务运行时做**
+（一致性快照），**恢复必须在服务停止后做**。
+
+**本版不做**：① 备份的**加密与异地存放**（产物是普通文件，交给客户的存储策略：对象存储 / rsync / 磁带）；
+② **增量备份**（`VACUUM INTO` 是全量；outputs 可自行用 rsync 做增量）；③ **自动定时备份**
+（本版只提供工具与闸门，调度交给客户已有的 cron/计划任务）；④ **跨版本数据迁移**（向前兼容由 `COLUMN_MIGRATIONS`
+保证，但"回退到旧版本"不在支持范围 —— 回退请用恢复）。
 

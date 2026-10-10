@@ -284,6 +284,49 @@ H3 只识别直角双引号 `"` 包裹的对白；中文引号 `“”` 或无�
 
 **本版不做**：码率 / 编码参数对齐（只对画幅与帧率）、大包分片。
 
+## （十二）备份、恢复与升级 SOP（V2.17 / B52 片 A）
+
+**先建一次**（服务可以开着跑，备份是**一致性快照**）：
+
+```bash
+pnpm build                                   # 运维 CLI 用的是编译产物（与 UI 冒烟同一前提）
+node backend/dist/ops/cli.js backup          # → data/backups/backup-<日期>-<时间>/
+node backend/dist/ops/cli.js verify data/backups/backup-…   # 校验通过才算是"可用的备份"
+```
+
+**升级前照例做一遍**（这就是它的主要用途）：
+
+```bash
+# 1. 备份（含成片；只备数据库加 --no-outputs）
+node backend/dist/ops/cli.js backup --out /srv/astrmira-backups/pre-upgrade
+# 2. 校验（sha256 + 逐文件字节数）
+node backend/dist/ops/cli.js verify /srv/astrmira-backups/pre-upgrade
+# 3. 升级（拉镜像 / 更新代码后重建）
+# 4. 起服务后先看两个探针
+curl -s http://127.0.0.1:3000/api/health/ready        # 需要令牌时带上 Authorization
+```
+
+**出问题回滚**（**必须先停服务**）：
+
+```bash
+docker compose stop app                       # 或 systemctl stop astrmira
+node backend/dist/ops/cli.js restore /srv/astrmira-backups/pre-upgrade --yes
+docker compose start app
+```
+
+**四条要记住的**：
+
+| 事项 | 说明 |
+| :--- | :--- |
+| **恢复必须停服务** | 服务在跑时 CLI **会拒绝**（消息里带 PID）—— 半途被写会得到一个坏库 |
+| **`--yes` 是硬要求** | 恢复是**整体替换**（库 + 成片目录），不是合并 |
+| **恢复前自动备当前状态** | 落在 `pre-restore-*` 目录；恢复错了还能回去 |
+| **别用服务打开备份去看** | 打开会改写它（幂等迁移），之后 sha256 校验必然失败 —— **先 `verify` 再决定要不要打开** |
+
+**备份里有什么**：`app.db`（一致性快照）+ `manifest.json`（版本/条数/校验和）+ `outputs/`
+（成片与资产，`--no-outputs` 时不含）。**不含**：`.tmp` 临时帧（合成中间产物，见 §7 的清理规则）。
+备份产物就是普通文件 —— 加密、异地存放、保留几份，交给客户已有的存储策略（rsync / 对象存储 / 磁带）。
+
 ## （十一）运维巡检：探针与指标（V2.16 / B53）
 
 **三个端点分工不同，别混用**（完整口径见 [CONTRACT §16](CONTRACT.md)）：

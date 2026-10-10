@@ -35,8 +35,7 @@ export interface ObservabilityRoutesDeps extends ObservabilityDeps {
   checkMediaTools?: () => Promise<{ ok: boolean; detail: string }>;
 }
 
-const SERVICE_NAME = 'AstrmiraVideo Backend';
-const SERVICE_VERSION = '0.1.0';
+import { SERVICE_NAME, SERVICE_VERSION } from '../version.js';
 
 export const createObservabilityRoutes =
   (deps: ObservabilityRoutesDeps): FastifyPluginAsyncZod =>
