@@ -20,6 +20,7 @@
     "test:contract": "pnpm --filter backend exec vitest run src/contract.test.ts",
     "test:fixtures": "node scripts/make-fixture-clips.mjs",
     "smoke:ui": "node scripts/smoke-ui.mjs",
+    "capture:shots": "node scripts/capture-docs-shots.mjs",
     "serve:local": "node scripts/serve-local.mjs",
     "bench": "node scripts/bench.mjs"
   },

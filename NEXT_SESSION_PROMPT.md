@@ -18,14 +18,25 @@
 1. `README.md` — 入口、文档地图、**协作规范（十条 + 两条施工流程纪律）**（必须先读）
 2. `docs/PLAN.md` — 架构、七道防线、**Step+AC（= 唯一的施工入口）**、**进度日志（唯一进度权威）**、决策记录、安全合规、成本风险、**§9 台账**
 3. `docs/CONTRACT.md` — 接口唯一权威（类型 / 路由 / 错误码 / 存储）
-4. `docs/GUIDE.md` — 推荐档位（Tier 0~3，配置建议）、双轨引擎接入、工作流、FAQ
+4. `docs/GUIDE.md` — 推荐档位（Tier 0~3，配置建议）、双轨引擎接入、工作流、FAQ、**运维巡检与备份恢复 SOP**
+5. `docs/FRONTEND-REVIEW.md` — 前端技术选型与移动端适配复盘（**要不要换框架的四条判据在这里**）
 
 > **一次性施工手册 `docs/EXEC-STEP2-5.md` 已于 2026-09-23 归档删除**（Step 2 ~ Step 5 完工）。
 > 施工入口此后 = PLAN §4 的 Step+AC + §5 进度日志 + §6 决策 + §9 台账；**不要另建第二份施工手册**。
 
 ## 当前指针
 
-**Step 2 双轨 Provider（cloud 的 AC2 已全模式跑通：T2V / I2V / FL2V / V2V；host 本地轨 `LocalH3Provider` 仍未实现）＋ Step 3 前端工作台（已完成）＋ Step 4 端到端验收（**已完成 2026-09-23**，证据见 `docs/walkthrough.md`）＋ Step 5 公网部署（已上线，CI → CD 全自动）＋ V8.3 体验与功能补强（**批次 0~7 全部完成**）＋ Step 6 V9 前端改版（**已完成 2026-09-23：B1~B10 全部交付**，验收证据 = `docs/v9-acceptance.md`）＋ **Step 7 剪辑台改版（Remotion 多轨时间轴，台账 B34）【已完成 2026-09-24：P1~P5 全部交付】**（验收证据 = `docs/edit-desk-acceptance.md`；契约升至 **V2.5**：§11-2 多轨工程 / §11-3 EDL 降为 API-only / §5 新增 `POST /api/edits/renders`）。**两个待办都只剩"用户验收"**（Step 6 线上验收、Step 7 验收；`docs/EXEC-V9.md` 待验收后归档）——施工入口 = `docs/PLAN.md` **§4 的 Step+AC**（§5 进度日志是唯一进度权威、§6 是决策 D22~D38、§9 是台账 B1~B40）与 `docs/CONTRACT.md` **V2.10**。以 §5 进度日志的实际状态为准，不要以本文件为准。
+**产品主线 Step 1~10 已全部交付**（骨架 / 双轨 Provider / 工作台 / 端到端验收 / 公网部署 / V9 前端改版 /
+剪辑台改版 / 创作入口与血缘画布 / 运维批 / 素材体验批），**B 端待开发批正在推进**：
+已完成 **B57**（音频素材与 BGM）、**B47**（单库内多项目，片 A 后端 + 片 B 前端）、**B48**（成本台账，片 A + 片 B）、
+**B49**（交付物工程化 + 平台规格转码）、**B51 片 A**（Webhook 终态回调）、**B53**（可观测与 SLA：
+live/ready 分级 + `/api/metrics` + 阈值告警）、**B52 片 A**（备份与恢复：`VACUUM INTO` 一致性快照 +
+运维 CLI + 三道恢复闸门）、**B23**（操作日志保留策略）、**B59**（README 真实截图回归 + 前端体检）。
+**唯一未实现的代码功能项**：host 本地轨 `LocalH3Provider`（选它会如实返回 `PROVIDER_UNAVAILABLE`）。
+**接下来可选**：B52 其余四件（一键装机 / 离线镜像 / 首启向导 / 许可与 SOP —— 与客户部署排期绑定）、
+B60（移动端 5 项收口）+ B61（ErrorBoundary 等兜底层）、其余中小台账（B27/B10/B17/B21/B46/B8/B45…）。
+施工入口 = `docs/PLAN.md` **§4 的 Step+AC**（§5 进度日志是唯一进度权威、§6 决策已到 **D47**、
+§9 台账已到 **B61**）与 `docs/CONTRACT.md` **V2.18**。**以 §5 进度日志的实际状态为准，不要以本文件为准。**
 
 > ⚠️ **2026-09-23 线上故障与修复（批次 6，读一遍再动手）**：用户报 `invalidEndpointorModel.NotFound`。
 > 根因是三层叠加：① `options.model` / `options.baseUrl` **此前无人消费**（云端 provider 只读 env）；

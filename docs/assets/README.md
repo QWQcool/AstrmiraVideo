@@ -4,6 +4,28 @@
 > 约定：编号即年代顺序；`_mockup_` 是我们自己生成的概念稿，`_ref_` 是成熟产品的真实截图。
 > AI 生成的 mockup 里文字有乱码是正常现象 —— 看布局与氛围，不看文字。
 
+## ⭐ 真实界面截图（`ui/`，2026-10-10 起，**README 用的是这一组**）
+
+> 生成方式：`node scripts/capture-docs-shots.mjs`（生产形态 + 夹具数据 + 真浏览器，**任何人可复现**）。
+> **口径**：截图是**证据**，不修图、不摆拍 —— 界面什么样就截什么样。
+> `mobile-*.png` 三张是**现状记录**（当前手机端只做到"能看"，见 [../FRONTEND-REVIEW.md](../FRONTEND-REVIEW.md) §三），
+> 刻意不做美化。
+
+| 文件 | 内容 |
+|---|---|
+| `ui/desktop-01-create.png` | 创作入口 `#/create`（造梦盒：一句话 → 模式推断 + 配方 chips） |
+| `ui/desktop-02-workbench.png` | 专业工作台 `#/workbench`（三栏：提示词与素材槽 / 实时预览 / 任务与画廊） |
+| `ui/desktop-03-overview.png` | 总览 `#/overview`（KPI 卡 + 最近成片 + 操作 feed） |
+| `ui/desktop-04-library.png` | 视频库 `#/library`（筛选排序 + 卡片操作 + 交付包入口） |
+| `ui/desktop-05-edit.png` | 剪辑台 `#/edit?task=…`（Remotion 预览 + 多轨时间轴 + 属性/导出/影片面板） |
+| `ui/desktop-06-canvas.png` | 血缘画布 `#/canvas`（只读；节点=素材/任务，边=派生/抽帧/引用） |
+| `ui/desktop-07-logs.png` | 操作日志 `#/logs`（排错第一站，可按动作/错误码/关键词筛） |
+| `ui/mobile-0{1,2,3}-*.png` | 手机 390×844 现状：创作 / 工作台 / 视频库（**浏览可用、剪辑不可用**） |
+
+> ⚠️ **下面 01~03 的 Gemini 概念稿自 2026-10-10 起不再出现在 README**：那张图里有本项目
+> 并不存在的上游名（ComfyUI / MiniMax / Kling）、界面是英文，当作"产品说明"会误导访客。
+> 它们仍作为**历史概念稿**留档（用于追溯当时的布局取向）。
+
 ## 早期概念稿（Gemini 生成，2026-09 上旬）
 
 | 文件 | 内容 |
