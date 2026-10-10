@@ -81,6 +81,13 @@ export interface LeftPanelProps {
   onSubmit: () => void;
   submitDisabled: boolean;
   submitLabel: string;
+  /**
+   * V2.12（台账 B48）：**提交前预估价**文案（如「预计花费 ¥2.484（预估）」）。
+   * 由**视图**算好传进来（它才拿得到分辨率 / 时长 / 模型），本组件只负责显示 ——
+   * 预估价必须与结算价同源（`estimateCostFromRequest`），所以不在组件里另算一套。
+   * 可选：不传就是"不显示"（既有调用方与测试零改动）。
+   */
+  costHint?: string | null;
 }
 
 const PROVIDER_CLOUD: ProviderType = 'cloud-volcano-seedance';
@@ -154,6 +161,7 @@ export function LeftPanel(props: LeftPanelProps) {
     onOpenByok,
     onSubmit,
     submitDisabled,
+    costHint,
     submitLabel,
   } = props;
 
@@ -445,6 +453,13 @@ export function LeftPanel(props: LeftPanelProps) {
       {/* 缺素材时按钮是灰的 —— 原因必须同时写在按钮上方，否则用户只能靠猜 */}
       {assetRequirementHint === null ? null : (
         <span className="wb-warn">{assetRequirementHint}</span>
+      )}
+
+      {/* V2.12（B48）：提交前预估价（用户点生成之前就该看到要花多少钱） */}
+      {costHint === null || costHint === undefined ? null : (
+        <span className="wb-note cr-cost" title="按公开价目与上游计费式估算；实际以方舟账单为准">
+          {costHint}
+        </span>
       )}
 
       <button

@@ -175,14 +175,15 @@ export function estimateVideoCost(input: CostInput): CostRecord | null {
   const fps = COST_BILLING_FPS;
   const notes: string[] = [];
 
-  if (width === undefined || height === undefined || width <= 0 || height <= 0) return null;
-  if (!(outputSeconds > 0)) return null;
-
   const inputSeconds = input.inputSeconds ?? 0;
   const modelId = (input.model ?? '').trim();
 
   // 本地轨：无 API 费用。**显式记 0**（不是"没有成本字段"）——
   // "这条花了 0 元"和"这条我们不知道花了多少"是两件事，B 端必须分得清。
+  //
+  // ⚠️ 这一支必须在**分辨率检查之前**（UI 冒烟实测抓到的）：本地轨的金额与分辨率无关，
+  // 而请求可以不带 `resolution`（云端 provider 此时不传 `--resolution`，由上游用自己的默认值）。
+  // 若先要求分辨率，本地轨任务会落进"未结算"—— 那既不准也误导（它明明就是 0 元）。
   if (input.track === 'local') {
     return {
       yuan: 0,
@@ -195,13 +196,19 @@ export function estimateVideoCost(input: CostInput): CostRecord | null {
       usdToCny: input.usdToCny ?? COST_DEFAULT_USD_TO_CNY,
       outputSeconds,
       inputSeconds,
-      width,
-      height,
+      // 本地轨与分辨率无关；缺分辨率时给 1×1 占位（schema 要求正整数，而这个值**不参与任何计算**）
+      width: width ?? 1,
+      height: height ?? 1,
       fps,
       formula: '本地 / 浏览器内产生：无 API 费用（电费与设备折旧不在本口径内）',
       notes,
     };
   }
+
+  // 云端轨缺分辨率 → **不估算**：上游此时用的是它自己的默认档，我们不知道账单按哪个口径算。
+  // 编一个 720p 会得到一个看起来很确定的错数字，比"未结算"更危险。
+  if (width === undefined || height === undefined || width <= 0 || height <= 0) return null;
+  if (!(outputSeconds > 0)) return null;
 
   const price = findVideoModelPrice(input.model);
   const usdPerMillionTokens = price?.usdPerMillionTokens ?? COST_UNKNOWN_MODEL_USD_PER_MILLION;
@@ -251,17 +258,18 @@ export function estimateCostFromRequest(
   request: Pick<VideoGenerateRequest, 'resolution' | 'params' | 'options'>,
   options: { track?: 'cloud' | 'local'; usdToCny?: number; inputSeconds?: number } = {},
 ): CostRecord | null {
-  // 两道窄化都是**对着契约做的**：`resolution` 在类型上是可选（历史请求可能没写），
-  // `options.model` 是"未识别键"的开放记录（可能是任何 JSON 值）——
-  // 它们缺失或不是字符串时如实返回 null（不编数字），而不是硬取 `.width` 崩掉。
+  // 两道窄化都是**对着契约做的**：`resolution` 在类型上是可选（历史请求与"不传分辨率"的客户端都可能没有），
+  // `options.model` 是"未识别键"的开放记录（可能是任何 JSON 值）。
+  //
+  // ⚠️ **缺分辨率不能在这里提前 return null**（UI 冒烟实测抓到的）：那会让下面 `estimateVideoCost`
+  // 里"本地轨恒 0 元"的分支永远走不到（本地轨金额与分辨率无关）。该不该估算是 `estimateVideoCost`
+  // 的职责，这里只负责"把快照翻译成入参、不硬取字段崩掉"。
   const resolution = request.resolution;
-  if (resolution === undefined) return null;
   const model = typeof request.options?.['model'] === 'string' ? request.options['model'] : undefined;
 
   return estimateVideoCost({
     ...(model === undefined ? {} : { model }),
-    width: resolution.width,
-    height: resolution.height,
+    ...(resolution === undefined ? {} : { width: resolution.width, height: resolution.height }),
     ...(request.params?.durationSec === undefined
       ? {}
       : { outputSeconds: request.params.durationSec }),

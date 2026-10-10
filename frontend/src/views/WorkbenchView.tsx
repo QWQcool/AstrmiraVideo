@@ -6,7 +6,7 @@ import type {
   TaskProgress,
   VideoGenerateRequest,
 } from '@astrmira/shared';
-import { findRecipe, TASK_REF_PREFIX } from '@astrmira/shared';
+import { findRecipe, TASK_REF_PREFIX, estimateCostFromRequest, formatYuan } from '@astrmira/shared';
 import { CenterPanel } from '../components/CenterPanel';
 import { LeftPanel } from '../components/LeftPanel';
 import { RightPanel } from '../components/RightPanel';
@@ -644,10 +644,37 @@ export function WorkbenchView() {
         ? '已填写 Key · 明文保存在本机（仅限信任设备）'
         : '已填写 Key · 仅本次会话有效';
 
+  /**
+   * V2.12（台账 B48）：**提交前预估价**（与造梦盒同一纪律、同一纯函数 —— 两套入口一套语义）。
+   *
+   * 汇率用 shared 默认值（部署可用 `COST_USD_TO_CNY` 覆盖）→ 预估价与结算价**可能有小幅差异**；
+   * 结算值（成本台账里那个）才是准的，所以文案只写"预估"，不写成承诺。
+   */
+  const costEstimate = useMemo(
+    () =>
+      estimateCostFromRequest(
+        {
+          resolution: resolveTargetSize(aspectRatio, resolutionTier),
+          params: { durationSec },
+          options: { model: byok.model },
+        },
+        { track: provider === 'cloud-volcano-seedance' ? 'cloud' : 'local' },
+      ),
+    [aspectRatio, resolutionTier, durationSec, byok.model, provider],
+  );
+
+  const costHint =
+    costEstimate === null
+      ? null
+      : `预计花费 ${formatYuan(costEstimate.yuan)}${
+          costEstimate.source === 'local-free' ? '（本地轨：无 API 费用）' : '（预估）'
+        }`;
+
   return (
     <>
       <main className="wb-main">
         <LeftPanel
+          costHint={costHint}
           prompt={prompt}
           onPromptChange={setPrompt}
           onEnhance={() => void handleEnhance()}

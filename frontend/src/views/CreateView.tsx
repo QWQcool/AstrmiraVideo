@@ -7,7 +7,7 @@ import type {
   TaskProgress,
   VideoGenerateRequest,
 } from '@astrmira/shared';
-import { RECIPE_CARDS } from '@astrmira/shared';
+import { RECIPE_CARDS, estimateCostFromRequest, formatYuan } from '@astrmira/shared';
 import {
   ApiError,
   fetchAssets,
@@ -210,6 +210,28 @@ export function CreateView() {
     !providerStatus.cloud.available;
 
   const submitDisabled = submitting || prompt.trim() === '' || pending || needsKey;
+
+  /**
+   * V2.12（台账 B48）：**提交前预估**（用户点"生成"之前就该看到要花多少钱 —— 这是 D44 改口的落点）。
+   *
+   * 与结算共用 `estimateCostFromRequest`（同一条路径，不会出现"预估一个价、结算另一个价"）。
+   * 两条如实标注：
+   * ① 汇率用 shared 的默认值（部署可用 `COST_USD_TO_CNY` 覆盖）→ 预估价与结算价**可能有小幅差异**，
+   *    结算值（成本台账里那个）才是准的；
+   * ② 自定义档（`ep-…`）不在单价表内 → 按 2.0 标准口径估算，并在文案里说出来。
+   */
+  const costEstimate = useMemo(
+    () =>
+      estimateCostFromRequest(
+        {
+          resolution: resolveTargetSize(aspectRatio, resolutionTier),
+          params: { durationSec },
+          options: { model: byok.model },
+        },
+        { track: provider === 'cloud-volcano-seedance' ? 'cloud' : 'local' },
+      ),
+    [aspectRatio, resolutionTier, durationSec, byok.model, provider],
+  );
 
   // ── 素材动作 ──
   const addRef = (ref: MentionRef): void => {
@@ -641,7 +663,17 @@ export function CreateView() {
                 </button>
               </>
             ) : (
-              '提交后停留在本页，进度与成片会出现在下方。'
+              <>
+                {costEstimate === null ? null : (
+                  <span className="cr-cost" title="按公开价目与上游计费式估算；实际以方舟账单为准">
+                    预计花费 {formatYuan(costEstimate.yuan)}
+                    {costEstimate.source === 'local-free' ? '（本地轨：无 API 费用）' : '（预估）'}
+                    {costEstimate.fromPriceTable ? '' : '（自定义档按 2.0 标准口径估算）'}
+                    {' · '}
+                  </span>
+                )}
+                提交后停留在本页，进度与成片会出现在下方。
+              </>
             )}
           </div>
           <button

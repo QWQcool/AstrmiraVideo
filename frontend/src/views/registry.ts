@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import { CanvasView } from './CanvasView';
+import { CostsView } from './CostsView';
 import { CreateView } from './CreateView';
 import { EditView } from './EditView';
 import { LibraryView } from './LibraryView';
@@ -28,7 +29,9 @@ export type ViewIconKey =
   | 'cards'
   | 'list'
   | 'scissors'
-  | 'graph';
+  | 'graph'
+  /** V2.12（B48）：成本台账 —— 铜钱/账本意象 */
+  | 'coins';
 
 export interface ViewDef {
   /** hash 路径（不含查询参数），如 `#/overview` */
@@ -56,6 +59,8 @@ export const VIEW_REGISTRY: readonly ViewDef[] = [
   { path: '#/overview', title: '总览', eyebrow: 'Overview', icon: 'grid', component: OverviewView },
   { path: '#/library', title: '视频库', eyebrow: 'Library', icon: 'film', component: LibraryView },
   { path: '#/canvas', title: '画布', eyebrow: 'Lineage', icon: 'graph', component: CanvasView },
+  // V2.12（台账 B48）：成本台账 —— 与总览并列的"经营视图"（不占空间，不必收侧栏）
+  { path: '#/costs', title: '成本台账', eyebrow: 'Cost Ledger', icon: 'coins', component: CostsView },
   { path: '#/recipes', title: '配方库', eyebrow: 'Recipe Library', icon: 'cards', component: RecipesView },
   { path: '#/logs', title: '操作日志', eyebrow: 'Logs', icon: 'list', component: LogsView },
   { path: '#/edit', title: '剪辑台', eyebrow: 'Editing Desk', icon: 'scissors', component: EditView, hidden: true, preferRail: true },

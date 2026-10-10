@@ -75,10 +75,20 @@ describe('计价公式（对齐 PLAN §8 的实测基线）', () => {
     expect(cost?.formula).toContain('无 API 费用');
   });
 
-  it('取不到分辨率 / 时长 → **null**（不编数字）', () => {
+  it('云端取不到分辨率 / 时长 → **null**（不编数字）', () => {
     expect(estimateVideoCost({ outputSeconds: 5, track: 'cloud' })).toBeNull();
     expect(estimateVideoCost({ width: 1280, height: 720, outputSeconds: 0, track: 'cloud' })).toBeNull();
     expect(estimateVideoCost({ width: 0, height: 0, outputSeconds: 5, track: 'cloud' })).toBeNull();
+  });
+
+  it('本地轨**即使没有分辨率也结算 0 元**（UI 冒烟实测抓到的顺序坑）', () => {
+    // 请求可以不带 resolution（云端 provider 此时不传 --resolution，由上游用默认档）；
+    // 本地轨的金额与分辨率无关，若先卡分辨率就会把它误判成"未结算"
+    const cost = estimateVideoCost({ outputSeconds: 5, track: 'local' });
+    expect(cost?.source).toBe('local-free');
+    expect(cost?.yuan).toBe(0);
+    // 端点把"缺分辨率"如实写进 notes，不假装知道自己用了什么分辨率
+    expect(cost?.width).toBe(1);
   });
 
   it('未知模型（自定义接入点）→ 按兜底单价 + 显著标注 fromPriceTable=false', () => {
@@ -128,6 +138,18 @@ describe('从请求快照估算（提交前预估与结算共用同一条路径�
 
   it('正常快照 → 有金额', () => {
     expect(estimateCostFromRequest(request, { track: 'cloud' })?.tokens).toBe(108_000);
+  });
+
+  it('**缺 resolution 但走本地轨 → 仍结算 0 元**（UI 冒烟实测抓到的那条路径）', () => {
+    // 夹具/本地 provider 的请求可以不带 resolution（trackFor 判 local），
+    // 而本地轨金额与分辨率无关 —— 这条曾经因为"提前 return null"而落进"未结算"，
+    // 直到冒烟里出现"3 条任务全部未结算"才暴露
+    const cost = estimateCostFromRequest(
+      { params: { durationSec: 2 }, options: {}, provider: 'fixture-local' } as never,
+      { track: 'local' },
+    );
+    expect(cost?.source).toBe('local-free');
+    expect(cost?.yuan).toBe(0);
   });
 
   it('缺 resolution / model 不是字符串 → **null**（窄化对着契约做，不硬取字段崩掉）', () => {

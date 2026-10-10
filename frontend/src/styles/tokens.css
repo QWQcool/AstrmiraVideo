@@ -85,6 +85,9 @@
   --danger-line: rgba(248, 113, 113, 0.3);
   --danger-line-strong: rgba(248, 113, 113, 0.35);
   --line-strong: rgba(179, 195, 219, 0.2);
+  /* V2.12（B48）：浮层投影（项目切换器的管理面板等）。收进 tokens 的原因与其它色值一样 ——
+     写在组件里会**绕过主题**（日间模式下仍是暗色的黑，深得不自然）。 */
+  --shadow-pop: 0 18px 40px rgba(0, 0, 0, 0.3);
   --canvas-veil: rgba(5, 7, 10, 0.6);
 
   /* 几何与缓动 */
@@ -165,6 +168,8 @@
   --gold-wash: rgba(47, 111, 224, 0.1);
   --gold-line: rgba(47, 111, 224, 0.4);
   --gold-shadow: rgba(47, 111, 224, 0.18);
+  /* 浮层投影（日间）：比暗色主题浅一档，否则白底上的黑尖角很脏 */
+  --shadow-pop: 0 18px 40px rgba(15, 23, 42, 0.12);
   --blue-soft: rgba(47, 111, 224, 0.08);
   --blue-line: rgba(47, 111, 224, 0.3);
   --danger-tint: rgba(217, 59, 59, 0.06);
