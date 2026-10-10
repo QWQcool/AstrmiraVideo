@@ -446,6 +446,32 @@ if (!hasTapHighlight) {
   failures.push('没有任何 CSS 关掉 -webkit-tap-highlight-color（B60：触屏点击高亮与主题不符）');
 }
 
+// ── ⑬ 画布规模的两个抓手（V2.25 / 台账 B44）──
+//
+// 与 ⑪⑫ 同一条理由：这两件事在**小数据下完全看不出差别**（一页 50 条以内、节点都在视口里），
+// 被摘掉不会有任何症状 —— 直到真有几百条任务、画布卡住时才发现"开关早就被删了"。
+// 行为断言在冒烟 [7e] 段（注入 120 条后验分页与裁剪），这里钉住**代码事实**（开关与调用形态）。
+const CANVAS_VIEW = path.join(SRC, 'views', 'CanvasView.tsx');
+const canvasText = contents.get(CANVAS_VIEW);
+
+if (canvasText === undefined) {
+  failures.push('找不到 views/CanvasView.tsx（B44 的分页与视口裁剪都在这里）');
+} else {
+  if (!canvasText.includes('onlyRenderVisibleElements')) {
+    failures.push(
+      'CanvasView 未开 `onlyRenderVisibleElements`（B44：一百多个节点一列排开时，' +
+        'fitView 被 minZoom 钳住 —— 大多数节点在视口外，全量建 DOM 是纯浪费）',
+    );
+  }
+  for (const needle of ['limit: CANVAS_PAGE_SIZE', 'before: page.before']) {
+    if (!canvasText.includes(needle)) {
+      failures.push(
+        `CanvasView 的分页调用缺 \`${needle}\`（B44：没有游标时「加载更早」会反复取回同一页）`,
+      );
+    }
+  }
+}
+
 // ── 汇总 ──
 if (failures.length > 0) {
   console.error(`✗ 视觉自检失败（${failures.length} 项）：`);
@@ -458,5 +484,6 @@ console.log(
     `无硬编码字号/字距、${PANELS_EXPECTING_EYEBROW.length} 处分区标题走 eyebrow 体系、` +
     `水印 ${watermarkUsers.length} 处、数据路径零 innerHTML、index.html 零跨源资源、` +
     `组件层零硬编码色值、两套主题对比度全部达标（${CONTRAST_RULES.length} 对 × ${THEMES.length} 套）、` +
-    `移动端四件套就位（B60：窄屏日志 / hover 兜底 / dvh / 字号下限）`,
+    `移动端四件套就位（B60：窄屏日志 / hover 兜底 / dvh / 字号下限）、` +
+    `画布规模抓手就位（B44：分页游标 + 视口裁剪）`,
 );
