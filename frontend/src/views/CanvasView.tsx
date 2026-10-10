@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Background, Controls, ReactFlow, type Edge } from '@xyflow/react';
+import { useCallback, useEffect, useMemo, useState, type FC } from 'react';
+import {
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  useNodesState,
+  useReactFlow,
+  type Edge,
+  type OnSelectionChangeParams,
+} from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { AssetListEntry, TaskProgress } from '@astrmira/shared';
 import { ApiError, fetchAssets, fetchHistory, resolveMediaUrl } from '../lib/api';
@@ -44,6 +53,58 @@ function describeError(caught: unknown): string {
   }
   return caught instanceof Error ? caught.message : String(caught);
 }
+
+/**
+ * 画布工具条（V2.19 / 台账 B64）。
+ *
+ * 为什么需要"缩放到选区"：血缘图会长（多镜头剪辑链 + 抽帧派生），
+ * 而 `Controls` 自带的 fitView 只能"看全部"—— 全图缩小到 20% 时节点小到读不出标题。
+ * 选中几个节点 → 一键把它们填满视口，才是长图里真正省事的操作。
+ *
+ * ⚠️ 必须渲染在 `<ReactFlow>` 内部（`useReactFlow` 依赖它的 Provider）。
+ * 参考 n8n 的画布导航交互，本组件为独立实现（PLAN §6-D48）。
+ */
+const CanvasToolbar: FC<{ selectedIds: string[] }> = ({ selectedIds }) => {
+  const { fitView } = useReactFlow();
+  const count = selectedIds.length;
+
+  return (
+    <div className="cv-tools">
+      <button
+        type="button"
+        className="cv-tool"
+        data-testid="cv-zoom-selection"
+        disabled={count === 0}
+        title={
+          count === 0
+            ? '先在画布上框选节点，或按住 Shift 点选多个节点'
+            : `把选中的 ${count} 个节点填满视口`
+        }
+        onClick={() => {
+          void fitView({
+            nodes: selectedIds.map((id) => ({ id })),
+            duration: 400,
+            padding: 0.3,
+            maxZoom: 1.6,
+          });
+        }}
+      >
+        ◎ 缩放到选区{count === 0 ? '' : `（${count}）`}
+      </button>
+      <button
+        type="button"
+        className="cv-tool"
+        data-testid="cv-zoom-all"
+        title="缩放到全部节点（等同左下角控件里的适配按钮）"
+        onClick={() => {
+          void fitView({ duration: 400, padding: 0.2, maxZoom: 1.6 });
+        }}
+      >
+        ⤢ 全部
+      </button>
+    </div>
+  );
+};
 
 /** 节点详情抽屉：动作全部指向既有 hash 参数（零新路由、零契约） */
 function CanvasDrawer({ node, onClose }: { node: LineageNode; onClose: () => void }) {
@@ -132,6 +193,8 @@ export function CanvasView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<LineageNode | null>(null);
+  /** 当前选中的节点 id（V2.19 / B64）：只用于"缩放到选区"，不参与任何编辑语义 */
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const reload = useCallback(async (): Promise<void> => {
     try {
@@ -159,16 +222,28 @@ export function CanvasView() {
   const graph = useMemo(() => buildLineage({ tasks, assets }), [tasks, assets]);
   const layout = useMemo(() => layoutLineage(graph), [graph]);
 
-  const flowNodes = useMemo<LineageFlowNode[]>(
-    () =>
+  /**
+   * 节点走 `useNodesState`（**受控 + 变更回写**），而不是直接塞 `nodes={...}` 常量。
+   *
+   * ⚠️ **这是 2026-10-10 发现的一个真缺陷的修复**（B64 实施时暴露）：
+   * 原先只传 `nodes` / `edges`、**没有 `onNodesChange`** —— 而 React Flow 的
+   * "拖摆位"与"选中"都靠 `onNodesChange` 把变更写回节点数组。缺了它，
+   * 文档里写的"节点可拖摆位（会话内）"**其实一直没生效**，选中态也落不下来
+   * （直接后果：B64 的「缩放到选区」永远是灰的）。
+   * 画布仍是**只读**：回写的只有位置与选中（`nodesConnectable=false` / `deleteKeyCode=null` 不变）。
+   */
+  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<LineageFlowNode>([]);
+
+  useEffect(() => {
+    setFlowNodes(
       graph.nodes.map((node) => ({
         id: node.id,
         type: 'lineage' as const,
         position: layout.positions[node.id] ?? { x: 0, y: 0 },
         data: { node },
       })),
-    [graph, layout],
-  );
+    );
+  }, [graph, layout, setFlowNodes]);
 
   const flowEdges = useMemo<Edge[]>(
     () =>
@@ -243,8 +318,12 @@ export function CanvasView() {
               <ReactFlow
                 nodes={flowNodes}
                 edges={flowEdges}
+                onNodesChange={onNodesChange}
                 nodeTypes={nodeTypes}
                 onNodeClick={(_event, node) => setSelected((node as LineageFlowNode).data.node)}
+                onSelectionChange={(params: OnSelectionChangeParams) =>
+                  setSelectedIds(params.nodes.map((node) => node.id))
+                }
                 nodesConnectable={false}
                 deleteKeyCode={null}
                 fitView
@@ -253,6 +332,19 @@ export function CanvasView() {
               >
                 <Background gap={24} />
                 <Controls showInteractive={false} />
+                <CanvasToolbar selectedIds={selectedIds} />
+                <MiniMap
+                  data-testid="cv-minimap"
+                  position="bottom-right"
+                  pannable
+                  zoomable
+                  maskColor="var(--canvas-veil)"
+                  nodeColor={(node) => {
+                    const data = (node as LineageFlowNode).data.node;
+                    if (data.ghost === true) return 'var(--faint)';
+                    return data.isEdit === true ? 'var(--blue)' : 'var(--gold)';
+                  }}
+                />
               </ReactFlow>
             </div>
             <p className="cv-mobile-note wb-note">

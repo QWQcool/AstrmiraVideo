@@ -82,6 +82,8 @@
 .cv-canvas {
   height: 68vh;
   min-height: 420px;
+  /* 工具条（B64）是绝对定位的浮层，需要这里做定位上下文 */
+  position: relative;
   border: 1px solid var(--line);
   border-radius: var(--radius-surface);
   background-color: var(--canvas);
@@ -98,6 +100,51 @@
 
 .cv-canvas .react-flow__controls button:hover {
   background-color: var(--panel2);
+}
+
+/* ── 导航：小地图 + 工具条（V2.19 / 台账 B64）──────────────────────────────
+   设计参考 n8n 的画布导航（数据来自 @xyflow/react 自带的 MiniMap），**独立实现**：
+   皮肤全部走 tokens（默认小地图是白底浅灰，暗色主题下刺眼）。
+   ⚠️ 画布是**只读**视图（D40）：这里只做"看图的姿势"（缩放到选区/全部），
+   不引入任何编辑语义。 */
+.cv-tools {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+}
+
+.cv-tool {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background-color: var(--panel-glass);
+  color: var(--text);
+  font-size: var(--fs-note);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.cv-tool:hover:enabled {
+  border-color: var(--line-gold);
+  color: var(--gold);
+}
+
+.cv-tool:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cv-canvas .react-flow__minimap {
+  background-color: var(--panel-glass);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.cv-canvas .react-flow__minimap-mask {
+  fill: var(--canvas-veil);
 }
 
 .cv-canvas .react-flow__attribution {

@@ -2133,6 +2133,29 @@ try {
     '抽屉里有动作入口（复用参数 / 送剪辑台 / 设为视频参考…）',
   );
 
+  // V2.19（台账 B64）：画布导航 —— 小地图 + 「缩放到选区」（设计参考 n8n，独立实现）
+  assert(
+    (await page.locator('.cv-canvas .react-flow__minimap').count()) === 1,
+    '小地图（MiniMap）已渲染 —— 长血缘图能一眼看出自己在哪',
+  );
+  const zoomSelection = page.getByTestId('cv-zoom-selection');
+  const viewportBefore = await page
+    .locator('.cv-canvas .react-flow__viewport')
+    .getAttribute('style');
+  assert(
+    await zoomSelection.isEnabled(),
+    '选中节点后「缩放到选区」可用（此前已点中一个节点）',
+  );
+  await zoomSelection.click();
+  await page.waitForTimeout(700);
+  const viewportAfter = await page
+    .locator('.cv-canvas .react-flow__viewport')
+    .getAttribute('style');
+  assert(
+    viewportBefore !== viewportAfter,
+    '「缩放到选区」真的改变了视口（行为断言，不只看按钮存在）',
+  );
+
   // 只读断言②：Delete 键不删除节点（deleteKeyCode=null）
   const beforeDelete = await canvasNodes.count();
   await page.keyboard.press('Delete');
