@@ -498,6 +498,41 @@ if (canvasText !== undefined && !canvasText.includes("query.get('mode') === 'pla
   failures.push('CanvasView 没有读 `mode=plan`（A5 片 A 的编排模式入口没了）');
 }
 
+// ── ⑮ window 层运行期兜底还在，且**没有偷偷上报**（台账 B61 片 B / 决策 D52）──
+//
+// 与 ⑪ 同一条理由：这一层在**没出错时什么都不渲染** —— 被摘掉不会有任何视觉回归、
+// 类型错误或测试变红。而它一旦"顺手加上报"，性质就变了：D52 定的是**只本地提示**，
+// 上报等于把用户的运行时错误送出这台机器，那正是用户明确不要的那一项。
+// 行为断言在冒烟 [7f] 段（真抛一个错 → 真看到提示条 → 真点关闭）。
+const NOTICE = path.join(SRC, 'lib', 'runtimeErrorNotice.ts');
+const noticeText = contents.get(NOTICE);
+// 复用上面第 ⑪ 条读到的 `mainText`（同一个 main.tsx，别再读一遍）
+
+if (mainText === undefined || !mainText.includes('installRuntimeErrorNotice()')) {
+  failures.push(
+    'main.tsx 没有安装 `installRuntimeErrorNotice()`（B61 片 B：事件回调与 Promise 里的抛错' +
+      '会退回"静默白屏"，只能开 DevTools 才看得见）',
+  );
+}
+
+if (noticeText === undefined) {
+  failures.push('找不到 lib/runtimeErrorNotice.ts（B61 片 B 的 window 层兜底不见了）');
+} else {
+  for (const listener of ["addEventListener('error'", "addEventListener('unhandledrejection'"]) {
+    if (!noticeText.includes(listener)) {
+      failures.push(`window 层兜底没有监听 \`${listener}\`（B61 片 B）`);
+    }
+  }
+  for (const sink of ['fetch(', 'sendBeacon', 'XMLHttpRequest']) {
+    if (noticeText.includes(sink)) {
+      failures.push(
+        `window 层兜底里出现了 \`${sink}\` —— D52 定的是**只本地提示**：` +
+          '上报会把用户的运行时错误送出这台机器',
+      );
+    }
+  }
+}
+
 // ── 汇总 ──
 if (failures.length > 0) {
   console.error(`✗ 视觉自检失败（${failures.length} 项）：`);
@@ -512,5 +547,6 @@ console.log(
     `组件层零硬编码色值、两套主题对比度全部达标（${CONTRAST_RULES.length} 对 × ${THEMES.length} 套）、` +
     `移动端四件套就位（B60：窄屏日志 / hover 兜底 / dvh / 字号下限）、` +
     `画布规模抓手就位（B44：分页游标 + 视口裁剪）、` +
-    `编排模式的两个花钱约定就位（A5 片 A：确定性幂等键 + mode=plan 入口）`,
+    `编排模式的两个花钱约定就位（A5 片 A：确定性幂等键 + mode=plan 入口）、` +
+    `window 层兜底就位且零上报（B61 片 B：两个事件 + D52 只本地提示）`,
 );

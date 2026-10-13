@@ -1079,6 +1079,44 @@
   user-select: text;
 }
 
+/* 运行期出错提示条（B61 片 B）：**浮在右下角、不遮内容** ——
+   它要报的是"某处可能不动了"，把整页替换掉反而会让用户连试都没法试。
+   z-index 取 60：高于全部现有浮层（当前最高 50 = 剪辑台浮层），
+   否则"提示条被谁挡住"本身就成了一个 bug。 */
+.wb-runtime-error {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 14px 16px;
+  border: 1px solid var(--danger-line-strong);
+  border-radius: var(--radius-control);
+  background-color: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-pop);
+}
+
+.wb-runtime-error-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* 窄屏（B60 那条纪律）：提示条不该比视口还宽，也不该压住底部操作区 */
+@media (max-width: 768px) {
+  .wb-runtime-error {
+    right: 8px;
+    left: 8px;
+    bottom: 8px;
+    max-width: none;
+  }
+}
+
 /* 可播封面做成按钮（V8.3 批次 7）：点它 → 载入中栏播放。
    视觉上保持原样（它本来就是一块封面图），只补焦点态与悬停提示。 */
 .wb-card-thumb-button {

@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { installRuntimeErrorNotice } from './lib/runtimeErrorNotice';
 import './styles/tokens.css';
 import './styles/index.css';
 import './styles/workbench.css';
@@ -19,7 +20,14 @@ import './styles/canvas.css';
  *
  * ⚠️ 它**不替代**视图级兜底：这一层的代价是整个界面被替换成面板，
  * 而视图级那层保住侧栏与导航。**两层都要有**，不是二选一。
+ *
+ * ## 第三层：window 层的运行期提示（B61 片 B）
+ * 上面两层都兜不住**事件回调与 Promise**里的抛错（React 不交给 boundary）。
+ * `installRuntimeErrorNotice` 在**挂载之前**装上 —— 越早越好：它要覆盖的正是
+ * "React 已经出错但还没渲染出任何东西"的那段时间。它**只本地提示、不上报**（D52）。
  */
+installRuntimeErrorNotice();
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary label="界面">

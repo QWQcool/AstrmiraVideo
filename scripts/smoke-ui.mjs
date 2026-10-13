@@ -262,16 +262,63 @@ try {
    * （其它任何时刻出现 429 仍然会红 —— 不留"全局宽恕"的口子）。
    */
   let allowExpected429 = false;
+  /**
+   * **预期内的运行期错误窗口**（V2.29 / 台账 B61 片 B）。
+   *
+   * [7f] 段要验的正是"未被捕获的错误会不会变成一条提示条" —— 所以它必须**真的抛一个错**。
+   * 那个错同时会出现在 pageerror 与 console.error 里，而 [8] 段要求两者都为 0。
+   * 这里的做法不是"宽恕"，是**收走并计数**：命中的条目进 `expectedRuntimeErrors`，
+   * 段内再用断言核对条数（抛了几次就该收几条）。它只在 [7f] 段开着 ——
+   * 窗口外的任何异常、以及窗口内**不匹配**的异常，都照样会红。
+   */
+  let runtimeErrorWindow = false;
+  const expectedRuntimeErrors = [];
+  /**
+   * 被兜底层**筛掉的浏览器良性噪声**（`ResizeObserver loop …` 之类）。
+   *
+   * 它不是缺陷（浏览器自己的通知丢失，对功能无害），但兜底层仍会**留一条控制台记录** ——
+   * 所以这里既不放它去污染"控制台零 error"，也不把它藏起来：单独收走并在 [8] 段**如实报数**。
+   * 这是 2026-10-13 上线当天就撞到的真实情况（见 PLAN §5 的「B61 · 片 B」）。
+   */
+  const runtimeNoise = [];
   page.on('console', (message) => {
     if (message.type() === 'error') {
       const text = message.text();
       if (allowExpected429 && /429 \(Too Many Requests\)/.test(text)) return;
+      if (text.includes('[运行期噪声·已忽略，不提示]')) {
+        runtimeNoise.push(text);
+        return;
+      }
+      if (runtimeErrorWindow && text.includes('[运行期错误]')) {
+        expectedRuntimeErrors.push(`console: ${text}`);
+        return;
+      }
       consoleErrors.push(text);
     } else if (message.type() === 'warning') {
       consoleWarnings.push(message.text());
     }
   });
-  page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('pageerror', (error) => {
+    /**
+     * **浏览器良性噪声**：与前端 `BENIGN_RUNTIME_NOISE` 同一口径（产品不会为它提示用户，
+     * 冒烟也就不该因它失败）—— 但它**仍被如实报数**（`runtimeNoise`），不藏起来。
+     *
+     * 注意这条不放在 `runtimeErrorWindow` 里：浏览器自身的 `ResizeObserver loop` 通知丢失
+     * **不产生 pageerror**（实测），会产生 pageerror 的是"[7f] 段里主动抛出的一句话"——
+     * 两者都该按噪声处理，所以这里只看消息。
+     */
+    if (/ResizeObserver loop/.test(error.message)) {
+      runtimeNoise.push(`pageerror: ${error.message}`);
+      return;
+    }
+    // 同时认两种：同步抛错（smoke-runtime-error）与未处理的 Promise 拒绝（…-rejection，
+    // Playwright 在 Chromium 下会把它报成 "Uncaught (in promise) …" 的 pageerror）
+    if (runtimeErrorWindow && /smoke-runtime-(error|rejection)/.test(error.message)) {
+      expectedRuntimeErrors.push(`pageerror: ${error.message}`);
+      return;
+    }
+    pageErrors.push(error.message);
+  });
 
   const startedAt = Date.now();
   const response = await page.goto(baseUrl, { waitUntil: 'load' });
@@ -2115,6 +2162,43 @@ try {
     `日志页无横向溢出（scrollWidth=${logFacts.scrollWidth} ≤ clientWidth=${logFacts.clientWidth}）`,
   );
 
+  // ⑦ 全部主要视图在 **375px** 下都不横向溢出（B61 的 ③ 项 —— B60 只覆盖了日志页）
+  //
+  // 为什么这条值得单独铺一遍：本仓是"高密度工作台"（六列日志表 / 三栏网格 / 画布工具条 /
+  // 调试台两列），任何一处撑破视口都不会以"能横滑"的形式暴露 —— 全局 `overflow-x: hidden`
+  // 会把溢出的部分**直接剪掉**，表现为"右边的按钮不见了"。所以判据取
+  // scrollWidth ≤ clientWidth + 1（1px 给亚像素舍入）。
+  // 375 = 最窄的主流机型宽度（iPhone SE），比 390 更严 —— 不通过就说明**内容真的丢了**。
+  await mobile.setViewportSize({ width: 375, height: 812 });
+  const NARROW_VIEWS = [
+    ['#/workbench', '.wb-main', '创作工作台'],
+    ['#/library', '.lib-card', '视频库'],
+    ['#/logs', '.wb-log-row-main', '操作日志'],
+    ['#/create', '.cr-panel', '创作入口'],
+    ['#/canvas', '.cv-wrap', '血缘画布'],
+  ];
+  const narrowOverflows = [];
+  for (const [hash, selector, name] of NARROW_VIEWS) {
+    await mobile.evaluate((target) => {
+      location.hash = target;
+    }, hash);
+    // 视图可能因夹具数据为空而没有该选择器 —— 那也照样要量溢出（不跳过测量）
+    await mobile.waitForSelector(selector, { timeout: 10_000 }).catch(() => {});
+    const fact = await mobile.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    if (fact.scrollWidth > fact.clientWidth + 1) {
+      narrowOverflows.push(`${name}（${hash}）scrollWidth=${fact.scrollWidth} > ${fact.clientWidth}`);
+    }
+  }
+  assert(
+    narrowOverflows.length === 0,
+    `375px 下五个主要视图都无横向溢出（${narrowOverflows.join('；') === '' ? '全部合格' : narrowOverflows.join('；')}）`,
+  );
+
+  // 截图恢复成 390×844（本段 §⑤⑥ 的口径，也是 artifacts 里 mobile.png 的一贯尺寸）
+  await mobile.setViewportSize({ width: 390, height: 844 });
   await mobile.screenshot({ path: path.join(SHOT_DIR, 'mobile.png'), fullPage: false });
   note('移动端截图留档：artifacts/ui-smoke/mobile.png');
   await mobileContext.close();
@@ -2816,6 +2900,105 @@ try {
   await page.screenshot({ path: path.join(SHOT_DIR, 'canvas.png'), fullPage: false });
   note('画布截图留档：artifacts/ui-smoke/canvas.png');
 
+  console.log('\n[7f] window 层运行期兜底（V2.29 / B61 片 B / D52：只本地提示、不上报）');
+  // 为什么必须**真抛**：这一层唯一的存在理由就是"接住没人接的错误"。直接调它的 report()
+  // 只能证明函数能跑，证明不了"浏览器真会把事件送到它手上" —— 而"事件没送到"
+  // （监听阶段挂错、被某个 patch 吃掉）恰恰是它最可能的失效方式。
+  runtimeErrorWindow = true;
+
+  await page.evaluate(() => {
+    setTimeout(() => {
+      throw new Error('smoke-runtime-error');
+    }, 0);
+  });
+  const runtimeNotice = page.getByTestId('runtime-error-notice');
+  await runtimeNotice.waitFor({ state: 'visible', timeout: 10_000 });
+  assert(
+    ((await runtimeNotice.textContent()) ?? '').includes('界面里有一处代码出错了'),
+    '未被捕获的同步错误 → 页面上真的出现提示条（真浏览器、真未捕获异常）',
+  );
+
+  // 同一条错误再抛两次：只更新计数、**不重复弹**（循环里抛错否则会自己变成一场灾难）
+  await page.evaluate(() => {
+    setTimeout(() => {
+      throw new Error('smoke-runtime-error');
+    }, 0);
+    setTimeout(() => {
+      throw new Error('smoke-runtime-error');
+    }, 0);
+  });
+  const countLine = page.getByTestId('runtime-error-count');
+  await countLine.waitFor({ state: 'visible', timeout: 10_000 });
+  assert(
+    ((await countLine.textContent()) ?? '').includes('另有 2 次同类'),
+    '同一条错误重复抛 → 只弹一条提示，并如实累计"另有 N 次同类"',
+  );
+  assert(
+    (await page.getByTestId('runtime-error-notice').count()) === 1,
+    '提示条不会堆积成一片（同一条错误只有一个容器）',
+  );
+
+  const runtimeDetails = async () =>
+    page.evaluate(
+      () => document.querySelector('[data-testid=runtime-error-notice] pre')?.textContent ?? '',
+    );
+  const firstDetails = await runtimeDetails();
+  assert(firstDetails.includes('smoke-runtime-error'), '技术细节里有真实错误消息（报障可复制带走）');
+  assert(firstDetails.includes('没有上报到服务器'), '如实写明"只在本机提示、没有上报"（D52 的承诺）');
+
+  // 未处理的 Promise 拒绝：**根本不会触发 error 事件**，只有 unhandledrejection 能接住它
+  await page.evaluate(() => {
+    Promise.reject(new Error('smoke-runtime-rejection'));
+  });
+  await page.waitForFunction(
+    () =>
+      (document.querySelector('[data-testid=runtime-error-notice] pre')?.textContent ?? '').includes(
+        'smoke-runtime-rejection',
+      ),
+    undefined,
+    { timeout: 10_000 },
+  );
+  assert(
+    (await runtimeDetails()).includes('未处理的 Promise 拒绝'),
+    'Promise 拒绝也能被兜住，且报告里写清来源（只做 window.onerror 会漏掉这一整类）',
+  );
+
+  // 关得掉（它浮在右下角，关不掉就会永久压住界面）
+  await page.getByTestId('runtime-error-dismiss').click();
+  await runtimeNotice.waitFor({ state: 'detached', timeout: 5_000 });
+  assert(
+    (await page.getByTestId('runtime-error-notice').count()) === 0,
+    '点「知道了」后提示条真的消失',
+  );
+
+  // 浏览器**良性噪声**：只留控制台、**不弹提示条**。
+  // 这条是 2026-10-13 上线当天真实撞到的（冒烟 [8] 段多出一条 ResizeObserver 错误）——
+  // 不筛掉它，用户会收到一条"界面里有一处代码出错了"的**误报**。
+  await page.evaluate(() => {
+    setTimeout(() => {
+      throw new Error('ResizeObserver loop completed with undelivered notifications.');
+    }, 0);
+  });
+  await sleep(800); // 给它足够的机会去弹（若筛检漏了，这里就会多出一条提示条）
+  assert(
+    (await page.getByTestId('runtime-error-notice').count()) === 0,
+    '浏览器良性噪声（ResizeObserver loop）不弹提示条 —— 只留控制台记录',
+  );
+  assert(
+    runtimeNoise.length >= 1,
+    `良性噪声**仍然留了控制台记录**（被筛掉 ${runtimeNoise.length} 条，信息不丢）`,
+  );
+
+  runtimeErrorWindow = false;
+  const consumedConsole = expectedRuntimeErrors.filter((item) => item.startsWith('console:')).length;
+  const consumedPage = expectedRuntimeErrors.filter((item) => item.startsWith('pageerror:')).length;
+  note(`本段预期内的运行期错误：console ${consumedConsole} 条 / pageerror ${consumedPage} 条`);
+  assert(
+    consumedConsole === 4,
+    `每次运行期错误都会在控制台留一条原始记录（4 次错误 → 4 条，实际 ${consumedConsole}）`,
+  );
+  assert(consumedPage >= 3, `三次同步抛错都必须以 pageerror 形式被收走（实际 ${consumedPage}）`);
+
   console.log('\n[8] 控制台卫生');
   const realConsoleErrors = consoleErrors.filter(
     (text) => !IGNORED_CONSOLE.some((pattern) => pattern.test(text)),
@@ -2828,6 +3011,13 @@ try {
 
   for (const text of realConsoleErrors) note(`console.error: ${text.slice(0, 300)}`);
   for (const text of pageErrors) note(`pageerror: ${text.slice(0, 300)}`);
+  if (runtimeNoise.length > 0) {
+    // 如实报数：被兜底层筛掉的浏览器噪声既不算失败、也不藏起来
+    note(
+      `（如实）整场会话里兜底层筛掉的浏览器良性噪声 ${runtimeNoise.length} 条（只留控制台、不弹提示）：` +
+        `${runtimeNoise[0]?.slice(0, 160)}`,
+    );
+  }
   if (consoleWarnings.length > 0) {
     note(`（提示）console.warning ${consoleWarnings.length} 条，不参与判定：${consoleWarnings[0]?.slice(0, 160)}`);
   }
