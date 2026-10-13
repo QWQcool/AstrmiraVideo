@@ -514,6 +514,15 @@ if (canvasText !== undefined && !canvasText.includes('bumpPlanRun')) {
   );
 }
 
+// V2.29（A5 片 B 第二批 / B68）：固定与重试的**界面入口**也必须真的接上 ——
+// 领域层有、界面没入口 = 功能不存在（而单测是全绿的：它测的是领域层）。
+if (canvasText !== undefined && !canvasText.includes('pinPlanNode')) {
+  failures.push('CanvasView 没有用 `pinPlanNode` —— 「📌 固定这条的产物」入口不见了（下游省钱的关键入口）');
+}
+if (canvasText !== undefined && !canvasText.includes('setPlanNodeRetry')) {
+  failures.push('CanvasView 没有用 `setPlanNodeRetry` —— 节点级重试的入口不见了（B74 界面）');
+}
+
 // ── ⑮ window 层运行期兜底还在，且**没有偷偷上报**（台账 B61 片 B / 决策 D52）──
 //
 // 与 ⑪ 同一条理由：这一层在**没出错时什么都不渲染** —— 被摘掉不会有任何视觉回归、

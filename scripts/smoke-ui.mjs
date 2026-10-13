@@ -2910,6 +2910,24 @@ try {
     `重跑真的新建了任务（2 → ${afterRerun.length} 条 —— 换键的硬证据，这一片唯一花钱的断言）`,
   );
 
+  // ── V2.29（B68 第二批）：**固定**之后重跑，被钉住的那段绝不再提交 ──────────────
+  // 这是"省钱"最硬的一条证据：任务数只 +1（另一条被钉住了），
+  // 且下游照样能引用固定的那份产物（引用不上就会 skipped，断言会红）。
+  await page.locator('.cv-plan-node').first().click();
+  await page.getByTestId('cv-pin-node').waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByTestId('cv-pin-node').click();
+  const pinState = await page.getByTestId('cv-pin-state').textContent();
+  assert(pinState?.includes('已固定') === true, `固定后有明确状态（${pinState}）`);
+
+  const beforePinRerun = await planTasks();
+  await runUntilAccepted('cv-rerun-plan');
+  const afterPinRerun = await planTasks();
+  assert(
+    afterPinRerun.length === beforePinRerun.length + 1,
+    `固定之后重跑：任务数只 +1（${beforePinRerun.length} → ${afterPinRerun.length}）` +
+      ' —— 被钉住的那段没有重新提交（它照样被下游引用着）',
+  );
+
   allowExpected429 = false; // 编排段结束：429 不再豁免
 
   await page.screenshot({ path: path.join(SHOT_DIR, 'canvas-plan.png'), fullPage: false });

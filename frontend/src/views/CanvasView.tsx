@@ -55,11 +55,14 @@ import {
   movePlanNode,
   newPlanNode,
   bumpPlanRun,
+  pinPlanNode,
   planNodeBlockReason,
   planRunSeq,
   removePlanEdge,
   removePlanNode,
   saveCanvasPlan,
+  setPlanNodeRetry,
+  unpinPlanNode,
   updatePlanNode,
   withRunTaskIds,
 } from '../lib/canvasPlan';
@@ -1510,6 +1513,13 @@ export function CanvasView() {
                 }}
                 onClose={() => setSelectedPlanNodeId(null)}
                 onRerun={() => handleRerunFromNode(selectedPlanNode.id)}
+                onPin={(taskId) =>
+                  mutatePlan((current) => pinPlanNode(current, selectedPlanNode.id, taskId))
+                }
+                onUnpin={() => mutatePlan((current) => unpinPlanNode(current, selectedPlanNode.id))}
+                onRetryChange={(retry) =>
+                  mutatePlan((current) => setPlanNodeRetry(current, selectedPlanNode.id, retry))
+                }
                 running={running}
               />
             )

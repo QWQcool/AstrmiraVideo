@@ -1,4 +1,10 @@
-import type { AspectRatio, CanvasPlan, CanvasPlanNode, GenerationMode } from '@astrmira/shared';
+import {
+  PLAN_RETRY_DEFAULT_BACKOFF_MS,
+  type AspectRatio,
+  type CanvasPlan,
+  type CanvasPlanNode,
+  type GenerationMode,
+} from '@astrmira/shared';
 import { PLAN_SUPPORTED_MODES, planNodeBlockReason } from '../lib/canvasPlan';
 import type { PlanNodeRunResult } from '../lib/canvasPlanRunner';
 import { CANVAS_MODE_LABELS } from './labels';
@@ -22,6 +28,11 @@ export interface PlanInspectorProps {
   onClose: () => void;
   /** V2.29（B68 / B69）：从这条节点开始重跑（它 ∪ 它的下游，换一代幂等键） */
   onRerun: () => void;
+  /** V2.29（B68 第二批）：固定这条节点的产物（之后永不重提交）。`taskId` 只能是它已有的产物 */
+  onPin: (taskId: string) => void;
+  onUnpin: () => void;
+  /** V2.29（B74 第二批）：节点级重试设置（null = 回到"不重试"） */
+  onRetryChange: (retry: CanvasPlanNode['retry'] | null) => void;
   /** 面板里有些动作要在"运行中"时禁用（重跑开着就再点一次 = 双份任务） */
   running: boolean;
 }
@@ -36,6 +47,9 @@ export function PlanInspector({
   onRemove,
   onClose,
   onRerun,
+  onPin,
+  onUnpin,
+  onRetryChange,
   running,
 }: PlanInspectorProps) {
   const blocked = planNodeBlockReason(plan, node.id);
@@ -82,6 +96,72 @@ export function PlanInspector({
         <p className="wb-note">
           换一代幂等键 → <strong>这条与它的下游会新建任务（真的计费）</strong>；
           上游不在范围内、沿用上次产物。若某个上游本机没有产物记录，下游会如实跳过并说明原因。
+        </p>
+      </section>
+
+      {/* V2.29（B68 第二批）：**固定** —— 钉住"很贵 / 已经满意"的那一段，之后只重跑下游 */}
+      <section className="cv-insp-section">
+        <h3 className="cv-insp-title">产物</h3>
+        {node.pinnedTaskId === undefined ? (
+          <>
+            <p className="wb-note" data-testid="cv-pin-state">
+              {node.lastTaskId === undefined
+                ? '还没有产物可固定 —— 先运行一次，出片之后就能把这一段钉住'
+                : `上次产物 ${node.lastTaskId.slice(0, 8)}（固定 = 之后任何运行都不再重提交它）`}
+            </p>
+            <button
+              type="button"
+              className="wb-btn"
+              data-testid="cv-pin-node"
+              disabled={node.lastTaskId === undefined || running}
+              onClick={() => {
+                if (node.lastTaskId !== undefined) onPin(node.lastTaskId);
+              }}
+            >
+              📌 固定这条的产物
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="wb-note cv-plan-pinned" data-testid="cv-pin-state">
+              📌 已固定 {node.pinnedTaskId.slice(0, 8)} ——
+              之后任何运行（含「重跑全部」）都不会再动这一段，下游一律引用它
+            </p>
+            <button type="button" className="wb-btn" data-testid="cv-unpin-node" onClick={onUnpin}>
+              🔓 取消固定
+            </button>
+          </>
+        )}
+      </section>
+
+      {/* V2.29（B74 第二批）：节点级重试 —— 只对"可能靠重试变好"的失败生效 */}
+      <section className="cv-insp-section">
+        <h3 className="cv-insp-title">失败重试</h3>
+        <label className="cv-plan-field">
+          提交失败最多试
+          <select
+            data-testid="cv-retry-attempts"
+            value={node.retry?.maxAttempts ?? 1}
+            onChange={(event) => {
+              const attempts = Number(event.target.value);
+              onRetryChange(
+                attempts <= 1
+                  ? null
+                  : {
+                      maxAttempts: attempts,
+                      backoffMs: node.retry?.backoffMs ?? PLAN_RETRY_DEFAULT_BACKOFF_MS,
+                    },
+              );
+            }}
+          >
+            <option value={1}>1 次（不重试）</option>
+            <option value={2}>2 次</option>
+            <option value={3}>3 次</option>
+          </select>
+        </label>
+        <p className="wb-note">
+          只对 <strong>5xx / 网络错误</strong>重试；参数错误（4xx）与<strong>冷却（429）不重试</strong>
+          （后者的意思是"等一下再点"）。重试<strong>沿用同一个幂等键</strong> —— 不会因此多花一次钱。
         </p>
       </section>
 
