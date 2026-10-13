@@ -17,6 +17,8 @@ export const CANVAS_MODE_LABELS: Record<GenerationMode, string> = {
 export const CANVAS_PROVIDER_LABELS: Record<ProviderType, string> = {
   'cloud-volcano-seedance': '云端 Seedance',
   'local-minimax-h3': '本地 MiniMax H3',
+  // V2.30（A1 片 B / D53）：用户自备的 ComfyUI（引擎与模型都由用户装）
+  'host-comfyui': '本地 ComfyUI',
   'stock-local': '素材库（开发期）',
   'fixture-local': '夹具（开发期）',
 };

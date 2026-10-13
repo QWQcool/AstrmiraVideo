@@ -1,6 +1,15 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.29 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.30 · 已冻结（变更需先改本文，再改代码）**
+> **V2.30 修订（2026-10-13）**：**新增 §19 本地 ComfyUI 对接 `host-comfyui`（台账 A1 片 B；形态 = 决策 D53）** ——
+>   `ProviderType` 新增 `host-comfyui`（`resolveExecutedBy` 判定仍是 **`host-local`**：算力在用户/部署者的机器上）；
+>   **无新路由、无新错误码、无新表**（它对接的是**用户自己机器上**的服务，本服务只做适配与如实登记）。
+>   关键约定：配置只认 env `COMFYUI_BASE_URL`（回环 / 内网白名单，**不允许请求体指定地址** —— 与云端 BYOK
+>   `options.baseUrl` 刻意不同）；**能力位按"模型 + 关键节点"判定**（缺 `VAEDecodeTiled` 就一个模式都不给，
+> 不许"节点存在就算支持"）；工作流 = API 格式 + 三处刻意差异（**分块解码 / fp8 权重 / 产物子目录**）；
+>   **取消做不到就返回 `false`**、**进度拿不到就不编造**（§19-4 / §19-6 —— 这两条是本片最容易被"做漂亮"的地方）。
+>
+> **状态（上一版）：V2.29 · 已冻结**
 > **V2.29 修订（2026-10-13）**：**§11-6 画布编排扩展 —— 运行代数 / 选择性执行 / 固定 / 节点级重试（台账 A5 片 B：B68 + B69 + B74；B75 按 D54 砍掉）**。
 >   全部是**向后兼容的可选字段**（`CANVAS_PLAN_VERSION` 仍为 1），**无新路由、无新错误码、无新表**：
 >   ① `CanvasPlan.runSeq`（可选，缺省 = 1）+ **幂等键带代数** `plan:<planId>:<nodeId>[:r<代数>]`
@@ -1595,3 +1604,94 @@ export interface BackupManifest {
   **服务端入口**（新路由 + 契约），与真机验证一起做（片 B/C）；
 - **不做自检与端口 / 目录冲突实测**（片 B：需要用户的真机与模型）；
 - **不做中间帧清理审计**（片 C：worker 须回报 `tmpCleaned` 并写入 `warnings[]`，见 §7 中间帧一行）。
+
+---
+
+## 19. 本地 ComfyUI 对接 `host-comfyui`（V2.30 新增；台账 A1 片 B；形态 = 决策 **D53**）
+
+> **它是什么**：**用户自己装好的 ComfyUI**（默认 `http://127.0.0.1:8188`）当成本地轨的一个执行后端。
+> 与 §18 的 worker 协议的区别一句话：§18 是"**我们自己写 worker**"（协议由我们定），
+> §19 是"**对接别人写的引擎**"（协议由 ComfyUI 定，我们只做适配与如实登记）。
+> 两者共同点：**数据不出这台机器**（`executedBy: 'host-local'`）。
+> **模型由用户决定**（他把模型放进 ComfyUI 的 `models/` 就行）—— 我们**不内置、也不替用户选模型**。
+
+### 19-1 配置与白名单
+
+- **唯一入口是 `COMFYUI_BASE_URL`**（env）：未配置 / 不是回环或内网（`isAllowedEngineUrl`，与 §2 同一份白名单）
+  → provider **注册为 `null`**（**不假装可用**）；
+- **不允许请求体指定地址**：与云端 BYOK 的 `options.baseUrl` 刻意不同 —— 云端那个地址是用户自己的账号端点，
+  而本地 ComfyUI 是**部署者的机器**，让请求体指定等于把内网探测面打开（SSRF）；
+- 可选 `COMFYUI_WEIGHT_DTYPE`（默认 `fp8_e4m3fn`，理由见 19-3）。
+
+### 19-2 能力位：按"模型 + 关键节点"判定，不是"节点存在就算支持"
+
+探测 `GET /object_info`（缓存 10 分钟）之后：
+
+| 判定 | 结果 |
+|---|---|
+| 缺 `VAEDecodeTiled` | **一个模式都不给**（10GB 卡上整段解码会退化成 CPU 解码：实测 >14 分钟未完成） |
+| 缺 `Wan22ImageToVideoLatent` | 同上（Wan 2.2 的潜空间节点） |
+| `diffusion_models` 为空 | 不可用 |
+| UNET 文件名含 `ti2v` | 支持 **t2v + i2v**（同一个模型两种用法，区别只在有没有 `start_image`） |
+| UNET 文件名含 `i2v`（不含 ti2v） | 只支持 **i2v**，并说明"文生视频需要 TI2V/T2V 模型" |
+| **`fl2v` / `v2v`** | **一律不支持**（需要 FLF2V / VACE 系列模型 —— 有模型才亮，没有就如实拒绝） |
+
+`checkHealth().reason` 必须同时说出"支持什么"与"不支持什么"（界面照实展示，不许只报一边）。
+
+### 19-3 工作流与参数映射（全部来自真机实测，见 PLAN V8.34 / V8.35）
+
+- **工作流 = API 格式**（节点 id → `class_type` + `inputs`；连线写成 `[上游 id, 输出槽]`），
+  节点图与官方模板 `video_wan2_2_5B_ti2v.json` 一致，只有三处刻意差异：
+  ① `VAEDecode` → **`VAEDecodeTiled`**（tile 256 / overlap 32 / temporal 32 / temporal_overlap 8）；
+  ② `UNETLoader.weight_dtype` 走参数（**默认 `fp8_e4m3fn`** —— 同一条工作流 fp16→fp8 从 753s 降到 119s）；
+  ③ `SaveVideo.filename_prefix` **带 `astrmira/` 子目录**（那台 ComfyUI 的 `output/` 可能与别的项目共用）；
+- **采样档**：20 步 / cfg 5 / `uni_pc` / `simple` / `ModelSamplingSD3.shift = 8` / `fps 24`（官方模板值，实测可用）；
+- **尺寸**：有 `request.resolution` 就用它，否则按画幅给 480p 档（16:9 → 832×480，9:16 → 480×832，1:1 → 640×640）；
+  一律**对齐 32**（`Wan22ImageToVideoLatent` 的 step=32）；超过 **`COMFY_MAX_PIXELS` = 832×480** 时
+  **等比缩小并写进 `warnings[]`**（不静默改参数、也不硬跑）；
+- **帧数**：`durationSec × 24`（fps 与模板一致）后**取最近的 `4n+1`** —— Wan 的时序要求，
+  5 秒 → **121 帧**（与官方模板一致）；等距时向上（宁可略长，也不让成片比请求的时长少一截）；
+- **seed**：`params.seed` 优先，缺省随机；**负向提示词**：`options.negativePrompt` 优先，否则内置中文默认。
+
+### 19-4 状态机（ComfyUI 自己就是异步队列，所以形态很自然）
+
+| 步骤 | 端点 | 语义 |
+|---|---|---|
+| 提交 | `POST /prompt` | 返回 `prompt_id` → **它就是本系统的 `taskId`** |
+| 排队中 | `GET /queue` | 该 id 在 running/pending 里 → `running` |
+| 出片 | `GET /history/{id}` 有 `outputs` | 下载产物 → `succeeded` |
+| 无产物 | 同上但 `outputs` 空 | `failed`（把 ComfyUI 的 `status_str` 与 `exception_message` **原样带出**） |
+| 记录丢失 | 既不在 history 也不在 queue | `failed`，消息直说"**可能重启过**"（`/history` 与队列都在内存里） |
+
+- **进度百分比拿不到**（进度在 WebSocket 上）：`running` 时 `progressPercent` 恒为 **0**，
+  `message` 说明"它不上报进度" —— **不编造一个会匀速上涨的假进度条**；
+- **提交被拒**（400）：把 `node_errors` 的**节点 id + 消息**拼成人话抛出（只说"提交失败"用户无法行动）；
+- **重复查询幂等**：已交付的任务再查直接返回同一结果，**不重复下载**产物。
+
+### 19-5 产物与清理
+
+- 产物按实测形状解析：`outputs[<任意节点 id>]` 下的任意数组里、带 `filename` 的项
+  （实测是 `images[]` + `animated:[true]`；**不假设保存节点的 id** —— 用户换模板会变）；
+- 下载走 `GET /view?filename=&subfolder=&type=`（三个参数缺一不可）；
+- 落地为本服务的 `/media/<taskId>.mp4`（与其它 provider 同一约定：`taskId` 命名，落 `OUTPUT_DIR`）；
+- **ComfyUI 侧的原件保留**（不去删别人的 `output/` 目录 —— 那是用户自己的资产）。
+
+### 19-6 取消：**做不到，且不许假装**
+
+实测（V8.34）：`POST /interrupt` 只打断当前执行、任务会**重启**；`POST /queue {delete:[id]}` **只对 pending 生效**。
+**真要停下只能重启 ComfyUI**。因此 `cancel()` **恒返回 `false`** ——
+返回 `true` 会让界面显示"已取消"而 GPU 还在跑（那是最糟的一种谎言）。
+
+### 19-7 错误映射
+
+| 情形 | 契约码 | disposition |
+|---|---|---|
+| 连不上 / 提交被拒 / 执行报错 / 无产物 / 记录丢失 / 取产物失败 | `UPSTREAM_ERROR` | **`terminal`**（重投同一条不会变好，只会再占一次 GPU） |
+| `COMFYUI_BASE_URL` 未配 | 不是错误码：provider 未注册，能力位上就是不可用 | — |
+
+### 19-8 如实不做
+
+- **不内置"某个具体模型才是唯一真理"的工作流**：模板与参数映射是契约，**模型由用户决定**（D53）；
+- **不做"用户自己写适配器"的通道**（D53 的取舍：那等于把活儿推给用户）；
+- **不做进度条**（接口没有）；**不做取消**（引擎做不到）；
+- **不做中间帧清理**（产物由 ComfyUI 自己管理，我们只下载成品）。

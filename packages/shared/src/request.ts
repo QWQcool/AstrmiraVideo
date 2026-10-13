@@ -15,10 +15,15 @@ export const AspectRatioSchema = z.enum(['16:9', '9:16', '1:1']);
  * 执行引擎（CONTRACT §1 V1.5 修订）。
  * 'stock-local' / 'fixture-local' 为开发期校验专用 provider（PLAN §4「Step 2 补充」），
  * 默认关闭、不出现在产品线能力位；前端不得为它们硬编码任何分支。
+ *
+ * V2.30（台账 A1 片 B / 决策 D53）：新增 **`host-comfyui`** —— 用户**自备的 ComfyUI**
+ * （回环 / 内网地址，见 CONTRACT §19）。它与 `local-minimax-h3` 同属本地轨
+ * （`executedBy: 'host-local'`），区别是**引擎由用户自己装、模型由用户自己放**。
  */
 export const ProviderTypeSchema = z.enum([
   'cloud-volcano-seedance',
   'local-minimax-h3',
+  'host-comfyui',
   'stock-local',
   'fixture-local',
 ]);

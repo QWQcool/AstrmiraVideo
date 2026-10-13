@@ -5,6 +5,8 @@ import { FixtureLocalProvider } from './fixture/FixtureLocalProvider.js';
 import { readOptionString } from './providerOptions.js';
 import { VolcanoSeedanceProvider } from './VolcanoSeedanceProvider.js';
 import { SEEDANCE_DEFAULT_BASE_URL, SEEDANCE_DEFAULT_MODEL } from './seedanceProtocol.js';
+import { ComfyUiProvider } from './comfyui/ComfyUiProvider.js';
+import { isAllowedEngineUrl } from './statusProbe.js';
 import { createFaultInjectedProvider, resolveFaultPlanFromEnv } from './withFaultInjection.js';
 
 /**
@@ -137,6 +139,27 @@ function createCloudProvider(ctx: ProviderResolutionContext): VideoProvider {
 }
 
 /**
+ * 本地 ComfyUI（V2.30 / 台账 A1 片 B / 决策 **D53**）：**用户自备引擎与模型**。
+ *
+ * 门控 = `COMFYUI_BASE_URL`（未配 / 不是回环或内网 → **返回 null，不假装可用**）。
+ * 白名单复用 §2 的 `isAllowedEngineUrl`（防 SSRF：不允许请求体指定地址，只认部署者的 env ——
+ * 这一条与云端的"BYOK 可带 baseUrl"刻意不同：云端那个地址是**用户自己的账号端点**，
+ * 而本地 ComfyUI 是**部署者的机器**，让请求体指定等于把内网探测面打开）。
+ */
+function createComfyProvider(ctx: ProviderResolutionContext): VideoProvider | null {
+  const raw = process.env.COMFYUI_BASE_URL?.trim();
+  if (raw === undefined || raw === '' || !isAllowedEngineUrl(raw)) return null;
+  const dtype = process.env.COMFYUI_WEIGHT_DTYPE?.trim();
+
+  return new ComfyUiProvider({
+    baseUrl: raw,
+    outputDir: resolveOutputsDir(),
+    ...(dtype === undefined || dtype === '' ? {} : { weightDtype: dtype }),
+    ...(ctx.resolveAssetUrl === undefined ? {} : { resolveAssetUrl: ctx.resolveAssetUrl }),
+  });
+}
+
+/**
  * 模板里的占位符曾被部署者当成真值抄进 `.env`（`VOLCANO_MODEL_NAME=doubao-seedance-video`），
  * 于是**所有**提交都在上游 404。模板已经改成注释态，但线上 `.env` 不会自动更新，
  * 所以启动时对"已知的坑值"告一次警 —— 让人在日志里一眼看见，而不是等用户来报错。
@@ -165,8 +188,10 @@ const REGISTRY: Record<ProviderType, ProviderFactory> = {
   'stock-local': () => null,
   // 云端轨（S5b 落地）：每任务一份实例，凭据由调度器注入
   'cloud-volcano-seedance': (ctx) => createCloudProvider(ctx),
-  // host 本地轨：未实现（到达路径 = 配 env + 重启，见 providers/statusProbe.ts）
+  // host 本地轨（自装 MiniMax H3）：未实现（到达路径 = 配 env + 重启，见 providers/statusProbe.ts）
   'local-minimax-h3': () => null,
+  // host 本地轨（用户自备 ComfyUI，V2.30 / A1 片 B / D53）：配 COMFYUI_BASE_URL 即启用
+  'host-comfyui': (ctx) => createComfyProvider(ctx),
 };
 
 /** ⚠️ 测试注入表（生产路径永不写入；见 `__setProviderForTesting`） */
