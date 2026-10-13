@@ -20,11 +20,24 @@ export interface PlanInspectorProps {
   onChange: (patch: Partial<Omit<CanvasPlanNode, 'id' | 'position'>>) => void;
   onRemove: () => void;
   onClose: () => void;
+  /** V2.29（B68 / B69）：从这条节点开始重跑（它 ∪ 它的下游，换一代幂等键） */
+  onRerun: () => void;
+  /** 面板里有些动作要在"运行中"时禁用（重跑开着就再点一次 = 双份任务） */
+  running: boolean;
 }
 
 const ASPECT_RATIOS: AspectRatio[] = ['16:9', '9:16', '1:1'];
 
-export function PlanInspector({ plan, node, run, onChange, onRemove, onClose }: PlanInspectorProps) {
+export function PlanInspector({
+  plan,
+  node,
+  run,
+  onChange,
+  onRemove,
+  onClose,
+  onRerun,
+  running,
+}: PlanInspectorProps) {
   const blocked = planNodeBlockReason(plan, node.id);
 
   return (
@@ -47,6 +60,29 @@ export function PlanInspector({ plan, node, run, onChange, onRemove, onClose }: 
             现在不能跑：{blocked}
           </p>
         )}
+      </section>
+
+      {/* V2.29（B68 / B69）：只重跑这一段及其下游 —— 上游沿用上次产物（省钱的关键入口） */}
+      <section className="cv-insp-section">
+        <h3 className="cv-insp-title">执行</h3>
+        <button
+          type="button"
+          className="wb-btn"
+          data-testid="cv-rerun-node"
+          disabled={running || blocked !== null}
+          title={
+            blocked !== null
+              ? '先修好这条节点（原因见上）'
+              : '从这条节点开始重跑：它和它的下游都会新建任务（真的计费）；上游沿用上次产物'
+          }
+          onClick={onRerun}
+        >
+          🔁 重跑此节点及下游
+        </button>
+        <p className="wb-note">
+          换一代幂等键 → <strong>这条与它的下游会新建任务（真的计费）</strong>；
+          上游不在范围内、沿用上次产物。若某个上游本机没有产物记录，下游会如实跳过并说明原因。
+        </p>
       </section>
 
       <section className="cv-insp-section">
@@ -134,6 +170,9 @@ export function PlanInspector({ plan, node, run, onChange, onRemove, onClose }: 
           <h3 className="cv-insp-title">上次运行</h3>
           {run.state === 'submitted' ? (
             <p className="wb-note cv-plan-ok">✓ 已提交：{run.taskId}</p>
+          ) : run.state === 'kept' ? (
+            // 三种"没提交"的原因完全不同，配色也不该混：跳过/失败是红的，保留是中性的
+            <p className="wb-note cv-plan-kept">⏸ {run.message}</p>
           ) : (
             <p className="wb-note cv-plan-bad">{run.state === 'failed' ? '✗' : '⏭'} {run.message}</p>
           )}

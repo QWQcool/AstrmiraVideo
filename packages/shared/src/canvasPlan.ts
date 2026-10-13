@@ -28,6 +28,23 @@ export const CANVAS_PLAN_VERSION = 1;
  */
 export const PLAN_IDEMPOTENCY_PREFIX = 'plan:';
 
+/**
+ * 节点级重试的上限（V2.29 / B74）。
+ *
+ * 为什么封顶 3：这是"提交那一刻的失败"（429 冷却 / 5xx / 网络抖动）的兜底，
+ * 不是排队系统 —— 加得更长只是让用户更久看不到失败。
+ */
+export const PLAN_RETRY_MAX_ATTEMPTS = 3;
+/** 默认退避（毫秒）—— 60s 冷却那种失败本来就不该靠重试硬撞（界面会如实告诉用户等多久） */
+export const PLAN_RETRY_DEFAULT_BACKOFF_MS = 2_000;
+
+export const CanvasPlanRetrySchema = z.object({
+  /** 总共试几次（1 = 不重试）。上限 `PLAN_RETRY_MAX_ATTEMPTS` */
+  maxAttempts: z.number().int().min(1).max(PLAN_RETRY_MAX_ATTEMPTS),
+  /** 两次之间的退避（毫秒） */
+  backoffMs: z.number().int().min(0).max(60_000),
+});
+
 export const CanvasPlanNodeSchema = z.object({
   id: z.string().min(1),
   /** 空提示词在**执行时**被拒（编辑期允许空 —— 边写边存，不能因为还没写完就不让存） */
@@ -42,6 +59,20 @@ export const CanvasPlanNodeSchema = z.object({
   seed: z.number().int().optional(),
   /** 画布坐标：编排模式下**持久化**（与事实图节点相反 —— 那里位置是会话级的） */
   position: z.object({ x: z.number(), y: z.number() }),
+  /**
+   * V2.29（B68 / B69）：**本轮（`runSeq`）里这个节点提交得到的任务 id**，由运行时写回。
+   *
+   * 它是"部分重跑"能成立的**唯一来源**：范围外的节点不重新提交，
+   * 但下游要引用它的成片 —— 那份引用只能来自上一轮记在这里的 taskId。
+   */
+  lastTaskId: z.string().min(1).optional(),
+  /**
+   * V2.29（B68）：**用户显式固定**的产物 —— 运行中**永不重提交**（连"重跑全部"也不动它），
+   * 下游一律引用它。用来钉住"很贵 / 已经满意"的那一段，只重跑下游。
+   */
+  pinnedTaskId: z.string().min(1).optional(),
+  /** V2.29（B74）：节点级重试。省略 = 不重试（maxAttempts 1） */
+  retry: CanvasPlanRetrySchema.optional(),
 });
 
 export const CanvasPlanEdgeSchema = z.object({
@@ -59,6 +90,15 @@ export const CanvasPlanSchema = z.object({
   nodes: z.array(CanvasPlanNodeSchema),
   edges: z.array(CanvasPlanEdgeSchema),
   updatedAt: z.number(),
+  /**
+   * V2.29（B69）：**运行代数** —— 默认读作 1（老编排没有这个字段）。
+   *
+   * 幂等键只由它决定：`runSeq` 不变 → 「运行」永远命中同一批任务（**不重复计费**）；
+   * **显式重跑**才 +1 → 换键 → 真的产生新任务（**真的花钱**，界面必须写清）。
+   * 用"代数"而不是"随机盐"：同一张图跑第二遍必须能得到**同一批键**（否则连点两次重跑
+   * 会各自新建一套任务，那是双倍计费）。
+   */
+  runSeq: z.number().int().min(1).max(1_000_000).optional(),
 });
 
 export type CanvasPlanNode = z.infer<typeof CanvasPlanNodeSchema>;

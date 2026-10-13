@@ -178,9 +178,155 @@ export function planNodeBlockReason(plan: CanvasPlan, nodeId: string): string | 
   return null;
 }
 
-/** 确定性幂等键（契约 §11-6）；**不要**用 `newIdempotencyKey()`（随机 = 每次点运行都是新提交） */
-export function planIdempotencyKey(planId: string, nodeId: string): string {
-  return `${PLAN_IDEMPOTENCY_PREFIX}${planId}:${nodeId}`;
+/**
+ * 确定性幂等键（契约 §11-6 / V2.29）；**不要**用 `newIdempotencyKey()`（随机 = 每次点运行都是新提交）。
+ *
+ * `runSeq` 决定键：**代数不变 → 键不变**（连点「运行」不重复计费）；
+ * **显式重跑把代数 +1 → 键全变 → 真的产生新任务**（B69）。
+ * `runSeq <= 1` 沿用 V2.26 的老格式 —— 所以片 A 时代已提交的编排**天然就是第 1 代**，
+ * 升级后重复点「运行」仍然幂等命中它们（不重复计费）。
+ */
+export function planIdempotencyKey(planId: string, nodeId: string, runSeq = 1): string {
+  const base = `${PLAN_IDEMPOTENCY_PREFIX}${planId}:${nodeId}`;
+  return runSeq <= 1 ? base : `${base}:r${runSeq}`;
+}
+
+/** 运行代数（老编排没有这个字段 → 读作第 1 代） */
+export function planRunSeq(plan: CanvasPlan): number {
+  return plan.runSeq ?? 1;
+}
+
+/** 显式重跑：代数 +1（**下一轮提交会换键 = 真的新建任务、真的花钱**） */
+export function bumpPlanRun(plan: CanvasPlan, now = Date.now()): CanvasPlan {
+  return { ...plan, runSeq: planRunSeq(plan) + 1, updatedAt: now };
+}
+
+/** 固定：把某个节点的产物钉住（之后的运行**永不重提交**它） */
+export function pinPlanNode(plan: CanvasPlan, nodeId: string, taskId: string, now = Date.now()): CanvasPlan {
+  return {
+    ...plan,
+    nodes: plan.nodes.map((node) => (node.id === nodeId ? { ...node, pinnedTaskId: taskId } : node)),
+    updatedAt: now,
+  };
+}
+
+export function unpinPlanNode(plan: CanvasPlan, nodeId: string, now = Date.now()): CanvasPlan {
+  return {
+    ...plan,
+    nodes: plan.nodes.map((node) => {
+      if (node.id !== nodeId) return node;
+      const { pinnedTaskId: _pinned, ...rest } = node;
+      return rest;
+    }),
+    updatedAt: now,
+  };
+}
+
+/** 节点级重试（B74）；传 `null` = 清掉（回到"不重试"） */
+export function setPlanNodeRetry(
+  plan: CanvasPlan,
+  nodeId: string,
+  retry: CanvasPlanNode['retry'] | null,
+  now = Date.now(),
+): CanvasPlan {
+  return {
+    ...plan,
+    nodes: plan.nodes.map((node) => {
+      if (node.id !== nodeId) return node;
+      if (retry === null) {
+        const { retry: _retry, ...rest } = node;
+        return rest;
+      }
+      return { ...node, retry };
+    }),
+    updatedAt: now,
+  };
+}
+
+/**
+ * 该节点**可被下游引用**的产物（`null` = 拿不出引用）。
+ *
+ * 固定优先于"上次产物"：用户显式钉住的那一份就是**唯一权威**（他要的是"别再动这段"）。
+ */
+export function planRetainedTaskId(node: CanvasPlanNode): string | null {
+  return node.pinnedTaskId ?? node.lastTaskId ?? null;
+}
+
+/** 选中节点 + **它们的全部下游**（沿边传递闭包）：改了一个节点的参数，下游引用的就是旧产物了 */
+export function planDownstreamClosure(plan: CanvasPlan, nodeIds: ReadonlyArray<string>): Set<string> {
+  const selected = new Set(nodeIds);
+  const queue = [...selected];
+  while (queue.length > 0) {
+    const current = queue.shift() as string;
+    for (const edge of plan.edges) {
+      if (edge.from !== current || selected.has(edge.to)) continue;
+      selected.add(edge.to);
+      queue.push(edge.to);
+    }
+  }
+  return selected;
+}
+
+export interface PlanRunScope {
+  /** 本轮**提交**的节点（拓扑序的筛选依据由 runner 决定） */
+  submit: Set<string>;
+  /** 本轮**不提交**、沿用上次产物的节点（含被固定的） */
+  keep: Set<string>;
+  /** 被固定导致"选中了也不提交"的节点（界面要如实说明，不能静默忽略用户的选择） */
+  pinnedOverride: Set<string>;
+}
+
+/**
+ * 决定本轮哪些节点提交、哪些保留（B68 部分重跑）。
+ *
+ * 三条口径：
+ * 1. **不传 `selected`** → 全部提交（= 「运行 / 重跑全部」的语义）；
+ * 2. 传了 → 提交范围 = **选中 ∪ 下游**（只重跑选中的那个而不管下游，会让下游引用旧产物 ——
+ *    那不是"部分重跑"，那是"数据不一致"）；
+ * 3. **固定的节点永不提交**（即使它被选中）—— 并在 `pinnedOverride` 里如实报出来。
+ */
+export function planRunScope(plan: CanvasPlan, selected?: ReadonlyArray<string>): PlanRunScope {
+  const all = new Set(plan.nodes.map((node) => node.id));
+  const pinned = new Set(plan.nodes.filter((node) => node.pinnedTaskId !== undefined).map((node) => node.id));
+
+  if (selected === undefined || selected.length === 0) {
+    const submit = new Set([...all].filter((id) => !pinned.has(id)));
+    return {
+      submit,
+      keep: new Set([...all].filter((id) => !submit.has(id))),
+      pinnedOverride: new Set(),
+    };
+  }
+
+  const wanted = planDownstreamClosure(plan, selected);
+  const submit = new Set([...wanted].filter((id) => !pinned.has(id)));
+  return {
+    submit,
+    keep: new Set([...all].filter((id) => !submit.has(id))),
+    pinnedOverride: new Set([...wanted].filter((id) => pinned.has(id))),
+  };
+}
+
+/**
+ * 把本轮提交得到的 taskId **写回编排**（`lastTaskId`）。
+ *
+ * 为什么必须写回：下一轮"部分重跑"里，范围外的节点不会重新提交 —— 下游要引用它的成片，
+ * 而那份引用**只能**来自这里记下的 taskId（否则部分重跑永远只能跑全图）。
+ */
+export function withRunTaskIds(
+  plan: CanvasPlan,
+  submitted: ReadonlyMap<string, string>,
+  now = Date.now(),
+): CanvasPlan {
+  if (submitted.size === 0) return plan;
+  return {
+    ...plan,
+    nodes: plan.nodes.map((node) => {
+      const taskId = submitted.get(node.id);
+      return taskId === undefined ? node : { ...node, lastTaskId: taskId };
+    }),
+    updatedAt: now,
+  };
 }
 
 /**

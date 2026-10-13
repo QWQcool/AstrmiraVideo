@@ -2802,13 +2802,13 @@ try {
    * 只作用于同一次运行内的后续节点，见 CONTRACT §11-6）。撞上时卡片与运行条会写出
    * "请在 Xs 后重试"，本段就按它等 —— 顺带把这条**如实提示**也验了。
    */
-  const runUntilAccepted = async () => {
+  const runUntilAccepted = async (testid = 'cv-run-plan') => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const previous = await page
         .getByTestId('cv-plan-notice')
         .textContent()
         .catch(() => null);
-      await page.getByTestId('cv-run-plan').click();
+      await page.getByTestId(testid).click();
       // 等"运行条出现新文本"（点击后它会先被清空）；编排还会**等上游出片**（夹具几秒）
       await page.waitForFunction(
         (before) => {
@@ -2892,6 +2892,24 @@ try {
     secondNotice?.includes('已提交 2 条') === true,
     `第二次运行照样如实回报（命中的是同两条任务）：${secondNotice}`,
   );
+
+  // ── V2.29（A5 片 B / B68 + B69）：**显式重跑**必须真的换键、真的新建任务 ──────────
+  // 这是"重跑"与"再点一次运行"的**全部区别**，也是本片唯一会花钱的断言：
+  // 幂等键不变的话，重跑只会命中上一代的任务（界面显示"已提交"，实际什么都没新建）。
+  // 与第一次运行一样，它会**如实撞上 60s 冷却**（新的一轮运行 = 新的一次有意动作），
+  // 所以走同一条"按提示等待重试"的路径 —— 这正是真实用户会做的事。
+  await runUntilAccepted('cv-rerun-plan');
+  const rerunNotice = await page.getByTestId('cv-plan-notice').textContent();
+  assert(
+    /第 [2-9]\d* 轮（显式重跑/.test(rerunNotice ?? '') === true,
+    `重跑如实报出这是第几轮（不是悄悄再跑一遍）：${rerunNotice}`,
+  );
+  const afterRerun = await planTasks();
+  assert(
+    afterRerun.length === 4,
+    `重跑真的新建了任务（2 → ${afterRerun.length} 条 —— 换键的硬证据，这一片唯一花钱的断言）`,
+  );
+
   allowExpected429 = false; // 编排段结束：429 不再豁免
 
   await page.screenshot({ path: path.join(SHOT_DIR, 'canvas-plan.png'), fullPage: false });

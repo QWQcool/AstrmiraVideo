@@ -47,6 +47,15 @@ export function PlanNodeCard({ data, selected }: NodeProps<PlanFlowNode>) {
         {run?.state === 'skipped' ? (
           <span className="cv-node-sub cv-plan-skip">⏭ {run.message}</span>
         ) : null}
+        {/* V2.29（B68 部分重跑）：本轮**没提交**的节点也要说清为什么 ——
+            "卡片上什么都没变"会让用户以为它跑了。 */}
+        {run?.state === 'kept' ? (
+          <span className="cv-node-sub cv-plan-kept">⏸ {run.message}</span>
+        ) : null}
+        {/* 固定标记与"本轮结果"无关：它是编排自身的状态，运行时没跑也要看得见 */}
+        {node.pinnedTaskId === undefined ? null : (
+          <span className="cv-node-sub cv-plan-pinned">📌 已固定 {node.pinnedTaskId.slice(0, 8)}</span>
+        )}
       </div>
       <Handle type="source" position={Position.Right} />
     </div>

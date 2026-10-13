@@ -10,21 +10,29 @@ import {
   PLAN_NODE_DEFAULTS,
   addPlanEdge,
   addPlanNode,
+  bumpPlanRun,
   canvasPlanKey,
   createEmptyPlan,
   loadCanvasPlan,
   movePlanNode,
   newPlanNode,
+  pinPlanNode,
+  planDownstreamClosure,
   planExecutionOrder,
   planIdempotencyKey,
   planNodeBlockReason,
+  planRetainedTaskId,
+  planRunScope,
+  planRunSeq,
   removePlanEdge,
   removePlanNode,
   saveCanvasPlan,
   toGenerateRequest,
+  unpinPlanNode,
   updatePlanNode,
+  withRunTaskIds,
 } from './canvasPlan';
-import { runCanvasPlan } from './canvasPlanRunner';
+import { isRetryableSubmitError, runCanvasPlan } from './canvasPlanRunner';
 import type { StorageLike } from './storage';
 
 /**
@@ -53,6 +61,41 @@ function memoryStorage(): StorageLike {
     setItem: (key, value) => void map.set(key, value),
     removeItem: (key) => void map.delete(key),
   };
+}
+
+/**
+ * 假 submit（记录每次调用的**三件要紧事**：提交体 / 幂等键 / 本轮 runId）。
+ *
+ * 放在顶层而不是某个 describe 里：片 A 与片 B 两组执行器用例都要用（A5 片 B 新增
+ * "部分重跑 / 重试"用例时才发现它被关在 describe 内部 —— 提上来，别再复制一份）。
+ */
+interface SubmitCall {
+  body: VideoGenerateRequest;
+  key: string;
+  runId: string;
+}
+
+function recorder(
+  fail?: (prompt: string) => boolean,
+  queryTask?: (taskId: string) => Promise<{ status: string; outputVideoUrl?: string | null }>,
+) {
+  const calls: SubmitCall[] = [];
+  const deps = {
+    submit: async (body: VideoGenerateRequest, key: string, runId: string) => {
+      const index = calls.length;
+      calls.push({ body, key, runId });
+      const marker = `task-${index}`;
+      if (fail?.(body.prompt) === true) throw new Error(`上游拒了 ${marker}`);
+      return { taskId: marker };
+    },
+    // 默认：任何任务都"已出片"（链式用例不必关心等待；等待的边界另有专门用例）
+    queryTask:
+      queryTask ??
+      (async (taskId: string) => ({ status: 'succeeded', outputVideoUrl: `/media/${taskId}.mp4` })),
+    now: () => 1234,
+    sleep: () => Promise.resolve(),
+  };
+  return { calls, deps };
 }
 
 describe('画布编排 · 模型与编辑（A5 片 A）', () => {
@@ -183,33 +226,6 @@ describe('画布编排 · 执行序与阻断', () => {
 });
 
 describe('画布编排 · 执行器（注入 submit）', () => {
-  interface Call {
-    body: VideoGenerateRequest;
-    key: string;
-    runId: string;
-  }
-
-  function recorder(
-    fail?: (nodeId: string) => boolean,
-    queryTask?: (taskId: string) => Promise<{ status: string; outputVideoUrl?: string | null }>,
-  ) {
-    const calls: Call[] = [];
-    const deps = {
-      submit: async (body: VideoGenerateRequest, key: string, runId: string) => {
-        const index = calls.length;
-        calls.push({ body, key, runId });
-        const marker = `task-${index}`;
-        if (fail?.(body.prompt) === true) throw new Error(`上游拒了 ${marker}`);
-        return { taskId: marker };
-      },
-      // 默认：任何任务都"已出片"（链式用例不必关心等待；等待的边界另有专门用例）
-      queryTask: queryTask ?? (async (taskId: string) => ({ status: 'succeeded', outputVideoUrl: `/media/${taskId}.mp4` })),
-      now: () => 1234,
-      sleep: () => Promise.resolve(),
-    };
-    return { calls, deps };
-  }
-
   it('链式执行：按序提交，v2v 下游拿到上游 task: 引用，结果带 taskId', async () => {
     const graph = plan(
       [node('a', { prompt: '生成 A' }), node('b', { prompt: '参考 A', mode: 'v2v' })],
@@ -339,5 +355,201 @@ describe('画布编排 · 执行器（注入 submit）', () => {
 
     expect(runA.calls[0]?.key).toBe(runB.calls[0]?.key); // 键不动（去重与省钱靠它）
     expect(runA.calls[0]?.runId).not.toBe(runB.calls[0]?.runId); // runId 每轮新生成（冷却豁免的边界）
+  });
+});
+
+/**
+ * A5 片 B（V2.29 / B68 + B69 + B74）：**重跑与部分重跑**。
+ *
+ * 这一组盯的全是"钱"：什么时候**不该**新建任务（幂等）、什么时候**必须**新建（显式重跑）、
+ * 以及"上游失败但有旧产物"这种夹缝里**绝不能**悄悄接上去（那是让人误判产物来源）。
+ */
+describe('画布编排 · 重跑与部分重跑（A5 片 B）', () => {
+  it('幂等键随代数变化：第 1 代沿用老格式（片 A 建的任务仍是第 1 代），第 2 代起带 rN', () => {
+    expect(planIdempotencyKey('p1', 'n1')).toBe('plan:p1:n1');
+    expect(planIdempotencyKey('p1', 'n1', 1)).toBe('plan:p1:n1');
+    expect(planIdempotencyKey('p1', 'n1', 2)).toBe('plan:p1:n1:r2');
+  });
+
+  it('老编排（没有 runSeq 字段）读作第 1 代 —— 升级后重复点「运行」仍幂等命中片 A 建的任务', () => {
+    expect(planRunSeq(plan([node('a')]))).toBe(1);
+  });
+
+  it('bumpPlanRun：代数 +1、updatedAt 更新，键随之全变（"真的新建任务"的开关）', () => {
+    const before = plan([node('a')]);
+    const after = bumpPlanRun(before, 77);
+    expect(planRunSeq(after)).toBe(2);
+    expect(after.updatedAt).toBe(77);
+    expect(planIdempotencyKey(after.id, 'a', planRunSeq(after))).not.toBe(
+      planIdempotencyKey(before.id, 'a'),
+    );
+  });
+
+  it('下游闭包：改了一个节点，它和**它的全部下游**都得重跑（只跑自己 = 下游接旧产物）', () => {
+    const graph = plan(
+      [node('a'), node('b', { mode: 'v2v' }), node('c', { mode: 'v2v' }), node('loose')],
+      [edge('a', 'b'), edge('b', 'c')],
+    );
+    expect([...planDownstreamClosure(graph, ['a'])].sort()).toEqual(['a', 'b', 'c']);
+    expect([...planDownstreamClosure(graph, ['b'])].sort()).toEqual(['b', 'c']);
+    expect([...planDownstreamClosure(graph, ['loose'])].sort()).toEqual(['loose']);
+  });
+
+  it('planRunScope：不传 = 全部提交；传 [b] = 提交 {b,c}、a 保留', () => {
+    const graph = plan(
+      [node('a'), node('b', { mode: 'v2v' }), node('c', { mode: 'v2v' })],
+      [edge('a', 'b'), edge('b', 'c')],
+    );
+    const all = planRunScope(graph);
+    expect([...all.submit].sort()).toEqual(['a', 'b', 'c']);
+    expect([...all.keep]).toEqual([]);
+
+    const partial = planRunScope(graph, ['b']);
+    expect([...partial.submit].sort()).toEqual(['b', 'c']);
+    expect([...partial.keep]).toEqual(['a']);
+    expect([...partial.pinnedOverride]).toEqual([]);
+  });
+
+  it('固定的节点**永不提交**（即使被选中），并在 pinnedOverride 里如实报出来', () => {
+    const graph = pinPlanNode(
+      plan([node('a'), node('b', { mode: 'v2v' })], [edge('a', 'b')]),
+      'a',
+      'task-pinned',
+    );
+    const scope = planRunScope(graph, ['a']);
+    expect([...scope.submit]).toEqual(['b']);
+    expect([...scope.pinnedOverride]).toEqual(['a']);
+    // 「重跑全部」也一样：固定的不提交
+    expect([...planRunScope(graph).submit]).toEqual(['b']);
+  });
+
+  it('产物引用的优先序：固定 > 上次产物；都没有 = 拿不出引用', () => {
+    const withLast = node('a', { lastTaskId: 'task-last' });
+    expect(planRetainedTaskId(withLast)).toBe('task-last');
+    expect(planRetainedTaskId({ ...withLast, pinnedTaskId: 'task-pin' })).toBe('task-pin');
+    expect(planRetainedTaskId(node('b'))).toBeNull();
+  });
+
+  it('取消固定 → 回落到上次产物（不是把 lastTaskId 一起删掉）', () => {
+    const graph = pinPlanNode(plan([node('a', { lastTaskId: 'task-last' })]), 'a', 'task-pin');
+    const back = unpinPlanNode(graph, 'a', 9);
+    expect(planRetainedTaskId(back.nodes[0] as CanvasPlanNode)).toBe('task-last');
+    expect(back.updatedAt).toBe(9);
+  });
+
+  it('withRunTaskIds：只写回**提交成功**的节点（失败的不该留下假产物记录）', () => {
+    const graph = plan([node('a'), node('b')]);
+    const next = withRunTaskIds(graph, new Map([['a', 'task-a']]), 5);
+    expect(next.nodes[0]?.lastTaskId).toBe('task-a');
+    expect(next.nodes[1]?.lastTaskId).toBeUndefined();
+    expect(next.updatedAt).toBe(5);
+    // 空 map → 原样返回同一个对象（不发无谓的状态更新）
+    expect(withRunTaskIds(graph, new Map())).toBe(graph);
+  });
+
+  it('部分重跑：范围外节点 kept，下游用它的 lastTaskId 作引用（**不重新提交它**）', async () => {
+    const graph = withRunTaskIds(
+      plan([node('a'), node('b', { prompt: '重跑这一段', mode: 'v2v' })], [edge('a', 'b')]),
+      new Map([['a', 'task-a-old']]),
+    );
+    const { calls, deps } = recorder();
+    const outcome = await runCanvasPlan(graph, { ...deps, scope: ['b'] });
+
+    expect(calls).toHaveLength(1); // 只提交 b —— a 沿用上次产物
+    expect(calls[0]?.body.prompt).toBe('重跑这一段');
+    expect(calls[0]?.body.assets).toEqual({ referenceVideo: 'task:task-a-old' });
+    expect(outcome.results.find((item) => item.nodeId === 'a')?.state).toBe('kept');
+    expect(outcome.results.find((item) => item.nodeId === 'b')?.state).toBe('submitted');
+  });
+
+  it('范围外上游**没有**产物记录 → 下游 skipped 并说清怎么办（先单独跑一次它，或固定它）', async () => {
+    const graph = plan([node('a'), node('b', { mode: 'v2v' })], [edge('a', 'b')]);
+    const { calls, deps } = recorder();
+    const outcome = await runCanvasPlan(graph, { ...deps, scope: ['b'] });
+
+    expect(calls).toHaveLength(0);
+    expect(outcome.results.find((item) => item.nodeId === 'b')?.message).toContain('先单独跑一次它');
+  });
+
+  it('上游本轮失败、但上一轮有产物 → 下游**仍然 skipped**（绝不悄悄接在旧产物上跑）', async () => {
+    const graph = withRunTaskIds(
+      plan([node('a', { prompt: '会失败' }), node('b', { prompt: '下游', mode: 'v2v' })], [edge('a', 'b')]),
+      new Map([['a', 'task-a-old']]),
+    );
+    const { calls, deps } = recorder((prompt) => prompt === '会失败');
+    const outcome = await runCanvasPlan(graph, deps);
+
+    expect(calls).toHaveLength(1);
+    expect(outcome.results.find((item) => item.nodeId === 'b')?.message).toContain('上游没有提交成功');
+  });
+
+  it('重跑（代数 +1）→ 键带 rN：这才是"真的新建任务"', async () => {
+    const graph = bumpPlanRun(plan([node('a')]), 1);
+    const { calls, deps } = recorder();
+    const outcome = await runCanvasPlan(graph, deps);
+
+    expect(calls[0]?.key).toBe('plan:plan-test:a:r2');
+    expect(outcome.runSeq).toBe(2);
+  });
+
+  it('节点级重试：5xx 会重试到成功，且**沿用同一个幂等键**（换键 = 重复计费）', async () => {
+    const graph = plan([node('a', { retry: { maxAttempts: 3, backoffMs: 0 } })]);
+    const keys: string[] = [];
+    let attempt = 0;
+    const outcome = await runCanvasPlan(graph, {
+      submit: async (_body, key) => {
+        keys.push(key);
+        attempt += 1;
+        if (attempt < 3) throw new Error('提交失败：HTTP 503 Service Unavailable');
+        return { taskId: 'task-ok' };
+      },
+      sleep: () => Promise.resolve(),
+      now: () => 1,
+    });
+
+    expect(keys).toHaveLength(3);
+    expect(new Set(keys).size).toBe(1); // 同一个键：这次重试绝不会变成第二条任务
+    expect(outcome.results[0]).toMatchObject({ state: 'submitted', taskId: 'task-ok' });
+  });
+
+  it('重试用尽 → failed，且**不多试**（次数正好 = maxAttempts）', async () => {
+    const graph = plan([node('a', { retry: { maxAttempts: 2, backoffMs: 0 } })]);
+    let calls = 0;
+    const outcome = await runCanvasPlan(graph, {
+      submit: async () => {
+        calls += 1;
+        throw new Error('HTTP 500 Internal Server Error');
+      },
+      sleep: () => Promise.resolve(),
+      now: () => 1,
+    });
+
+    expect(calls).toBe(2);
+    expect(outcome.results[0]?.state).toBe('failed');
+  });
+
+  it('重试的判据：5xx / 网络层重试；4xx / 429 / 认不出的**一律不重试**', () => {
+    expect(isRetryableSubmitError(new Error('HTTP 503 Service Unavailable'))).toBe(true);
+    expect(isRetryableSubmitError(new Error('Failed to fetch'))).toBe(true);
+    expect(isRetryableSubmitError(new Error('HTTP 400 Bad Request'))).toBe(false);
+    // 429 是"等一下再点"，不是"再试一次"（自动重试只会连撞防线）
+    expect(isRetryableSubmitError(new Error('HTTP 429 Too Many Requests'))).toBe(false);
+    // 认不出来 → 不重试：宁可如实失败，也不做"悄悄多花一次钱"的猜测
+    expect(isRetryableSubmitError(new Error('上游拒了 task-0'))).toBe(false);
+  });
+
+  it('429 撞上冷却时，即使配了重试也只提交一次（冷却的语义是"等"）', async () => {
+    const graph = plan([node('a', { retry: { maxAttempts: 3, backoffMs: 0 } })]);
+    let calls = 0;
+    await runCanvasPlan(graph, {
+      submit: async () => {
+        calls += 1;
+        throw new Error('提交过于频繁：HTTP 429 Too Many Requests');
+      },
+      sleep: () => Promise.resolve(),
+      now: () => 1,
+    });
+
+    expect(calls).toBe(1);
   });
 });

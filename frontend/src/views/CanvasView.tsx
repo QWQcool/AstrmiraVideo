@@ -54,11 +54,14 @@ import {
   loadCanvasPlan,
   movePlanNode,
   newPlanNode,
+  bumpPlanRun,
   planNodeBlockReason,
+  planRunSeq,
   removePlanEdge,
   removePlanNode,
   saveCanvasPlan,
   updatePlanNode,
+  withRunTaskIds,
 } from '../lib/canvasPlan';
 import { runCanvasPlan, type PlanRunOutcome } from '../lib/canvasPlanRunner';
 import { downloadText } from '../lib/zipStore';
@@ -162,9 +165,13 @@ const CanvasToolbar: FC<{
   onTogglePlan: () => void;
   onAddPlanNode: (x: number, y: number) => void;
   onRunPlan: () => void;
+  /** V2.29（A5 片 B / B69）：**显式重跑**（换一代幂等键 —— 会真的新建任务） */
+  onRerunPlan: () => void;
   running: boolean;
   /** 当前能跑的节点数（空 / 被阻断的不算）—— 按钮上直接写出来，省得点了才发现没东西可跑 */
   runnableCount: number;
+  /** V2.29（B69）：当前运行代数（界面如实展示"第几轮"） */
+  runSeq: number;
 }> = ({
   selectedIds,
   onAddNote,
@@ -175,8 +182,10 @@ const CanvasToolbar: FC<{
   onTogglePlan,
   onAddPlanNode,
   onRunPlan,
+  onRerunPlan,
   running,
   runnableCount,
+  runSeq,
 }) => {
   const { fitView, screenToFlowPosition } = useReactFlow();
   const count = selectedIds.length;
@@ -226,6 +235,24 @@ const CanvasToolbar: FC<{
             onClick={onRunPlan}
           >
             {running ? '⏳ 运行中…' : `▶ 运行编排${runnableCount === 0 ? '' : `（${runnableCount}）`}`}
+          </button>
+          {/* V2.29（台账 B69）：**显式重跑** —— 换一代幂等键 = 真的新建任务。
+              它必须与「▶ 运行编排」在视觉与文案上明确区分：前者是"补跑没跑成的"，
+              后者是"整张图再来一遍（花钱）"。 */}
+          <button
+            type="button"
+            className="cv-tool"
+            data-testid="cv-rerun-plan"
+            disabled={running || runnableCount === 0}
+            title={
+              runnableCount === 0
+                ? '没有能跑的节点（空提示词 / 被阻断的都不能跑 —— 点节点看原因）'
+                : `整张图再来一遍：换一代幂等键 → 会新建 ${runnableCount} 条任务（真的计费）。` +
+                  `当前是第 ${runSeq} 轮；跑完变成第 ${runSeq + 1} 轮`
+            }
+            onClick={onRerunPlan}
+          >
+            🔁 重跑全部
           </button>
         </>
       ) : (
@@ -896,54 +923,102 @@ export function CanvasView() {
   );
 
   /**
-   * 「▶ 运行编排」（契约 §11-6 的执行语义）：拓扑序提交、幂等键确定性、不猜上游。
+   * 「▶ 运行编排 / 🔁 重跑」（契约 §11-6 的执行语义）：拓扑序提交、幂等键确定性、不猜上游。
    *
-   * 幂等键由 runner 用 `plan:<planId>:<nodeId>` 生成 —— 所以**连点两次不会重复计费**；
-   * 真正的"重跑"（换键）是 B69 的事（片 B）。
+   * 三种入口共用这一条路径（V2.29 / B68 + B69）：
+   * - **运行**（`rerun` 省略）：代数不变 → 幂等键不变 → 连点两次**不会重复计费**；
+   * - **重跑全部**（`rerun: true`）：代数 +1 → 键全变 → **真的新建任务**；
+   * - **重跑此节点及下游**（`rerun: true` + `scope`）：只重提交"选中 ∪ 下游"，
+   *   范围外沿用上次产物（引用来自写回的 `lastTaskId`）。
    */
-  const runPlan = useCallback(async (): Promise<void> => {
-    if (running) return;
-    setRunning(true);
-    setPlanNotice(null);
-    try {
-      const providerKey = resolveProviderKey(byok);
-      const outcome = await runCanvasPlan(plan, {
-        submit: async (body, idempotencyKey, planRunId) => {
-          const created = await submitGenerate(
-            // 与工作台同一条口径：BYOK 的服务端地址与模型名走 options（未识别键由服务端忽略）
-            { ...body, options: { baseUrl: byok.baseUrl, model: byok.model } },
-            {
-              idempotencyKey,
-              // 本轮运行 id：服务端据此把"一串节点"当成一次有意动作（只吃一次 60s 冷却）
-              planRunId,
-              ...(providerKey === undefined ? {} : { providerKey }),
-            },
-          );
-          return { taskId: created.taskId };
-        },
-        // 等上游出片：`task:` 引用要求"已有可用成片"，否则下游提交会被服务端 404 挡回
-        queryTask: (taskId) => fetchTask(taskId),
-      });
-      setRunOutcome(outcome);
-      if (outcome.cycle.length > 0) {
-        setPlanNotice(`图里有环（${outcome.cycle.length} 个节点参与）—— 一个都没提交，先解开环再跑`);
-      } else {
-        const ok = outcome.results.filter((item) => item.state === 'submitted').length;
-        const rest = outcome.results.length - ok;
-        setPlanNotice(
-          rest === 0
-            ? `已提交 ${ok} 条任务（可在视频库与事实图里看到它们）`
-            : `已提交 ${ok} 条，${rest} 条被跳过或失败（原因在节点卡上）`,
-        );
+  const runPlan = useCallback(
+    async (options?: { rerun?: boolean; scope?: ReadonlyArray<string> }): Promise<void> => {
+      if (running) return;
+      const rerun = options?.rerun === true;
+      // 显式重跑先把代数 +1 并**落盘**：否则刷新后回到旧代数，下一次「运行」会命中上一代的任务
+      // —— 用户以为重跑了，其实什么都没发生。
+      let base = plan;
+      if (rerun) {
+        base = bumpPlanRun(plan);
+        mutatePlan(() => base);
       }
-      // 提交出来的任务要立刻能在事实图里看到（切回去时不再等一次手动刷新）
-      void reload();
-    } catch (caught) {
-      setPlanNotice(`运行失败：${describeError(caught)}`);
-    } finally {
-      setRunning(false);
-    }
-  }, [plan, running, byok, reload]);
+
+      setRunning(true);
+      setPlanNotice(null);
+      try {
+        const providerKey = resolveProviderKey(byok);
+        const outcome = await runCanvasPlan(base, {
+          submit: async (body, idempotencyKey, planRunId) => {
+            const created = await submitGenerate(
+              // 与工作台同一条口径：BYOK 的服务端地址与模型名走 options（未识别键由服务端忽略）
+              { ...body, options: { baseUrl: byok.baseUrl, model: byok.model } },
+              {
+                idempotencyKey,
+                // 本轮运行 id：服务端据此把"一串节点"当成一次有意动作（只吃一次 60s 冷却）
+                planRunId,
+                ...(providerKey === undefined ? {} : { providerKey }),
+              },
+            );
+            return { taskId: created.taskId };
+          },
+          // 等上游出片：`task:` 引用要求"已有可用成片"，否则下游提交会被服务端 404 挡回
+          queryTask: (taskId) => fetchTask(taskId),
+          ...(options?.scope === undefined ? {} : { scope: options.scope }),
+        });
+        setRunOutcome(outcome);
+
+        // 把本轮的产物写回编排：下一轮"部分重跑"里范围外的节点，靠它给下游提供引用
+        const submitted = new Map<string, string>();
+        for (const item of outcome.results) {
+          if (item.taskId !== undefined) submitted.set(item.nodeId, item.taskId);
+        }
+        if (submitted.size > 0) {
+          const next = withRunTaskIds(base, submitted);
+          mutatePlan(() => next);
+        }
+
+        if (outcome.cycle.length > 0) {
+          setPlanNotice(`图里有环（${outcome.cycle.length} 个节点参与）—— 一个都没提交，先解开环再跑`);
+        } else {
+          const ok = submitted.size;
+          const kept = outcome.results.filter((item) => item.state === 'kept').length;
+          const bad = outcome.results.filter(
+            (item) => item.state === 'failed' || item.state === 'skipped',
+          ).length;
+          const parts = [`已提交 ${ok} 条任务`];
+          if (kept > 0) parts.push(`${kept} 条沿用上次产物`);
+          if (bad > 0) parts.push(`${bad} 条跳过或失败（原因在节点卡上）`);
+          const head = rerun ? `第 ${outcome.runSeq} 轮（显式重跑：这些是新建的任务）—— ` : '';
+          setPlanNotice(head + parts.join('，'));
+        }
+        // 提交出来的任务要立刻能在事实图里看到（切回去时不再等一次手动刷新）
+        void reload();
+      } catch (caught) {
+        setPlanNotice(`运行失败：${describeError(caught)}`);
+      } finally {
+        setRunning(false);
+      }
+    },
+    [plan, running, byok, reload, mutatePlan],
+  );
+
+  /** 「▶ 运行编排」：代数不变（幂等） */
+  const handleRunPlan = useCallback((): void => {
+    void runPlan();
+  }, [runPlan]);
+
+  /** 「🔁 重跑全部」：代数 +1（真的新建任务） */
+  const handleRerunPlan = useCallback((): void => {
+    void runPlan({ rerun: true });
+  }, [runPlan]);
+
+  /** 「🔁 重跑此节点及下游」：代数 +1 + 只重跑选中 ∪ 下游 */
+  const handleRerunFromNode = useCallback(
+    (nodeId: string): void => {
+      void runPlan({ rerun: true, scope: [nodeId] });
+    },
+    [runPlan],
+  );
 
   const mutateNotes = useCallback(
     (next: CanvasNote[]): void => {
@@ -1216,7 +1291,10 @@ export function CanvasView() {
           {planMode ? (
             <p className="wb-note cv-plan-hint" data-testid="cv-plan-hint">
               连线 = 数据流（只有 v2v 能接上游）；「▶ 运行编排」按依赖顺序一次提交 ——
-              <strong>重复点不会重复计费</strong>（同一编排同一节点用的幂等键是固定的）
+              <strong>重复点不会重复计费</strong>（同一编排同一节点用的幂等键是固定的）。
+              「🔁 重跑」则相反：它换一代幂等键 ——<strong>会新建任务（真的计费）</strong>；
+              在节点面板里可以只重跑<b>一段</b>（它和它的下游，上游沿用上次产物）
+              <span data-testid="cv-plan-run-seq">（当前第 {planRunSeq(plan)} 轮）</span>
             </p>
           ) : (
             <div className="cv-legend" aria-label="边的图例">
@@ -1376,11 +1454,11 @@ export function CanvasView() {
                       ),
                     )
                   }
-                  onRunPlan={() => {
-                    void runPlan();
-                  }}
+                  onRunPlan={handleRunPlan}
+                  onRerunPlan={handleRerunPlan}
                   running={running}
                   runnableCount={runnableCount}
+                  runSeq={planRunSeq(plan)}
                 />
                 <MiniMap
                   data-testid="cv-minimap"
@@ -1431,6 +1509,8 @@ export function CanvasView() {
                   setSelectedPlanNodeId(null);
                 }}
                 onClose={() => setSelectedPlanNodeId(null)}
+                onRerun={() => handleRerunFromNode(selectedPlanNode.id)}
+                running={running}
               />
             )
         : selected === null

@@ -639,6 +639,13 @@
   border-color: var(--line-strong);
 }
 
+/* V2.29（B68 部分重跑）：本轮**没提交**、沿用上次产物的节点 —— 用中性虚线的观感，
+   与"跳过（有问题）"区分开：它没出错，只是这次不动它 */
+.cv-plan-node.cv-plan-kept {
+  border-color: var(--line);
+  opacity: 0.75;
+}
+
 .cv-plan-ok {
   color: var(--success);
 }
@@ -649,6 +656,15 @@
 
 .cv-plan-skip {
   color: var(--muted);
+}
+
+.cv-plan-kept {
+  color: var(--muted);
+}
+
+/* 固定的产物（B68）：金色小标 —— 它意味着"这一段别再动了" */
+.cv-plan-pinned {
+  color: var(--gold);
 }
 
 /* ── 编排面板的控件（提示词 / 模式段选 / 数值）── */

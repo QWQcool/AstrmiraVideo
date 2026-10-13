@@ -492,10 +492,26 @@ if (runnerText === undefined) {
       '编排执行器引用了 `newIdempotencyKey`（随机键）—— 那是单次手动提交用的；编排必须用确定性键',
     );
   }
+  // V2.29（A5 片 B / B69）：**代数必须进幂等键**。漏了它的症状是"点了没反应"：
+  // 代数换了、键没换 → 提交仍然命中上一代的任务 → 用户以为重跑了，其实什么都没发生（还白等）。
+  if (!runnerText.includes('planIdempotencyKey(plan.id, nodeId, runSeq)')) {
+    failures.push(
+      '编排执行器没有把**运行代数**传进幂等键（`planIdempotencyKey(plan.id, nodeId, runSeq)`）—— ' +
+        '「🔁 重跑」会变成"点了没反应"',
+    );
+  }
 }
 
 if (canvasText !== undefined && !canvasText.includes("query.get('mode') === 'plan'")) {
   failures.push('CanvasView 没有读 `mode=plan`（A5 片 A 的编排模式入口没了）');
+}
+
+// V2.29（A5 片 B / B69）：重跑入口（换键）必须真的接在界面上 —— 没有它，"重跑"这个能力
+// 在界面上等于不存在，而**单测全绿也不会知道**（runner 的换键逻辑照样被测到）。
+if (canvasText !== undefined && !canvasText.includes('bumpPlanRun')) {
+  failures.push(
+    'CanvasView 没有用 `bumpPlanRun` —— 「🔁 重跑」入口不见了（只剩幂等的「运行」，用户无法换键重跑）',
+  );
 }
 
 // ── ⑮ window 层运行期兜底还在，且**没有偷偷上报**（台账 B61 片 B / 决策 D52）──
@@ -547,6 +563,6 @@ console.log(
     `组件层零硬编码色值、两套主题对比度全部达标（${CONTRAST_RULES.length} 对 × ${THEMES.length} 套）、` +
     `移动端四件套就位（B60：窄屏日志 / hover 兜底 / dvh / 字号下限）、` +
     `画布规模抓手就位（B44：分页游标 + 视口裁剪）、` +
-    `编排模式的两个花钱约定就位（A5 片 A：确定性幂等键 + mode=plan 入口）、` +
+    `编排的三个花钱约定就位（A5 片 A+B：确定性幂等键 + 代数换键的重跑入口 + mode=plan 入口）、` +
     `window 层兜底就位且零上报（B61 片 B：两个事件 + D52 只本地提示）`,
 );
