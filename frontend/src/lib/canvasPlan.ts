@@ -201,6 +201,25 @@ export function bumpPlanRun(plan: CanvasPlan, now = Date.now()): CanvasPlan {
   return { ...plan, runSeq: planRunSeq(plan) + 1, updatedAt: now };
 }
 
+/**
+ * V2.35（A5 片 B 收口）：给一份编排**换新身份**（导入文件时用）。
+ *
+ * 为什么导入必须换 `id`：幂等键含 `planId`（`plan:<planId>:<nodeId>[:r<代数>]`）——
+ * 两份从同一文件导入的编排若共享 id，在**同一部署**里跑会互相命中对方已提交的任务
+ * （第二份显示"已提交"，产物却在另一个项目里，属静默错误）。
+ * **代价如实**：导入后第一次「运行」会新建任务（不与来源共享幂等键）。
+ *
+ * `lastTaskId` / `pinnedTaskId` / `runSeq` **原样保留**：它们只在本机部署有意义，
+ * 运行时对"任务不存在"有既有的如实处理（跳过并说明），这里不替用户改写编排。
+ */
+export function withNewPlanIdentity(
+  plan: CanvasPlan,
+  now = Date.now(),
+  id = `plan-${now}-${Math.random().toString(36).slice(2, 8)}`,
+): CanvasPlan {
+  return { ...plan, id };
+}
+
 /** 固定：把某个节点的产物钉住（之后的运行**永不重提交**它） */
 export function pinPlanNode(plan: CanvasPlan, nodeId: string, taskId: string, now = Date.now()): CanvasPlan {
   return {

@@ -101,6 +101,19 @@ function describeThrown(caught: unknown): string {
   return caught instanceof Error ? caught.message : String(caught);
 }
 
+/**
+ * 抛错对象里的 HTTP 状态码（能取到就取；取不到退回消息里的 `HTTP 4xx/5xx` 字面量，
+ * 与 `isRetryableSubmitError` 同一口径 —— 前端拿不到统一的状态码对象）。
+ */
+function httpStatusOf(caught: unknown): number | null {
+  if (typeof caught === 'object' && caught !== null && 'status' in caught) {
+    const status = (caught as { status?: unknown }).status;
+    if (typeof status === 'number') return status;
+  }
+  const match = /HTTP (\d{3})/.exec(describeThrown(caught));
+  return match === null ? null : Number(match[1]);
+}
+
 const SETTLED_FAILURE = new Set(['failed', 'cancelled']);
 
 const defaultSleep = (ms: number): Promise<void> =>
@@ -163,6 +176,10 @@ async function submitWithRetry(
  *
  * 三态如实：成功 / 失败（终态但没有成片）/ 超时 —— 后两者都返回 `ok: false` + **给人看的原因**，
  * 调用方据此把下游标成 `skipped`（而不是带着一条不存在的成片去提交）。
+ *
+ * V2.35（A5 片 B 收口）补第四态：**查询本身失败**（最典型的是"这条任务在本服务上不存在" ——
+ * 导入的编排会带来这种引用）。它同样返回 `ok: false` + 可执行原因，**不抛异常**：
+ * 抛出去会把整轮运行中断成"运行失败：HTTP 404"，那对用户既看不懂也做不了下一步。
  */
 async function waitForTaskReady(
   taskId: string,
@@ -177,7 +194,27 @@ async function waitForTaskReady(
   const short = taskId.slice(0, 8);
 
   for (;;) {
-    const task = await deps.queryTask(taskId);
+    let task: { status: string; outputVideoUrl?: string | null };
+    try {
+      task = await deps.queryTask(taskId);
+    } catch (caught) {
+      /**
+       * V2.35（A5 片 B 收口）：**查不到 / 查不动**时如实跳过，而不是让异常冒出去把整轮运行中断。
+       *
+       * 中断的形态是"运行失败：HTTP 404"—— 用户既看不懂、也做不了下一步；而这条分支在
+       * **导入的编排**上必然遇到（文件里记着来源机器的产物 ID，本部署里没有那条任务）。
+       * 4xx（不存在 / 查不动那些记录）给"重跑这一段"的可执行下一步；其它（网络 / 5xx）如实说清是查询失败。
+       */
+      const status = httpStatusOf(caught);
+      return {
+        ok: false,
+        message:
+          status === 404
+            ? `引用的产物 ${short} 在本服务上不存在（来自导入的编排，或任务记录已被清理）—— ` +
+              '先重跑这一段（被固定的先取消固定），或直接重跑引用它的那个节点'
+            : `查询引用的产物 ${short} 失败（${describeThrown(caught)}）—— 稍后重试这次运行`,
+      };
+    }
     if (task.status === 'succeeded') {
       if (typeof task.outputVideoUrl === 'string' && task.outputVideoUrl !== '') return { ok: true };
       return { ok: false, message: `上游 ${short} 成功了但没有成片文件（可能已被容量淘汰清理）` };

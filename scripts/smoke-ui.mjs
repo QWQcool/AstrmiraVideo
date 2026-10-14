@@ -2965,6 +2965,138 @@ try {
   await page.screenshot({ path: path.join(SHOT_DIR, 'canvas.png'), fullPage: false });
   note('画布截图留档：artifacts/ui-smoke/canvas.png');
 
+  // ── V2.35（A5 片 B 收口）：编排的导出 / 导入文件（契约 §11-6 附）────────────────
+  //
+  // 这一段**不提交任务**（不花钱），它盯四件事：
+  // ① 导出的是**本产品格式且保真**（kind / version / notes / 产物 ID 都在）；
+  // ② 导入走**真文件上传**（file input）→ 画布上真的换成了文件里的内容；
+  // ③ **非空时两步确认**（取消 = 一动不动；确认 = 新编排身份）；
+  // ④ 坏文件（kind 不对 / 更高版本 / 悬挂边）→ **如实拒绝且当前编排一动不动**。
+  const planFile = path.join(tmpdir(), `astrmira-canvas-plan-${Date.now()}.json`);
+  const [planDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByTestId('cv-export-plan').click(),
+  ]);
+  await planDownload.saveAs(planFile);
+  const exported = JSON.parse(readFileSync(planFile, 'utf8'));
+  assert(
+    exported.kind === 'astrmira.canvas-plan' && typeof exported.version === 'number',
+    `编排文件可下载且带格式标识（kind=${exported.kind} · v${exported.version}）`,
+  );
+  assert(
+    Array.isArray(exported.plan?.nodes) && exported.plan.nodes.length === 2,
+    `导出的是**当前这份编排**（${exported.plan?.nodes?.length} 个节点，与画布一致）`,
+  );
+  assert(
+    exported.plan.nodes.some((node) => typeof node.pinnedTaskId === 'string'),
+    '导出**保真**：固定（pinnedTaskId）这类本机状态也在文件里（剥离等于悄悄丢信息）',
+  );
+  assert(
+    Array.isArray(exported.notes) && exported.notes.join(' ').includes('只在本机部署有意义'),
+    '文件里写明了"这份文件不含什么"（产物 ID 只在本机部署有意义）—— 接收方知道边界',
+  );
+  assert(
+    (await page.getByTestId('cv-plan-file-notice').innerText()).includes('已导出'),
+    '界面上如实反馈导出结果',
+  );
+  const exportedPlanId = exported.plan.id;
+
+  // ② 导入：当前编排非空 → **先确认**；取消 = 一动不动（不静默覆盖别人的工作）
+  await page.getByTestId('cv-import-plan-input').setInputFiles(planFile);
+  await page.getByTestId('cv-import-confirm').waitFor({ state: 'visible', timeout: 10_000 });
+  assert(true, '导入非空编排先走两步确认（没有静默覆盖当前编排）');
+  await page.getByTestId('cv-import-confirm-cancel').click();
+  const afterCancel = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((item) => item.startsWith('astrmira.canvasPlan.'));
+    return key === undefined ? null : JSON.parse(localStorage.getItem(key)).id;
+  });
+  assert(afterCancel === exportedPlanId, '取消导入 → 当前编排一动不动（本机存储里的编排 id 没变）');
+
+  // ③ 改一处能看见的地方（名字 + 提示词）再导入 → 证明"画布真的换成了文件里的内容"
+  const edited = JSON.parse(readFileSync(planFile, 'utf8'));
+  edited.plan.name = '冒烟导入的编排';
+  edited.plan.nodes[0].prompt = '冒烟编排 A：导入之后改了提示词';
+  writeFileSync(planFile, JSON.stringify(edited));
+
+  await page.getByTestId('cv-import-plan-input').setInputFiles(planFile);
+  await page.getByTestId('cv-import-confirm').waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByTestId('cv-import-confirm-yes').click();
+  // 等**本机存储真的变成文件里的那份**（界面提示与落盘是同一次 state 更新，但 DOM/存储各有自己的时序）
+  await page.waitForFunction(() => {
+    const key = Object.keys(localStorage).find((item) => item.startsWith('astrmira.canvasPlan.'));
+    if (key === undefined) return false;
+    return JSON.parse(localStorage.getItem(key) ?? '{}').name === '冒烟导入的编排';
+  }, undefined, { timeout: 10_000 });
+  const storedPlan = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((item) => item.startsWith('astrmira.canvasPlan.'));
+    return key === undefined ? null : JSON.parse(localStorage.getItem(key));
+  });
+  assert(storedPlan?.name === '冒烟导入的编排', '导入的内容真的落到了本机存储（文件里的名字）');
+  assert(
+    storedPlan?.nodes?.[0]?.prompt?.includes('导入之后改了提示词') === true,
+    '画布上真的是文件里的那份内容（提示词被替换）',
+  );
+  assert(
+    storedPlan.id !== exportedPlanId,
+    '导入 = **新编排身份**（幂等键含 planId：两份同源编排不能互相命中对方的任务）',
+  );
+  assert(
+    (await page.getByTestId('cv-plan-file-notice').innerText()).includes('新的编排身份'),
+    '界面上说清了"新的编排身份 —— 首次运行会新建任务"（代价如实）',
+  );
+
+  // ④ 坏文件三种 → 如实拒绝 + 当前编排一动不动
+  const badCases = [
+    {
+      label: 'kind 不对（误选了别种文件）',
+      content: () => JSON.stringify({ kind: 'astrmira.recipe-pack', version: 1, plan: {} }),
+      expect: '这不是编排文件',
+    },
+    {
+      label: '来自更高的版本（未来格式）',
+      content: () => JSON.stringify({ ...exported, version: 999 }),
+      expect: '请升级',
+    },
+    {
+      label: '图不成立（悬挂边）',
+      content: () =>
+        JSON.stringify({
+          ...exported,
+          plan: {
+            ...exported.plan,
+            edges: [{ id: 'pedge-ghost', from: 'ghost', to: exported.plan.nodes[0].id }],
+          },
+        }),
+      expect: '连到不存在节点',
+    },
+  ];
+  let badIndex = 0;
+  for (const item of badCases) {
+    badIndex += 1;
+    const badFile = path.join(tmpdir(), `astrmira-canvas-plan-bad-${Date.now()}-${badIndex}.json`);
+    writeFileSync(badFile, item.content());
+    await page.getByTestId('cv-import-plan-input').setInputFiles(badFile);
+    // 判据是"出现**本 case 的**原因"（不是"出现导入失败"）：否则上一条失败提示会让等待立刻满足（假绿）
+    await page.waitForFunction(
+      (needle) =>
+        (document.querySelector('[data-testid=cv-plan-file-notice]')?.textContent ?? '').includes(needle),
+      item.expect,
+      { timeout: 10_000 },
+    );
+    const badText = await page.getByTestId('cv-plan-file-notice').innerText();
+    assert(
+      badText.includes(item.expect),
+      `坏文件如实拒绝（${item.label}）：${badText.replaceAll('\n', ' ').slice(0, 70)}…`,
+    );
+    rmSync(badFile, { force: true });
+  }
+  const afterBad = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((item) => item.startsWith('astrmira.canvasPlan.'));
+    return key === undefined ? null : JSON.parse(localStorage.getItem(key));
+  });
+  assert(afterBad?.name === '冒烟导入的编排', '坏文件被拒之后当前编排**一动不动**（没有半成品装进来）');
+  rmSync(planFile, { force: true });
+
   console.log('\n[7f] window 层运行期兜底（V2.29 / B61 片 B / D52：只本地提示、不上报）');
   // 为什么必须**真抛**：这一层唯一的存在理由就是"接住没人接的错误"。直接调它的 report()
   // 只能证明函数能跑，证明不了"浏览器真会把事件送到它手上" —— 而"事件没送到"

@@ -483,6 +483,41 @@ describe('画布编排 · 重跑与部分重跑（A5 片 B）', () => {
     expect(outcome.results.find((item) => item.nodeId === 'b')?.message).toContain('上游没有提交成功');
   });
 
+  // V2.35（A5 片 B 收口）：导入的编排会带来"引用的任务在本部署里不存在"——
+  // 它必须是**如实跳过 + 可执行的下一步**，而不是让异常冒出去把整轮运行中断成"运行失败：HTTP 404"。
+  it('引用的产物在本服务上**不存在** → 下游 skipped 并给可执行下一步（不中断整轮运行）', async () => {
+    const graph = withRunTaskIds(
+      plan([node('a'), node('b', { mode: 'v2v' })], [edge('a', 'b')]),
+      new Map([['a', 'task-imported']]),
+    );
+    const { calls, deps } = recorder(undefined, async (taskId) => {
+      const error = new Error(`任务不存在：${taskId}`) as Error & { status: number };
+      error.status = 404;
+      throw error;
+    });
+    const outcome = await runCanvasPlan(graph, { ...deps, scope: ['b'] });
+
+    expect(calls).toHaveLength(0); // 不带着一条不存在的引用去提交（那会被服务端在提交那一刻挡回）
+    const downstream = outcome.results.find((item) => item.nodeId === 'b');
+    expect(downstream?.state).toBe('skipped');
+    expect(downstream?.message).toContain('不存在');
+    expect(downstream?.message).toContain('取消固定'); // 给的是下一步，不是一句裸的 HTTP 404
+  });
+
+  it('查询引用产物**失败**（非 404，如网络抖动）→ 同样 skipped + 可执行原因（不抛出去中断整轮）', async () => {
+    const graph = withRunTaskIds(
+      plan([node('a'), node('b', { mode: 'v2v' })], [edge('a', 'b')]),
+      new Map([['a', 'task-a-old']]),
+    );
+    const { deps } = recorder(undefined, async () => {
+      throw new Error('HTTP 500（/api/tasks/x）');
+    });
+    const outcome = await runCanvasPlan(graph, { ...deps, scope: ['b'] });
+    const downstream = outcome.results.find((item) => item.nodeId === 'b');
+    expect(downstream?.state).toBe('skipped');
+    expect(downstream?.message).toContain('稍后重试');
+  });
+
   it('重跑（代数 +1）→ 键带 rN：这才是"真的新建任务"', async () => {
     const graph = bumpPlanRun(plan([node('a')]), 1);
     const { calls, deps } = recorder();

@@ -523,6 +523,30 @@ if (canvasText !== undefined && !canvasText.includes('setPlanNodeRetry')) {
   failures.push('CanvasView 没有用 `setPlanNodeRetry` —— 节点级重试的入口不见了（B74 界面）');
 }
 
+// ── V2.35（A5 片 B 收口）：编排文件的导出 / 导入 —— 三条**类型与单测都看不见**的约定 ──
+//
+// ① **入口与结果位必须真的接在界面上**（同 ⑭ 第二批的理由：领域层有、界面没入口 = 功能不存在，
+//    而单测是全绿的 —— 它测的是领域层；"导入失败但界面没动静"更是最糟的形态：用户会反复点）；
+// ② 导入必须走 `readCanvasPlanFile`：自己 `JSON.parse` 会绕开**前向兼容**（未来版本明确拒绝）
+//    与**图结构检查**（悬挂边 / 重复 id / 自环 / 重复边）—— 那是"坏文件不许装进画布"的唯一闸门；
+// ③ 导出必须走 `buildCanvasPlanFile`：手拼文件对象会漏掉 `kind` / `version` / `notes`
+//    （而"文件里写明了不含什么"正是这份格式的诚实落点）。
+for (const marker of ['cv-export-plan', 'cv-import-plan', 'cv-import-plan-input', 'cv-plan-file-notice']) {
+  if (canvasText !== undefined && !canvasText.includes(marker)) {
+    failures.push(`CanvasView 缺少编排文件的 \`${marker}\`（V2.35：导出 / 导入的界面入口或结果位不见了）`);
+  }
+}
+if (canvasText !== undefined && !canvasText.includes('readCanvasPlanFile')) {
+  failures.push(
+    'CanvasView 没有走 `readCanvasPlanFile` 导入 —— 自己解析 JSON 会绕开前向兼容与图结构检查（V2.35）',
+  );
+}
+if (canvasText !== undefined && !canvasText.includes('buildCanvasPlanFile')) {
+  failures.push(
+    'CanvasView 没有用 `buildCanvasPlanFile` 导出 —— 手拼文件对象会漏掉 kind / version / notes（V2.35）',
+  );
+}
+
 // ── ⑮ window 层运行期兜底还在，且**没有偷偷上报**（台账 B61 片 B / 决策 D52）──
 //
 // 与 ⑪ 同一条理由：这一层在**没出错时什么都不渲染** —— 被摘掉不会有任何视觉回归、
@@ -573,5 +597,6 @@ console.log(
     `移动端四件套就位（B60：窄屏日志 / hover 兜底 / dvh / 字号下限）、` +
     `画布规模抓手就位（B44：分页游标 + 视口裁剪）、` +
     `编排的三个花钱约定就位（A5 片 A+B：确定性幂等键 + 代数换键的重跑入口 + mode=plan 入口）、` +
+    `编排文件入口与失败纪律就位（V2.35：读走 readCanvasPlanFile / 写走 buildCanvasPlanFile + 结果位）、` +
     `window 层兜底就位且零上报（B61 片 B：两个事件 + D52 只本地提示）`,
 );

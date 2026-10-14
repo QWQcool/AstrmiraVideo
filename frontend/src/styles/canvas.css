@@ -615,6 +615,34 @@
   font-size: var(--fs-note);
 }
 
+/* V2.35（A5 片 B 收口）：编排文件（导出 / 导入）的注记与两步确认。
+   注记是**逐条**的（文件里"不含什么"写给接收方的话）—— 挤成一行会没人读。 */
+.cv-plan-file-notes {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  display: grid;
+  gap: 2px;
+}
+
+.cv-plan-import-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  /* ⚠️ 按钮必须**靠左**排：页面右侧 340px 被 fixed 的检查器抽屉（`.cv-drawer`，z-index 20）覆盖 ——
+     第一版把按钮推到右侧（文字 flex: 1），UI 冒烟当场抓到"取消按钮点不到"
+     （element intercepts pointer events）。这与 B63 那次"工具条被抽屉压住"是同一类缺陷：
+     看得见、点不到。文字独占一行、按钮换行到左侧第二行即可彻底避开。 */
+  justify-content: flex-start;
+}
+
+.cv-plan-import-confirm > span {
+  /* 文字独占一行：按钮整体换行到左侧第二行（见上面的注释） */
+  flex: 1 1 100%;
+}
+
 /* ── 编排节点卡片（复用 `.cv-node` 的骨架，只改边框语义）── */
 .cv-plan-node {
   border-style: dashed;

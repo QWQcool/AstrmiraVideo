@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FC } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FC } from 'react';
 import {
   Background,
   Controls,
@@ -22,7 +22,14 @@ import type {
   EventLogEntry,
   TaskProgress,
 } from '@astrmira/shared';
-import { formatYuan, logActionLabel, parseTaskRef } from '@astrmira/shared';
+import {
+  buildCanvasPlanFile,
+  canvasPlanFileText,
+  formatYuan,
+  logActionLabel,
+  parseTaskRef,
+  readCanvasPlanFile,
+} from '@astrmira/shared';
 import {
   ApiError,
   fetchAssets,
@@ -64,6 +71,7 @@ import {
   setPlanNodeRetry,
   unpinPlanNode,
   updatePlanNode,
+  withNewPlanIdentity,
   withRunTaskIds,
 } from '../lib/canvasPlan';
 import { runCanvasPlan, type PlanRunOutcome } from '../lib/canvasPlanRunner';
@@ -175,6 +183,9 @@ const CanvasToolbar: FC<{
   runnableCount: number;
   /** V2.29（B69）：当前运行代数（界面如实展示"第几轮"） */
   runSeq: number;
+  /** V2.35（A5 片 B 收口）：编排导出 / 导入文件（格式见契约 §11-6 附；不进服务端） */
+  onExportPlan: () => void;
+  onImportPlanFile: (file: File) => void;
 }> = ({
   selectedIds,
   onAddNote,
@@ -189,8 +200,11 @@ const CanvasToolbar: FC<{
   running,
   runnableCount,
   runSeq,
+  onExportPlan,
+  onImportPlanFile,
 }) => {
   const { fitView, screenToFlowPosition } = useReactFlow();
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const count = selectedIds.length;
   const viewportCenter = (): { x: number; y: number } =>
     screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
@@ -257,6 +271,40 @@ const CanvasToolbar: FC<{
           >
             🔁 重跑全部
           </button>
+          {/* V2.35（A5 片 B 收口）：编排的导出 / 导入文件 —— 纯前端（浏览器下载 / 本地文件读取），
+              零服务端交互。导出的是一份新的"编排身份"（见契约 §11-6 附 第 3 条）。 */}
+          <button
+            type="button"
+            className="cv-tool"
+            data-testid="cv-export-plan"
+            title="把这份编排导出为 JSON 文件（含产物 ID 注记：它们只在本机部署有意义；不含凭据）"
+            onClick={onExportPlan}
+          >
+            ⤓ 导出编排
+          </button>
+          <button
+            type="button"
+            className="cv-tool"
+            data-testid="cv-import-plan"
+            title="从 JSON 文件导入一份编排（会替换当前编排；当前非空时先确认，不会静默覆盖）"
+            onClick={() => importInputRef.current?.click()}
+          >
+            ⤒ 导入编排
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            hidden
+            accept="application/json,.json"
+            data-testid="cv-import-plan-input"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              // 先清空再处理：否则"再选同一个文件"不会再触发 change（浏览器行为），
+              // 用户会以为导入没反应 —— 而这正是"重试一次"最常见的动作。
+              event.target.value = '';
+              if (file !== undefined) onImportPlanFile(file);
+            }}
+          />
         </>
       ) : (
         /* V2.25（台账 B44）：把"能看多少"交给用户 —— 每点一次向前翻一页（50 条），
@@ -793,6 +841,16 @@ export function CanvasView() {
   const [runOutcome, setRunOutcome] = useState<PlanRunOutcome | null>(null);
   const [running, setRunning] = useState(false);
   const [planNotice, setPlanNotice] = useState<string | null>(null);
+  /**
+   * V2.35（A5 片 B 收口）：编排文件的提示（导出成功 / 导入结果 / 导入失败）。
+   *
+   * 为什么**独立于** `planNotice`：运行结果与文件操作是两件不同的事 —— 混用一个位会让
+   * "运行结果"把"导入说了什么"顶掉（或反过来），而两条信息用户都需要看到。
+   * `notes` 是文件里写给接收方的话（含"这份文件不含什么"），逐条展示、不折叠。
+   */
+  const [planFileNotice, setPlanFileNotice] = useState<{ text: string; notes: string[] } | null>(null);
+  /** 待确认的导入（当前编排非空时不静默覆盖 —— 两步确认，照 `ProjectSwitcher` 的删除同款） */
+  const [pendingImport, setPendingImport] = useState<{ plan: CanvasPlan; notes: string[] } | null>(null);
 
   const reload = useCallback(async (): Promise<void> => {
     try {
@@ -892,6 +950,9 @@ export function CanvasView() {
         ? '本机有一份读不出来的编排（可能是更新版本写的）—— 原文已保留，你一旦改动就会被覆盖'
         : null,
     );
+    // 文件提示与待确认的导入都属于"上一份编排"的上下文：切项目/重载时清掉，避免串项目
+    setPlanFileNotice(null);
+    setPendingImport(null);
     setPlanLoaded(true);
   }, [projectId]);
 
@@ -1021,6 +1082,73 @@ export function CanvasView() {
       void runPlan({ rerun: true, scope: [nodeId] });
     },
     [runPlan],
+  );
+
+  /**
+   * V2.35（A5 片 B 收口）：导出编排文件（契约 §11-6 附）。
+   *
+   * 导出的是**内存里这份**（不是 localStorage 里那份）：两者只在"刚改动、还没落盘"的瞬间不同，
+   * 而用户按下导出时想要的一定是**眼前这份**。
+   */
+  const handleExportPlan = useCallback((): void => {
+    const file = buildCanvasPlanFile(plan);
+    downloadText(canvasPlanFileText(file), `canvas-plan-${plan.id.slice(0, 8)}.json`);
+    setPlanFileNotice({
+      text:
+        `已导出「${plan.name}」：${plan.nodes.length} 个节点 · ${plan.edges.length} 条连线` +
+        `（文件里 ${file.notes.length} 条注记，含"这份文件不含什么"）`,
+      notes: [],
+    });
+  }, [plan]);
+
+  /** 导入成功后的**唯一落点**（两条路径共用：空编排直接装入 / 非空经两步确认） */
+  const applyImportedPlan = useCallback(
+    (imported: CanvasPlan, notes: string[]): void => {
+      mutatePlan(() => imported);
+      setPendingImport(null);
+      setPlanFileNotice({
+        text:
+          `已导入「${imported.name}」：${imported.nodes.length} 个节点 · ${imported.edges.length} 条连线` +
+          '（新的编排身份 —— 首次「▶ 运行编排」会新建任务）',
+        notes,
+      });
+    },
+    [mutatePlan],
+  );
+
+  /**
+   * V2.35（A5 片 B 收口）：读一份导入文件。
+   *
+   * 三条口径（契约 §11-6 附）：
+   * 1. **失败给人话原因**：解析函数说清是哪一类问题，这里只负责"如实展示 + 一动不动"；
+   * 2. **导入 = 新编排身份**（`withNewPlanIdentity`）：避免两份同源编排在同一部署里互相命中对方的任务；
+   * 3. **非空不静默覆盖**：走两步确认（当前为空则直接装入）—— 覆盖前提示"可以先导出留一份"。
+   */
+  const handleImportPlanFile = useCallback(
+    (file: File): void => {
+      void file
+        .text()
+        .then((text) => {
+          const result = readCanvasPlanFile(text);
+          if (!result.ok) {
+            setPendingImport(null);
+            setPlanFileNotice({ text: `导入失败：${result.reason}（当前编排未变动）`, notes: [] });
+            return;
+          }
+          const adopted = withNewPlanIdentity(result.plan);
+          if (plan.nodes.length === 0) {
+            applyImportedPlan(adopted, result.notes);
+            return;
+          }
+          setPendingImport({ plan: adopted, notes: result.notes });
+          setPlanFileNotice(null);
+        })
+        .catch((caught: unknown) => {
+          setPendingImport(null);
+          setPlanFileNotice({ text: `导入失败：读不到文件内容（${describeError(caught)}）`, notes: [] });
+        });
+    },
+    [plan.nodes.length, applyImportedPlan],
   );
 
   const mutateNotes = useCallback(
@@ -1326,6 +1454,48 @@ export function CanvasView() {
           </div>
         ) : null}
 
+        {/* V2.35（A5 片 B 收口）：编排文件的导出 / 导入结果 —— 与运行结果分开显示（两件事） */}
+        {planMode && planFileNotice !== null ? (
+          <div className="cv-plan-notice" data-testid="cv-plan-file-notice">
+            {planFileNotice.text}
+            {planFileNotice.notes.length === 0 ? null : (
+              <ul className="cv-plan-file-notes">
+                {planFileNotice.notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+
+        {/* V2.35：非空时的**两步确认** —— 导入会替换当前编排，不能静默覆盖别人的工作
+            （照 ProjectSwitcher 的删除确认：不用原生对话框，内联两步） */}
+        {planMode && pendingImport !== null ? (
+          <div className="cv-plan-notice cv-plan-import-confirm" data-testid="cv-import-confirm">
+            <span>
+              导入会<strong>替换当前编排</strong>（现在有 {plan.nodes.length} 个节点 ·{' '}
+              {plan.edges.length} 条连线；文件里是「{pendingImport.plan.name}」
+              {pendingImport.plan.nodes.length} 个节点）—— 想留一份的话，先「⤓ 导出编排」。
+            </span>
+            <button
+              type="button"
+              className="wb-btn"
+              data-testid="cv-import-confirm-yes"
+              onClick={() => applyImportedPlan(pendingImport.plan, pendingImport.notes)}
+            >
+              确认导入
+            </button>
+            <button
+              type="button"
+              className="wb-btn"
+              data-testid="cv-import-confirm-cancel"
+              onClick={() => setPendingImport(null)}
+            >
+              取消
+            </button>
+          </div>
+        ) : null}
+
         {error === null ? null : (
           <div className="wb-uncertain cv-alert">
             <span className="wb-uncertain-title">画布数据读取失败</span>
@@ -1462,6 +1632,8 @@ export function CanvasView() {
                   running={running}
                   runnableCount={runnableCount}
                   runSeq={planRunSeq(plan)}
+                  onExportPlan={handleExportPlan}
+                  onImportPlanFile={handleImportPlanFile}
                 />
                 <MiniMap
                   data-testid="cv-minimap"
