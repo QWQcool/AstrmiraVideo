@@ -1,32 +1,11 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { ProviderStatusSchema } from '@astrmira/shared';
 import type { ProviderStatus } from '@astrmira/shared';
-import { isAllowedEngineUrl } from '../providers/statusProbe.js';
-
-/**
- * 本地引擎自检结果（服务端内存缓存）。
- *
- * V1.8（PLAN §6-D22）：本端点**不再是硬件探针**，只陈述**本服务自身**的配置事实。
- * 到达路径 = 配置 env + 重启（S5 由 `providers/statusProbe.ts` 启动时做一次轻量自检并写入这里）；
- * 运行时自检路由属 PLAN §9 台账 B4，**未实现**。
- */
-export interface LocalEngineSelfCheck {
-  available: boolean;
-  tier?: 0 | 1 | 2 | 3;
-  reason: string;
-}
+import { isAllowedEngineUrl, runLocalEngineSelfCheck } from '../providers/statusProbe.js';
 
 /** 部署者是否向访客开放 host 本地轨（CONTRACT §2：`EXPOSE_HOST_LOCAL_TRACK`，默认 0） */
 function isHostLocalTrackExposed(): boolean {
   return process.env.EXPOSE_HOST_LOCAL_TRACK === '1';
-}
-
-/** 启动自检缓存；在 S5 接入前恒为 null（即"未配置本地引擎"） */
-let localEngineSelfCheck: LocalEngineSelfCheck | null = null;
-
-/** 供 S5 的 statusProbe 写入自检结果 */
-export function setLocalEngineSelfCheck(next: LocalEngineSelfCheck | null): void {
-  localEngineSelfCheck = next;
 }
 
 /** 服务端视角的云端状态：只表示 env 兜底 Key 是否存在（客户端 Key 由前端自行合成） */
@@ -63,19 +42,13 @@ function resolveLocalStatus(): ProviderStatus['local'] {
     };
   }
 
-  const selfCheck = localEngineSelfCheck;
-  if (selfCheck === null) {
-    return {
-      available: false,
-      provider: 'minimax-h3',
-      reason: '本服务未配置本地引擎',
-    };
-  }
-
+  // V2.32：**现算**（与 `comfyui` 段同源同法）——此前读的是"启动时写一次"的缓存，
+  // 而 comfyui 段读 env，两者在同一次请求里可能给出不同口径的事实。
+  const selfCheck = runLocalEngineSelfCheck();
   return {
     available: selfCheck.available,
     provider: 'minimax-h3',
-    tier: selfCheck.tier,
+    ...(selfCheck.tier === undefined ? {} : { tier: selfCheck.tier }),
     reason: selfCheck.reason,
   };
 }

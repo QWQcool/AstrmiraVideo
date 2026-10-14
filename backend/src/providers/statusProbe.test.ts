@@ -77,11 +77,12 @@ describe('isAllowedWorkdir', () => {
 });
 
 describe('runLocalEngineSelfCheck（配置事实陈述）', () => {
-  it('两项都未配置 → available:false + 「本服务未配置本地引擎」', () => {
+  it('未配 H3_WORKDIR → available:false，且原因点名缺哪个 env（V2.32 起说"MiniMax H3"）', () => {
     const result = runLocalEngineSelfCheck({} as NodeJS.ProcessEnv);
 
     expect(result.available).toBe(false);
-    expect(result.reason).toBe('本服务未配置本地引擎');
+    expect(result.reason).toContain('MiniMax H3');
+    expect(result.reason).toContain('H3_WORKDIR');
     expect(result.tier).toBeUndefined();
   });
 
@@ -122,21 +123,26 @@ describe('runLocalEngineSelfCheck（配置事实陈述）', () => {
     expect(result.reason).toContain('H3_WORKDIR');
   });
 
-  it('配置了公网 ComfyUI 地址 → available:false（拒绝任意外部地址）', () => {
+  it('**只配 COMFYUI_BASE_URL（回环）→ H3 这一段仍不可用**（V2.32 收窄：一个后端一段）', () => {
+    // 修的是一个真实缺陷：此前配了 ComfyUI 也会让 `local`（= 自装 MiniMax H3）宣称可用，
+    // 而 `local-minimax-h3` 这个 provider **根本没实现** —— 界面说"可用"、提交却是 503。
+    // ComfyUI 的配置事实由 `/api/providers/status` 的 `comfyui` 段独立陈述（同一份白名单）。
+    const result = runLocalEngineSelfCheck({
+      COMFYUI_BASE_URL: 'http://127.0.0.1:8188',
+    } as NodeJS.ProcessEnv);
+
+    expect(result.available).toBe(false);
+    expect(result.reason).toContain('H3_WORKDIR');
+  });
+
+  it('COMFYUI_BASE_URL 的合规性归 `comfyui` 段管（这里不再复述白名单结论）', () => {
     const result = runLocalEngineSelfCheck({
       COMFYUI_BASE_URL: 'http://example.com:8188',
     } as NodeJS.ProcessEnv);
 
     expect(result.available).toBe(false);
-    expect(result.reason).toContain('COMFYUI_BASE_URL');
-  });
-
-  it('回环 ComfyUI 地址可用', () => {
-    const result = runLocalEngineSelfCheck({
-      COMFYUI_BASE_URL: 'http://127.0.0.1:8188',
-    } as NodeJS.ProcessEnv);
-
-    expect(result.available).toBe(true);
+    // 不复述 = 不会出现"同一件事在两个段里各说一遍、文案还可能不一致"
+    expect(result.reason).not.toContain('COMFYUI_BASE_URL');
   });
 
   it('脱敏：自检结果不得回显路径明文', () => {

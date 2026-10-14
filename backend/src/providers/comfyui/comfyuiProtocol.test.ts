@@ -6,12 +6,14 @@ import {
   buildComfyWorkflow,
   comfyCapabilities,
   comfyViewPath,
+  COMFY_DEFAULT_TUNING,
   COMFY_MAX_PIXELS,
   describeComfySubmissionError,
   parseComfyOutputs,
   pickComfyModels,
   planComfyDimensions,
   planComfyFrames,
+  resolveComfyTuning,
   type ComfyModels,
 } from './comfyuiProtocol.js';
 
@@ -142,6 +144,72 @@ describe('ComfyUI 协议 · 参数映射（真机约束）', () => {
     const plan = planComfyDimensions(request({ resolution: { width: 704, height: 480 } }));
     expect(plan).toMatchObject({ width: 704, height: 480 });
     expect(plan.warnings).toEqual([]);
+  });
+});
+
+/**
+ * 档位可配（V2.32）—— 这一组是"**换硬件只改 env**"那条承诺的钉子。
+ * 默认值是 10GB 卡实测出来的，但 5090 之类不该等我们发版才能跑 720p。
+ */
+describe('ComfyUI 协议 · 档位解析（env）', () => {
+  it('什么都不配 → 全用默认（20 步 / cfg 5 / shift 8 / fps 24 / fp8）', () => {
+    const tuning = resolveComfyTuning({} as NodeJS.ProcessEnv);
+    expect(tuning).toMatchObject({
+      maxPixels: COMFY_MAX_PIXELS,
+      steps: 20,
+      cfg: 5,
+      shift: 8,
+      fps: 24,
+      dtype: 'fp8_e4m3fn',
+    });
+  });
+
+  it('env 能覆盖每一项（这就是"换卡/换机器只改 env"的落点）', () => {
+    const tuning = resolveComfyTuning({
+      COMFYUI_MAX_PIXELS: '921600', // 1280×720
+      COMFYUI_STEPS: '30',
+      COMFYUI_CFG: '6.5',
+      COMFYUI_SHIFT: '3',
+      COMFYUI_FPS: '16',
+      COMFYUI_WEIGHT_DTYPE: 'default',
+    } as NodeJS.ProcessEnv);
+
+    expect(tuning).toEqual({
+      maxPixels: 921600,
+      steps: 30,
+      cfg: 6.5,
+      shift: 3,
+      fps: 16,
+      dtype: 'default',
+    });
+  });
+
+  it('非法值**回落到默认**（档位是"能用"的旋钮，不是"配错就起不来"的开关）', () => {
+    const tuning = resolveComfyTuning({
+      COMFYUI_MAX_PIXELS: 'abc',
+      COMFYUI_STEPS: '-5',
+      COMFYUI_CFG: '0',
+      COMFYUI_SHIFT: '',
+      COMFYUI_FPS: 'NaN',
+      COMFYUI_WEIGHT_DTYPE: '   ',
+    } as NodeJS.ProcessEnv);
+
+    expect(tuning).toEqual(COMFY_DEFAULT_TUNING);
+  });
+
+  it('像素预算真的能放开：同一个 720p 请求，10GB 档被缩、24GB 档原样', () => {
+    // 用 1280×704（32 的倍数）；注意 1280×720 会被对齐成 1280×736 —— 那是另一个坑，
+    // 所以"放开预算"这条用官方那档尺寸来钉
+    const wanted = request({ resolution: { width: 1280, height: 704 } });
+
+    const small = planComfyDimensions(wanted);
+    expect(small.width).toBeLessThan(1280);
+    expect(small.warnings.length).toBe(1);
+
+    // 5090 那类卡：显式把预算调高 → 不再被 10GB 档的默认值误伤
+    const big = planComfyDimensions(wanted, 1280 * 704);
+    expect(big).toMatchObject({ width: 1280, height: 704 });
+    expect(big.warnings).toEqual([]);
   });
 });
 

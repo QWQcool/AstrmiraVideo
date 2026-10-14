@@ -42,11 +42,14 @@ export const COMFY_SCHEDULER = 'simple';
 export const COMFY_TILE = { size: 256, overlap: 32, temporalSize: 32, temporalOverlap: 8 } as const;
 
 /**
- * 像素预算（`width × height` 的上限）：832×480 = 399,360。
+ * 像素预算（`width × height` 的上限）的**默认值**：832×480 = 399,360。
  *
- * 依据是实测：480p / 81 帧（3.4 秒）约 98 秒 —— 这是 10GB 档"能等"的上限；
+ * 依据是实测：480p / 81 帧（3.4 秒）约 98 秒 —— 这是 **10GB 档**"能等"的上限；
  * 更高分辨率会把单条耗时推到十几分钟（480×272 → 832×480 已经慢了 7 倍）。
  * 超预算时**按比例缩小并如实告警**（不静默改参数、也不硬跑）。
+ *
+ * ⚠️ 它只是**默认值**：换到 24GB+ 的卡（例如 5090）时用 `COMFYUI_MAX_PIXELS` 覆盖，
+ * 否则明明能跑 720p 也会被这个 10GB 档的预算缩到 480p（见 `resolveComfyTuning`）。
  */
 export const COMFY_MAX_PIXELS = 832 * 480;
 
@@ -197,6 +200,72 @@ export function alignFrames(value: number): number {
   return Math.max(FRAME_STEP + 1, blocks * FRAME_STEP + 1);
 }
 
+/**
+ * 可调档位（V2.32）—— 这些值**默认按 10GB 卡实测**定，但都不该写死在代码里：
+ * 换一张 24GB+ 的卡（5090 之类）时，用户只该改 env，不该等我们发版。
+ *
+ * 每个字段的 env 与默认值见 `resolveComfyTuning`。
+ */
+export interface ComfyTuning {
+  /** 像素预算上限（`width × height`） */
+  maxPixels: number;
+  steps: number;
+  cfg: number;
+  shift: number;
+  fps: number;
+  dtype: string;
+}
+
+export const COMFY_DEFAULT_TUNING: ComfyTuning = {
+  maxPixels: COMFY_MAX_PIXELS,
+  steps: COMFY_DEFAULT_STEPS,
+  cfg: COMFY_DEFAULT_CFG,
+  shift: COMFY_DEFAULT_SHIFT,
+  fps: COMFY_FPS,
+  dtype: 'fp8_e4m3fn',
+};
+
+/** 读一个正整数 env（非法 / 缺失 → 用默认值；**不猜、不报错**，但也不静默改成别的数） */
+function readPositiveInt(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw.trim());
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+/** 读一个正浮点 env（cfg / shift 可以带小数） */
+function readPositiveFloat(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw.trim());
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * 从 env 解析档位（V2.32）。**这是"换硬件/换机器只改 env"的落点。**
+ *
+ * | env | 默认 | 说明 |
+ * |---|---|---|
+ * | `COMFYUI_MAX_PIXELS` | 832×480 | 像素预算；24GB+ 的卡可调到 1280×704（约 90 万）等 |
+ * | `COMFYUI_STEPS` | 20 | 采样步数（画质 vs 时间的旋钮） |
+ * | `COMFYUI_CFG` | 5 | 官方模板值 |
+ * | `COMFYUI_SHIFT` | 8 | `ModelSamplingSD3.shift`（官方模板值） |
+ * | `COMFYUI_FPS` | 24 | 与官方模板一致；帧数由它换算（并取 `4n+1`） |
+ * | `COMFYUI_WEIGHT_DTYPE` | `fp8_e4m3fn` | 显存紧张时别用 `default`（fp16 在 10GB 上慢 6.3 倍） |
+ *
+ * 非法值一律**回落到默认**（不抛错、也不悄悄取一半）—— 档位是"能用"的旋钮，
+ * 不是"配错就起不来"的开关；真的配错了，用户会在提交后的耗时上看见。
+ */
+export function resolveComfyTuning(env: NodeJS.ProcessEnv = process.env): ComfyTuning {
+  const dtype = env.COMFYUI_WEIGHT_DTYPE?.trim();
+  return {
+    maxPixels: readPositiveInt(env.COMFYUI_MAX_PIXELS, COMFY_DEFAULT_TUNING.maxPixels),
+    steps: readPositiveInt(env.COMFYUI_STEPS, COMFY_DEFAULT_TUNING.steps),
+    cfg: readPositiveFloat(env.COMFYUI_CFG, COMFY_DEFAULT_TUNING.cfg),
+    shift: readPositiveFloat(env.COMFYUI_SHIFT, COMFY_DEFAULT_TUNING.shift),
+    fps: readPositiveInt(env.COMFYUI_FPS, COMFY_DEFAULT_TUNING.fps),
+    dtype: dtype === undefined || dtype === '' ? COMFY_DEFAULT_TUNING.dtype : dtype,
+  };
+}
+
 export interface ComfyDimensionPlan {
   width: number;
   height: number;
@@ -213,7 +282,10 @@ export interface ComfyDimensionPlan {
  * 3. 超出像素预算（`COMFY_MAX_PIXELS`）→ **等比缩小**并如实告警。
  * 两种情况最后都对齐 32。
  */
-export function planComfyDimensions(request: VideoGenerateRequest): ComfyDimensionPlan {
+export function planComfyDimensions(
+  request: VideoGenerateRequest,
+  maxPixels: number = COMFY_DEFAULT_TUNING.maxPixels,
+): ComfyDimensionPlan {
   const warnings: string[] = [];
   const base =
     request.resolution === undefined
@@ -222,12 +294,12 @@ export function planComfyDimensions(request: VideoGenerateRequest): ComfyDimensi
 
   const pixels = base.width * base.height;
   let scale = 1;
-  if (pixels > COMFY_MAX_PIXELS) {
-    scale = Math.sqrt(COMFY_MAX_PIXELS / pixels);
+  if (pixels > maxPixels) {
+    scale = Math.sqrt(maxPixels / pixels);
     warnings.push(
       `请求尺寸 ${base.width}×${base.height}（${Math.round(pixels / 1000)}K 像素）超过本地档上限 ` +
-        `${COMFY_MAX_PIXELS / 1000}K 像素 —— 已等比缩小到 ${Math.round(base.width * scale)}×${Math.round(base.height * scale)}` +
-        '（这是 10GB 显存档的实测上限，不是随手定的）',
+        `${Math.round(maxPixels / 1000)}K 像素 —— 已等比缩小到 ${Math.round(base.width * scale)}×${Math.round(base.height * scale)}` +
+        '（这个上限可用 COMFYUI_MAX_PIXELS 调 —— 默认值是 10GB 档的实测上限）',
     );
   }
 

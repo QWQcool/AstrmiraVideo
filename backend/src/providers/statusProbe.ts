@@ -63,38 +63,38 @@ function parseTier(raw: string | undefined): 0 | 1 | 2 | 3 | undefined {
 
 /**
  * 执行一次配置自检（纯函数：只读 env，不产生副作用）。
+ *
+ * ## ⚠️ 它现在**只认 `H3_WORKDIR`**（V2.32 收窄；此前它把 `COMFYUI_BASE_URL` 也算进来）
+ *
+ * 收窄修的是一个**真实缺陷**：`/api/providers/status` 的 `local` 段表达的是
+ * "**自装 MiniMax H3**"这一档（`provider: 'minimax-h3'`），而此前只要配了 `COMFYUI_BASE_URL`
+ * 也会让 `local.available = true` —— 于是在配了 ComfyUI 的机器上，界面会**同时**宣称：
+ * "本地 MiniMax H3 可用"（**假的**：`local-minimax-h3` 这个 provider 根本没实现，提交必 503）
+ * 与"本地 ComfyUI 可用"（真的）。
+ *
+ * 现在：ComfyUI 的配置事实由 `comfyui` 段**独立陈述**（`routes/providers.ts` 的
+ * `resolveComfyUiStatus`，用的是同一份白名单 `isAllowedEngineUrl`）——
+ * 一个后端一段，谁配了谁亮。
+ *
  * @returns `available:false` + 对**自身**的事实陈述；绝不描述访问者设备
  */
 export function runLocalEngineSelfCheck(env: NodeJS.ProcessEnv = process.env): LocalEngineSelfCheck {
   const workdir = env.H3_WORKDIR?.trim();
-  const comfyUrl = env.COMFYUI_BASE_URL?.trim();
-
   const hasWorkdir = workdir !== undefined && workdir !== '';
-  const hasComfy = comfyUrl !== undefined && comfyUrl !== '';
 
-  if (!hasWorkdir && !hasComfy) {
-    return { available: false, reason: '本服务未配置本地引擎' };
+  if (!hasWorkdir) {
+    return { available: false, reason: '本服务未配置本地 MiniMax H3（缺 H3_WORKDIR）' };
   }
 
-  const problems: string[] = [];
-
-  if (hasWorkdir && !isAllowedWorkdir(workdir)) {
+  if (!isAllowedWorkdir(workdir)) {
     // 只报"哪一项不合规"，不回显路径明文（脱敏）
-    problems.push('H3_WORKDIR 必须是存在的绝对目录路径');
-  }
-
-  if (hasComfy && !isAllowedEngineUrl(comfyUrl)) {
-    problems.push('COMFYUI_BASE_URL 仅允许回环或内网地址');
-  }
-
-  if (problems.length > 0) {
-    return { available: false, reason: `本地引擎自检失败：${problems.join('；')}` };
+    return { available: false, reason: '本地引擎自检失败：H3_WORKDIR 必须是存在的绝对目录路径' };
   }
 
   const tier = parseTier(env.H3_TIER);
   return {
     available: true,
     ...(tier === undefined ? {} : { tier }),
-    reason: '本服务已配置本地引擎（自检通过）',
+    reason: '本服务已配置本地 MiniMax H3（自检通过）',
   };
 }

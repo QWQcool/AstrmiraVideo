@@ -14,7 +14,6 @@ import { cleanupTaskTemp } from './pipeline/cleanup.js';
 import { createEditJobRunner } from './pipeline/editExecutor.js';
 import { createTaskThumbnail } from './pipeline/thumbnail.js';
 import { getEnvModelWarning, getProvider } from './providers/registry.js';
-import { runLocalEngineSelfCheck } from './providers/statusProbe.js';
 import { JobDispatcher } from './queue/dispatcher.js';
 import { SqliteJobQueue } from './queue/SqliteJobQueue.js';
 import { createEditRoutes } from './routes/edits.js';
@@ -37,7 +36,7 @@ import { SERVICE_VERSION } from './version.js';
 import { createKeyVerifyRoutes } from './routes/keysVerify.js';
 import { createLogRoutes } from './routes/logs.js';
 import { createProjectRoutes } from './routes/projects.js';
-import { providerRoutes, setLocalEngineSelfCheck } from './routes/providers.js';
+import { providerRoutes } from './routes/providers.js';
 import { createTaskRoutes } from './routes/tasks.js';
 import { createUploadRoutes, MAX_FILE_BYTES } from './routes/upload.js';
 import {
@@ -181,8 +180,9 @@ export async function buildApp() {
     ],
   });
 
-  // 本地引擎**配置自检**：启动时一次、写内存缓存（不扫描硬件 —— CONTRACT §2 V1.8 / PLAN §6-D22）
-  setLocalEngineSelfCheck(runLocalEngineSelfCheck());
+  // 本地引擎自检**不再缓存在这里**（V2.32）：`/api/providers/status` 的 `local` / `comfyui`
+  // 两段各自**现算** env（同源同法）—— 缓存一半、现算一半，会让同一次请求里出现两个口径。
+  // 仍然不扫描硬件、不描述访问者设备（CONTRACT §2 V1.8 / PLAN §6-D22）。
 
   // 已配置的兜底模型名必须在日志里看得见（含"这是模板占位符"的精确告警，见 registry.ts）
   const envModelWarning = getEnvModelWarning();

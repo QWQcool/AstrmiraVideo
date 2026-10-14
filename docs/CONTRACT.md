@@ -1,6 +1,19 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.31 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.32 · 已冻结（变更需先改本文，再改代码）**
+> **V2.32 修订（2026-10-13）**：**本地轨两处修正（台账 A1 后续 / 用户问"公司 ComfyUI、家里 H3 能不能区分"带出来的）** ——
+>   ① **`local` 段语义收窄**：它只代表「**自装 MiniMax H3**」这一档（只认 `H3_WORKDIR`）。
+>   此前只要 `COMFYUI_BASE_URL` 合规也会让它宣称可用 —— 而 `local-minimax-h3` 这个 provider
+>   **根本没实现**（提交必 503）。于是配了 ComfyUI 的机器上，界面会同时亮"本地 H3 可用"（假）
+>   与"本地 ComfyUI 可用"（真）。现在**一个后端一段**，互不代言；两段都改为**现算 env**
+>   （此前 `local` 读"启动时写一次"的缓存、`comfyui` 读 env —— 同一次请求里两个口径）。
+>   ② **档位可配（新 env 六个）**：`COMFYUI_MAX_PIXELS` / `COMFYUI_STEPS` / `COMFYUI_CFG` /
+>   `COMFYUI_SHIFT` / `COMFYUI_FPS` / `COMFYUI_WEIGHT_DTYPE`（表见 §19-3）。
+>   动机是"**换卡换机器只改 env，不等我们发版**"：默认的 832×480 像素预算是 10GB 卡实测出来的，
+>   在 5090 上会把明明能跑的 720p 缩回 480p。**非法值回落默认**（旋钮不该是"配错就起不来"的开关）。
+>   **无新路由、无新错误码、无新表**。
+>
+> **状态（上一版）：V2.31 · 已冻结**
 > **V2.31 修订（2026-10-13）**：**§2 `ProviderStatus` 新增 `comfyui` 段（台账 A1 片 C）** ——
 >   与 `local` **同一套门控**（`EXPOSE_HOST_LOCAL_TRACK` + 回环 / 内网白名单，同一份 `isAllowedEngineUrl`），
 >   并且**只陈述配置事实、不报模式能力**：模式要连用户的 ComfyUI 才能知道（`GET /object_info`），
@@ -376,9 +389,12 @@ export interface ProviderStatus {
     // 不再是硬件扫描结论，也不得用于"自动锁定/置灰"判定
     tier?: HardwareTier;
     // V1.8：删除 gpuName / vramFreeGB —— 面向访客的端点不得携带硬件型号与显存数字（D27）
-    // reason 两类口径（文案纪律见 PLAN §3 铁律 2）：
-    //  - 「本服务未配置本地引擎」（未配 env）
+    // reason 三类口径（文案纪律见 PLAN §3 铁律 2）：
+    //  - 「本服务未配置本地 MiniMax H3（缺 H3_WORKDIR）」（V2.32 起：**这一段只说 H3**）
+    //  - 「本服务已配置本地 MiniMax H3（自检通过）」
     //  - 「本服务未向访客开放本地轨」（EXPOSE_HOST_LOCAL_TRACK=0，默认）
+    // ⚠️ V2.32 收窄：此前只要 COMFYUI_BASE_URL 合规也会让这一段宣称可用 —— 而
+    //    `local-minimax-h3` 这个 provider **根本没实现**（提交必 503）。ComfyUI 归 `comfyui` 段。
     reason?: string;
   };
   comfyui: {
@@ -1664,7 +1680,20 @@ export interface BackupManifest {
   ① `VAEDecode` → **`VAEDecodeTiled`**（tile 256 / overlap 32 / temporal 32 / temporal_overlap 8）；
   ② `UNETLoader.weight_dtype` 走参数（**默认 `fp8_e4m3fn`** —— 同一条工作流 fp16→fp8 从 753s 降到 119s）；
   ③ `SaveVideo.filename_prefix` **带 `astrmira/` 子目录**（那台 ComfyUI 的 `output/` 可能与别的项目共用）；
-- **采样档**：20 步 / cfg 5 / `uni_pc` / `simple` / `ModelSamplingSD3.shift = 8` / `fps 24`（官方模板值，实测可用）；
+- **采样档**：20 步 / cfg 5 / `uni_pc` / `simple` / `ModelSamplingSD3.shift = 8` / `fps 24`（官方模板值，实测可用）——
+  这些**默认值**全部可用 env 覆盖（V2.32）：
+
+  | env | 默认 | 什么时候该改 |
+  |---|---|---|
+  | `COMFYUI_MAX_PIXELS` | 832×480（10GB 档实测上限） | **换到 24GB+ 的卡**（如 5090）——不改它，720p 会被缩到 480p |
+  | `COMFYUI_STEPS` | 20 | 画质 vs 时间的旋钮 |
+  | `COMFYUI_CFG` / `COMFYUI_SHIFT` | 5 / 8 | 官方模板值；换模型后可能要调 |
+  | `COMFYUI_FPS` | 24 | 与官方模板一致；帧数由它换算（再取 `4n+1`） |
+  | `COMFYUI_WEIGHT_DTYPE` | `fp8_e4m3fn` | 显存紧张**别**改回 `default`（fp16 在 10GB 上慢 6.3 倍） |
+
+  **非法值一律回落到默认**（不抛错、也不悄悄取一半）：档位是"能用"的旋钮，不是"配错就起不来"的开关；
+  真配错了，用户会在提交后的耗时上看见；
+
 - **尺寸**：有 `request.resolution` 就用它，否则按画幅给 480p 档（16:9 → 832×480，9:16 → 480×832，1:1 → 640×640）；
   一律**对齐 32**（`Wan22ImageToVideoLatent` 的 step=32）；超过 **`COMFY_MAX_PIXELS` = 832×480** 时
   **等比缩小并写进 `warnings[]`**（不静默改参数、也不硬跑）；

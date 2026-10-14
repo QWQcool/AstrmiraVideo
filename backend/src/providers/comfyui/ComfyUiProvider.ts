@@ -14,8 +14,10 @@ import {
   pickComfyModels,
   planComfyDimensions,
   planComfyFrames,
+  resolveComfyTuning,
   type ComfyCapabilities,
   type ComfyModels,
+  type ComfyTuning,
 } from './comfyuiProtocol.js';
 
 /**
@@ -45,8 +47,13 @@ export interface ComfyUiProviderOptions {
   outputDir: string;
   /** 注入 fetch（测试用；默认全局 fetch） */
   fetchImpl?: typeof fetch;
-  /** 权重精度（默认 fp8_e4m3fn —— 实测 10GB 卡上 fp16 会慢 6.3 倍） */
-  weightDtype?: string;
+  /**
+   * 档位**显式覆盖**（V2.32）。
+   *
+   * 默认值来自 `resolveComfyTuning()`（读 env）—— 这里传进来的只用于**覆盖**它，
+   * 所以生产路径一个都不用传（换硬件改 env 就够了），测试才好钉住具体数值。
+   */
+  tuning?: Partial<ComfyTuning>;
   /** 产物前缀（`SaveVideo.filename_prefix`）；默认带 `astrmira/` 子目录 */
   outputPrefix?: string;
   /** 资产 id → 可下载地址（i2v 的首帧要先下载再上传给 ComfyUI） */
@@ -72,7 +79,7 @@ export class ComfyUiProvider implements VideoProvider {
   private readonly baseUrl: string;
   private readonly outputDir: string;
   private readonly fetchImpl: typeof fetch;
-  private readonly weightDtype: string;
+  private readonly tuning: ComfyTuning;
   private readonly outputPrefix: string;
   private readonly resolveAssetUrl?: (assetId: string) => Promise<string | null>;
   private readonly inventoryTtlMs: number;
@@ -84,7 +91,9 @@ export class ComfyUiProvider implements VideoProvider {
     this.baseUrl = (options.baseUrl ?? COMFYUI_DEFAULT_BASE_URL).replace(/\/$/, '');
     this.outputDir = options.outputDir;
     this.fetchImpl = options.fetchImpl ?? fetch;
-    this.weightDtype = options.weightDtype ?? 'fp8_e4m3fn';
+    // 档位：env（resolveComfyTuning）→ 显式覆盖（测试）。生产路径不传就是 env 说了算 ——
+    // "换卡只改 env"这条承诺的落点就在这一行。
+    this.tuning = { ...resolveComfyTuning(), ...options.tuning };
     this.outputPrefix = options.outputPrefix ?? `${COMFY_OUTPUT_SUBDIR}/comfy`;
     this.inventoryTtlMs = options.inventoryTtlMs ?? DEFAULT_INVENTORY_TTL_MS;
     if (options.resolveAssetUrl !== undefined) this.resolveAssetUrl = options.resolveAssetUrl;
@@ -148,8 +157,8 @@ export class ComfyUiProvider implements VideoProvider {
       );
     }
 
-    const dimensions = planComfyDimensions(request);
-    const frames = planComfyFrames(request.params?.durationSec);
+    const dimensions = planComfyDimensions(request, this.tuning.maxPixels);
+    const frames = planComfyFrames(request.params?.durationSec, this.tuning.fps);
     const startImageName =
       request.mode === 'i2v' ? await this.uploadFirstFrame(request) : undefined;
 
@@ -161,8 +170,12 @@ export class ComfyUiProvider implements VideoProvider {
       width: dimensions.width,
       height: dimensions.height,
       frames,
+      fps: this.tuning.fps,
+      steps: this.tuning.steps,
+      cfg: this.tuning.cfg,
+      shift: this.tuning.shift,
       seed: readSeed(request),
-      dtype: this.weightDtype,
+      dtype: this.tuning.dtype,
       outputPrefix: this.outputPrefix,
       ...(startImageName === undefined ? {} : { startImageName }),
     });

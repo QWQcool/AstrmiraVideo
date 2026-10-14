@@ -206,6 +206,34 @@ describe('ComfyUiProvider · 提交', () => {
     const { provider } = setup({ queued: false, promptResponse: { status: 200, body: {} } });
     await expect(provider.submit(request())).rejects.toThrow(/没有返回 prompt_id/);
   });
+
+  it('档位（V2.32）：注入的 steps / fps / 像素预算真的进了提交体', async () => {
+    // "换卡只改 env"这条承诺的端到端证据：注入档位 → 提交体跟着变
+    const outputDir = mkdtempSync(path.join(tmpdir(), 'comfy-tuning-'));
+    dirs.push(outputDir);
+    const fake = createFakeComfy({ queued: false });
+    const provider = new ComfyUiProvider({
+      baseUrl: 'http://127.0.0.1:8188',
+      outputDir,
+      fetchImpl: fake.fetch,
+      // 模拟"24GB 卡 + 少步数快出"的一套档位
+      tuning: { steps: 8, cfg: 4, shift: 3, fps: 16, maxPixels: 1280 * 704, dtype: 'default' },
+    });
+
+    await provider.submit(
+      request({ resolution: { width: 1280, height: 704 }, params: { durationSec: 5 } }),
+    );
+
+    const body = fake.bodies.prompt as {
+      prompt: Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+    };
+    expect(body.prompt['3']?.inputs).toMatchObject({ steps: 8, cfg: 4 });
+    expect(body.prompt['48']?.inputs['shift']).toBe(3);
+    expect(body.prompt['37']?.inputs['weight_dtype']).toBe('default');
+    // 720p 档不再被缩小（像素预算放开了）；fps 16 → 5 秒 80 帧 → 对齐 4n+1 = 81
+    expect(body.prompt['55']?.inputs).toMatchObject({ width: 1280, height: 704, length: 81 });
+    expect(body.prompt['57']?.inputs['fps']).toBe(16);
+  });
 });
 
 describe('ComfyUiProvider · 查状态', () => {

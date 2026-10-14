@@ -11,12 +11,15 @@ import { buildProviderStatus } from './providers.js';
 
 const ORIGINAL_BASE = process.env.COMFYUI_BASE_URL;
 const ORIGINAL_EXPOSE = process.env.EXPOSE_HOST_LOCAL_TRACK;
+const ORIGINAL_WORKDIR = process.env.H3_WORKDIR;
 
 afterEach(() => {
   if (ORIGINAL_BASE === undefined) delete process.env.COMFYUI_BASE_URL;
   else process.env.COMFYUI_BASE_URL = ORIGINAL_BASE;
   if (ORIGINAL_EXPOSE === undefined) delete process.env.EXPOSE_HOST_LOCAL_TRACK;
   else process.env.EXPOSE_HOST_LOCAL_TRACK = ORIGINAL_EXPOSE;
+  if (ORIGINAL_WORKDIR === undefined) delete process.env.H3_WORKDIR;
+  else process.env.H3_WORKDIR = ORIGINAL_WORKDIR;
 });
 
 describe('providers/status · comfyui 段', () => {
@@ -56,6 +59,20 @@ describe('providers/status · comfyui 段', () => {
     process.env.EXPOSE_HOST_LOCAL_TRACK = '1';
     process.env.COMFYUI_BASE_URL = 'http://192.168.1.20:8188';
     expect(buildProviderStatus().comfyui.available).toBe(true);
+  });
+
+  it('**一个后端一段**：只配 ComfyUI 时，`local`（自装 H3）必须仍是不可用（V2.32 修复）', () => {
+    // 这条钉住的是一次真实的误导：此前 `local.available` 只要看到 COMFYUI_BASE_URL 合规就为 true，
+    // 于是界面上"本地 MiniMax H3 可用"（假的，那个 provider 没实现、提交必 503）
+    // 与"本地 ComfyUI 可用"（真的）会同时亮。
+    process.env.EXPOSE_HOST_LOCAL_TRACK = '1';
+    process.env.COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
+    delete process.env.H3_WORKDIR;
+
+    const status = buildProviderStatus();
+    expect(status.comfyui.available).toBe(true);
+    expect(status.local.available).toBe(false);
+    expect(status.local.reason).toContain('H3_WORKDIR');
   });
 
   it('reason 里不得出现硬件型号 / 显存数字（§2 / D27 的文案纪律同样适用于新段）', () => {

@@ -101,7 +101,7 @@ describe('GET /api/providers/status（CONTRACT §2 V1.8 / PLAN §6-D22、D27）'
     expect(res.json().defaultProvider).toBe('cloud-volcano-seedance');
   });
 
-  it('AC6：EXPOSE=1 但未配置引擎 → available:false + 「本服务未配置本地引擎」', async () => {
+  it('AC6：EXPOSE=1 但未配置引擎 → available:false + 原因点名缺哪个 env', async () => {
     process.env.EXPOSE_HOST_LOCAL_TRACK = '1';
     const local = await buildApp();
 
@@ -110,7 +110,9 @@ describe('GET /api/providers/status（CONTRACT §2 V1.8 / PLAN §6-D22、D27）'
       const body = res.json();
 
       expect(body.local.available).toBe(false);
-      expect(body.local.reason).toBe('本服务未配置本地引擎');
+      // V2.32：`local` 段 = 自装 MiniMax H3 这一档，原因要点名缺 H3_WORKDIR
+      // （ComfyUI 的配置事实走 `comfyui` 段 —— 一个后端一段，不互相代言）
+      expect(body.local.reason).toContain('H3_WORKDIR');
       expect(body.local.tier).toBeUndefined();
       // 与 R1 同源的取反断言：**未配置态**的文案同样不得夹带任何硬件细节（型号 / 显存数字）
       expect(res.body).not.toMatch(HARDWARE_DETAIL_PATTERN);

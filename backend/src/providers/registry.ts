@@ -149,12 +149,13 @@ function createCloudProvider(ctx: ProviderResolutionContext): VideoProvider {
 function createComfyProvider(ctx: ProviderResolutionContext): VideoProvider | null {
   const raw = process.env.COMFYUI_BASE_URL?.trim();
   if (raw === undefined || raw === '' || !isAllowedEngineUrl(raw)) return null;
-  const dtype = process.env.COMFYUI_WEIGHT_DTYPE?.trim();
 
+  // 档位（精度 / 像素预算 / 步数 / cfg / shift / fps）**不在这里传**：
+  // provider 自己用 `resolveComfyTuning()` 读 env（V2.32）—— 注册点只管"能不能注册"，
+  // 免得每加一个旋钮就要在这里多透传一次（漏一遍就是一个静默失效的 env）。
   return new ComfyUiProvider({
     baseUrl: raw,
     outputDir: resolveOutputsDir(),
-    ...(dtype === undefined || dtype === '' ? {} : { weightDtype: dtype }),
     ...(ctx.resolveAssetUrl === undefined ? {} : { resolveAssetUrl: ctx.resolveAssetUrl }),
   });
 }
