@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { ProviderStatusSchema } from '@astrmira/shared';
 import type { ProviderStatus } from '@astrmira/shared';
+import { isAllowedEngineUrl } from '../providers/statusProbe.js';
 
 /**
  * 本地引擎自检结果（服务端内存缓存）。
@@ -87,6 +88,45 @@ function resolveLocalStatus(): ProviderStatus['local'] {
  * 若把 `available` 当成"能不能用扩写"，就会复刻 V1.6 那个
  * 「用户填了 Key 也用不了」的漏洞（状态端点没有凭据上下文，它不知道访客手里有什么）。
  */
+/**
+ * 本地 ComfyUI（V2.31 / A1 片 C / CONTRACT §19）：与 `local` 同一套门控。
+ *
+ * 三条判定，顺序即优先级（都只是**本服务的配置事实**）：
+ * 1. 没向访客开放本地轨 → 不可用（**默认如此** —— ComfyUI 跑在部署者的机器上，
+ *    不因为"配了地址"就自动对访客开放）；
+ * 2. `COMFYUI_BASE_URL` 未配 / 地址不合规（同一份白名单 `isAllowedEngineUrl`）→ 不可用；
+ * 3. 都过 → 可用。
+ *
+ * **不在这里探测模式能力**（那要连用户的 ComfyUI）—— 见 `ComfyUiProviderStatusSchema` 的说明。
+ */
+function resolveComfyUiStatus(): ProviderStatus['comfyui'] {
+  if (!isHostLocalTrackExposed()) {
+    return { available: false, provider: 'comfyui', reason: '本服务未向访客开放本地轨' };
+  }
+
+  const raw = process.env.COMFYUI_BASE_URL?.trim();
+  if (raw === undefined || raw === '') {
+    return {
+      available: false,
+      provider: 'comfyui',
+      reason: '本服务未配置 ComfyUI（缺 COMFYUI_BASE_URL）',
+    };
+  }
+  if (!isAllowedEngineUrl(raw)) {
+    return {
+      available: false,
+      provider: 'comfyui',
+      reason: 'COMFYUI_BASE_URL 仅允许回环或内网地址（防 SSRF）',
+    };
+  }
+
+  return {
+    available: true,
+    provider: 'comfyui',
+    reason: '本服务已配置 ComfyUI（地址合规；能跑哪些模式在提交时判定）',
+  };
+}
+
 function resolveLlmStatus(): ProviderStatus['llm'] {
   return {
     available: false,
@@ -105,6 +145,7 @@ export function buildProviderStatus(): ProviderStatus {
   return {
     cloud: resolveCloudStatus(),
     local: resolveLocalStatus(),
+    comfyui: resolveComfyUiStatus(),
     llm: resolveLlmStatus(),
     defaultProvider: 'cloud-volcano-seedance',
   };

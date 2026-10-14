@@ -57,9 +57,30 @@ export const LlmProviderStatusSchema = z.object({
   reason: z.string().optional(),
 });
 
+/**
+ * 本地 ComfyUI 能力位（**V2.31 新增**；台账 A1 片 C；CONTRACT §19；形态 = D53）。
+ *
+ * 与 `local`（自装 MiniMax H3）**同一套门控语义**：`available` 说的是
+ * "本服务是否配了这个后端 + 是否向访客开放本地轨"，**不是**对访问者设备的判断
+ * （V1.8 / D22 的文案纪律同样适用）。
+ *
+ * ⚠️ **为什么不在这里报"能跑哪些模式"**：那需要**真的探测**用户那台 ComfyUI
+ * （`GET /object_info`，见 §19-2），而这个端点是"**配置事实陈述**" ——
+ * 把远端探测塞进来，会让一个每次刷界面都可能被调用的接口，变成
+ * "慢几秒、且在 ComfyUI 没启动时超时"的东西。
+ * 模式能力改由**提交时**判定并如实报错（缺 `VAEDecodeTiled` / 模型不含 `ti2v` 等）。
+ */
+export const ComfyUiProviderStatusSchema = z.object({
+  available: z.boolean(),
+  provider: z.literal('comfyui'),
+  reason: z.string().optional(),
+});
+
 export const ProviderStatusSchema = z.object({
   cloud: CloudProviderStatusSchema,
   local: LocalProviderStatusSchema,
+  /** V2.31（A1 片 C）：用户自备的 ComfyUI（地址合规 + 本地轨已开放才算可用） */
+  comfyui: ComfyUiProviderStatusSchema,
   llm: LlmProviderStatusSchema,
   // 初始建议值（V1.8：不再由 Tier 判定推导）
   defaultProvider: ProviderTypeSchema,

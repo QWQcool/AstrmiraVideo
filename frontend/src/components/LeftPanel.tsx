@@ -92,6 +92,8 @@ export interface LeftPanelProps {
 
 const PROVIDER_CLOUD: ProviderType = 'cloud-volcano-seedance';
 const PROVIDER_LOCAL: ProviderType = 'local-minimax-h3';
+/** V2.31（A1 片 C / D53）：用户自备的 ComfyUI（引擎与模型都由用户装） */
+const PROVIDER_COMFY: ProviderType = 'host-comfyui';
 
 /**
  * 四种生成模式（CONTRACT §1 `GenerationMode`）。
@@ -166,6 +168,17 @@ export function LeftPanel(props: LeftPanelProps) {
   } = props;
 
   const isCloud = provider === PROVIDER_CLOUD;
+  /**
+   * 当前选中的引擎在**本服务这边**是否已配置好（只影响提示文案与"推荐配置"，**不置灰按钮**）。
+   *
+   * 两个本地档各有自己的状态（H3 / ComfyUI）—— V2.31 起必须分开看：
+   * 用 `local.available` 去判断 ComfyUI 会出现"选了 ComfyUI 但提示写的是 H3 的配置"。
+   */
+  const engineConfigured =
+    isCloud ||
+    (provider === PROVIDER_COMFY
+      ? providerStatus?.comfyui.available === true
+      : providerStatus?.local.available === true);
   const target = resolveTargetSize(aspectRatio, resolutionTier);
   const dialogue = dialogueLength(prompt);
 
@@ -399,16 +412,34 @@ export function LeftPanel(props: LeftPanelProps) {
           >
             本地 MiniMax H3
           </button>
+          {/* V2.31（A1 片 C / D53）：用户自备的 ComfyUI —— 引擎与模型都由用户装，
+              我们只对接接口（CONTRACT §19）。与上一个按钮同款处理：状态说"本服务配没配"，
+              能不能跑（模型 / 节点）在提交时判定并如实报错。 */}
+          <button
+            type="button"
+            className="wb-segment"
+            aria-pressed={provider === PROVIDER_COMFY}
+            onClick={() => onProviderChange(PROVIDER_COMFY)}
+            title={
+              providerStatus?.comfyui.available === true
+                ? '使用本服务已配置的 ComfyUI（自备引擎与模型）'
+                : '本服务未配置 ComfyUI；仍可选择，提交时会返回 PROVIDER_UNAVAILABLE'
+            }
+          >
+            本地 ComfyUI
+          </button>
         </div>
         <span className="wb-note">
           {isCloud
             ? byokSummary
-            : providerStatus?.local.reason ?? '本地引擎状态未知'}
+            : provider === PROVIDER_COMFY
+              ? (providerStatus?.comfyui.reason ?? '本地 ComfyUI 状态未知')
+              : (providerStatus?.local.reason ?? '本地引擎状态未知')}
         </span>
 
         {/* AC2：本地轨不可用时给出**推荐配置说明**，但开关本身**保持可选、不置灰** ——
             状态端点只陈述"本服务有没有配"，不替访客判断能不能用（CONTRACT §2 V1.8）。 */}
-        {isCloud || providerStatus?.local.available === true ? null : (
+        {engineConfigured ? null : (
           <span className="wb-note">
             推荐配置（可选）：本服务自身配置本地引擎后重启即可开放，需在服务端设置
             <code> H3_WORKDIR </code>（本地推理工作目录）或

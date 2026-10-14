@@ -727,6 +727,12 @@ try {
   note(`截图留档（仅 artifact，不参与判定）：${path.relative(ROOT, homeShot)} · ${path.relative(ROOT, drawerShot)}`);
 
   console.log('\n[4] 生成参数控件（V8.3 批次 1：时长 / 清晰度 → 目标尺寸联动）');
+  // V2.31（A1 片 C / D53）：执行引擎多了一档「本地 ComfyUI」（用户自备引擎与模型）。
+  // 只断言"入口在"，不断言可用性 —— 可用性由服务端 env 决定（冒烟起的服务没配它，那才是默认态）。
+  assert(
+    (await page.locator('.wb-segment:visible', { hasText: '本地 ComfyUI' }).count()) >= 1,
+    '执行引擎里有「本地 ComfyUI」档（自备引擎与模型；能否跑由提交时判定）',
+  );
   // 限定 :visible —— 创作入口是 keepalive 常驻视图，隐藏副本里也有 .wb-segment（B41 起）
   const durationButtons = page.locator('.wb-segment:visible', { hasText: /^\d+s$/ });
   assert((await durationButtons.count()) >= 3, `时长选项 ≥ 3 个（实际 ${await durationButtons.count()}）`);

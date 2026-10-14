@@ -21,6 +21,7 @@
     "test:fixtures": "node scripts/make-fixture-clips.mjs",
     "smoke:ui": "node scripts/smoke-ui.mjs",
     "smoke:comfy": "node scripts/comfyui-acceptance.mjs",
+    "smoke:comfy:e2e": "node scripts/smoke-comfyui-e2e.mjs",
     "capture:shots": "node scripts/capture-docs-shots.mjs",
     "serve:local": "node scripts/serve-local.mjs",
     "bench": "node scripts/bench.mjs"

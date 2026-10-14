@@ -1,6 +1,14 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.30 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.31 · 已冻结（变更需先改本文，再改代码）**
+> **V2.31 修订（2026-10-13）**：**§2 `ProviderStatus` 新增 `comfyui` 段（台账 A1 片 C）** ——
+>   与 `local` **同一套门控**（`EXPOSE_HOST_LOCAL_TRACK` + 回环 / 内网白名单，同一份 `isAllowedEngineUrl`），
+>   并且**只陈述配置事实、不报模式能力**：模式要连用户的 ComfyUI 才能知道（`GET /object_info`），
+>   把这个远端探测塞进状态端点，会让一个"每次刷界面都可能被调用"的接口变成"慢几秒、
+>   且 ComfyUI 没启动时超时"的东西 —— 模式能力改由**提交时**判定并如实报错（§19-2）。
+>   前端据此在执行引擎里多一档「本地 ComfyUI」（左栏与创作入口两处）。**无新路由、无新错误码**。
+>
+> **状态（上一版）：V2.30 · 已冻结**
 > **V2.30 修订（2026-10-13）**：**新增 §19 本地 ComfyUI 对接 `host-comfyui`（台账 A1 片 B；形态 = 决策 D53）** ——
 >   `ProviderType` 新增 `host-comfyui`（`resolveExecutedBy` 判定仍是 **`host-local`**：算力在用户/部署者的机器上）；
 >   **无新路由、无新错误码、无新表**（它对接的是**用户自己机器上**的服务，本服务只做适配与如实登记）。
@@ -269,6 +277,7 @@ export type AspectRatio = '16:9' | '9:16' | '1:1'; // 1:1 仅云端可选，本�
 export type ProviderType =
   | 'cloud-volcano-seedance'
   | 'local-minimax-h3'
+  | 'host-comfyui'      // V2.30：用户自备的 ComfyUI（§19；executedBy 仍判 host-local）
   | 'stock-local'
   | 'fixture-local';
 
@@ -371,6 +380,16 @@ export interface ProviderStatus {
     //  - 「本服务未配置本地引擎」（未配 env）
     //  - 「本服务未向访客开放本地轨」（EXPOSE_HOST_LOCAL_TRACK=0，默认）
     reason?: string;
+  };
+  comfyui: {
+    // V2.31（台账 A1 片 C）：用户**自备的 ComfyUI**（§19）——**与 local 同一套门控语义**：
+    // available 说的是"本服务配没配这个后端 + 有没有向访客开放本地轨"，**不是**对访问者设备的判断。
+    // ⚠️ 这里**不报"能跑哪些模式"**：那要真的连用户的 ComfyUI（GET /object_info），
+    //    而本端点是"配置事实陈述"——把远端探测塞进来会让它变成"慢几秒、ComfyUI 没启动就超时"的接口。
+    //    模式能力在**提交时**由 provider 判定并如实报错（§19-2）。
+    available: boolean;
+    provider: 'comfyui';
+    reason?: string; // 例：「本服务未向访客开放本地轨」/「缺 COMFYUI_BASE_URL」/「仅允许回环或内网地址」
   };
   llm: {
     // V2.0：文本轨（提示词扩写）能力位。口径与 cloud 相同：本字段只表示**服务端视角**。
