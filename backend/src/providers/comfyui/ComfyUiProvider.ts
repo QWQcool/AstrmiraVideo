@@ -18,7 +18,9 @@ import {
   type ComfyCapabilities,
   type ComfyModels,
   type ComfyTuning,
+  type WorkflowTemplate,
 } from './comfyuiProtocol.js';
+import { loadWorkflowTemplate, type LoadedTemplate } from './comfyuiTemplates.js';
 
 /**
  * `host-comfyui` provider（CONTRACT §19；台账 A1 片 B；形态 = 决策 **D53**）。
@@ -54,6 +56,13 @@ export interface ComfyUiProviderOptions {
    * 所以生产路径一个都不用传（换硬件改 env 就够了），测试才好钉住具体数值。
    */
   tuning?: Partial<ComfyTuning>;
+  /**
+   * 工作流模板**显式注入**（V2.33；测试用）。
+   *
+   * 生产路径不传 —— 它由 `COMFYUI_TEMPLATE_DIR` / `COMFYUI_TEMPLATE` 决定（见 `comfyuiTemplates.ts`），
+   * 那才是"换模型不改代码"的入口。
+   */
+  template?: WorkflowTemplate;
   /** 产物前缀（`SaveVideo.filename_prefix`）；默认带 `astrmira/` 子目录 */
   outputPrefix?: string;
   /** 资产 id → 可下载地址（i2v 的首帧要先下载再上传给 ComfyUI） */
@@ -86,6 +95,9 @@ export class ComfyUiProvider implements VideoProvider {
 
   private inventory: { models: ComfyModels; capabilities: ComfyCapabilities; at: number } | null = null;
   private readonly jobs = new Map<string, JobRecord>();
+  private readonly injectedTemplate?: WorkflowTemplate;
+  /** 懒加载的工作流模板（配错路径时**每次调用都会抛**，所以不缓存错误态 —— 用户改好即可用） */
+  private loadedTemplate: LoadedTemplate | null = null;
 
   constructor(options: ComfyUiProviderOptions) {
     this.baseUrl = (options.baseUrl ?? COMFYUI_DEFAULT_BASE_URL).replace(/\/$/, '');
@@ -97,6 +109,22 @@ export class ComfyUiProvider implements VideoProvider {
     this.outputPrefix = options.outputPrefix ?? `${COMFY_OUTPUT_SUBDIR}/comfy`;
     this.inventoryTtlMs = options.inventoryTtlMs ?? DEFAULT_INVENTORY_TTL_MS;
     if (options.resolveAssetUrl !== undefined) this.resolveAssetUrl = options.resolveAssetUrl;
+    if (options.template !== undefined) this.injectedTemplate = options.template;
+  }
+
+  /**
+   * 取工作流模板（懒加载 + 缓存）。
+   *
+   * **为什么不放在构造函数里**：`COMFYUI_TEMPLATE_DIR` 配错时应当"**提交时报一句人话**"，
+   * 而不是让整个服务起不来（其它 provider 还得能用）。错误态刻意不缓存 —— 用户改好路径就该立刻生效。
+   */
+  private template(): LoadedTemplate {
+    if (this.loadedTemplate !== null) return this.loadedTemplate;
+    this.loadedTemplate =
+      this.injectedTemplate === undefined
+        ? loadWorkflowTemplate()
+        : { template: this.injectedTemplate, source: '注入（测试 / 调用方指定）' };
+    return this.loadedTemplate;
   }
 
   // ── 探测与自检 ─────────────────────────────────────────────────────────────
@@ -111,7 +139,8 @@ export class ComfyUiProvider implements VideoProvider {
     if (!response.ok) throw new Error(`ComfyUI /object_info → HTTP ${response.status}`);
     const objectInfo: unknown = await response.json();
     const models = pickComfyModels(objectInfo);
-    const capabilities = comfyCapabilities(objectInfo, models);
+    // V2.33：能力位**按当前模板引用的节点**判定（换了模板，缺什么就报什么）
+    const capabilities = comfyCapabilities(objectInfo, models, this.template().template);
     this.inventory = { models, capabilities, at: now };
     return { models, capabilities };
   }
@@ -123,23 +152,29 @@ export class ComfyUiProvider implements VideoProvider {
         return { available: false, reason: `ComfyUI 可达但 /system_stats 返回 HTTP ${response.status}` };
       }
       const { capabilities, models } = await this.readInventory();
+      // 模板来源也报出来（V2.33）：出问题时第一件事是搞清"跑的是哪张图"
+      const templateSource = this.template().source;
       if (capabilities.modes.length === 0) {
         return {
           available: false,
-          reason: `ComfyUI 可达但当前不能跑视频：${capabilities.unavailableReasons.join('；')}`,
+          reason:
+            `ComfyUI 可达但当前不能跑视频：${capabilities.unavailableReasons.join('；')}` +
+            `（模板：${templateSource}）`,
         };
       }
       return {
         // 可用，但把"能跑什么 / 不能跑什么"一并说清（界面照实展示，不藏）
         available: true,
         reason:
-          `模型：${models.unet} · 支持 ${capabilities.modes.join(' / ')}；` +
+          `模型：${models.unet} · 模板：${templateSource} · 支持 ${capabilities.modes.join(' / ')}；` +
           `不支持 ${capabilities.unavailableReasons.join('；')}`,
       };
     } catch (error) {
+      // 这里可能失败在两处：连不上 ComfyUI，或**模板读不出来**（COMFYUI_TEMPLATE_DIR 配错）——
+      // 两种情况都要说清是哪种，所以文案不写死成"连不上"
       return {
         available: false,
-        reason: `连不上 ComfyUI（${this.baseUrl}）：${error instanceof Error ? error.message : String(error)}`,
+        reason: `本地 ComfyUI 不可用（${this.baseUrl}）：${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }
@@ -178,7 +213,7 @@ export class ComfyUiProvider implements VideoProvider {
       dtype: this.tuning.dtype,
       outputPrefix: this.outputPrefix,
       ...(startImageName === undefined ? {} : { startImageName }),
-    });
+    }, this.template().template);
 
     const response = await this.fetchImpl(`${this.baseUrl}/prompt`, {
       method: 'POST',

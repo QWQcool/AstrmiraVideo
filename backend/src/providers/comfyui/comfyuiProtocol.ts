@@ -144,9 +144,14 @@ export function pickComfyModels(objectInfo: unknown, preferred?: Partial<ComfyMo
  * - 纯 I2V 模型（含 `i2v` 但不含 `ti2v`）→ 只支持 i2v；
  * - **fl2v / v2v 一律不支持**（需要 FLF2V / VACE 系列模型，本机未装；有模型才亮，没有就如实说）。
  */
-export function comfyCapabilities(objectInfo: unknown, models: ComfyModels): ComfyCapabilities {
-  const hasTiledDecode = asRecord(objectInfo)?.VAEDecodeTiled !== undefined;
-  const hasLatentNode = asRecord(objectInfo)?.Wan22ImageToVideoLatent !== undefined;
+export function comfyCapabilities(
+  objectInfo: unknown,
+  models: ComfyModels,
+  template: WorkflowTemplate = WAN22_TI2V_5B_TEMPLATE,
+): ComfyCapabilities {
+  const info = asRecord(objectInfo);
+  const hasTiledDecode = info?.VAEDecodeTiled !== undefined;
+  const hasLatentNode = info?.Wan22ImageToVideoLatent !== undefined;
   const unetCandidates = enumCandidate(objectInfo, 'UNETLoader', 'unet_name');
   const clipCandidates = enumCandidate(objectInfo, 'CLIPLoader', 'clip_name');
   const vaeCandidates = enumCandidate(objectInfo, 'VAELoader', 'vae_name');
@@ -155,17 +160,22 @@ export function comfyCapabilities(objectInfo: unknown, models: ComfyModels): Com
   const unavailableReasons: string[] = [];
   const unetName = models.unet.toLowerCase();
 
-  if (!hasTiledDecode) {
-    unavailableReasons.push('缺少 VAEDecodeTiled（10GB 显存上整段解码会退化成 CPU 解码）');
-  }
-  if (!hasLatentNode) {
-    unavailableReasons.push('缺少 Wan22ImageToVideoLatent（Wan 2.2 的潜空间节点）');
+  // V2.33：**按模板引用的节点判定**（不再硬编码两个节点名）——
+  // 换模板（别的模型 / 别的节点图）时，缺什么就报什么，判定逻辑不用跟着改。
+  const missingNodes = templateNodeTypes(template).filter((type) => info?.[type] === undefined);
+  if (missingNodes.length > 0) {
+    unavailableReasons.push(
+      `这套工作流模板需要的节点缺失：${missingNodes.join('、')}` +
+        (missingNodes.includes('VAEDecodeTiled')
+          ? '（缺 VAEDecodeTiled 时整段解码会退化成 CPU 解码，所以**不许回退**到 VAEDecode）'
+          : ''),
+    );
   }
   if (models.unet === '') {
     unavailableReasons.push('models/diffusion_models 里没有模型文件');
   }
 
-  if (hasTiledDecode && hasLatentNode && models.unet !== '') {
+  if (missingNodes.length === 0 && models.unet !== '') {
     if (unetName.includes('ti2v')) {
       modes.push('t2v', 'i2v');
     } else if (unetName.includes('i2v')) {
@@ -316,6 +326,153 @@ export function planComfyFrames(durationSec: number | undefined, fps = COMFY_FPS
   return alignFrames(seconds * fps);
 }
 
+/**
+ * 工作流模板（V2.33 外置）：**API 格式**的节点图 + 占位符。
+ *
+ * ## 为什么要外置
+ * 此前节点图**写死在 `buildComfyWorkflow` 里** —— 换一个"节点图不同"的模型
+ * （LTX / Hunyuan / 新 Wan 结构）必须改代码、发版。而 ComfyUI 世界里换模型**就等于换一张图**，
+ * 所以模板必须是**数据**：放一份 JSON 就能多支持一套模型（契约 §19-3）。
+ *
+ * ## 占位符约定（三条，够用且好懂）
+ * 1. `"{{KEY}}"` **独占整个字符串**时 → 替换为**任意 JSON 值**（数字 / 数组 / 字符串都行）；
+ * 2. 该值**未提供**（`undefined`）→ **删掉这个键** —— 这是"可选输入"的表达方式
+ *    （例如 t2v 不接 `start_image`）；
+ * 3. 节点上的 `_dropWhenMissing: ["KEY"]` → 这些键任一未提供时，**整个节点删掉**
+ *    （例如 t2v 不该出现 `LoadImage` 节点）。下划线开头的键都是**元数据**，渲染时剔除。
+ *
+ * 模板里的常量（节点 id / 图结构 / tile 参数）保持原样 —— 它们是"这套模型怎么跑"的知识，
+ * 该留在模板里；而数值型旋钮（步数 / cfg / shift…）走占位符，由 `ComfyTuning` 决定。
+ */
+export type WorkflowTemplate = Record<string, Record<string, unknown>>;
+export type WorkflowValues = Record<string, unknown>;
+
+const PLACEHOLDER_ONLY = /^\{\{([A-Z0-9_]+)\}\}$/;
+
+function renderValue(value: unknown, values: WorkflowValues): unknown {
+  if (typeof value === 'string') {
+    const match = PLACEHOLDER_ONLY.exec(value);
+    // 只有"整个字符串就是一个占位符"时才做类型化替换；字符串内嵌的占位符不做
+    // （内嵌替换会引出一个"值是数字时怎么拼"的坑，而我们并不需要它）
+    return match === null ? value : values[match[1]];
+  }
+  if (Array.isArray(value)) return value.map((item) => renderValue(item, values));
+  if (typeof value === 'object' && value !== null) {
+    const source = value as Record<string, unknown>;
+    const output: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(source)) {
+      const rendered = renderValue(item, values);
+      if (rendered !== undefined) output[key] = rendered; // 规则 2：未提供的键直接删
+    }
+    return output;
+  }
+  return value;
+}
+
+export function renderWorkflow(template: WorkflowTemplate, values: WorkflowValues): ComfyWorkflow {
+  const workflow: ComfyWorkflow = {};
+  for (const [nodeId, node] of Object.entries(template)) {
+    const dropWhenMissing = node['_dropWhenMissing'];
+    if (
+      Array.isArray(dropWhenMissing) &&
+      dropWhenMissing.some((key) => values[String(key)] === undefined)
+    ) {
+      continue; // 规则 3：条件节点
+    }
+    const classType = node['class_type'];
+    if (typeof classType !== 'string') continue; // 模板写坏了不至于抛错
+    const inputs = renderValue(node['inputs'], values);
+    if (typeof inputs !== 'object' || inputs === null) continue;
+    workflow[nodeId] = { class_type: classType, inputs: inputs as ComfyNodeInputs };
+  }
+  return workflow;
+}
+
+/** 模板引用了哪些节点类型（能力位按它判定"这台机器能不能跑这套模板"） */
+export function templateNodeTypes(template: WorkflowTemplate): string[] {
+  const types = new Set<string>();
+  for (const node of Object.values(template)) {
+    const classType = node['class_type'];
+    if (typeof classType === 'string') types.add(classType);
+  }
+  return [...types];
+}
+
+/**
+ * 内置模板：Wan2.2 TI2V-5B（与官方 `video_wan2_2_5B_ti2v.json` 同构，三处刻意差异见下）。
+ *
+ * ⚠️ 它**不是"唯一真理"**：用户可以用 `COMFYUI_TEMPLATE_DIR` + `COMFYUI_TEMPLATE` 指向自己的模板
+ * （见 `ComfyUiProvider`）—— 那正是"换模型不改代码"的入口。
+ */
+export const WAN22_TI2V_5B_TEMPLATE: WorkflowTemplate = {
+  '37': {
+    class_type: 'UNETLoader',
+    inputs: { unet_name: '{{UNET_NAME}}', weight_dtype: '{{WEIGHT_DTYPE}}' },
+  },
+  '38': {
+    class_type: 'CLIPLoader',
+    inputs: { clip_name: '{{CLIP_NAME}}', type: '{{CLIP_TYPE}}' },
+  },
+  '39': { class_type: 'VAELoader', inputs: { vae_name: '{{VAE_NAME}}' } },
+  '48': { class_type: 'ModelSamplingSD3', inputs: { model: ['37', 0], shift: '{{SHIFT}}' } },
+  '6': { class_type: 'CLIPTextEncode', inputs: { text: '{{PROMPT}}', clip: ['38', 0] } },
+  '7': { class_type: 'CLIPTextEncode', inputs: { text: '{{NEGATIVE_PROMPT}}', clip: ['38', 0] } },
+  // t2v 时整个节点消失（start_image 也不接）—— 同一个模型两种用法，区别只在这里
+  '56': {
+    _dropWhenMissing: ['START_IMAGE_NAME'],
+    class_type: 'LoadImage',
+    inputs: { image: '{{START_IMAGE_NAME}}' },
+  },
+  '55': {
+    class_type: 'Wan22ImageToVideoLatent',
+    inputs: {
+      vae: ['39', 0],
+      width: '{{WIDTH}}',
+      height: '{{HEIGHT}}',
+      length: '{{FRAMES}}',
+      batch_size: 1,
+      start_image: '{{START_IMAGE}}',
+    },
+  },
+  '3': {
+    class_type: 'KSampler',
+    inputs: {
+      model: ['48', 0],
+      seed: '{{SEED}}',
+      steps: '{{STEPS}}',
+      cfg: '{{CFG}}',
+      sampler_name: COMFY_SAMPLER,
+      scheduler: COMFY_SCHEDULER,
+      positive: ['6', 0],
+      negative: ['7', 0],
+      latent_image: ['55', 0],
+      denoise: 1,
+    },
+  },
+  // 与官方模板的刻意差异①：分块解码（10GB 卡上整段 VAEDecode 会退化成 CPU，实测 >14 分钟）
+  '8': {
+    class_type: 'VAEDecodeTiled',
+    inputs: {
+      samples: ['3', 0],
+      vae: ['39', 0],
+      tile_size: COMFY_TILE.size,
+      overlap: COMFY_TILE.overlap,
+      temporal_size: COMFY_TILE.temporalSize,
+      temporal_overlap: COMFY_TILE.temporalOverlap,
+    },
+  },
+  '57': { class_type: 'CreateVideo', inputs: { images: ['8', 0], fps: '{{FPS}}' } },
+  '58': {
+    class_type: 'SaveVideo',
+    inputs: {
+      video: ['57', 0],
+      filename_prefix: '{{OUTPUT_PREFIX}}',
+      format: 'auto',
+      codec: 'auto',
+    },
+  },
+};
+
 export interface ComfyWorkflowInput {
   models: ComfyModels;
   prompt: string;
@@ -344,78 +501,33 @@ export interface ComfyWorkflowInput {
  * - `UNETLoader.weight_dtype` 走参数（默认 `fp8_e4m3fn`，见 V8.35 实测）；
  * - `SaveVideo.filename_prefix` 带 `astrmira/` 子目录（output 目录与别的项目共用）。
  */
-export function buildComfyWorkflow(input: ComfyWorkflowInput): ComfyWorkflow {
-  const frames = alignFrames(input.frames);
-  const width = alignDimension(input.width);
-  const height = alignDimension(input.height);
-
-  const workflow: ComfyWorkflow = {
-    '37': {
-      class_type: 'UNETLoader',
-      inputs: { unet_name: input.models.unet, weight_dtype: input.dtype },
-    },
-    '38': {
-      class_type: 'CLIPLoader',
-      inputs: { clip_name: input.models.clip, type: input.models.clipType },
-    },
-    '39': { class_type: 'VAELoader', inputs: { vae_name: input.models.vae } },
-    '48': { class_type: 'ModelSamplingSD3', inputs: { model: ['37', 0], shift: input.shift ?? COMFY_DEFAULT_SHIFT } },
-    '6': { class_type: 'CLIPTextEncode', inputs: { text: input.prompt, clip: ['38', 0] } },
-    '7': { class_type: 'CLIPTextEncode', inputs: { text: input.negativePrompt, clip: ['38', 0] } },
-    '55': {
-      class_type: 'Wan22ImageToVideoLatent',
-      inputs: {
-        vae: ['39', 0],
-        width,
-        height,
-        length: frames,
-        batch_size: 1,
-        ...(input.startImageName === undefined ? {} : { start_image: ['56', 0] }),
-      },
-    },
-    '3': {
-      class_type: 'KSampler',
-      inputs: {
-        model: ['48', 0],
-        seed: input.seed,
-        steps: input.steps ?? COMFY_DEFAULT_STEPS,
-        cfg: input.cfg ?? COMFY_DEFAULT_CFG,
-        sampler_name: COMFY_SAMPLER,
-        scheduler: COMFY_SCHEDULER,
-        positive: ['6', 0],
-        negative: ['7', 0],
-        latent_image: ['55', 0],
-        denoise: 1,
-      },
-    },
-    '8': {
-      class_type: 'VAEDecodeTiled',
-      inputs: {
-        samples: ['3', 0],
-        vae: ['39', 0],
-        tile_size: COMFY_TILE.size,
-        overlap: COMFY_TILE.overlap,
-        temporal_size: COMFY_TILE.temporalSize,
-        temporal_overlap: COMFY_TILE.temporalOverlap,
-      },
-    },
-    '57': { class_type: 'CreateVideo', inputs: { images: ['8', 0], fps: input.fps ?? COMFY_FPS } },
-    '58': {
-      class_type: 'SaveVideo',
-      inputs: {
-        video: ['57', 0],
-        filename_prefix: input.outputPrefix,
-        format: 'auto',
-        codec: 'auto',
-      },
-    },
-  };
-
-  // i2v 才挂首帧节点（t2v 不挂 —— 同一个模型两种用法，区别只在有没有 start_image）
-  if (input.startImageName !== undefined) {
-    workflow['56'] = { class_type: 'LoadImage', inputs: { image: input.startImageName } };
-  }
-  return workflow;
+export function buildComfyWorkflow(
+  input: ComfyWorkflowInput,
+  template: WorkflowTemplate = WAN22_TI2V_5B_TEMPLATE,
+): ComfyWorkflow {
+  return renderWorkflow(template, {
+    UNET_NAME: input.models.unet,
+    CLIP_NAME: input.models.clip,
+    CLIP_TYPE: input.models.clipType,
+    VAE_NAME: input.models.vae,
+    WEIGHT_DTYPE: input.dtype,
+    PROMPT: input.prompt,
+    NEGATIVE_PROMPT: input.negativePrompt,
+    WIDTH: alignDimension(input.width),
+    HEIGHT: alignDimension(input.height),
+    FRAMES: alignFrames(input.frames),
+    FPS: input.fps ?? COMFY_FPS,
+    SEED: input.seed,
+    STEPS: input.steps ?? COMFY_DEFAULT_STEPS,
+    CFG: input.cfg ?? COMFY_DEFAULT_CFG,
+    SHIFT: input.shift ?? COMFY_DEFAULT_SHIFT,
+    OUTPUT_PREFIX: input.outputPrefix,
+    // t2v 时这两个都是 undefined → 键被删、`LoadImage` 节点也被删（模板里的 _dropWhenMissing）
+    START_IMAGE_NAME: input.startImageName,
+    // ⚠️ `56` 是**内置模板里 LoadImage 的节点 id** —— 写自定义模板的人只要保证"有一个输入图节点"
+    // 并把它的连接写进模板（本行只在 i2v 时给内置模板用）
+    START_IMAGE: input.startImageName === undefined ? undefined : ['56', 0],
+  });
 }
 
 export interface ComfyArtifact {

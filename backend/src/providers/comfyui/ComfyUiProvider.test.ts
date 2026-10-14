@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { VideoGenerateRequest } from '@astrmira/shared';
 import { ComfyUiProvider } from './ComfyUiProvider.js';
+import { templateNodeTypes, WAN22_TI2V_5B_TEMPLATE } from './comfyuiProtocol.js';
 
 /**
  * `host-comfyui` provider 的单测（假 ComfyUI）。
@@ -17,22 +18,35 @@ import { ComfyUiProvider } from './ComfyUiProvider.js';
  * `/queue`、`/history/{id}`、`/view`、`/upload/image`。端点形状都从真机响应抄来。
  */
 
-const OBJECT_INFO: unknown = {
-  UNETLoader: {
-    input: {
-      required: {
-        unet_name: [['wan2.2_ti2v_5B_fp16.safetensors']],
-        weight_dtype: [['default', 'fp8_e4m3fn'], { advanced: true }],
+/**
+ * 假的 `/object_info`：三个加载节点的**枚举值**（决定 `pickComfyModels` 挑到什么）
+ * + **模板引用的其余节点**（V2.33 起能力位按模板判定，fixture 必须像真机一样"该有的都有"——
+ * 真机上 `KSampler` / `SaveVideo` 这些核心节点必然在 958 个节点里）。
+ *
+ * 这里**动态补全**而不是手抄一遍：以后改模板（多一个节点）不会让这些测试莫名其妙地红。
+ */
+const OBJECT_INFO: unknown = (() => {
+  const info: Record<string, unknown> = {
+    UNETLoader: {
+      input: {
+        required: {
+          unet_name: [['wan2.2_ti2v_5B_fp16.safetensors']],
+          weight_dtype: [['default', 'fp8_e4m3fn'], { advanced: true }],
+        },
       },
     },
-  },
-  CLIPLoader: {
-    input: { required: { clip_name: [['umt5_xxl_fp8_e4m3fn_scaled.safetensors']], type: [['wan']] } },
-  },
-  VAELoader: { input: { required: { vae_name: [['wan2.2_vae.safetensors']] } } },
-  VAEDecodeTiled: { input: { required: {} } },
-  Wan22ImageToVideoLatent: { input: { required: {} } },
-};
+    CLIPLoader: {
+      input: {
+        required: { clip_name: [['umt5_xxl_fp8_e4m3fn_scaled.safetensors']], type: [['wan']] },
+      },
+    },
+    VAELoader: { input: { required: { vae_name: [['wan2.2_vae.safetensors']] } } },
+  };
+  for (const type of templateNodeTypes(WAN22_TI2V_5B_TEMPLATE)) {
+    if (info[type] === undefined) info[type] = { input: { required: {} } };
+  }
+  return info;
+})();
 
 interface FakeState {
   /** `/queue` 里是否有这条任务 */

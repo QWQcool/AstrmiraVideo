@@ -14,6 +14,8 @@ import {
   planComfyDimensions,
   planComfyFrames,
   resolveComfyTuning,
+  templateNodeTypes,
+  WAN22_TI2V_5B_TEMPLATE,
   type ComfyModels,
 } from './comfyuiProtocol.js';
 
@@ -49,9 +51,12 @@ function objectInfo(overrides: { unet?: string[]; nodeMissing?: string } = {}): 
       },
     },
     VAELoader: { input: { required: { vae_name: [['wan2.2_vae.safetensors', 'taesd']] } } },
-    VAEDecodeTiled: { input: { required: { samples: ['LATENT'], vae: ['VAE'] } } },
-    Wan22ImageToVideoLatent: { input: { required: { vae: ['VAE'] } } },
   };
+  // V2.33：能力位按**模板引用的节点**判定，所以 fixture 必须像真机一样"该有的都有" ——
+  // 动态补全（改模板不必改这里）
+  for (const type of templateNodeTypes(WAN22_TI2V_5B_TEMPLATE)) {
+    if (info[type] === undefined) info[type] = { input: { required: {} } };
+  }
   if (overrides.nodeMissing !== undefined) delete info[overrides.nodeMissing];
   return info;
 }
