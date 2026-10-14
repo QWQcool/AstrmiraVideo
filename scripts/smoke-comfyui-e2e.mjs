@@ -135,6 +135,20 @@ try {
     `能力位如实：comfyui.available=true（reason：${status.comfyui?.reason ?? '—'}）`,
   );
 
+  // ①.b V2.34（台账 B4 / CONTRACT §20）：**运行时自检**要在真机上给出"能跑什么" ——
+  // 它比 /status 强的地方就在这里：`available` 是"真的连了一次"的结论，
+  // 而不是"env 里有个合规地址"。
+  const selfCheck = await (await fetch(`${baseUrl}/api/providers/selfcheck`)).json();
+  const comfyEntry = (selfCheck.entries ?? []).find((entry) => entry.provider === 'host-comfyui');
+  assert(
+    comfyEntry?.available === true,
+    `自检真的连上了 ComfyUI 并给出结论（${comfyEntry?.reason ?? '没有这一项'}）`,
+  );
+  assert(
+    typeof comfyEntry?.reason === 'string' && /模型：/.test(comfyEntry.reason),
+    '自检结论里带着"用的哪个模型 / 能跑哪些模式"（不是一句空泛的"可用"）',
+  );
+
   // ② 提交（走真实路由；provider = host-comfyui）
   const submitAt = Date.now();
   const submit = await fetch(`${baseUrl}/api/generate`, {

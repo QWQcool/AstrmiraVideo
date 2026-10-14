@@ -86,8 +86,43 @@ export const ProviderStatusSchema = z.object({
   defaultProvider: ProviderTypeSchema,
 });
 
+/**
+ * 本地引擎**运行时自检**（**V2.34 新增**；台账 **B4**；CONTRACT §20）。
+ *
+ * ## 它与 `/api/providers/status` 的分工（这是两件事，不是一个东西的两种叫法）
+ * - `/status` = **配置事实**（有没有配 env、地址合规不合规）——读 env 就能答，**快**，
+ *   每次刷界面都可能被调用，所以**一次网络请求都不发**；
+ * - `/selfcheck` = **真的去连一次**（ComfyUI 起没起？模型与节点齐吗？能跑哪些模式？）——**慢几秒**，
+ *   只在用户**显式点击**时调用。
+ *
+ * ⚠️ 之所以坚持分成两个端点：把探测塞进 `/status` 会让"每次刷界面"都变慢，
+ * 而把配置事实塞进 `/selfcheck` 又会让用户为了看一句"你没配 env"等上几秒。
+ * 两者的**读者与代价**都不同，所以**结论也不共享**（`/selfcheck` 是"刚才通不通"，不是"配过没有"）。
+ *
+ * 三条纪律：
+ * 1. **只报告本服务自身**（不描述访问者设备 —— V1.8 / D22 同一条）；
+ * 2. **不得携带硬件型号 / 显存数字**（D27）——哪怕 ComfyUI 的 `/system_stats` 里就有，
+ *    也不许原样转出来；
+ * 3. **不回显文件路径明文**（与 §2 同一份脱敏纪律）。
+ */
+export const SelfCheckEntrySchema = z.object({
+  provider: ProviderTypeSchema,
+  available: z.boolean(),
+  /** 人话原因；**通过时也可能有**（例如"能跑 t2v / i2v，不支持 fl2v"） */
+  reason: z.string().optional(),
+});
+
+export const SelfCheckResponseSchema = z.object({
+  /** 本次自检的运行时刻（ISO）—— 它回答的是"**刚才**通不通" */
+  checkedAt: z.string(),
+  /** 逐项结果（本地两档；云端不需要联网探测，不在自检范围内） */
+  entries: z.array(SelfCheckEntrySchema),
+});
+
 export type HardwareTier = z.infer<typeof HardwareTierSchema>;
 export type CloudProviderStatus = z.infer<typeof CloudProviderStatusSchema>;
 export type LocalProviderStatus = z.infer<typeof LocalProviderStatusSchema>;
 export type LlmProviderStatus = z.infer<typeof LlmProviderStatusSchema>;
 export type ProviderStatus = z.infer<typeof ProviderStatusSchema>;
+export type SelfCheckEntry = z.infer<typeof SelfCheckEntrySchema>;
+export type SelfCheckResponse = z.infer<typeof SelfCheckResponseSchema>;

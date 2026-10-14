@@ -81,6 +81,16 @@ interface JobRecord {
 
 const DEFAULT_INVENTORY_TTL_MS = 10 * 60 * 1000;
 
+/**
+ * 探测类请求的硬超时（V2.34）。
+ *
+ * 为什么必须有：地址可能**连得上但不响应**（端口开着、ComfyUI 卡住），
+ * 那种情况下 `fetch` 会一直挂着 —— 而"检测本地引擎"是个用户会盯着看的按钮。
+ * 8s 的依据：`/system_stats` 是毫秒级、`/object_info` 约 10MB 在本地读 1s 内（实测）。
+ * 注意**只管探测**：提交与取产物是任务路径，由调度器的语义与用户预期决定，不用这个值。
+ */
+const PROBE_TIMEOUT_MS = 8_000;
+
 export class ComfyUiProvider implements VideoProvider {
   readonly id = 'host-comfyui' as const;
   readonly name = '本地 ComfyUI（自备引擎与模型）';
@@ -129,13 +139,22 @@ export class ComfyUiProvider implements VideoProvider {
 
   // ── 探测与自检 ─────────────────────────────────────────────────────────────
 
-  /** 读 `/object_info`（**很大**，所以缓存；换模型后等 TTL 过期或重启服务） */
-  private async readInventory(): Promise<{ models: ComfyModels; capabilities: ComfyCapabilities }> {
+  /**
+   * 读 `/object_info`（**很大**，所以缓存）。
+   *
+   * `force` 用于"用户显式点自检"这种场合：他多半是刚换了模型，
+   * 拿 10 分钟前的清单回答他就没意义了（见 `routes/providers.ts` 的 `RefreshableHealth`）。
+   */
+  private async readInventory(
+    force = false,
+  ): Promise<{ models: ComfyModels; capabilities: ComfyCapabilities }> {
     const now = Date.now();
-    if (this.inventory !== null && now - this.inventory.at < this.inventoryTtlMs) {
+    if (!force && this.inventory !== null && now - this.inventory.at < this.inventoryTtlMs) {
       return { models: this.inventory.models, capabilities: this.inventory.capabilities };
     }
-    const response = await this.fetchImpl(`${this.baseUrl}/object_info`);
+    const response = await this.fetchImpl(`${this.baseUrl}/object_info`, {
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
     if (!response.ok) throw new Error(`ComfyUI /object_info → HTTP ${response.status}`);
     const objectInfo: unknown = await response.json();
     const models = pickComfyModels(objectInfo);
@@ -145,13 +164,15 @@ export class ComfyUiProvider implements VideoProvider {
     return { models, capabilities };
   }
 
-  async checkHealth(): Promise<{ available: boolean; reason?: string }> {
+  async checkHealth(options?: { refresh?: boolean }): Promise<{ available: boolean; reason?: string }> {
     try {
-      const response = await this.fetchImpl(`${this.baseUrl}/system_stats`);
+      const response = await this.fetchImpl(`${this.baseUrl}/system_stats`, {
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
       if (!response.ok) {
         return { available: false, reason: `ComfyUI 可达但 /system_stats 返回 HTTP ${response.status}` };
       }
-      const { capabilities, models } = await this.readInventory();
+      const { capabilities, models } = await this.readInventory(options?.refresh === true);
       // 模板来源也报出来（V2.33）：出问题时第一件事是搞清"跑的是哪张图"
       const templateSource = this.template().source;
       if (capabilities.modes.length === 0) {

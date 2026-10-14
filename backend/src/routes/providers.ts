@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
-import { ProviderStatusSchema } from '@astrmira/shared';
-import type { ProviderStatus } from '@astrmira/shared';
+import { ProviderStatusSchema, SelfCheckResponseSchema } from '@astrmira/shared';
+import type { ProviderStatus, SelfCheckEntry, SelfCheckResponse } from '@astrmira/shared';
+import { getProvider } from '../providers/registry.js';
 import { isAllowedEngineUrl, runLocalEngineSelfCheck } from '../providers/statusProbe.js';
 
 /** 部署者是否向访客开放 host 本地轨（CONTRACT §2：`EXPOSE_HOST_LOCAL_TRACK`，默认 0） */
@@ -124,6 +125,121 @@ export function buildProviderStatus(): ProviderStatus {
   };
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// 本地引擎**运行时自检**（V2.34 / 台账 B4 / CONTRACT §20）
+//
+// 它回答的问题与 `/status` 不同：`/status` 说"你**配了没有**"，这里说"**刚才通不通**"。
+// 所以它**真的去连一次** ComfyUI（因此慢几秒），并且只在用户**显式点击**时被调用。
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 自检只在**本地两档**上做。
+ *
+ * 云端不需要联网探测（它的"可用"是"有没有 env 兜底 Key"这种配置事实，`/status` 已经答了），
+ * 而本地两档的结论**必须**来自一次真实连接 —— 否则用户只是把"配了没"再看一遍，
+ * 而那恰恰是他点这个按钮的原因（刚配完 env、重启完，想知道到底成没成）。
+ */
+const SELF_CHECK_PROVIDERS = ['local-minimax-h3', 'host-comfyui'] as const;
+
+/**
+ * 自检的**硬超时**。
+ *
+ * 为什么必须有：ComfyUI 的地址可能**连得上但不响应**（端口开着、进程卡住），
+ * 那种情况下 `fetch` 会一直挂着 —— 一个"检测"按钮转十分钟，比报一句"超时"糟得多。
+ * 15s 的依据：`/object_info` 在真机上约 10MB、本地读取在 1s 内（实测），留一个数量级余量。
+ */
+const SELF_CHECK_TIMEOUT_MS = 15_000;
+
+/**
+ * 自检时**强制刷新**能力位的可选能力（duck typing）。
+ *
+ * 为什么需要：`ComfyUiProvider` 的模型/节点清单有 10 分钟缓存（`/object_info` 很大，
+ * 不该每次调用都拉一遍）。但用户点自检往往是"我刚在 ComfyUI 里换了模型" ——
+ * 拿 10 分钟前的清单回答他，就没意义了。
+ *
+ * 为什么是 duck typing 而不是改接口：`VideoProvider.checkHealth()` 的形状属于契约 §4
+ * （不得改变接口形状），所以实现方**可以**多接受一个可选参数（TS 下仍满足该接口），
+ * 这里探测性地传一次；不认这个参数的实现忽略它、行为不变。
+ */
+type RefreshableHealth = (options?: { refresh?: boolean }) => Promise<{
+  available: boolean;
+  reason?: string;
+}>;
+
+/** 给任意 promise 套硬超时（超时后**如实**回报，而不是让请求挂着） */
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  // 亚秒级的超时值只在测试里出现（跑 15s 的用例不可接受），但消息要照样读得通
+  const human = ms >= 1000 ? `${Math.round(ms / 1000)}s` : `${ms}ms`;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label}超时（${human} 未响应）`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
+ * 未注册时如实说明**为什么** —— 这一档的三种"不可用"原因完全不同，
+ * 混成一句"不可用"会让用户去改错的配置项。
+ */
+function describeUnregistered(id: (typeof SELF_CHECK_PROVIDERS)[number]): string {
+  if (!isHostLocalTrackExposed()) {
+    return '本服务未向访客开放本地轨（部署者自用需显式设 EXPOSE_HOST_LOCAL_TRACK=1）';
+  }
+  return id === 'host-comfyui'
+    ? '本服务没有可用的 ComfyUI 后端：缺 COMFYUI_BASE_URL，或地址不在回环 / 内网白名单内'
+    : '本服务没有可用的本地 MiniMax H3 后端（只有配置约定，没有可执行的推理 provider）';
+}
+
+async function selfCheckOne(
+  id: (typeof SELF_CHECK_PROVIDERS)[number],
+  timeoutMs: number,
+): Promise<SelfCheckEntry> {
+  // 自检语义的上下文：只需要"能不能问这个引擎"，与凭据无关（PROBE_CONTEXT 同一条）
+  const provider = getProvider(id, { taskId: 'selfcheck' });
+  if (provider === null) {
+    return { provider: id, available: false, reason: describeUnregistered(id) };
+  }
+
+  try {
+    const health = await withTimeout(
+      (provider.checkHealth as RefreshableHealth)({ refresh: true }),
+      timeoutMs,
+      '本地引擎自检',
+    );
+    return {
+      provider: id,
+      available: health.available,
+      ...(health.reason === undefined ? {} : { reason: health.reason }),
+    };
+  } catch (error) {
+    return {
+      provider: id,
+      available: false,
+      reason: `自检失败：${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/**
+ * 跑一次本地引擎运行时自检（CONTRACT §20）。
+ *
+ * **只读、无副作用**：不提交任务、不写盘、不改任何状态；结果**不缓存**
+ * （用户点了就是"现在看一次"）。
+ *
+ * 两档**并行**且各自 try/catch：一个后端挂着不拖累另一项、一个炸了不影响另一个的结论 ——
+ * 这正是自检相对"提交时才发现"的价值（后者一次只暴露一个错误）。
+ */
+export async function buildSelfCheck(timeoutMs: number = SELF_CHECK_TIMEOUT_MS): Promise<SelfCheckResponse> {
+  const entries = await Promise.all(SELF_CHECK_PROVIDERS.map((id) => selfCheckOne(id, timeoutMs)));
+  return { checkedAt: new Date().toISOString(), entries };
+}
+
 /**
  * 算力 / 本地引擎状态路由（CONTRACT §5）。
  */
@@ -136,5 +252,15 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async () => buildProviderStatus(),
+  );
+
+  app.get(
+    '/api/providers/selfcheck',
+    {
+      schema: {
+        response: { 200: SelfCheckResponseSchema },
+      },
+    },
+    async () => buildSelfCheck(),
   );
 };

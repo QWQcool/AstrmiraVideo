@@ -1,10 +1,14 @@
+import { useCallback, useState } from 'react';
 import type {
   AspectRatio,
   GenerationMode,
   ProviderStatus,
   ProviderType,
+  SelfCheckResponse,
   TaskProgress,
 } from '@astrmira/shared';
+import { ApiError, fetchSelfCheck } from '../lib/api';
+import { CANVAS_PROVIDER_LABELS } from '../canvas/labels';
 import { AssetDropZone } from './AssetDropZone';
 import { Eyebrow } from './Eyebrow';
 import type { AssetSlotKey, AssetSlots } from '../lib/assets';
@@ -95,6 +99,15 @@ const PROVIDER_LOCAL: ProviderType = 'local-minimax-h3';
 /** V2.31（A1 片 C / D53）：用户自备的 ComfyUI（引擎与模型都由用户装） */
 const PROVIDER_COMFY: ProviderType = 'host-comfyui';
 
+/** 自检结果的错误文案（与各视图同一份口径：ApiError 带契约码） */
+function describeError(caught: unknown): string {
+  if (caught instanceof ApiError) {
+    const code = caught.failure.code === undefined ? '' : `【${caught.failure.code}】`;
+    return `${code}${caught.failure.message}`;
+  }
+  return caught instanceof Error ? caught.message : String(caught);
+}
+
 /**
  * 四种生成模式（CONTRACT §1 `GenerationMode`）。
  *
@@ -179,6 +192,30 @@ export function LeftPanel(props: LeftPanelProps) {
     (provider === PROVIDER_COMFY
       ? providerStatus?.comfyui.available === true
       : providerStatus?.local.available === true);
+
+  /**
+   * V2.34（台账 B4 / CONTRACT §20）：**本地引擎运行时自检**的结果。
+   *
+   * 它与 `providerStatus` 的区别要一直记住：状态说"你**配了没有**"（读 env 就能答，快），
+   * 自检说"**刚才通不通**"（真的去连一次 ComfyUI，慢几秒）。所以它**只在点击时**请求，
+   * 绝不放在渲染路径上 —— 否则每次改一个字都会去连一次用户的 ComfyUI。
+   */
+  const [selfCheck, setSelfCheck] = useState<SelfCheckResponse | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [selfCheckError, setSelfCheckError] = useState<string | null>(null);
+
+  const runSelfCheck = useCallback(async (): Promise<void> => {
+    setChecking(true);
+    setSelfCheckError(null);
+    try {
+      setSelfCheck(await fetchSelfCheck());
+    } catch (caught) {
+      // 端点本身几乎不会失败（逐项 try/catch → 总 200）；走到这里通常是服务断了
+      setSelfCheckError(describeError(caught));
+    } finally {
+      setChecking(false);
+    }
+  }, []);
   const target = resolveTargetSize(aspectRatio, resolutionTier);
   const dialogue = dialogueLength(prompt);
 
@@ -436,6 +473,49 @@ export function LeftPanel(props: LeftPanelProps) {
               ? (providerStatus?.comfyui.reason ?? '本地 ComfyUI 状态未知')
               : (providerStatus?.local.reason ?? '本地引擎状态未知')}
         </span>
+
+        {/* V2.34（台账 B4 / CONTRACT §20）：**检测本地引擎** ——
+            它要回答的正是"配完 env、重启之后到底成没成"这个问题；
+            在此之前用户只能靠提交一条任务去试错（而失败还可能是别的原因，混在一起更难判）。 */}
+        <button
+          type="button"
+          className="wb-btn"
+          data-testid="wb-selfcheck"
+          disabled={checking}
+          title={
+            checking
+              ? '正在连一次本地引擎（ComfyUI 的模型清单较大，通常一两秒）'
+              : '真的去连一次本机 / 内网的引擎，如实报告能不能跑、能跑哪些模式'
+          }
+          onClick={() => {
+            void runSelfCheck();
+          }}
+        >
+          {checking ? '🔍 检测中…' : '🔍 检测本地引擎'}
+        </button>
+
+        {selfCheckError === null ? null : (
+          <span className="wb-note cv-plan-bad" data-testid="wb-selfcheck-error">
+            检测失败：{selfCheckError}
+          </span>
+        )}
+
+        {selfCheck === null ? null : (
+          <div className="wb-note" data-testid="wb-selfcheck-result">
+            {selfCheck.entries.map((entry) => (
+              <div key={entry.provider} data-testid={`wb-selfcheck-${entry.provider}`}>
+                <strong className={entry.available ? 'cv-plan-ok' : 'cv-plan-bad'}>
+                  {entry.available ? '✓' : '✗'}
+                </strong>{' '}
+                {CANVAS_PROVIDER_LABELS[entry.provider]}：{entry.reason ?? '可用'}
+              </div>
+            ))}
+            <div>
+              （{new Date(selfCheck.checkedAt).toLocaleTimeString()} 检测 ——
+              它反映的是<strong>此刻</strong>能不能连上，与上面那行"配没配"是两件事）
+            </div>
+          </div>
+        )}
 
         {/* AC2：本地轨不可用时给出**推荐配置说明**，但开关本身**保持可选、不置灰** ——
             状态端点只陈述"本服务有没有配"，不替访客判断能不能用（CONTRACT §2 V1.8）。 */}

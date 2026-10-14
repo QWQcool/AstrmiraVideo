@@ -15,6 +15,7 @@ import {
   ProjectResponseSchema,
   PromptEnhanceResponseSchema,
   ProviderStatusSchema,
+  SelfCheckResponseSchema,
   TaskProgressSchema,
   UploadResponseSchema,
 } from '@astrmira/shared';
@@ -41,6 +42,7 @@ import type {
   PromptEnhanceRequest,
   PromptEnhanceResponse,
   ProviderStatus,
+  SelfCheckResponse,
   TaskProgress,
   UploadResponse,
   VideoGenerateRequest,
@@ -195,6 +197,16 @@ export function fetchHealth(signal?: AbortSignal): Promise<HealthResponse> {
 
 export function fetchProviderStatus(signal?: AbortSignal): Promise<ProviderStatus> {
   return request('/api/providers/status', ProviderStatusSchema, { signal });
+}
+
+/**
+ * 本地引擎**运行时自检**（CONTRACT §20 / 台账 B4）。
+ *
+ * ⚠️ 与 `fetchProviderStatus` 的区别是**它会真的去连一次**用户的 ComfyUI（慢几秒）——
+ * 所以只允许在用户显式点击时调用，**不要**放进渲染路径或轮询里。
+ */
+export function fetchSelfCheck(signal?: AbortSignal): Promise<SelfCheckResponse> {
+  return request('/api/providers/selfcheck', SelfCheckResponseSchema, { signal });
 }
 
 /**

@@ -733,6 +733,29 @@ try {
     (await page.locator('.wb-segment:visible', { hasText: '本地 ComfyUI' }).count()) >= 1,
     '执行引擎里有「本地 ComfyUI」档（自备引擎与模型；能否跑由提交时判定）',
   );
+
+  // V2.34（台账 B4 / CONTRACT §20）：本地引擎**运行时自检** —— 真点一次，看它是否如实回答。
+  // ⚠️ 冒烟起的服务**没有配**本地引擎，所以这里的**正确**结果是"两档都如实说不可用"。
+  // 把它当成"能用"才是这个按钮最糟的失败方式（假绿比没有更坏）——
+  // 所以断言盯的是"有没有说清缺哪个 env"，而不是"有没有 ✓"。
+  // 限定 `:visible` —— 视图是 keepalive 常驻的，隐藏副本里也会有同一 testid（B41 起的老坑）
+  const selfCheckButton = page.locator('[data-testid=wb-selfcheck]:visible').first();
+  await selfCheckButton.click();
+  const selfCheckResult = page.locator('[data-testid=wb-selfcheck-result]:visible').first();
+  await selfCheckResult.waitFor({ state: 'visible', timeout: 15_000 });
+  const selfCheckText = (await selfCheckResult.textContent()) ?? '';
+  assert(
+    selfCheckText.includes('本地 ComfyUI') && selfCheckText.includes('本地 MiniMax H3'),
+    `自检如实列出本地两档（${selfCheckText.slice(0, 60)}…）`,
+  );
+  assert(
+    selfCheckText.includes('EXPOSE_HOST_LOCAL_TRACK'),
+    '未配置时自检说清**缺哪个 env**（而不是一句"不可用"让人无从下手）',
+  );
+  assert(
+    !selfCheckText.includes('✓'),
+    '未配置时不会出现绿勾（自检不许假绿）',
+  );
   // 限定 :visible —— 创作入口是 keepalive 常驻视图，隐藏副本里也有 .wb-segment（B41 起）
   const durationButtons = page.locator('.wb-segment:visible', { hasText: /^\d+s$/ });
   assert((await durationButtons.count()) >= 3, `时长选项 ≥ 3 个（实际 ${await durationButtons.count()}）`);

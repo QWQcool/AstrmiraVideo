@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { HealthResponseSchema, ProviderStatusSchema } from '@astrmira/shared';
+import { HealthResponseSchema, ProviderStatusSchema, SelfCheckResponseSchema } from '@astrmira/shared';
 import { buildApp } from './index.js';
 
 /**
@@ -148,6 +148,39 @@ describe('GET /api/providers/status（CONTRACT §2 V1.8 / PLAN §6-D22、D27）'
       delete process.env.H3_TIER;
       rmSync(workdir, { recursive: true, force: true, maxRetries: 3 });
     }
+  });
+});
+
+describe('GET /api/providers/selfcheck（CONTRACT §20 V2.34 / 台账 B4）', () => {
+  it('返回 200，且响应体通过 SelfCheckResponseSchema 校验（checkedAt 是合法时间）', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/providers/selfcheck' });
+
+    expect(res.statusCode).toBe(200);
+    const parsed = SelfCheckResponseSchema.safeParse(res.json());
+    expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
+    expect(Number.isNaN(Date.parse(res.json().checkedAt))).toBe(false);
+  });
+
+  it('只自检**本地两档**（云端是配置事实、不需要联网探测 —— 它的答案在 /status 里）', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/providers/selfcheck' });
+    const ids = (res.json().entries as { provider: string }[]).map((entry) => entry.provider);
+
+    expect(ids).toEqual(['local-minimax-h3', 'host-comfyui']);
+    expect(ids).not.toContain('cloud-volcano-seedance');
+  });
+
+  it('默认（未开放本地轨）→ 两档都不可用，且**原因里点名那个 env**（不是一句"不可用"）', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/providers/selfcheck' });
+    const entries = res.json().entries as { available: boolean; reason?: string }[];
+
+    expect(entries.every((entry) => entry.available === false)).toBe(true);
+    expect(entries.every((entry) => (entry.reason ?? '').includes('EXPOSE_HOST_LOCAL_TRACK'))).toBe(true);
+  });
+
+  it('文案纪律同样适用：自检结果不得出现硬件型号 / 显存数字（D27）', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/providers/selfcheck' });
+    expect(res.body).not.toMatch(HARDWARE_DETAIL_PATTERN);
+    expect(res.body).not.toMatch(VISITOR_JUDGEMENT_PATTERN);
   });
 });
 
