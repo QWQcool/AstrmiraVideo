@@ -1,7 +1,12 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { TaskProgress, VideoGenerateRequest, VideoProvider } from '@astrmira/shared';
+import type {
+  ProviderType,
+  TaskProgress,
+  VideoGenerateRequest,
+  VideoProvider,
+} from '@astrmira/shared';
 import {
   buildComfyWorkflow,
   comfyCapabilities,
@@ -47,6 +52,15 @@ import { loadWorkflowTemplate, type LoadedTemplate } from './comfyuiTemplates.js
 export interface ComfyUiProviderOptions {
   baseUrl?: string;
   outputDir: string;
+  /** provider id（V2.36：具名实例 `host-comfyui:<name>`；缺省 = 默认实例 `host-comfyui`） */
+  id?: ProviderType;
+  /** 显示名（V2.36：带上实例 label —— 日志与界面里要能分清是**哪一台**） */
+  name?: string;
+  /**
+   * **实例级**模板名（V2.36；缺省 = 全局 `COMFYUI_TEMPLATE`）。
+   * 多台引擎可能跑不同模型（= 不同节点图），见 §19-1 / §19-3。
+   */
+  templateName?: string;
   /** 注入 fetch（测试用；默认全局 fetch） */
   fetchImpl?: typeof fetch;
   /**
@@ -92,10 +106,16 @@ const DEFAULT_INVENTORY_TTL_MS = 10 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 8_000;
 
 export class ComfyUiProvider implements VideoProvider {
-  readonly id = 'host-comfyui' as const;
-  readonly name = '本地 ComfyUI（自备引擎与模型）';
+  /**
+   * V2.36：具名实例时是 `host-comfyui:<name>` —— 任务的 `provider` 字段据此能回答
+   * "**这条在哪台机器上跑的**"（追溯 / 成本 / 排错都靠它，见 §1 的 ProviderType 说明）。
+   */
+  readonly id: ProviderType;
+  readonly name: string;
 
   private readonly baseUrl: string;
+  /** 实例级模板名（V2.36；缺省 = 全局 `COMFYUI_TEMPLATE`） */
+  private readonly templateName?: string;
   private readonly outputDir: string;
   private readonly fetchImpl: typeof fetch;
   private readonly tuning: ComfyTuning;
@@ -110,6 +130,9 @@ export class ComfyUiProvider implements VideoProvider {
   private loadedTemplate: LoadedTemplate | null = null;
 
   constructor(options: ComfyUiProviderOptions) {
+    this.id = options.id ?? 'host-comfyui';
+    this.name = options.name ?? '本地 ComfyUI（自备引擎与模型）';
+    this.templateName = options.templateName;
     this.baseUrl = (options.baseUrl ?? COMFYUI_DEFAULT_BASE_URL).replace(/\/$/, '');
     this.outputDir = options.outputDir;
     this.fetchImpl = options.fetchImpl ?? fetch;
@@ -132,7 +155,7 @@ export class ComfyUiProvider implements VideoProvider {
     if (this.loadedTemplate !== null) return this.loadedTemplate;
     this.loadedTemplate =
       this.injectedTemplate === undefined
-        ? loadWorkflowTemplate()
+        ? loadWorkflowTemplate(process.env, this.templateName)
         : { template: this.injectedTemplate, source: '注入（测试 / 调用方指定）' };
     return this.loadedTemplate;
   }

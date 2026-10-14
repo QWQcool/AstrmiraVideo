@@ -1,6 +1,21 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.35 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.36 · 已冻结（变更需先改本文，再改代码）**
+> **V2.36 修订（2026-10-14）**：**一份服务连多台 ComfyUI（台账 A1 后续；§19-1 / §2 / §20）** ——
+>   此前"本地 ComfyUI 只有一个地址"（`COMFYUI_BASE_URL`），而真实场景是**多台机器**：
+>   3080 跑 480p、5090 跑 720p，或"公司一台 / 家里一台"。
+>   现在：
+>   ① **`ProviderType` 支持具名实例** —— `host-comfyui:<name>`（默认实例仍是 `host-comfyui`，
+>   向后兼容；实例名进 id 的理由是**任务要能追溯"在哪台机器上跑的"**，而 `options` 是私有参数、不参与追溯）；
+>   ② **配置走文件**（`COMFYUI_SERVERS_FILE`，每项 `{ name, label?, url, template?, …档位 }`）——
+>   与 A1 片 E 的"模板是数据"同一条取向；**`COMFYUI_BASE_URL` 单实例写法保留**（老部署零改动）；
+>   ③ **档位三层**（实例 > 全局 env > 内置默认）：这是"换卡换机器只改 env"在多台场景下的自然延伸 —
+>   一台机器一个显存档，全局 env 压不住两台不同的卡；
+>   ④ **白名单逐实例校验**（仍**不允许请求体指定地址**）、`/status` 与 `/selfcheck` **逐实例**陈述，
+>   一个实例不合规/连不上**不影响其它实例的结论**。
+>   **无新路由、无新错误码、无新表**。**如实不做**：不自动挑实例（无健康分与失败转移 —— 选哪台由人定）。
+>
+> **状态（上一版）：V2.35 · 已冻结**
 > **V2.35 修订（2026-10-14）**：**新增 §11-6 附 编排文件格式 `astrmira.canvas-plan`（台账 A5 片 B 收口）** ——
 >   编排此前**只有本机 localStorage 一份**（清缓存 / 换浏览器 / 换人接手就没了，也无法"发给同事照着搭"）。
 >   现在可以**导出成文件**、在别处**导入回来**：纯前端生成与读取，**零新路由、零新错误码、零新表**。
@@ -321,12 +336,26 @@ export type GenerationMode = 't2v' | 'i2v' | 'fl2v' | 'v2v';
 export type AspectRatio = '16:9' | '9:16' | '1:1'; // 1:1 仅云端可选，本地 H3 支持度【待验证】
 // V1.5：补入 OI provider id。'stock-local' / 'fixture-local' 为开发期校验专用（PLAN §4「Step 2 补充」），
 // 默认关闭、不出现在产品线能力位；前端不得为它们硬编码任何分支。
-export type ProviderType =
+export type ProviderBaseType =
   | 'cloud-volcano-seedance'
   | 'local-minimax-h3'
   | 'host-comfyui'      // V2.30：用户自备的 ComfyUI（§19；executedBy 仍判 host-local）
   | 'stock-local'
   | 'fixture-local';
+
+/**
+ * V2.36：**具名实例后缀** —— `host-comfyui:<name>`（`name` = `[A-Za-z0-9_-]{1,24}`）。
+ *
+ * 为什么实例名进 **id** 而不是塞进 `options`：
+ * ① 任务的 `provider` 字段要能回答"**这条在哪台机器上跑的**"（追溯 / 成本 / 排错都靠它），
+ *   而 `options` 是 provider 私有参数，**不参与鉴权与追溯**；
+ * ② 选错实例是用户可操作的事实（和选错引擎同一级），应当是一等字段。
+ *
+ * 默认实例仍写作 `host-comfyui`（只配 `COMFYUI_BASE_URL` 的老部署零改动，见 §19-1）。
+ * **形状校验在前端/契约层，实例是否存在由服务端注册表判定**（未注册 = `503 PROVIDER_UNAVAILABLE`，
+ * 与其它未实现档位同一条路径 —— 不新增错误码）。
+ */
+export type ProviderType = ProviderBaseType | `host-comfyui:${string}`;
 
 export interface VideoGenerateRequest {
   // 核心文本描述（可配合 LLM 扩写）
@@ -439,6 +468,17 @@ export interface ProviderStatus {
     //    模式能力在**提交时**由 provider 判定并如实报错（§19-2）。
     available: boolean;
     provider: 'comfyui';
+    /**
+     * **V2.36**：逐实例（一份服务可连多台 ComfyUI，见 §19-1）。
+     * 单实例部署（只配 `COMFYUI_BASE_URL`）时这里只有一项（`id: 'host-comfyui'`）。
+     * 每一项都是**配置事实**（地址白名单过了没）——不表示"刚才通不通"（那是 §20 的事）。
+     */
+    servers: Array<{
+      id: string;          // 'host-comfyui'（默认）或 'host-comfyui:<name>'
+      label: string;       // 显示名（缺省 = name；供界面直接展示）
+      available: boolean;  // 这一台：地址合规 + 本地轨已开放
+      reason?: string;     // 不合规的原因（人话；**不回显地址明文**，同 §2 的脱敏纪律）
+    }>;
     reason?: string; // 例：「本服务未向访客开放本地轨」/「缺 COMFYUI_BASE_URL」/「仅允许回环或内网地址」
   };
   llm: {
@@ -1735,11 +1775,25 @@ export interface BackupManifest {
 
 ### 19-1 配置与白名单
 
-- **唯一入口是 `COMFYUI_BASE_URL`**（env）：未配置 / 不是回环或内网（`isAllowedEngineUrl`，与 §2 同一份白名单）
-  → provider **注册为 `null`**（**不假装可用**）；
-- **不允许请求体指定地址**：与云端 BYOK 的 `options.baseUrl` 刻意不同 —— 云端那个地址是用户自己的账号端点，
-  而本地 ComfyUI 是**部署者的机器**，让请求体指定等于把内网探测面打开（SSRF）；
-- 可选 `COMFYUI_WEIGHT_DTYPE`（默认 `fp8_e4m3fn`，理由见 19-3）。
+**两种写法（V2.36 起）**：
+
+| 写法 | 什么时候用 | 形态 |
+|---|---|---|
+| `COMFYUI_BASE_URL` | **单实例**（多数部署） | `http://127.0.0.1:8188` → 注册为**默认实例**（provider id = `host-comfyui`） |
+| `COMFYUI_SERVERS_FILE` | **多实例**（3080 + 5090 / 公司 + 家里） | 指向一份 JSON 文件：`[{ "name": "office", "label": "办公室的 3080", "url": "http://127.0.0.1:8188", "template": "wan22-ti2v-5b", "maxPixels": 921600 }, …]` |
+
+- 每个实例 **一个 provider id**：`host-comfyui:<name>`；默认实例仍是 `host-comfyui`。
+  `name` 限 `[A-Za-z0-9_-]{1,24}`（**它是 id 的一部分**：会进任务记录、日志、界面上选的"引擎"）；
+  `label` 才是给人看的中文名（可省，缺省用 `name`）。
+- 两种写法**可同时用**：默认实例在前、具名实例随后 —— 它们是**不同的地址**，不存在"谁覆盖谁"。
+- **白名单逐实例校验**（`isAllowedEngineUrl`，与 §2 同一份）：未配置 / 不是回环或内网
+  → **该实例注册为 `null`**（**不假装可用**），**不影响其它实例**的结论。
+- **文件读不出来 / 结构不对 → 该文件里的实例全部不可用，并如实说明是文件的问题**：
+  绝不静默回落成"只认 `COMFYUI_BASE_URL`" —— 那会让人以为自己的多实例配置生效了。
+- **不允许请求体指定地址**（V2.30 起不变）：与云端 BYOK 的 `options.baseUrl` 刻意不同 ——
+  云端那个地址是用户自己的账号端点，而本地 ComfyUI 是**部署者的机器**，让请求体指定等于把内网探测面打开（SSRF）。
+  请求体**可以**指定 `provider: 'host-comfyui:<name>'`：它只能在这份白名单里挑，挑不到就是未注册 → `503`。
+- 可选 `COMFYUI_WEIGHT_DTYPE`（默认 `fp8_e4m3fn`，理由见 19-3）；**实例可逐项覆盖档位**。
 
 ### 19-2 能力位：按"**当前模板引用的节点** + 模型"判定，不是"节点存在就算支持"
 
@@ -1789,6 +1843,9 @@ export interface BackupManifest {
   | `COMFYUI_FPS` | 24 | 与官方模板一致；帧数由它换算（再取 `4n+1`） |
   | `COMFYUI_WEIGHT_DTYPE` | `fp8_e4m3fn` | 显存紧张**别**改回 `default`（fp16 在 10GB 上慢 6.3 倍） |
 
+  **三层优先级（V2.36 起）：实例 > 全局 env > 内置默认**（逐项回落，不是整块覆盖）。
+  为什么必须有实例层：**一台机器一个显存档** —— "3080 用 480p、5090 用 720p"只能在实例这一层表达
+  （全局 env 只有一份，压不住两台不同的卡；而这正是 V2.32"换卡换机器只改 env"在多台场景下的延伸）。
   **非法值一律回落到默认**（不抛错、也不悄悄取一半）：档位是"能用"的旋钮，不是"配错就起不来"的开关；
   真配错了，用户会在提交后的耗时上看见；
 
@@ -1839,6 +1896,9 @@ export interface BackupManifest {
 
 - **不内置"某个具体模型才是唯一真理"的工作流**：模板与参数映射是契约，**模型由用户决定**（D53）；
 - **不做"用户自己写适配器"的通道**（D53 的取舍：那等于把活儿推给用户）；
+- **不自动挑实例**（V2.36）：多台引擎是"**让你能分别选**"，不是"服务端猜哪台空闲"——
+  自动调度要有健康分、排队视图与**失败转移**（转移 = 重提交 = 可能双倍计费），那是另一件事，
+  等真有"排队排到难受"的实测再立项；
 - **不做进度条**（接口没有）；**不做取消**（引擎做不到）；
 - **不做中间帧清理**（产物由 ComfyUI 自己管理，我们只下载成品）。
 
@@ -1866,13 +1926,14 @@ interface SelfCheckEntry {
 
 interface SelfCheckResponse {
   checkedAt: string;          // ISO 时刻 —— 它回答的是"刚才"
-  entries: SelfCheckEntry[];  // 逐项：本地两档
+  entries: SelfCheckEntry[];  // 逐项：本地 H3 + **每一个** ComfyUI 实例（V2.36；一台一台列，谁连不上说谁）
 }
 ```
 
 **七条口径**：
 
-1. **只自检本地两档**（`local-minimax-h3` / `host-comfyui`）。云端不联网探测 ——
+1. **只自检本地档**：`local-minimax-h3` + **每一个配置好的 ComfyUI 实例**（V2.36：一台一台列，
+   谁连不上说谁 —— 这正是多台引擎最需要的可观测性）。云端不联网探测 ——
    它的"可用"是"有没有 env 兜底 Key"这种配置事实，§2 已经答了。
 2. **逐项独立**：各自 try/catch、**并行**执行。一个后端炸了不影响另一项的结论 ——
    这正是自检相对"提交时才发现"的价值（后者一次只暴露一个错误）。
@@ -1885,8 +1946,8 @@ interface SelfCheckResponse {
    `VideoProvider` 的接口形状是 §4 的一部分、不得改变，所以实现方**可以**多接受一个可选参数。
 5. **结果不缓存**：连点两次 = 问两次。"刚才通不通"不能拿上一次的答案。
 6. **只读、无副作用**：不提交任务、不写盘、不改任何状态。所以它**不需要写操作的门控** ——
-   但探测目标仍只有部署者配的那一个地址（`COMFYUI_BASE_URL`，§19-1 的白名单已校验，
-   **不接受任何请求参数**）—— 它不是一个可以拿去扫内网的端口探测器。
+   但探测目标仍只有部署者配的那些地址（§19-1：`COMFYUI_BASE_URL` 与 `COMFYUI_SERVERS_FILE`，
+   白名单**逐个**校验过，**不接受任何请求参数**）—— 它不是一个可以拿去扫内网的端口探测器。
 7. **文案与脱敏纪律同 §2**：只陈述本服务自身（不替访客判断设备，V1.8 / D22）；
    **不得携带硬件型号 / 显存数字**（D27）——哪怕 ComfyUI 的 `/system_stats` 里就有；
    **不回显文件路径明文**。

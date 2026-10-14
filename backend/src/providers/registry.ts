@@ -1,4 +1,4 @@
-import type { ProviderType, VideoProvider } from '@astrmira/shared';
+import { providerBaseType, type ProviderBaseType, type ProviderType, type VideoProvider } from '@astrmira/shared';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
 import type { TaskVideoResolution } from '../store/assets.js';
 import { FixtureLocalProvider } from './fixture/FixtureLocalProvider.js';
@@ -6,7 +6,7 @@ import { readOptionString } from './providerOptions.js';
 import { VolcanoSeedanceProvider } from './VolcanoSeedanceProvider.js';
 import { SEEDANCE_DEFAULT_BASE_URL, SEEDANCE_DEFAULT_MODEL } from './seedanceProtocol.js';
 import { ComfyUiProvider } from './comfyui/ComfyUiProvider.js';
-import { isAllowedEngineUrl } from './statusProbe.js';
+import { DEFAULT_COMFY_SERVER_ID, findComfyServer } from './comfyui/comfyuiServers.js';
 import { createFaultInjectedProvider, resolveFaultPlanFromEnv } from './withFaultInjection.js';
 
 /**
@@ -139,23 +139,29 @@ function createCloudProvider(ctx: ProviderResolutionContext): VideoProvider {
 }
 
 /**
- * 本地 ComfyUI（V2.30 / 台账 A1 片 B / 决策 **D53**）：**用户自备引擎与模型**。
+ * 本地 ComfyUI 的**一个实例**（V2.30 起；**V2.36 起按 id 取实例**）：用户自备引擎与模型（决策 **D53**）。
  *
- * 门控 = `COMFYUI_BASE_URL`（未配 / 不是回环或内网 → **返回 null，不假装可用**）。
- * 白名单复用 §2 的 `isAllowedEngineUrl`（防 SSRF：不允许请求体指定地址，只认部署者的 env ——
+ * 门控：实例存在且地址合规（回环 / 内网白名单，见 `comfyuiServers.ts`）——
+ * 否则 **返回 null，不假装可用**（调用方报 503）。
+ * 白名单**逐实例**校验；请求体仍**不允许指定地址**（防 SSRF）——
  * 这一条与云端的"BYOK 可带 baseUrl"刻意不同：云端那个地址是**用户自己的账号端点**，
- * 而本地 ComfyUI 是**部署者的机器**，让请求体指定等于把内网探测面打开）。
+ * 而本地 ComfyUI 是**部署者的机器**，让请求体指定等于把内网探测面打开。
+ *
+ * 实例自己的**模板与档位**在这里透传（缺省项各自回落全局 env / 内置默认，见 §19-3）——
+ * 多台机器往往跑不同模型、不同显存档，一份全局配置压不住它们。
  */
-function createComfyProvider(ctx: ProviderResolutionContext): VideoProvider | null {
-  const raw = process.env.COMFYUI_BASE_URL?.trim();
-  if (raw === undefined || raw === '' || !isAllowedEngineUrl(raw)) return null;
+function createComfyProviderFor(id: string, ctx: ProviderResolutionContext): VideoProvider | null {
+  const server = findComfyServer(id);
+  // 找不到（拼错 / 那一台没配 / 地址不合规）→ null：走既有的「未注册 → 503」路径，不新增错误码
+  if (server === null || !server.available) return null;
 
-  // 档位（精度 / 像素预算 / 步数 / cfg / shift / fps）**不在这里传**：
-  // provider 自己用 `resolveComfyTuning()` 读 env（V2.32）—— 注册点只管"能不能注册"，
-  // 免得每加一个旋钮就要在这里多透传一次（漏一遍就是一个静默失效的 env）。
   return new ComfyUiProvider({
-    baseUrl: raw,
+    id: server.id,
+    name: `本地 ComfyUI（${server.label}）`,
+    baseUrl: server.url,
     outputDir: resolveOutputsDir(),
+    ...(server.template === undefined ? {} : { templateName: server.template }),
+    ...(server.tuning === undefined ? {} : { tuning: server.tuning }),
     ...(ctx.resolveAssetUrl === undefined ? {} : { resolveAssetUrl: ctx.resolveAssetUrl }),
   });
 }
@@ -182,7 +188,7 @@ export function getEnvModelWarning(): string | null {
   return `VOLCANO_MODEL_NAME=${configured}：仅作为"请求未指定模型"时的兜底值（请求里的模型优先级更高）`;
 }
 
-const REGISTRY: Record<ProviderType, ProviderFactory> = {
+const REGISTRY: Record<ProviderBaseType, ProviderFactory> = {
   // OI-2 夹具（S1 已实现）
   'fixture-local': () => (isFixtureProviderEnabled() ? fixtureProvider() : null),
   // OI-1 素材 provider：未实现，属 PLAN §9 台账 B7
@@ -191,8 +197,10 @@ const REGISTRY: Record<ProviderType, ProviderFactory> = {
   'cloud-volcano-seedance': (ctx) => createCloudProvider(ctx),
   // host 本地轨（自装 MiniMax H3）：未实现（到达路径 = 配 env + 重启，见 providers/statusProbe.ts）
   'local-minimax-h3': () => null,
-  // host 本地轨（用户自备 ComfyUI，V2.30 / A1 片 B / D53）：配 COMFYUI_BASE_URL 即启用
-  'host-comfyui': (ctx) => createComfyProvider(ctx),
+  // host 本地轨（用户自备 ComfyUI，V2.30 / A1 片 B / D53）：配 COMFYUI_BASE_URL 即启用。
+  // **具名实例**（V2.36，`host-comfyui:<name>`）由 `getProvider` 按 id 分流 ——
+  // 注册表只放"每类一个工厂"，实例是数据（见 comfyuiServers.ts）。
+  'host-comfyui': (ctx) => createComfyProviderFor(DEFAULT_COMFY_SERVER_ID, ctx),
 };
 
 /** ⚠️ 测试注入表（生产路径永不写入；见 `__setProviderForTesting`） */
@@ -207,9 +215,23 @@ const PROBE_CONTEXT: ProviderResolutionContext = { taskId: 'probe' };
  */
 export function getProvider(id: ProviderType, ctx?: ProviderResolutionContext): VideoProvider | null {
   const context = ctx ?? PROBE_CONTEXT;
-  const base = testOverrides.has(id) ? (testOverrides.get(id) ?? null) : REGISTRY[id](context);
+
+  if (testOverrides.has(id)) {
+    const overridden = testOverrides.get(id) ?? null;
+    return overridden === null ? null : applyEnvFaultInjection(overridden);
+  }
+
+  // 形状不合法（正常由请求 schema 先挡住）→ 未注册
+  const base = providerBaseType(id);
   if (base === null) return null;
-  return applyEnvFaultInjection(base);
+
+  // V2.36：具名实例按 id 取"那一台"；默认实例走注册表（一处逻辑一处真相）
+  const provider =
+    base === 'host-comfyui' && id !== DEFAULT_COMFY_SERVER_ID
+      ? createComfyProviderFor(id, context)
+      : REGISTRY[base](context);
+
+  return provider === null ? null : applyEnvFaultInjection(provider);
 }
 
 /**

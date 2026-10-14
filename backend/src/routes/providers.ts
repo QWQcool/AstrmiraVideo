@@ -1,8 +1,14 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
-import { ProviderStatusSchema, SelfCheckResponseSchema } from '@astrmira/shared';
-import type { ProviderStatus, SelfCheckEntry, SelfCheckResponse } from '@astrmira/shared';
+import { ProviderStatusSchema, SelfCheckResponseSchema, providerBaseType } from '@astrmira/shared';
+import type {
+  ComfyUiServerStatus,
+  ProviderStatus,
+  SelfCheckEntry,
+  SelfCheckResponse,
+} from '@astrmira/shared';
 import { getProvider } from '../providers/registry.js';
-import { isAllowedEngineUrl, runLocalEngineSelfCheck } from '../providers/statusProbe.js';
+import { DEFAULT_COMFY_SERVER_ID, resolveComfyServers } from '../providers/comfyui/comfyuiServers.js';
+import { runLocalEngineSelfCheck } from '../providers/statusProbe.js';
 
 /** 部署者是否向访客开放 host 本地轨（CONTRACT §2：`EXPOSE_HOST_LOCAL_TRACK`，默认 0） */
 function isHostLocalTrackExposed(): boolean {
@@ -74,30 +80,53 @@ function resolveLocalStatus(): ProviderStatus['local'] {
  * **不在这里探测模式能力**（那要连用户的 ComfyUI）—— 见 `ComfyUiProviderStatusSchema` 的说明。
  */
 function resolveComfyUiStatus(): ProviderStatus['comfyui'] {
-  if (!isHostLocalTrackExposed()) {
-    return { available: false, provider: 'comfyui', reason: '本服务未向访客开放本地轨' };
+  const { servers, problems } = resolveComfyServers();
+  const exposed = isHostLocalTrackExposed();
+  const notExposed = '本服务未向访客开放本地轨';
+
+  // **不下发地址**：只给 id / label / available / reason（脱敏，§2）
+  const described: ComfyUiServerStatus[] = servers.map((server) =>
+    exposed
+      ? {
+          id: server.id,
+          label: server.label,
+          available: server.available,
+          ...(server.reason === undefined ? {} : { reason: server.reason }),
+        }
+      : { id: server.id, label: server.label, available: false, reason: notExposed },
+  );
+
+  // 文件级问题（读不出来 / 结构不对）**排在最前**：它比"某一台不合规"更该被看到
+  const head = problems.length === 0 ? '' : `${problems.join('；')}；`;
+
+  if (!exposed) {
+    return { available: false, provider: 'comfyui', servers: described, reason: notExposed };
+  }
+  if (servers.length === 0) {
+    return {
+      available: false,
+      provider: 'comfyui',
+      servers: [],
+      reason: `${head}本服务未配置 ComfyUI（缺 COMFYUI_BASE_URL 或 COMFYUI_SERVERS_FILE）`,
+    };
   }
 
-  const raw = process.env.COMFYUI_BASE_URL?.trim();
-  if (raw === undefined || raw === '') {
-    return {
-      available: false,
-      provider: 'comfyui',
-      reason: '本服务未配置 ComfyUI（缺 COMFYUI_BASE_URL）',
-    };
-  }
-  if (!isAllowedEngineUrl(raw)) {
-    return {
-      available: false,
-      provider: 'comfyui',
-      reason: 'COMFYUI_BASE_URL 仅允许回环或内网地址（防 SSRF）',
-    };
-  }
+  const usable = described.filter((server) => server.available).length;
+  // 全部不可用时，段级 reason 里**要能直接读到原因**（单实例部署下这里就是唯一入口）——
+  // 多台时带第一台的原因并指明其余在 `servers` 里（不去拼一串谁也读不完的话）
+  const firstBad = described.find((server) => !server.available);
+  const allBad = `${head}本服务配置的 ComfyUI 实例都不可用：${
+    firstBad?.reason ?? '原因见各实例'
+  }${described.length > 1 ? '（其余实例的原因见 servers）' : ''}`;
 
   return {
-    available: true,
+    available: usable > 0,
     provider: 'comfyui',
-    reason: '本服务已配置 ComfyUI（地址合规；能跑哪些模式在提交时判定）',
+    servers: described,
+    reason:
+      usable > 0
+        ? `${head}本服务已配置 ${servers.length} 台 ComfyUI（合规 ${usable} 台；能跑哪些模式在提交时判定）`
+        : allBad,
   };
 }
 
@@ -133,13 +162,19 @@ export function buildProviderStatus(): ProviderStatus {
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
- * 自检只在**本地两档**上做。
+ * 自检范围（**V2.36 起动态**）：本地 H3 + **每一个**配好的 ComfyUI 实例。
  *
- * 云端不需要联网探测（它的"可用"是"有没有 env 兜底 Key"这种配置事实，`/status` 已经答了），
- * 而本地两档的结论**必须**来自一次真实连接 —— 否则用户只是把"配了没"再看一遍，
- * 而那恰恰是他点这个按钮的原因（刚配完 env、重启完，想知道到底成没成）。
+ * 为什么按实例逐条列：多台引擎最需要的可观测性就是"**哪一台连不上**" ——
+ * 把三台合成一条"ComfyUI 不可用"，用户还得自己一台台去试。
+ *
+ * 云端不在范围内：它的"可用"是"有没有 env 兜底 Key"这种配置事实（`/status` 已经答了）。
  */
-const SELF_CHECK_PROVIDERS = ['local-minimax-h3', 'host-comfyui'] as const;
+function selfCheckTargets(): string[] {
+  const ids = resolveComfyServers().servers.map((server) => server.id);
+  // ⚠️ **一台都没配时不把 ComfyUI 藏起来**：B4 的价值正是"点一下就知道缺什么"——
+  // 因为"没配置"就从列表里消失，用户只会看到一条 H3 的结论，然后不知道 ComfyUI 那一档去哪了。
+  return ['local-minimax-h3', ...(ids.length === 0 ? [DEFAULT_COMFY_SERVER_ID] : ids)];
+}
 
 /**
  * 自检的**硬超时**。
@@ -187,19 +222,26 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
  * 未注册时如实说明**为什么** —— 这一档的三种"不可用"原因完全不同，
  * 混成一句"不可用"会让用户去改错的配置项。
  */
-function describeUnregistered(id: (typeof SELF_CHECK_PROVIDERS)[number]): string {
+function describeUnregistered(id: string): string {
   if (!isHostLocalTrackExposed()) {
     return '本服务未向访客开放本地轨（部署者自用需显式设 EXPOSE_HOST_LOCAL_TRACK=1）';
   }
-  return id === 'host-comfyui'
-    ? '本服务没有可用的 ComfyUI 后端：缺 COMFYUI_BASE_URL，或地址不在回环 / 内网白名单内'
-    : '本服务没有可用的本地 MiniMax H3 后端（只有配置约定，没有可执行的推理 provider）';
+  if (providerBaseType(id) !== 'host-comfyui') {
+    return '本服务没有可用的本地 MiniMax H3 后端（只有配置约定，没有可执行的推理 provider）';
+  }
+  // V2.36：逐实例说清"是哪一台的问题、问题是什么"（比一句"ComfyUI 不可用"可行动得多）
+  const { servers } = resolveComfyServers();
+  if (servers.length === 0) {
+    return '本服务没有可用的 ComfyUI 后端：缺 COMFYUI_BASE_URL 或 COMFYUI_SERVERS_FILE，或地址不在回环 / 内网白名单内';
+  }
+  const server = servers.find((item) => item.id === id);
+  if (server === undefined) {
+    return '这一台不在本服务的实例表里（COMFYUI_SERVERS_FILE 里没有它）';
+  }
+  return server.reason ?? '这一台不可用（原因见 /api/providers/status 的 comfyui.servers）';
 }
 
-async function selfCheckOne(
-  id: (typeof SELF_CHECK_PROVIDERS)[number],
-  timeoutMs: number,
-): Promise<SelfCheckEntry> {
+async function selfCheckOne(id: string, timeoutMs: number): Promise<SelfCheckEntry> {
   // 自检语义的上下文：只需要"能不能问这个引擎"，与凭据无关（PROBE_CONTEXT 同一条）
   const provider = getProvider(id, { taskId: 'selfcheck' });
   if (provider === null) {
@@ -236,7 +278,7 @@ async function selfCheckOne(
  * 这正是自检相对"提交时才发现"的价值（后者一次只暴露一个错误）。
  */
 export async function buildSelfCheck(timeoutMs: number = SELF_CHECK_TIMEOUT_MS): Promise<SelfCheckResponse> {
-  const entries = await Promise.all(SELF_CHECK_PROVIDERS.map((id) => selfCheckOne(id, timeoutMs)));
+  const entries = await Promise.all(selfCheckTargets().map((id) => selfCheckOne(id, timeoutMs)));
   return { checkedAt: new Date().toISOString(), entries };
 }
 

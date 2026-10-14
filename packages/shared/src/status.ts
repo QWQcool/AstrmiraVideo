@@ -70,9 +70,26 @@ export const LlmProviderStatusSchema = z.object({
  * "慢几秒、且在 ComfyUI 没启动时超时"的东西。
  * 模式能力改由**提交时**判定并如实报错（缺 `VAEDecodeTiled` / 模型不含 `ti2v` 等）。
  */
+export const ComfyUiServerStatusSchema = z.object({
+  /** provider id：`host-comfyui`（默认实例）或 `host-comfyui:<name>` */
+  id: z.string(),
+  /** 显示名（缺省 = name；可配中文标签 —— 它是给人看的，不参与 id） */
+  label: z.string(),
+  available: z.boolean(),
+  /** 不合规的原因（人话；**不回显地址明文**，同 §2 的脱敏纪律） */
+  reason: z.string().optional(),
+});
+export type ComfyUiServerStatus = z.infer<typeof ComfyUiServerStatusSchema>;
+
 export const ComfyUiProviderStatusSchema = z.object({
   available: z.boolean(),
   provider: z.literal('comfyui'),
+  /**
+   * V2.36：**逐实例**（一份服务可连多台 ComfyUI，见 §19-1）。
+   * 单实例部署（只配 `COMFYUI_BASE_URL`）时数组里只有一项（`id: 'host-comfyui'`）。
+   * 每一项都是**配置事实**（地址白名单过了没），不表示"刚才通不通"（那是 §20）。
+   */
+  servers: z.array(ComfyUiServerStatusSchema),
   reason: z.string().optional(),
 });
 

@@ -41,8 +41,17 @@ export function isWorkflowTemplate(value: unknown): value is WorkflowTemplate {
   });
 }
 
-export function loadWorkflowTemplate(env: NodeJS.ProcessEnv = process.env): LoadedTemplate {
-  const name = env.COMFYUI_TEMPLATE?.trim();
+/**
+ * 取工作流模板（V2.33 外置；V2.36 加 `nameOverride` = **实例级模板**）。
+ *
+ * 为什么需要实例级：多台引擎往往跑**不同模型**（3080 跑 Wan2.2、5090 跑 LTX），
+ * 而"不同模型 = 不同的节点图" —— 一份全局模板压不住两台机器（§19-1 / §19-3）。
+ */
+export function loadWorkflowTemplate(
+  env: NodeJS.ProcessEnv = process.env,
+  nameOverride?: string,
+): LoadedTemplate {
+  const name = (nameOverride ?? env.COMFYUI_TEMPLATE)?.trim();
   const dir = env.COMFYUI_TEMPLATE_DIR?.trim();
 
   if (dir === undefined || dir === '') {
