@@ -1,3 +1,5 @@
+import { getLanguage, translate, type Language, type MessageKey } from './i18n';
+
 /**
  * 崩溃报告的**纯函数**部分（台账 B61 · 片 A + 片 B）。
  *
@@ -7,6 +9,19 @@
  * 要不要引入 jsdom（从而能写组件渲染测试）是个**决策项**：**用户 2026-10-13 拍板"不引入"**
  * （决策 D52）—— 所以这条纪律继续有效，而且片 B 更彻底：连"通知条"都是**原生 DOM**（见
  * `runtimeErrorNotice.ts`），照样只测纯函数那半。
+ *
+ * ## 语言迁移第七批：文案全部走字典
+ * 本文件是**"非 React 上下文取文案"的第三处**（前两处：`lib/format.ts` 的 `statusLabel`、
+ * `components/ErrorBoundary.tsx`）：调用方一个是 class 组件（React 只有 class 能做 error boundary）、
+ * 一个是原生 DOM 薄壳，两者都用不了 `useTranslate()`。
+ *
+ * **语言做成可注入参数**（`language?`，缺省 `getLanguage()`）—— 这不是为了好看：
+ * 本文件的纪律一直是"**纯函数不该读全局**"（`now` / `userAgent` 早就是注入的），
+ * 而语言同样是全局状态。注入之后，那份在盯措辞的单测可以**直接钉住中英两边**，
+ * 不需要去动运行期缓存、也不会因为用例顺序不同而变红。
+ *
+ * **代价如实登记**：报告在**拼装那一刻**的语言下生成（崩溃面板在 `componentDidCatch` 里拼、
+ * 通知条在事件里拼），此后切语言不会让它重新生成 —— 可接受：它们本来就是"事后快照"。
  */
 
 /** 栈只留前 N 行：完整栈几百行，而报障的人只需要"顶层几帧" */
@@ -22,12 +37,12 @@ export interface CrashReport {
 }
 
 /** 抛出来的可能根本不是 `Error`（`throw '字符串'` / Promise 拒绝一个对象都会发生）——都要能变成一句人话 */
-export function describeThrown(thrown: unknown): string {
+export function describeThrown(thrown: unknown, language: Language = getLanguage()): string {
   if (thrown instanceof Error) {
     return thrown.message === '' ? thrown.name : thrown.message;
   }
   if (typeof thrown === 'string') {
-    return thrown === '' ? '(空的字符串)' : thrown;
+    return thrown === '' ? translate(language, 'error.report.emptyString') : thrown;
   }
   try {
     const json = JSON.stringify(thrown);
@@ -40,21 +55,32 @@ export function describeThrown(thrown: unknown): string {
 }
 
 /** 取栈的前 N 行；没有栈就返回空数组（**别在面板上渲染出 "undefined"**） */
-export function stackOf(thrown: unknown, headLines: number = STACK_HEAD_LINES): string[] {
+export function stackOf(
+  thrown: unknown,
+  headLines: number = STACK_HEAD_LINES,
+  language: Language = getLanguage(),
+): string[] {
   const raw = thrown instanceof Error ? thrown.stack : undefined;
   if (raw === undefined || raw === '') return [];
   const lines = raw.split('\n').map((line) => line.trim());
   const head = lines.slice(0, Math.max(1, headLines));
   if (lines.length > head.length) {
-    head.push(`…（共 ${lines.length} 行，已截断）`);
+    head.push(translate(language, 'error.report.stackTruncated', { total: lines.length }));
   }
   return head;
+}
+
+/** 报告里"视图"那一行的取值：hash 为空时得写清楚，否则看起来像被截断了 */
+function hashLine(language: Language, key: MessageKey, hash: string): string {
+  return translate(language, key, {
+    hash: hash === '' ? translate(language, 'error.report.noHash') : hash,
+  });
 }
 
 /**
  * 拼一份崩溃报告。
  *
- * `now` / `userAgent` 可注入**只为了可测**（纯函数不该读全局）——运行时留空即取真实值。
+ * `now` / `userAgent` / `language` 可注入**只为了可测**（纯函数不该读全局）—— 运行时留空即取真实值。
  */
 export function buildCrashReport(input: {
   /** 出错区域的人话名（"画布" / "剪辑台预览" / "界面"） */
@@ -64,26 +90,26 @@ export function buildCrashReport(input: {
   hash: string;
   now?: number;
   userAgent?: string;
+  language?: Language;
 }): CrashReport {
-  const message = describeThrown(input.error);
-  const stack = stackOf(input.error);
+  const language = input.language ?? getLanguage();
+  const message = describeThrown(input.error, language);
+  const stack = stackOf(input.error, STACK_HEAD_LINES, language);
   const at = new Date(input.now ?? Date.now()).toLocaleString();
   const ua = input.userAgent ?? (typeof navigator === 'undefined' ? '' : navigator.userAgent);
 
   const lines = [
-    `位置：${input.label}`,
-    `视图：${input.hash === '' ? '(无 hash)' : input.hash}`,
-    `时间：${at}`,
-    `消息：${message}`,
+    translate(language, 'error.report.line.location', { label: input.label }),
+    hashLine(language, 'error.report.line.hash', input.hash),
+    translate(language, 'error.report.line.at', { at }),
+    translate(language, 'error.report.line.message', { message }),
   ];
-  if (stack.length > 0) lines.push('栈（前几帧）：', ...stack);
-  if (ua !== '') lines.push(`浏览器：${ua}`);
+  if (stack.length > 0) lines.push(translate(language, 'error.report.line.stack'), ...stack);
+  if (ua !== '') lines.push(translate(language, 'error.report.line.userAgent', { ua }));
 
   return {
-    title: `${input.label}出错了`,
-    summary:
-      '这一块没有渲染出来，其余界面仍可用（左侧导航可以切到别的视图）。' +
-      '这是前端兜底层，不代表你的数据出了问题 —— 已完成的成片与任务记录都不受影响。',
+    title: translate(language, 'error.report.title', { label: input.label }),
+    summary: translate(language, 'error.report.summary'),
     details: lines.join('\n'),
   };
 }
@@ -102,10 +128,16 @@ export function buildCrashReport(input: {
 /** 运行期错误的两条来路（浏览器给的是两个不同事件） */
 export type RuntimeErrorSource = 'script' | 'rejection';
 
-/** 来源的人话名（`details` 里用，报障时能一眼看出是哪一类） */
-export const RUNTIME_ERROR_SOURCE_LABELS: Record<RuntimeErrorSource, string> = {
-  script: '脚本错误（未被捕获）',
-  rejection: '未处理的 Promise 拒绝',
+/**
+ * 来源 → 文案键（`details` 里用，报障时能一眼看出是哪一类）。
+ *
+ * V8.51 之前这里是一个 `Record<RuntimeErrorSource, string>` 的**中文常量表**；
+ * 迁移时换成键表 —— 常量表在双语下没法用（它只能是一种语言）。
+ * 它**只在本文件内使用**，所以顺带撤掉了那个 `export`（无人引用的导出是负债）。
+ */
+const RUNTIME_ERROR_SOURCE_KEYS: Record<RuntimeErrorSource, MessageKey> = {
+  script: 'error.runtime.source.script',
+  rejection: 'error.runtime.source.rejection',
 };
 
 export interface RuntimeErrorNotice {
@@ -139,6 +171,9 @@ export interface RuntimeErrorNotice {
  *
  * 判定用"包含"而不是"等于"：`ErrorEvent.message` 常带前缀（`Uncaught Error: …`），
  * 而这两种写法（新老 Chromium）指的是同一件事。
+ *
+ * ⚠️ 这两条是**浏览器给的字面量**（英文原文），**不是我们的文案** ——
+ * 所以它们**永远不进字典**（翻译它等于把判据改坏；注释里也不写中文，免得被自检扫成文案）。
  */
 const BENIGN_RUNTIME_NOISE: readonly string[] = [
   'ResizeObserver loop completed with undelivered notifications',
@@ -161,28 +196,29 @@ export function buildRuntimeErrorNotice(input: {
   hash: string;
   now?: number;
   userAgent?: string;
+  language?: Language;
 }): RuntimeErrorNotice {
-  const message = describeThrown(input.error);
-  const stack = stackOf(input.error);
+  const language = input.language ?? getLanguage();
+  const message = describeThrown(input.error, language);
+  const stack = stackOf(input.error, STACK_HEAD_LINES, language);
   const at = new Date(input.now ?? Date.now()).toLocaleString();
   const ua = input.userAgent ?? (typeof navigator === 'undefined' ? '' : navigator.userAgent);
 
   const lines = [
-    `来源：${RUNTIME_ERROR_SOURCE_LABELS[input.source]}`,
-    `视图：${input.hash === '' ? '(无 hash)' : input.hash}`,
-    `时间：${at}`,
-    `消息：${message}`,
+    translate(language, 'error.runtime.line.source', {
+      source: translate(language, RUNTIME_ERROR_SOURCE_KEYS[input.source]),
+    }),
+    hashLine(language, 'error.report.line.hash', input.hash),
+    translate(language, 'error.report.line.at', { at }),
+    translate(language, 'error.report.line.message', { message }),
   ];
-  if (stack.length > 0) lines.push('栈（前几帧）：', ...stack);
-  if (ua !== '') lines.push(`浏览器：${ua}`);
-  lines.push('（本提示只出现在本机，没有上报到服务器）');
+  if (stack.length > 0) lines.push(translate(language, 'error.report.line.stack'), ...stack);
+  if (ua !== '') lines.push(translate(language, 'error.report.line.userAgent', { ua }));
+  lines.push(translate(language, 'error.runtime.localOnly'));
 
   return {
-    title: '界面里有一处代码出错了',
-    summary:
-      '出错的不一定是你正在看的地方 —— 如果你发现某个按钮或某块内容不动了，刷新一次页面通常就好。' +
-      '你的成片与任务记录都在服务端，不受影响。' +
-      '这条提示只出现在这台机器上（没有上报）。',
+    title: translate(language, 'error.runtime.title'),
+    summary: translate(language, 'error.runtime.summary'),
     details: lines.join('\n'),
     // 签名只看"来源 + 消息"，**不含栈** —— 这是刻意的取舍：
     // 去重的目的是别刷屏，而"同一条消息在循环里抛 200 次"正是最需要去重的场合

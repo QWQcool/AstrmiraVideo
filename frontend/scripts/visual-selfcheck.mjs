@@ -614,6 +614,7 @@ if (leftPanelText !== undefined) {
   // 判据 = "这一行（去掉注释后）还含中文"：注释是中文写的（本仓文化），不算文案。
   const I18N_MIGRATED = [
     'App.tsx',
+    'main.tsx',
     'components/Sidebar.tsx',
     'components/AssetDropZone.tsx',
     'components/ByokDrawer.tsx',
@@ -629,6 +630,7 @@ if (leftPanelText !== undefined) {
     'views/WorkbenchView.tsx',
     'lib/byok.ts',
     'lib/theme.ts',
+    'lib/errorReport.ts',
   ];
   const CJK_PATTERN = /[\u4e00-\u9fa5]/;
   for (const rel of I18N_MIGRATED) {

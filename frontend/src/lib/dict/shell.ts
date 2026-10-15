@@ -74,9 +74,12 @@ export const SHELL_ZH = {
   'shell.service.probing': '探测中',
   'shell.service.ok': '服务在线',
 
-  // ── 常驻视图的**区域名**（`ErrorBoundary` 的 label：崩了要说清是哪一块崩了）──
+  // ── 区域名（`ErrorBoundary` 的 label：崩了要说清是哪一块崩了）──
+  // `app` = `main.tsx` 那一层（兜的是**壳自身**渲染抛错，那时连侧栏都没了）——
+  // 它是"最后一道"的 label，崩了只能说"界面"，因为已经没有一个具体视图可指认。
   'shell.region.workbench': '工作台',
   'shell.region.create': '创作入口',
+  'shell.region.app': '界面',
 
   // ── 凭据（保存 / 清除 / 测试连接）──
   'shell.byok.saved': '凭据已{sink}：视频轨{video} · 文本扩写{text}。',
@@ -147,6 +150,7 @@ export const SHELL_EN = {
 
   'shell.region.workbench': 'Workbench',
   'shell.region.create': 'Create',
+  'shell.region.app': 'Interface',
 
   'shell.byok.saved': 'Credentials {sink}: video track {video} · text expansion {text}.',
   'shell.byok.sinkLocal': 'stored in plain text on this device (trusted devices only)',
