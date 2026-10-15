@@ -1,5 +1,23 @@
-# AstrmiraVideo · 产品与开发规划（PLAN V8.49）
+# AstrmiraVideo · 产品与开发规划（PLAN V8.50）
 
+> **修订说明（V8.50，2026-10-15）**
+> **L1 收官件 · 语言迁移第五批（工作台整屏收尾）**（**无契约变更**）：
+> - 迁完 `components/CenterPanel.tsx`（21 处：实时视窗的**全部状态分支** —— 等待 / 不可用 /
+>   已完成但缺成片地址 / 失败（可重试 vs 终止）/ 取消 / 排队与生成中）+ `components/RightPanel.tsx`
+>   （7 处）+ `components/UncertainNotice.tsx`（7 处：`UNCERTAIN_RESULT` 那张人工核对卡）+
+>   `components/GalleryCard.tsx`（9 处）。**工作台这一屏至此整屏迁完**。
+> - **`lib/format.ts` 的 `statusLabel` 改成按语言取**：它是**"非 React 上下文取文案"的第一处** ——
+>   被中央视窗 / 画廊卡 / 右栏调用，改造成 hook 不划算，于是按当前语言取（`getLanguage()`），
+>   而**调用它的组件都订阅了语言**，语言一变它们重渲染、结果跟着变。
+>   同时明确了一件事：状态名有**两套口径**（徽章说"失败"、视窗说"**未完成**"），
+>   **刻意不合并**（合并会改文案，而迁移不改文案），差异写进字典注释。
+> - **如实登记一处未收敛**：`executedBy` 的显示名来自 `@astrmira/shared` 的 `EXECUTED_BY_LABELS`
+>   （中文）—— 本批只译了"执行于…"这层壳，标签值留待**画布 / 视频库批次**与 `NodeCard` /
+>   `LibraryView` 一并收敛（三处一起改，避免只改一处反而不同步）。
+> - 证据：字典完整性单测自动覆盖新增 ~120 条；**视觉自检清单扩到 9 个文件**（新增上述 4 个）；
+>   冒烟全绿。**本批还做了一次全量盘点**（`frontend/src` 逐文件扫非注释中文），
+>   得到**完整的待迁清单**（见 §5 该条目的"剩余"段），此后按它推进、不再靠猜。
+>
 > **修订说明（V8.49，2026-10-15）**
 > **L1 收官件 · 语言迁移第四批（工作台容器 + 项目切换器）**（**无契约变更**）：
 > - 迁完 `views/WorkbenchView.tsx`（31 处：几乎全是**就地通知** —— 扩写结果 / 取消 / 复用参数 /
@@ -1645,6 +1663,35 @@
       - **未做（如实）**：`components/ByokDrawer.tsx`（35 处）与 `ErrorBoundary` / `lib/errorReport.ts`
         留在下一批（同属"抽屉与兜底"层）；画布 / 视频库 / 成本台账 / 配方库 / 操作日志 / 剪辑台仍未迁。
       - 门禁：lint 0 / type 0 / 前端 **406** / 视觉自检 / 契约 11 / 构建 / **UI 冒烟全绿**。
+- [x] **L1 · 语言迁移第五批（工作台整屏收尾）【已完成 2026-10-15】**（前端内建，**无契约变更**）：
+      - **迁完**：`components/CenterPanel.tsx`（**21 处** —— 实时视窗的**全部状态分支**：等待 /
+        不可用 / 已完成但缺成片地址 / 失败（**可重试 vs 终止**两套指引）/ 取消 / 排队与生成中）、
+        `components/RightPanel.tsx`（7 处）、`components/UncertainNotice.tsx`（7 处 ——
+        `UNCERTAIN_RESULT` 那张人工核对卡）、`components/GalleryCard.tsx`（9 处）。
+        **工作台这一屏至此整屏迁完**（左栏 / 中栏 / 右栏 / 容器 / 项目切换 / 核对卡 / 画廊卡）。
+      - **`lib/format.ts` 的 `statusLabel` 改成按语言取** —— 它是**"非 React 上下文取文案"的第一处**：
+        被中央视窗 / 画廊卡 / 右栏调用，改成 hook 不划算，于是按当前语言取（`getLanguage()`），
+        而**调用它的组件都订阅了语言**（`useTranslate()`），语言一变它们重渲染、结果跟着变。
+        同时把一件事写清了：状态名有**两套口径** —— 徽章说"失败"、视窗说"**未完成**"，
+        **刻意不合并**（合并会**改界面文案**，而迁移不改文案），差异写进 `common.statusLabel.*` 的注释。
+      - **如实登记一处未收敛**：`executedBy` 的显示名来自 `@astrmira/shared` 的 `EXECUTED_BY_LABELS`
+        （中文）—— 本批只译了"执行于…"这层壳，标签值留待**画布 / 视频库批次**与 `NodeCard` /
+        `LibraryView` **三处一并收敛**（只改一处反而不同步）。
+      - **本批还做了一次全量盘点**（逐文件扫"非注释中文行"），得到**完整的待迁清单**，
+        此后按它推进、不再靠猜（数字是**上界** —— 含多行注释续行；精确值由视觉自检清单逐文件钉）：
+        `views/CanvasView.tsx`（134）/ `views/LibraryView.tsx`（74）/ `canvas/PlanInspector.tsx`（36）/
+        `components/ByokDrawer.tsx`（35）/ `views/LogsView.tsx`（30）/ `views/CostsView.tsx`（28）/
+        `views/EditView.tsx`（27）/ `lib/errorReport.ts`（24）/ `edit/Timeline.tsx`（23）/
+        `views/OverviewView.tsx`（22）/ `edit/ExportPanel.tsx`（20）/ `edit/DraftHistory.tsx`（20）/
+        `edit/clipProperties.ts`（19）/ `lib/lineage.ts`（18）/ `edit/InspectorPanel.tsx`（15）/
+        `lib/canvasPlanRunner.ts`（13）/ `views/RecipesView.tsx`（12）/ `lib/costView.ts`（12）/
+        `lib/workerClient.ts`（11）/ `lib/deliverablePackage.ts`（10）/ `canvas/labels.ts`（9）/
+        `lib/engineOptions.ts`（8）/ `lib/presetTranscode.ts`、`libraryFilter.ts`、`canvasPlan.ts`、
+        `api.ts`（各 7）/ `lib/runtimeErrorNotice.ts`（6）/ `components/ErrorBoundary.tsx`（3）/
+        `views/UnknownView.tsx`（4）/ `lib/zipStore.ts`、`lib/assets.ts`、`edit/TimelineClip.tsx`、
+        `edit/store.ts`、`canvas/PlanNodeCard.tsx`、`canvas/NoteCard.tsx`（各 4）等。
+      - 门禁：lint 0 / type 0 / 前端 **406** / 视觉自检（**清单已 9 个文件**）/ 契约 11 / 构建 /
+        **UI 冒烟全绿**。
 - [x] **A1 · 后续 · 撤掉「本地 MiniMax H3」档【已完成 2026-10-15】**（契约 **V2.37** 先行；决策 **D56**；**零新路由、零新错误码、零新表**）：
       - **为什么**：这一档**只有配置约定、没有执行实现**（`registry` 里 `() => null`，选了如实 503）——
         摆在界面上就是"**点了才知道不行**"的按钮，正是本仓最反感的形态。用户 2026-10-15 拍板撤掉（N4 = ①）。

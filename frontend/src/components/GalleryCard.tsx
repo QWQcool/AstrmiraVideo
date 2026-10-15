@@ -3,6 +3,7 @@ import { EXECUTED_BY_LABELS, EXECUTED_BY_TITLES } from '@astrmira/shared';
 import { Eyebrow } from './Eyebrow';
 import { resolveMediaUrl } from '../lib/api';
 import { formatIndex, statusLabel } from '../lib/format';
+import { useTranslate } from '../lib/i18n';
 
 /**
  * 画廊卡片（PLAN §4 Step 3 右栏）。
@@ -43,6 +44,7 @@ export function GalleryCard({
   onPreview,
   onDelete,
 }: GalleryCardProps) {
+  const t = useTranslate();
   const videoUrl = resolveMediaUrl(task.outputVideoUrl);
   const thumbnailUrl = resolveMediaUrl(task.thumbnailUrl);
   // `?? ''` 只为满足 <img src> 的类型；真正的分支判据是 `showThumbnail`
@@ -74,14 +76,14 @@ export function GalleryCard({
           type="button"
           className="wb-card-thumb wb-card-thumb-button"
           onClick={() => onPreview(task)}
-          title="在中栏播放这条成片"
-          aria-label={`播放第 ${index} 条成片`}
+          title={t('workbench.gallery.playTitle')}
+          aria-label={t('workbench.gallery.playAria', { index })}
         >
           {thumbContent}
         </button>
       ) : (
         // 不可播的卡片保持静态：点它没有意义，做成按钮反而会让人以为"点了没反应 = 坏了"
-        <div className="wb-card-thumb" title="该任务没有可播放的成片">
+        <div className="wb-card-thumb" title={t('workbench.gallery.noOutput')}>
           {thumbContent}
         </div>
       )}
@@ -94,12 +96,16 @@ export function GalleryCard({
           <span className="wb-note">{formatIndex(index)}</span>
         </div>
 
-        <span className="wb-card-prompt">{prompt === '' ? '（无提示词）' : prompt}</span>
+        <span className="wb-card-prompt">
+          {prompt === '' ? t('workbench.gallery.emptyPrompt') : prompt}
+        </span>
 
         <span className="wb-note">
           {snapshot.aspectRatio} · {snapshot.provider}
           {snapshot.params?.seed === undefined ? '' : ` · seed ${snapshot.params.seed}`}
-          {snapshot.assets?.firstFrameImage === undefined ? '' : ' · 含参考图'}
+          {snapshot.assets?.firstFrameImage === undefined
+            ? ''
+            : t('workbench.gallery.hasReference')}
         </span>
 
         {/* V2.27（台账 A1 片 A / B11）：**这条在哪跑的**如实标注 ——
@@ -110,7 +116,7 @@ export function GalleryCard({
             data-testid="gallery-executed-by"
             title={EXECUTED_BY_TITLES[task.executedBy]}
           >
-            ▸ 执行于{EXECUTED_BY_LABELS[task.executedBy]}
+            {t('workbench.gallery.executedAt', { label: EXECUTED_BY_LABELS[task.executedBy] })}
           </span>
         )}
 
@@ -120,7 +126,7 @@ export function GalleryCard({
 
         <div className="wb-card-actions">
           <button type="button" className="wb-btn" onClick={() => onReuse(task)}>
-            复用参数
+            {t('workbench.center.reuse')}
           </button>
           <button
             type="button"
@@ -128,7 +134,7 @@ export function GalleryCard({
             onClick={() => onDelete(task.taskId)}
             disabled={deleting}
           >
-            {deleting ? '删除中…' : '删除'}
+            {deleting ? t('workbench.gallery.deleting') : t('common.delete')}
           </button>
         </div>
       </div>

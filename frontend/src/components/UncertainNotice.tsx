@@ -1,3 +1,5 @@
+import { useTranslate } from '../lib/i18n';
+
 /**
  * `UNCERTAIN_RESULT` 的人工核对提示（Step 3 AC7 / PLAN §3 防线 7）。
  *
@@ -20,21 +22,25 @@ export function UncertainNotice({
   onAcknowledge,
   onAbandon,
 }: UncertainNoticeProps) {
+  const t = useTranslate();
+
   return (
     <div className="wb-uncertain">
-      <span className="wb-uncertain-title">结果不明 · 需要人工核对</span>
+      <span className="wb-uncertain-title">{t('workbench.uncertain.title')}</span>
 
       <span className="wb-uncertain-body">
-        可能已产生费用，请到服务商后台核对后手动处理。
+        {t('workbench.uncertain.feeNote')}
         <br />
-        任务编号 <code>{taskId}</code> —— 该编号在上游不一定存在，若后台看不到对应记录，说明请求未真正受理。
+        {t('workbench.uncertain.taskId.before')}
+        <code>{taskId}</code>
+        {t('workbench.uncertain.taskId.after')}
       </span>
 
       <span className="wb-uncertain-body">{message}</span>
 
       <span className="wb-uncertain-body">
-        <strong>不会自动重试，也不提供一键重跑</strong>：重复提交可能被上游重复计费。
-        确认上游无扣费后，可点击下方按钮用同一参数重新发起一次新任务。
+        <strong>{t('workbench.uncertain.noRetry.emphasis')}</strong>
+        {t('workbench.uncertain.noRetry.after')}
       </span>
 
       <div className="wb-card-actions">
@@ -44,10 +50,12 @@ export function UncertainNotice({
           onClick={onAcknowledge}
           disabled={acknowledged}
         >
-          {acknowledged ? '已标记核对' : '标记已核对'}
+          {acknowledged
+            ? t('workbench.uncertain.acknowledged')
+            : t('workbench.uncertain.acknowledge')}
         </button>
         <button type="button" className="wb-btn" onClick={onAbandon}>
-          放弃任务
+          {t('workbench.uncertain.abandon')}
         </button>
       </div>
     </div>

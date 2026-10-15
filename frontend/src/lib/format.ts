@@ -1,4 +1,5 @@
 import type { AspectRatio } from '@astrmira/shared';
+import { getLanguage, translate, type MessageKey } from './i18n';
 
 /**
  * 展示层格式化（纯函数，可单测）。
@@ -108,20 +109,25 @@ export function formatClock(ms: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-/** 任务状态 → 中文标签（避免散落在组件里拼字符串） */
+const STATUS_LABEL_KEYS: Record<string, MessageKey> = {
+  queued: 'common.statusLabel.queued',
+  running: 'common.statusLabel.running',
+  succeeded: 'common.statusLabel.succeeded',
+  failed: 'common.statusLabel.failed',
+  cancelled: 'common.statusLabel.cancelled',
+};
+
+/**
+ * 任务状态 → 标签（避免散落在组件里拼字符串）。
+ *
+ * ⚠️ V2.41（语言迁移）：**这里是"非 React 上下文取文案"的第一处** ——
+ * 它被中央视窗 / 画廊卡 / 右栏调用（`GalleryCard` / `RightPanel`），改造成 hook 不划算，
+ * 所以直接按**当前语言**取（`getLanguage()`），而**调用它的组件都订阅了语言**
+ * （`useTranslate()` / `useLanguage()`）—— 语言一变它们会重渲染，这里的结果跟着变。
+ *
+ * 未知状态**原样返回**（不猜、不显示空白）：服务端将来加了新状态，界面显示原始值而不是空白。
+ */
 export function statusLabel(status: string): string {
-  switch (status) {
-    case 'queued':
-      return '排队中';
-    case 'running':
-      return '生成中';
-    case 'succeeded':
-      return '已完成';
-    case 'failed':
-      return '未完成';
-    case 'cancelled':
-      return '已取消';
-    default:
-      return status;
-  }
+  const key = STATUS_LABEL_KEYS[status];
+  return key === undefined ? status : translate(getLanguage(), key);
 }

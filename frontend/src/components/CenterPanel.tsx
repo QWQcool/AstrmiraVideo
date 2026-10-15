@@ -10,6 +10,7 @@ import {
   statusLabel,
   type ResolutionTier,
 } from '../lib/format';
+import { useTranslate } from '../lib/i18n';
 
 /**
  * 中栏视窗（PLAN §4 Step 3）。
@@ -44,6 +45,7 @@ export function CenterPanel({
   onCancel,
   onRequestReuse,
 }: CenterPanelProps) {
+  const t = useTranslate();
   const target = resolveTargetSize(aspectRatio, resolutionTier);
   const videoUrl = task === null ? null : resolveMediaUrl(task.outputVideoUrl);
 
@@ -53,10 +55,10 @@ export function CenterPanel({
     <section className="wb-panel wb-panel-center" data-status={task?.status ?? 'idle'}>
       <div className="wb-field-head">
         <Eyebrow index={2} tone="gold" as="h2">
-          实时视窗
+          {t('workbench.center.eyebrow')}
         </Eyebrow>
         <span className="wb-note">
-          {target.width}×{target.height} · 32 倍数对齐
+          {t('workbench.center.sizeNote', { width: target.width, height: target.height })}
         </span>
       </div>
 
@@ -69,13 +71,16 @@ export function CenterPanel({
           <span className="wb-timecode">
             {task === null
               ? '--:-- / --:--'
-              : `${formatClock(elapsedSeconds * 1000)} · ${statusLabel(task.status)}`}
+              : t('workbench.center.timecode', {
+                  clock: formatClock(elapsedSeconds * 1000),
+                  status: statusLabel(task.status),
+                })}
           </span>
 
           <div className="wb-card-actions">
             {task !== null && (task.status === 'queued' || task.status === 'running') ? (
               <button type="button" className="wb-btn" onClick={onCancel}>
-                取消任务
+                {t('workbench.center.cancel')}
               </button>
             ) : null}
 
@@ -86,7 +91,7 @@ export function CenterPanel({
               aria-disabled={videoUrl === null}
               style={videoUrl === null ? { opacity: 0.45, pointerEvents: 'none' } : undefined}
             >
-              下载 MP4
+              {t('workbench.center.download')}
             </a>
           </div>
         </div>
@@ -99,9 +104,9 @@ export function CenterPanel({
       return (
         <div className="wb-empty">
           <span className="wb-empty-icon">✧</span>
-          <span className="wb-empty-title">任务不可用</span>
+          <span className="wb-empty-title">{t('workbench.center.unavailable')}</span>
           <span className="wb-note">{pollingError.failure.message}</span>
-          <span className="wb-note">任务可能已被清理；可从右栏历史重新发起。</span>
+          <span className="wb-note">{t('workbench.center.unavailableNote')}</span>
         </div>
       );
     }
@@ -110,8 +115,8 @@ export function CenterPanel({
       return (
         <div className="wb-empty">
           <span className="wb-empty-icon">✧</span>
-          <span className="wb-empty-title">等待生成任务下发</span>
-          <span className="wb-note">配置左侧提示词与参考首帧后，点击「立即生成视频」。</span>
+          <span className="wb-empty-title">{t('workbench.center.waiting')}</span>
+          <span className="wb-note">{t('workbench.center.waitingNote')}</span>
           <span className="wb-watermark">Astrmira · awaiting signal</span>
         </div>
       );
@@ -123,7 +128,7 @@ export function CenterPanel({
           <video className="wb-video" src={videoUrl} controls loop playsInline />
           {/* V9 · B6：star-gather 提级到播放器中央。`key` 用 taskId 保证"换任务/重新出片即重播" */}
           <span className="wb-done-wrap" key={task.taskId}>
-            <span className="wb-done-mark" title="生成完成" aria-hidden="true">
+            <span className="wb-done-mark" title={t('workbench.center.doneMark')} aria-hidden="true">
               ✦
             </span>
           </span>
@@ -135,10 +140,8 @@ export function CenterPanel({
       return (
         <div className="wb-empty">
           <span className="wb-empty-icon">✧</span>
-          <span className="wb-empty-title">任务已完成</span>
-          <span className="wb-note">
-            但成片地址缺失（outputVideoUrl 为空）。这属于异常，请检查服务端输出目录。
-          </span>
+          <span className="wb-empty-title">{t('workbench.center.doneNoUrl')}</span>
+          <span className="wb-note">{t('workbench.center.doneNoUrlNote')}</span>
         </div>
       );
     }
@@ -150,7 +153,7 @@ export function CenterPanel({
         <div className="wb-empty">
           {uncertain ? (
             <UncertainNotice
-              message={task.error?.message ?? '结果不明'}
+              message={task.error?.message ?? t('workbench.center.uncertain')}
               taskId={task.taskId}
               acknowledged={uncertainAcknowledged}
               onAcknowledge={onAcknowledgeUncertain}
@@ -158,15 +161,21 @@ export function CenterPanel({
             />
           ) : (
             <>
-              <span className="wb-empty-title">未完成 · {task.error?.code ?? '未知错误'}</span>
-              <span className="wb-note">{task.error?.message ?? '任务失败'}</span>
+              <span className="wb-empty-title">
+                {t('workbench.center.failedTitle', {
+                  code: task.error?.code ?? t('workbench.center.unknownError'),
+                })}
+              </span>
+              <span className="wb-note">
+                {task.error?.message ?? t('workbench.center.failedMessage')}
+              </span>
               <span className="wb-note">
                 {task.error?.disposition === 'retryable'
-                  ? '该错误属可重试类：确认外部条件（额度 / 限流 / 网络）后可用同一参数再次发起。'
-                  : '该错误属终止类：重复提交大概率仍会失败，请先修正参数或凭据。'}
+                  ? t('workbench.center.retryable')
+                  : t('workbench.center.fatal')}
               </span>
               <button type="button" className="wb-btn wb-btn-gold" onClick={onRequestReuse}>
-                复用参数
+                {t('workbench.center.reuse')}
               </button>
             </>
           )}
@@ -178,8 +187,8 @@ export function CenterPanel({
       return (
         <div className="wb-empty">
           <span className="wb-empty-icon">✧</span>
-          <span className="wb-empty-title">任务已取消</span>
-          <span className="wb-note">{task.message ?? '该任务不再继续执行。'}</span>
+          <span className="wb-empty-title">{t('workbench.center.cancelled')}</span>
+          <span className="wb-note">{task.message ?? t('workbench.center.cancelledNote')}</span>
         </div>
       );
     }
@@ -191,8 +200,9 @@ export function CenterPanel({
         active
         caption={
           task.status === 'queued'
-            ? '已入队 · 等待执行'
-            : task.message ?? `生成中 · ${statusLabel(task.status)}`
+            ? t('workbench.center.queued')
+            : (task.message ??
+              t('workbench.center.running', { status: statusLabel(task.status) }))
         }
       />
     );

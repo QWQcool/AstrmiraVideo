@@ -25,6 +25,19 @@ export const COMMON_ZH = {
   'common.status.failed': '失败',
   'common.status.cancelled': '已取消',
 
+  /**
+   * 状态名的**第二套口径**（`lib/format.ts` 的 `statusLabel`：徽章 / 时间码行 / 画廊卡）。
+   *
+   * 为什么两套并存而不是合并：它们**修的语感不同** —— 徽章说"失败"（一个判定），
+   * 中央视窗说"**未完成**"（它连成片都没有，说"失败"过重；用户可能在别处还能看到成片）。
+   * 合并会**改掉界面文案**，而迁移不改文案。差异写在这里，免得后来者当它是笔误。
+   */
+  'common.statusLabel.queued': '排队中',
+  'common.statusLabel.running': '生成中',
+  'common.statusLabel.succeeded': '已完成',
+  'common.statusLabel.failed': '未完成',
+  'common.statusLabel.cancelled': '已取消',
+
   // ── 素材种类 ──
   'common.kind.image': '图片',
   'common.kind.video': '视频',
@@ -38,6 +51,7 @@ export const COMMON_ZH = {
   'common.remove': '移除',
   'common.uploading': '上传中…',
   'common.submit.pending': '提交中…',
+  'common.delete': '删除',
 
   // ── 产物来源的**行内前缀**（引用弹层 / 成片下拉都用同一对）──
   'common.origin.editBadge': '✂ 剪辑产物 · ',
@@ -63,6 +77,12 @@ export const COMMON_EN = {
   'common.status.failed': 'Failed',
   'common.status.cancelled': 'Cancelled',
 
+  'common.statusLabel.queued': 'Queued',
+  'common.statusLabel.running': 'Generating',
+  'common.statusLabel.succeeded': 'Done',
+  'common.statusLabel.failed': 'Not finished',
+  'common.statusLabel.cancelled': 'Cancelled',
+
   'common.kind.image': 'image',
   'common.kind.video': 'video',
 
@@ -73,6 +93,7 @@ export const COMMON_EN = {
   'common.remove': 'Remove',
   'common.uploading': 'Uploading…',
   'common.submit.pending': 'Submitting…',
+  'common.delete': 'Delete',
 
   'common.origin.editBadge': '✂ Edited · ',
   'common.origin.renderBadge': 'Render · ',

@@ -125,6 +125,67 @@ export const WORKBENCH_ZH = {
   'workbench.footer.waiting': ' 等待任务',
   'workbench.footer.recent': ' 最近任务 {id} · 观察 {time}',
 
+  // ── 中央视窗（`components/CenterPanel.tsx`）──
+  'workbench.center.eyebrow': '实时视窗',
+  'workbench.center.sizeNote': '{width}×{height} · 32 倍数对齐',
+  'workbench.center.timecode': '{clock} · {status}',
+  'workbench.center.cancel': '取消任务',
+  'workbench.center.download': '下载 MP4',
+  'workbench.center.unavailable': '任务不可用',
+  'workbench.center.unavailableNote': '任务可能已被清理；可从右栏历史重新发起。',
+  'workbench.center.waiting': '等待生成任务下发',
+  'workbench.center.waitingNote': '配置左侧提示词与参考首帧后，点击「立即生成视频」。',
+  'workbench.center.doneMark': '生成完成',
+  'workbench.center.doneNoUrl': '任务已完成',
+  'workbench.center.doneNoUrlNote': '但成片地址缺失（outputVideoUrl 为空）。这属于异常，请检查服务端输出目录。',
+  'workbench.center.uncertain': '结果不明',
+  'workbench.center.failedTitle': '未完成 · {code}',
+  'workbench.center.unknownError': '未知错误',
+  'workbench.center.failedMessage': '任务失败',
+  'workbench.center.retryable':
+    '该错误属可重试类：确认外部条件（额度 / 限流 / 网络）后可用同一参数再次发起。',
+  'workbench.center.fatal': '该错误属终止类：重复提交大概率仍会失败，请先修正参数或凭据。',
+  'workbench.center.reuse': '复用参数',
+  'workbench.center.cancelled': '任务已取消',
+  'workbench.center.cancelledNote': '该任务不再继续执行。',
+  'workbench.center.queued': '已入队 · 等待执行',
+  'workbench.center.running': '生成中 · {status}',
+
+  // ── 人工核对卡（`components/UncertainNotice.tsx`；`UNCERTAIN_RESULT` 那条防线）──
+  'workbench.uncertain.title': '结果不明 · 需要人工核对',
+  'workbench.uncertain.feeNote': '可能已产生费用，请到服务商后台核对后手动处理。',
+  'workbench.uncertain.taskId.before': '任务编号 ',
+  'workbench.uncertain.taskId.after':
+    ' —— 该编号在上游不一定存在，若后台看不到对应记录，说明请求未真正受理。',
+  'workbench.uncertain.noRetry.emphasis': '不会自动重试，也不提供一键重跑',
+  'workbench.uncertain.noRetry.after':
+    '：重复提交可能被上游重复计费。确认上游无扣费后，可点击下方按钮用同一参数重新发起一次新任务。',
+  'workbench.uncertain.acknowledged': '已标记核对',
+  'workbench.uncertain.acknowledge': '标记已核对',
+  'workbench.uncertain.abandon': '放弃任务',
+
+  // ── 画廊卡（`components/GalleryCard.tsx`）──
+  // ⚠️ `executedBy` 的**显示名**目前来自 `@astrmira/shared` 的 `EXECUTED_BY_LABELS`（中文）——
+  //    本批只把"执行于…"这层壳译了，标签值留待**画布 / 视频库批次**与 `NodeCard` / `LibraryView`
+  //    一并收敛（那时三处一起改，避免只改一处反而不同步）。
+  'workbench.gallery.playTitle': '在中栏播放这条成片',
+  'workbench.gallery.playAria': '播放第 {index} 条成片',
+  'workbench.gallery.noOutput': '该任务没有可播放的成片',
+  'workbench.gallery.emptyPrompt': '（无提示词）',
+  'workbench.gallery.hasReference': ' · 含参考图',
+  'workbench.gallery.executedAt': '▸ 执行于{label}',
+  'workbench.gallery.deleting': '删除中…',
+
+  // ── 右栏（`components/RightPanel.tsx`）──
+  'workbench.right.eyebrow': '任务与画廊',
+  'workbench.right.refreshing': '刷新中…',
+  'workbench.right.refresh': '刷新',
+  'workbench.right.current': '当前任务',
+  'workbench.right.noCurrent': '暂无进行中的任务',
+  'workbench.right.history': '历史成片（{count}）',
+  'workbench.right.noHistory': '暂无历史成片',
+  'workbench.right.noHistoryNote': '生成后的成片会在这里沉淀，支持参数一键回填。',
+
   // ── 素材槽（`AssetDropZone`）──
   'workbench.drop.previewAlt': '{label}裁切预览',
   'workbench.drop.naturalSize.before': '原图 ',
@@ -254,6 +315,66 @@ export const WORKBENCH_EN = {
   'workbench.footer.lead': 'Local demo build ·',
   'workbench.footer.waiting': ' waiting for a task',
   'workbench.footer.recent': ' latest task {id} · watching {time}',
+
+  'workbench.center.eyebrow': 'Live viewport',
+  'workbench.center.sizeNote': '{width}×{height} · aligned to a multiple of 32',
+  'workbench.center.timecode': '{clock} · {status}',
+  'workbench.center.cancel': 'Cancel task',
+  'workbench.center.download': 'Download MP4',
+  'workbench.center.unavailable': 'Task unavailable',
+  'workbench.center.unavailableNote':
+    'The task may have been cleaned up; start again from the history in the right column.',
+  'workbench.center.waiting': 'Waiting for a generation task',
+  'workbench.center.waitingNote':
+    'Set the prompt and first frame on the left, then hit “Generate video”.',
+  'workbench.center.doneMark': 'Generation finished',
+  'workbench.center.doneNoUrl': 'Task finished',
+  'workbench.center.doneNoUrlNote':
+    'but the output URL is missing (outputVideoUrl is empty). That is abnormal — check the server output directory.',
+  'workbench.center.uncertain': 'Result unclear',
+  'workbench.center.failedTitle': 'Not finished · {code}',
+  'workbench.center.unknownError': 'unknown error',
+  'workbench.center.failedMessage': 'Task failed',
+  'workbench.center.retryable':
+    'This error is retryable: check the external conditions (quota / rate limit / network) and you can submit the same parameters again.',
+  'workbench.center.fatal':
+    'This error is terminal: resubmitting will most likely fail again — fix the parameters or credentials first.',
+  'workbench.center.reuse': 'Reuse parameters',
+  'workbench.center.cancelled': 'Task cancelled',
+  'workbench.center.cancelledNote': 'This task will not run any further.',
+  'workbench.center.queued': 'Queued · waiting to run',
+  'workbench.center.running': 'Generating · {status}',
+
+  'workbench.uncertain.title': 'Unclear result · needs a manual check',
+  'workbench.uncertain.feeNote':
+    'You may already have been charged; check your provider console and sort it out by hand.',
+  'workbench.uncertain.taskId.before': 'Task id ',
+  'workbench.uncertain.taskId.after':
+    ' — that id need not exist upstream: if the console shows no matching record, the request was never accepted.',
+  'workbench.uncertain.noRetry.emphasis': 'No automatic retry, and deliberately no one-click resubmit',
+  'workbench.uncertain.noRetry.after':
+    ': resubmitting may be billed twice upstream. Once you have confirmed there was no charge, use the button below to start one new task with the same parameters.',
+  'workbench.uncertain.acknowledged': 'Marked as checked',
+  'workbench.uncertain.acknowledge': 'Mark as checked',
+  'workbench.uncertain.abandon': 'Abandon task',
+
+  'workbench.gallery.playTitle': 'Play this render in the centre column',
+  'workbench.gallery.playAria': 'Play render #{index}',
+  'workbench.gallery.noOutput': 'This task has no playable output',
+  'workbench.gallery.emptyPrompt': '(no prompt)',
+  'workbench.gallery.hasReference': ' · with reference image',
+  'workbench.gallery.executedAt': '▸ ran on {label}',
+  'workbench.gallery.deleting': 'Deleting…',
+
+  'workbench.right.eyebrow': 'Tasks and gallery',
+  'workbench.right.refreshing': 'Refreshing…',
+  'workbench.right.refresh': 'Refresh',
+  'workbench.right.current': 'Current task',
+  'workbench.right.noCurrent': 'No task in progress',
+  'workbench.right.history': 'Past renders ({count})',
+  'workbench.right.noHistory': 'No past renders yet',
+  'workbench.right.noHistoryNote':
+    'Finished renders land here, and their parameters can be filled back in with one click.',
 
   'workbench.drop.previewAlt': '{label} crop preview',
   'workbench.drop.naturalSize.before': 'Source ',

@@ -2,6 +2,7 @@ import type { TaskProgress } from '@astrmira/shared';
 import { Eyebrow } from './Eyebrow';
 import { GalleryCard } from './GalleryCard';
 import { statusLabel } from '../lib/format';
+import { useTranslate } from '../lib/i18n';
 
 /**
  * 右栏：任务队列 + 历史画廊（PLAN §4 Step 3）。
@@ -31,21 +32,23 @@ export function RightPanel({
   onDelete,
   onRefresh,
 }: RightPanelProps) {
+  const t = useTranslate();
+
   return (
     <section className="wb-panel">
       <div className="wb-field-head">
         <Eyebrow index={3} tone="gold" as="h2">
-          任务与画廊
+          {t('workbench.right.eyebrow')}
         </Eyebrow>
         <button type="button" className="wb-btn" onClick={onRefresh} disabled={loadingHistory}>
-          {loadingHistory ? '刷新中…' : '刷新'}
+          {loadingHistory ? t('workbench.right.refreshing') : t('workbench.right.refresh')}
         </button>
       </div>
 
       <div className="wb-field">
-        <span className="wb-label">当前任务</span>
+        <span className="wb-label">{t('workbench.right.current')}</span>
         {current === null ? (
-          <span className="wb-note">暂无进行中的任务</span>
+          <span className="wb-note">{t('workbench.right.noCurrent')}</span>
         ) : (
           <div className="wb-queue-item wb-queue-item-active">
             <span
@@ -67,15 +70,17 @@ export function RightPanel({
       </div>
 
       <div className="wb-field" style={{ flex: 1, minHeight: 0 }}>
-        <span className="wb-label">历史成片（{history.length}）</span>
+        <span className="wb-label">
+          {t('workbench.right.history', { count: history.length })}
+        </span>
 
         {historyError === null ? null : <span className="wb-warn">{historyError}</span>}
 
         {history.length === 0 ? (
           <div className="wb-empty" style={{ padding: '24px 8px' }}>
             <span className="wb-empty-icon">🎞</span>
-            <span className="wb-note">暂无历史成片</span>
-            <span className="wb-note">生成后的成片会在这里沉淀，支持参数一键回填。</span>
+            <span className="wb-note">{t('workbench.right.noHistory')}</span>
+            <span className="wb-note">{t('workbench.right.noHistoryNote')}</span>
             <span className="wb-watermark">Astrmira gallery</span>
           </div>
         ) : (
