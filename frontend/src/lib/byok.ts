@@ -5,6 +5,7 @@ import {
   VIDEO_MODEL_PRESETS,
   videoModelSelection,
 } from '@astrmira/shared';
+import { getLanguage, translate } from './i18n';
 import type { StorageAccess } from './storage';
 import {
   STORAGE_KEYS,
@@ -85,9 +86,10 @@ export function isKeyInputAllowed(location: {
 }
 
 export function keyInputNotice(location: { protocol: string; hostname: string }): string | null {
+  // 纯函数（无 React）→ 按当前语言现取；调用它的抽屉订阅了语言，语言一变会重渲染
   return isKeyInputAllowed(location)
     ? null
-    : '公网明文环境禁止填写密钥，请使用 HTTPS（见部署说明 §9-2）';
+    : translate(getLanguage(), 'byok.warn.publicPlaintext');
 }
 
 function parse(raw: string | null): ByokConfig | null {

@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { buildCrashReport, type CrashReport } from '../lib/errorReport';
+import { getLanguage, translate } from '../lib/i18n';
 
 /**
  * 视图级兜底（台账 B61 · 片 A）。
@@ -79,15 +80,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         <div className="wb-uncertain-title">{report.title}</div>
         <p className="wb-uncertain-body">{report.summary}</p>
         <div className="wb-crash-actions">
+          {/* ⚠️ 这里**不能用 hook**（本组件是 class —— 见文件头：React 只有 class 能做 error boundary），
+              所以按当前语言现取（与 `lib/format.ts` 的 `statusLabel` 同一手法）。
+              代价如实：这一层不订阅语言，面板文案停留在**崩溃那一刻**的语言 ——
+              可接受（它本来就是在崩溃后渲染的，且崩溃面板极少停留很久）。 */}
           <button type="button" className="wb-btn" onClick={this.reset}>
-            重试渲染
+            {translate(getLanguage(), 'error.boundary.retry')}
           </button>
           <a className="wb-btn" href="#/">
-            回到创作入口
+            {translate(getLanguage(), 'error.boundary.backToCreate')}
           </a>
         </div>
         <details className="wb-crash-details">
-          <summary className="wb-note">技术细节（报障时复制这一段）</summary>
+          <summary className="wb-note">{translate(getLanguage(), 'error.boundary.details')}</summary>
           <pre className="wb-crash-pre">{report.details}</pre>
         </details>
       </div>

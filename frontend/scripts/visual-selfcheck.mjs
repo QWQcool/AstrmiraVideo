@@ -616,7 +616,9 @@ if (leftPanelText !== undefined) {
     'App.tsx',
     'components/Sidebar.tsx',
     'components/AssetDropZone.tsx',
+    'components/ByokDrawer.tsx',
     'components/CenterPanel.tsx',
+    'components/ErrorBoundary.tsx',
     'components/GalleryCard.tsx',
     'components/LeftPanel.tsx',
     'components/ProjectSwitcher.tsx',
@@ -625,6 +627,7 @@ if (leftPanelText !== undefined) {
     'views/registry.ts',
     'views/CreateView.tsx',
     'views/WorkbenchView.tsx',
+    'lib/byok.ts',
     'lib/theme.ts',
   ];
   const CJK_PATTERN = /[\u4e00-\u9fa5]/;

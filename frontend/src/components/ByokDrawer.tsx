@@ -8,6 +8,7 @@ import {
 import { Eyebrow } from './Eyebrow';
 import type { ByokConfig } from '../lib/byok';
 import { applyLlmPreset, applyVideoPreset, keyInputNotice, videoPresetSelection } from '../lib/byok';
+import { useTranslate } from '../lib/i18n';
 
 /**
  * BYOK 抽屉（CONTRACT §5 / PLAN §4 Step 3）。
@@ -52,11 +53,12 @@ export function ByokDrawer({
     video: null,
     text: null,
   });
+  const t = useTranslate();
   const [verifying, setVerifying] = useState<'video' | 'text' | null>(null);
 
   async function runVerify(track: 'video' | 'text'): Promise<void> {
     setVerifying(track);
-    setVerifyResult((previous) => ({ ...previous, [track]: '校验中…' }));
+    setVerifyResult((previous) => ({ ...previous, [track]: t('byok.verify.running') }));
     try {
       const message = await onVerify(track, draft);
       setVerifyResult((previous) => ({ ...previous, [track]: message }));
@@ -80,17 +82,17 @@ export function ByokDrawer({
     <>
       <div className="wb-drawer-backdrop" onClick={onClose} role="presentation" />
 
-      <aside className="wb-drawer" role="dialog" aria-modal="true" aria-label="BYOK 凭据设置">
+      <aside className="wb-drawer" role="dialog" aria-modal="true" aria-label={t('byok.aria')}>
         <div className="wb-drawer-head">
-          <Eyebrow tone="gold">BYOK 凭据</Eyebrow>
+          <Eyebrow tone="gold">{t('byok.title')}</Eyebrow>
           <button type="button" className="wb-btn" onClick={onClose}>
-            关闭
+            {t('byok.close')}
           </button>
         </div>
 
         <div className="wb-drawer-body">
           <div className="wb-field">
-            <span className="wb-label">服务端地址</span>
+            <span className="wb-label">{t('byok.baseUrl.label')}</span>
             <input
               className="wb-input wb-input-mono"
               value={draft.baseUrl}
@@ -98,19 +100,19 @@ export function ByokDrawer({
               spellCheck={false}
               placeholder="https://ark.cn-beijing.volces.com/api/v3"
             />
-            <span className="wb-note">默认已填火山方舟；自建代理或兼容端点可改。</span>
+            <span className="wb-note">{t('byok.baseUrl.note')}</span>
           </div>
 
           <div className="wb-field">
             <div className="wb-field-head">
-              <span className="wb-label">API Key</span>
+              <span className="wb-label">{t('byok.key.label')}</span>
               <button
                 type="button"
                 className="wb-btn"
                 onClick={() => setReveal(!reveal)}
                 disabled={keyInputDisabled}
               >
-                {reveal ? '隐藏' : '显示'}
+                {reveal ? t('byok.key.hide') : t('byok.key.show')}
               </button>
             </div>
             <input
@@ -121,18 +123,23 @@ export function ByokDrawer({
               disabled={keyInputDisabled}
               spellCheck={false}
               autoComplete="off"
-              placeholder={keyInputDisabled ? '当前环境禁止填写' : '粘贴你的 Key'}
+              placeholder={
+                keyInputDisabled ? t('byok.key.placeholderDisabled') : t('byok.key.placeholder')
+              }
             />
             {notice === null ? null : <span className="wb-warn">{notice}</span>}
             <span className="wb-note">
-              仅经请求头 <code>X-Provider-Key</code> 传输，
-              <strong>不进 URL、不进请求体、不进日志</strong>；服务端运行时使用，不落库、不回显。
+              {t('byok.key.transport.before')}
+              <code>X-Provider-Key</code>
+              {t('byok.key.transport.mid')}
+              <strong>{t('byok.key.transport.emphasis')}</strong>
+              {t('byok.key.transport.after')}
             </span>
           </div>
 
           {/* 模型档位（V2.1）：手打模型 id 曾直接导致一次线上 404，故改为"下拉选档 + 自定义填写" */}
           <div className="wb-field">
-            <span className="wb-label">模型档位</span>
+            <span className="wb-label">{t('byok.model.label')}</span>
             <select
               className="wb-input"
               value={videoPresetSelection(draft)}
@@ -143,11 +150,11 @@ export function ByokDrawer({
                   {preset.label}
                 </option>
               ))}
-              <option value={VIDEO_CUSTOM_MODEL_ID}>自定义（填控制台里的模型 / 接入点 id）</option>
+              <option value={VIDEO_CUSTOM_MODEL_ID}>{t('byok.model.custom')}</option>
             </select>
             <span className="wb-note">
               {VIDEO_MODEL_PRESETS.find((preset) => preset.id === draft.model)?.note ??
-                '自定义：请填方舟控制台里真实可用的模型 id 或接入点 id（ep-…）'}
+                t('byok.model.customNote')}
             </span>
             <input
               className="wb-input wb-input-mono"
@@ -163,11 +170,9 @@ export function ByokDrawer({
                 onClick={() => void runVerify('video')}
                 disabled={verifying !== null}
               >
-                {verifying === 'video' ? '校验中…' : '测试连接'}
+                {verifying === 'video' ? t('byok.verify.running') : t('byok.verify.test')}
               </button>
-              <span className="wb-note">
-                零费用：先查模型列表，再用「空 content 探针」判断**是否已开通**（不会创建任务）
-              </span>
+              <span className="wb-note">{t('byok.verify.videoNote')}</span>
             </div>
             {verifyResult.video === null ? null : (
               <span className="wb-note wb-verify-result">{verifyResult.video}</span>
@@ -179,15 +184,15 @@ export function ByokDrawer({
               混在一起填会让人以为"填了视频 Key 就能扩写"。 */}
           <div className="wb-field">
             <div className="wb-field-head">
-              <span className="wb-label">扩写模型（文本轨）</span>
+              <span className="wb-label">{t('byok.llm.label')}</span>
               <button
                 type="button"
                 className="wb-btn"
-                title="把上面视频轨的 Key 复制到文本轨（仅当两者是同一把 Key 时使用）"
+                title={t('byok.llm.reuseTitle')}
                 onClick={() => setDraft({ ...draft, llmKey: draft.key })}
                 disabled={keyInputDisabled || draft.key.trim() === ''}
               >
-                复用视频 Key
+                {t('byok.llm.reuse')}
               </button>
             </div>
             <select
@@ -200,11 +205,11 @@ export function ByokDrawer({
                   {preset.label}
                 </option>
               ))}
-              <option value={LLM_CUSTOM_PRESET_ID}>自定义（自填地址与模型）</option>
+              <option value={LLM_CUSTOM_PRESET_ID}>{t('byok.llm.custom')}</option>
             </select>
             <span className="wb-note">
               {LLM_PRESETS.find((preset) => preset.id === draft.llmPreset)?.note ??
-                '自定义：需填完整的 baseUrl 与模型名；留空时服务端会明确报「未配置」，不会替你挑一个地址'}
+                t('byok.llm.customNote')}
             </span>
 
             <input
@@ -219,18 +224,18 @@ export function ByokDrawer({
               value={draft.llmModel}
               onChange={(event) => setDraft({ ...draft, llmModel: event.target.value })}
               spellCheck={false}
-              placeholder="模型名 / endpoint id"
+              placeholder={t('byok.llm.modelPlaceholder')}
             />
 
             <div className="wb-field-head">
-              <span className="wb-label">扩写 API Key</span>
+              <span className="wb-label">{t('byok.llm.keyLabel')}</span>
               <button
                 type="button"
                 className="wb-btn"
                 onClick={() => setRevealLlm(!revealLlm)}
                 disabled={keyInputDisabled}
               >
-                {revealLlm ? '隐藏' : '显示'}
+                {revealLlm ? t('byok.key.hide') : t('byok.key.show')}
               </button>
             </div>
             <input
@@ -241,7 +246,11 @@ export function ByokDrawer({
               disabled={keyInputDisabled}
               spellCheck={false}
               autoComplete="off"
-              placeholder={keyInputDisabled ? '当前环境禁止填写' : '粘贴你的 Key（可不填，那时 ✨ 会置灰）'}
+              placeholder={
+                keyInputDisabled
+                  ? t('byok.key.placeholderDisabled')
+                  : t('byok.llm.keyPlaceholder')
+              }
             />
             <div className="wb-field-head">
               <button
@@ -250,17 +259,18 @@ export function ByokDrawer({
                 onClick={() => void runVerify('text')}
                 disabled={verifying !== null}
               >
-                {verifying === 'text' ? '校验中…' : '测试连接'}
+                {verifying === 'text' ? t('byok.verify.running') : t('byok.verify.test')}
               </button>
-              <span className="wb-note">零费用：发一次 `max_tokens: 1` 的最小对话请求</span>
+              <span className="wb-note">{t('byok.llm.verifyNote')}</span>
             </div>
             {verifyResult.text === null ? null : (
               <span className="wb-note wb-verify-result">{verifyResult.text}</span>
             )}
 
             <span className="wb-note">
-              仅经请求头 <code>X-LLM-Key</code> 传输。本服务**不提供文本侧兜底 Key**（纯 BYOK）：
-              没填就是"没配"，不会静默降级成规则改写。
+              {t('byok.llm.transport.before')}
+              <code>X-LLM-Key</code>
+              {t('byok.llm.transport.after')}
             </span>
           </div>
 
@@ -272,17 +282,13 @@ export function ByokDrawer({
               disabled={keyInputDisabled}
             />
             <span>
-              明文存储到本机（localStorage）
+              {t('byok.persist.label')}
               <br />
-              <span className="wb-warn">
-                仅限个人信任设备：勾选后 Key 以明文留在浏览器中，任何人使用这台设备都能读到。
-              </span>
+              <span className="wb-warn">{t('byok.persist.warn')}</span>
             </span>
           </label>
 
-          <span className="wb-note">
-            不勾选时只存 sessionStorage —— 关闭标签页即失效，这是默认且推荐的用法。
-          </span>
+          <span className="wb-note">{t('byok.persist.note')}</span>
         </div>
 
         <div className="wb-drawer-foot">
@@ -296,7 +302,7 @@ export function ByokDrawer({
               setPersistDraft(false);
             }}
           >
-            清除本地凭据
+            {t('byok.clear')}
           </button>
           <button
             type="button"
@@ -304,7 +310,7 @@ export function ByokDrawer({
             onClick={() => onSave(draft, persistDraft)}
             disabled={keyInputDisabled}
           >
-            保存
+            {t('byok.save')}
           </button>
         </div>
       </aside>
