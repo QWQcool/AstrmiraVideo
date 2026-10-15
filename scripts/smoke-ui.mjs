@@ -3243,6 +3243,12 @@ try {
     (await enPage.locator('.side-row--theme .seg button').allInnerTexts()).join('') === '跟随系统星尘日间',
     '外壳文案走字典之后，**默认中文逐字不变**（迁移不该让中文用户看到任何差异）',
   );
+  // V2.39：创作入口（第一屏）也走字典了 —— 同理逐字不变。
+  // 这条盯的是"迁移有没有顺手改坏中文"（改文案是迁移里最容易发生的意外）。
+  assert(
+    (await enPage.locator('.cr-hero .cr-title').innerText()) === '描述你想要的画面',
+    '创作入口走字典之后**默认中文逐字不变**（第一屏标题）',
+  );
   await enContext.close();
 
   console.log('\n[7f] window 层运行期兜底（V2.29 / B61 片 B / D52：只本地提示、不上报）');

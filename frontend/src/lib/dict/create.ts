@@ -1,0 +1,164 @@
+/**
+ * **创作入口**（`views/CreateView.tsx`：一句话开场那张卡）的文案。
+ *
+ * ## 两条边界（都写在这里，免得后来者以为是"漏了"）
+ * 1. **配方 / 行业模板的名字与骨架不进字典**：`card.title` / `template.industry` /
+ *    `template.title` / `template.skeleton` 是**内容**（写出来的素材），不是界面文案 ——
+ *    它们要双语得先给数据加字段并逐条写英文，那是**内容双语**，另立项（见 PENDING-DECISIONS）。
+ *    英文界面下它们**仍是中文**，这是如实的状态，不是 bug；
+ * 2. **引擎的显示名（`option.label`）来自服务端** `/status`（部署者配置的实例名）——
+ *    同样属内容，不进字典。本文件只管**我们自己写的**那些词
+ *    （"云端 Seedance" / "本地" / "云端"）。
+ */
+
+export const CREATE_ZH = {
+  // ── 开场 ──
+  'create.hero.eyebrow': '创作 · 一句话开场',
+  'create.hero.title': '描述你想要的画面',
+  'create.hero.sub.before': '写一句话，或拖入一张图 / 一段视频；用 ',
+  'create.hero.sub.after': ' 引用历史成片（含剪辑产物）当参考。',
+
+  // ── 输入 ──
+  'create.input.placeholder': '例如：雨夜街头，女孩撑伞回头微笑着说：我们终于成功了。电影感光影',
+  'create.hint.mention': '＠ 引用素材 / 成片',
+  'create.hint.mentionNote': '或在框里直接输入 @；也可以把图 / 视频拖进来、直接粘贴',
+  'create.chip.uploading': '上传中…',
+  'create.chip.remove': '移除素材',
+  'create.chip.imageShort': '图',
+  'create.realperson': '提示：含真人 / 拟真人脸的图做首帧·尾帧会被上游隐私检测拒绝 —— 可换非人物素材（风景 / 物体 / 动漫风格），或改用文字描述人物（T2V）。',
+
+  // ── 引用弹层 ──
+  'create.mention.select': '选择素材',
+  'create.mention.search': '搜素材 / 成片…（Enter 选第一条，Esc 关闭）',
+  'create.mention.empty': '没有匹配的素材。可以把图/视频直接拖进来上传，或先去工作台生成一条成片。',
+  'create.mention.editOrigin': '✂ 剪辑产物 · ',
+  'create.mention.renderOrigin': '成片 · ',
+  'create.mention.assetLine': '资产 · {kind} · {name}',
+
+  // ── 配方 / 模板 ──
+  'create.recipes.aria': '配方快捷',
+  'create.recipes.all': '全部配方 →',
+  'create.templates.aria': '行业模板',
+  'create.templates.label': '行业模板',
+  'create.templates.title': '{summary}\n推荐：{mode} · {ratio} · {duration}s{needImage}\n（会覆盖当前输入框内容）',
+  'create.templates.needImage': ' · 需先拖入参考图',
+  'create.templates.applied': '已套用「{industry} · {title}」起手式：推荐 {mode} · {ratio} · {duration}s · {tier}（可直接改）',
+
+  // ── 更多设置 ──
+  'create.more.aspect': '画幅',
+  'create.more.duration': '时长',
+  'create.more.resolution': '清晰度',
+  'create.more.engine': '引擎',
+  'create.more.seed': 'seed（留空随机）',
+  'create.more.seedPlaceholder': '如 42',
+  'create.more.enginesAria': '本地 ComfyUI 实例',
+  'create.more.expand': '更多设置 ▼',
+  'create.more.collapse': '收起设置 ▲',
+
+  // ── 模式行 / 操作行 ──
+  'create.modeLine': '将按「{mode}」生成',
+  'create.modeLine.pending': '素材上传中，完成后即可提交。',
+  'create.needsKey': '未配置 Key 且服务端无兜底：',
+  'create.needsKey.action': '去填写凭据',
+  'create.cost.title': '按公开价目与上游计费式估算；实际以方舟账单为准',
+  'create.cost.estimated': '预计花费 {amount}',
+  'create.cost.localFree': '（本地轨：无 API 费用）',
+  'create.cost.estimateOnly': '（预估）',
+  'create.cost.customTier': '（自定义档按 2.0 标准口径估算）',
+  'create.actions.note': '提交后停留在本页，进度与成片会出现在下方。',
+  'create.submit.pending': '提交中…',
+  'create.submit': '✦ 生成',
+
+  // ── 就地告警（标题；正文来自接口，不译）──
+  'create.alert.uploadFailed': '素材上传未成功',
+  'create.alert.poolFailed': '素材库读取失败',
+  'create.alert.submitFailed': '提交未成功',
+  'create.alert.pollFailed': '任务状态读取失败',
+
+  // ── 任务卡 ──
+  'create.task.idLine': '任务 {id} · {prompt}',
+  'create.task.toWorkbench': '去专业模式查看',
+  'create.task.failedFallback': '任务失败（详情见操作日志）',
+  'create.task.download': '⤓ 下载 MP4',
+  'create.task.toEditor': '✂ 送剪辑台',
+  'create.task.again': '↺ 再来一条',
+
+  // ── 拖入 / 上传时的就地说明（逻辑层，用户同样看得见）──
+  'create.upload.audioNotRef': '音频素材不作为生成参考：请到剪辑台的音效轨添加（造梦盒只收图片 / 视频）',
+  'create.upload.noAsset': '上传未返回任何资产',
+  'create.upload.noVisual': '这个文件里没有画面（纯音频）：请到剪辑台的音效轨使用',
+};
+
+export const CREATE_EN = {
+  'create.hero.eyebrow': 'Create · one-line brief',
+  'create.hero.title': 'Describe the shot you want',
+  'create.hero.sub.before': 'Write one line, or drop in an image / video; use ',
+  'create.hero.sub.after': ' to reference past renders (edited ones included) as references.',
+
+  'create.input.placeholder':
+    'e.g. Rainy street at night; a girl turns with an umbrella and smiles: "we finally made it." Cinematic light',
+  'create.hint.mention': '＠ Reference assets / renders',
+  'create.hint.mentionNote': 'Or type @ in the box; you can also drag images / videos in, or paste them',
+  'create.chip.uploading': 'Uploading…',
+  'create.chip.remove': 'Remove reference',
+  'create.chip.imageShort': 'img',
+  'create.realperson':
+    'Heads-up: images with real or realistic human faces are rejected by upstream privacy checks when used as first/last frames — pick non-human material (landscape / objects / anime) or describe the person in words (T2V).',
+
+  'create.mention.select': 'Pick a reference',
+  'create.mention.search': 'Search assets / renders… (Enter picks the first, Esc closes)',
+  'create.mention.empty':
+    'No matching assets. You can drag images/videos in to upload, or generate a render in the Workbench first.',
+  'create.mention.editOrigin': '✂ Edited · ',
+  'create.mention.renderOrigin': 'Render · ',
+  'create.mention.assetLine': 'Asset · {kind} · {name}',
+
+  'create.recipes.aria': 'Recipe shortcuts',
+  'create.recipes.all': 'All recipes →',
+  'create.templates.aria': 'Industry templates',
+  'create.templates.label': 'Industry templates',
+  'create.templates.title': '{summary}\nRecommends: {mode} · {ratio} · {duration}s{needImage}\n(overwrites what is in the box)',
+  'create.templates.needImage': ' · needs a reference image first',
+  'create.templates.applied':
+    'Applied the “{industry} · {title}” starter: recommends {mode} · {ratio} · {duration}s · {tier} (editable)',
+
+  'create.more.aspect': 'Aspect',
+  'create.more.duration': 'Duration',
+  'create.more.resolution': 'Resolution',
+  'create.more.engine': 'Engine',
+  'create.more.seed': 'seed (blank = random)',
+  'create.more.seedPlaceholder': 'e.g. 42',
+  'create.more.enginesAria': 'Local ComfyUI instances',
+  'create.more.expand': 'More settings ▼',
+  'create.more.collapse': 'Hide settings ▲',
+
+  'create.modeLine': 'Will generate in “{mode}”',
+  'create.modeLine.pending': 'Uploading assets — you can submit once it finishes.',
+  'create.needsKey': 'No key configured and the server has no fallback:',
+  'create.needsKey.action': 'Add credentials',
+  'create.cost.title': 'Estimated from public pricing and upstream billing; your Ark bill is authoritative',
+  'create.cost.estimated': 'Estimated cost {amount}',
+  'create.cost.localFree': ' (local track: no API cost)',
+  'create.cost.estimateOnly': ' (estimate)',
+  'create.cost.customTier': ' (custom tier estimated at the 2.0 rate)',
+  'create.actions.note': 'You stay on this page; progress and the render show up below.',
+  'create.submit.pending': 'Submitting…',
+  'create.submit': '✦ Generate',
+
+  'create.alert.uploadFailed': 'Asset upload failed',
+  'create.alert.poolFailed': 'Could not read the asset library',
+  'create.alert.submitFailed': 'Submit failed',
+  'create.alert.pollFailed': 'Could not read task status',
+
+  'create.task.idLine': 'Task {id} · {prompt}',
+  'create.task.toWorkbench': 'Open in Workbench',
+  'create.task.failedFallback': 'Task failed (see the activity log for details)',
+  'create.task.download': '⤓ Download MP4',
+  'create.task.toEditor': '✂ Send to editor',
+  'create.task.again': '↺ Another take',
+
+  'create.upload.audioNotRef':
+    'Audio is not a generation reference: add it on the editor’s SFX track (the Create box only takes images / videos)',
+  'create.upload.noAsset': 'The upload returned no asset',
+  'create.upload.noVisual': 'This file has no picture (audio only): use it on the editor’s SFX track',
+};

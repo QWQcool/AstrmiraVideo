@@ -18,7 +18,13 @@ import { EN, ZH } from './index';
  */
 
 const KEYS = Object.keys(ZH);
-const KEY_PATTERN = /^[a-z][a-zA-Z]*(\.[a-z][a-zA-Z]*)+$/;
+/**
+ * 键名规范：`域.用途`，至少两段，段内 camelCase。
+ *
+ * ⚠️ 段内**允许数字**（但不能以数字开头）：模式名的领域缩写本来就是 `t2v` / `i2v` / `fl2v` ——
+ * 禁掉数字会逼着把通用缩写改写成 `t2v` 之外的怪名字。
+ */
+const KEY_PATTERN = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)+$/;
 const PLACEHOLDER = /\{(\w+)\}/g;
 const CJK = /[\u4e00-\u9fa5]/;
 

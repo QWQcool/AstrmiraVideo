@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { DICTIONARIES, I18N_MIGRATION_COMPLETE } from './dict/index.js';
 import type { MessageKey } from './dict/index.js';
 import { browserStorage, readLocal, writeLocal, type StorageAccess } from './storage';
@@ -158,8 +158,26 @@ export function useLanguage(): Language {
   return useSyncExternalStore(subscribe, getLanguage, getLanguage);
 }
 
-/** 取文案的 hook：`const t = useTranslate(); t('shell.nav.create')` */
-export function useTranslate(): (key: MessageKey, vars?: Readonly<Record<string, string | number>>) => string {
+/**
+ * 取文案的 hook：`const t = useTranslate(); t('shell.nav.create')`。
+ *
+ * ⚠️ 返回值用 `useCallback` 包住（**身份只在语言变化时变**）：
+ * 组件里那些 `useCallback(..., [t])` 才不会被"每次渲染都新建的函数"逼着重建
+ * （那会让依赖数组失去意义，也让 lint 的 exhaustive-deps 变成噪音）。
+ */
+export function useTranslate(): Translate {
   const language = useLanguage();
-  return (key, vars) => translate(language, key, vars);
+  return useCallback<Translate>(
+    (key, vars) => translate(language, key, vars),
+    [language],
+  );
 }
+
+/**
+ * "取文案"这件事的**类型**（`useTranslate()` 的返回值）。
+ *
+ * 存在的理由：有些**纯函数**（如 `views/CreateView.tsx` 里把资产转成 chip 引用的
+ * `refFromAsset`）也要产出用户可见的文案 —— 它们不该 import React，
+ * 所以把 `t` 当参数传进去。有了这个类型，传参处就有类型检查（而不是 `any` 乱飞）。
+ */
+export type Translate = (key: MessageKey, vars?: Readonly<Record<string, string | number>>) => string;

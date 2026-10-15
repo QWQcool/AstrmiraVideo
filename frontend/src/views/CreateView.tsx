@@ -31,6 +31,7 @@ import {
   type ResolutionTier,
 } from '../lib/format';
 import { newIdempotencyKey } from '../lib/idempotency';
+import { useTranslate, type MessageKey, type Translate } from '../lib/i18n';
 import {
   assetsForRefs,
   filterAssetCandidates,
@@ -64,19 +65,25 @@ const CLOUD_PROVIDER: ProviderType = 'cloud-volcano-seedance';
 // V2.31（A1 片 C / D53）：用户自备的 ComfyUI —— V2.36 起**不再是常量**：
 // 它可能有多台（`host-comfyui:<name>`），名单由 `/status` 的 `comfyui.servers` 给出（lib/engineOptions.ts）。
 
-const MODE_LABELS: Record<GenerationMode, string> = {
-  t2v: '文生视频',
-  i2v: '图生视频',
-  fl2v: '首尾帧',
-  v2v: '视频参考',
+/**
+ * 模式名 / 状态名 → **字典键**（V2.39：文案进 `dict/common.ts`）。
+ *
+ * 为什么是键表而不是文案表：这两组词在多个视图里出现（工作台 / 视频库 / 画布 / 成本台账），
+ * 各写一份中文必然漂移。键表放在模块层（键是常量），渲染时 `t(MODE_KEYS[mode])`。
+ */
+const MODE_KEYS: Record<GenerationMode, MessageKey> = {
+  t2v: 'common.mode.t2v',
+  i2v: 'common.mode.i2v',
+  fl2v: 'common.mode.fl2v',
+  v2v: 'common.mode.v2v',
 };
 
-const STATUS_TEXT: Record<TaskProgress['status'], string> = {
-  queued: '排队中',
-  running: '生成中',
-  succeeded: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
+const STATUS_KEYS: Record<TaskProgress['status'], MessageKey> = {
+  queued: 'common.status.queued',
+  running: 'common.status.running',
+  succeeded: 'common.status.succeeded',
+  failed: 'common.status.failed',
+  cancelled: 'common.status.cancelled',
 };
 
 /** 配方 chips：横滚条只放前 12 张（全量在配方库），避免首页变成第二个配方库 */
@@ -114,13 +121,17 @@ function isRefAsset(asset: AssetListEntry): asset is RefAsset {
   return asset.kind === 'image' || asset.kind === 'video';
 }
 
-/** 资产 → chip 引用（只接受 RefAsset；音频在池入口就被过滤掉） */
-function refFromAsset(asset: RefAsset): MentionRef {
+/**
+ * 资产 → chip 引用（只接受 RefAsset；音频在池入口就被过滤掉）。
+ *
+ * `t` 当参数传进来而不是在函数里取：这是**纯函数**，不该 import React 去要 hook。
+ */
+function refFromAsset(asset: RefAsset, t: Translate): MentionRef {
   // V2.9（B43）：有原始文件名就用它当 chip 标签（人认得名字，认不出编号）；
   // 没有（抽帧产物 / 老资产）就退回"图/视频·编号"，**不编造名字**
   const label =
     asset.name === undefined
-      ? `${asset.kind === 'image' ? '图' : '视频'}·${asset.assetId.slice(0, 6)}`
+      ? `${t(asset.kind === 'image' ? 'create.chip.imageShort' : 'common.kind.video')}·${asset.assetId.slice(0, 6)}`
       : asset.name.length > 16
         ? `${asset.name.slice(0, 16)}…`
         : asset.name;
@@ -136,6 +147,7 @@ function refFromAsset(asset: RefAsset): MentionRef {
 
 export function CreateView() {
   const { byok, providerStatus, openByok, projectId } = useShell();
+  const t = useTranslate();
 
   // ── 意图与素材 ──
   const [prompt, setPrompt] = useState('');
@@ -261,7 +273,7 @@ export function CreateView() {
       // 明确说出"去哪用"，而不是静默丢弃（不静默降级）
       const audioCount = files.filter((file) => file.type.startsWith('audio/')).length;
       if (audioCount > 0) {
-        setUploadError('音频素材不作为生成参考：请到剪辑台的音效轨添加（造梦盒只收图片 / 视频）');
+        setUploadError(t('create.upload.audioNotRef'));
       } else {
         setUploadError(null);
       }
@@ -282,11 +294,11 @@ export function CreateView() {
         uploadAssets([file], projectId)
           .then((result) => {
             const asset = result.assets[0];
-            if (asset === undefined) throw new Error('上传未返回任何资产');
+            if (asset === undefined) throw new Error(t('create.upload.noAsset'));
             // V2.10：拖进来的"视频"其实是纯音频容器（服务端 ffprobe 复核的结论）→ 如实报错，
             // 不把它伪装成可用的画面参考（catch 分支会把占位 chip 撤掉）
             if (asset.kind === 'audio') {
-              throw new Error('这个文件里没有画面（纯音频）：请到剪辑台的音效轨使用');
+              throw new Error(t('create.upload.noVisual'));
             }
             const kind = asset.kind;
             setRefs((prev) =>
@@ -377,7 +389,7 @@ export function CreateView() {
       return;
     }
     const firstAsset = filteredAssets[0];
-    if (firstAsset !== undefined) addRef(refFromAsset(firstAsset));
+    if (firstAsset !== undefined) addRef(refFromAsset(firstAsset, t));
   };
 
   const outputUrl = task === null ? null : resolveMediaUrl(task.outputVideoUrl);
@@ -407,10 +419,12 @@ export function CreateView() {
         }}
       >
         <header className="cr-hero">
-          <p className="cr-eyebrow">创作 · 一句话开场</p>
-          <h2 className="cr-title">描述你想要的画面</h2>
+          <p className="cr-eyebrow">{t('create.hero.eyebrow')}</p>
+          <h2 className="cr-title">{t('create.hero.title')}</h2>
           <p className="cr-sub">
-            写一句话，或拖入一张图 / 一段视频；用 <code>@</code> 引用历史成片（含剪辑产物）当参考。
+            {t('create.hero.sub.before')}
+            <code>@</code>
+            {t('create.hero.sub.after')}
           </p>
         </header>
 
@@ -418,7 +432,7 @@ export function CreateView() {
           <textarea
             className="cr-input"
             rows={3}
-            placeholder="例如：雨夜街头，女孩撑伞回头微笑着说：我们终于成功了。电影感光影"
+            placeholder={t('create.input.placeholder')}
             value={prompt}
             onChange={(event) => handlePromptChange(event.target.value, prompt)}
             onKeyDown={(event) => {
@@ -432,9 +446,9 @@ export function CreateView() {
 
           <div className="cr-hint-row">
             <button type="button" className="cr-recipe" onClick={openMentions}>
-              ＠ 引用素材 / 成片
+              {t('create.hint.mention')}
             </button>
-            <span className="wb-note">或在框里直接输入 @；也可以把图 / 视频拖进来、直接粘贴</span>
+            <span className="wb-note">{t('create.hint.mentionNote')}</span>
           </div>
 
           {refs.length > 0 ? (
@@ -447,12 +461,12 @@ export function CreateView() {
                     <span className="cr-chip-glyph">{item.kind === 'video' ? '🎬' : '🖼'}</span>
                   )}
                   <span className="cr-chip-label">
-                    {item.ref === '' ? '上传中…' : (item.label ?? item.ref.slice(0, 10))}
+                    {item.ref === '' ? t('create.chip.uploading') : (item.label ?? item.ref.slice(0, 10))}
                   </span>
                   <button
                     type="button"
                     className="cr-chip-remove"
-                    aria-label="移除素材"
+                    aria-label={t('create.chip.remove')}
                     onClick={() => removeRef(item.id)}
                   >
                     ×
@@ -465,17 +479,14 @@ export function CreateView() {
           {/* B32（Step 10 · P1）：真人素材的**前置提示** —— 只做文案引导（本项目无本地人脸检测能力，
               不假装检测、不阻断选择）；上游隐私检测拒绝时后端会给出可执行文案（seedanceProtocol） */}
           {refs.some((item) => item.kind === 'image') ? (
-            <p className="wb-note cr-realperson-note">
-              提示：含真人 / 拟真人脸的图做首帧·尾帧会被上游隐私检测拒绝 —— 可换非人物素材（风景 /
-              物体 / 动漫风格），或改用文字描述人物（T2V）。
-            </p>
+            <p className="wb-note cr-realperson-note">{t('create.realperson')}</p>
           ) : null}
 
           {mentionOpen ? (
-            <div className="cr-mention" role="listbox" aria-label="选择素材">
+            <div className="cr-mention" role="listbox" aria-label={t('create.mention.select')}>
               <input
                 className="wb-input cr-mention-search"
-                placeholder="搜素材 / 成片…（Enter 选第一条，Esc 关闭）"
+                placeholder={t('create.mention.search')}
                 value={mentionFilter}
                 autoFocus
                 onChange={(event) => setMentionFilter(event.target.value)}
@@ -489,9 +500,7 @@ export function CreateView() {
               />
               <div className="cr-mention-list">
                 {filteredTasks.length === 0 && filteredAssets.length === 0 ? (
-                  <p className="wb-note cr-mention-empty">
-                    没有匹配的素材。可以把图/视频直接拖进来上传，或先去工作台生成一条成片。
-                  </p>
+                  <p className="wb-note cr-mention-empty">{t('create.mention.empty')}</p>
                 ) : null}
                 {filteredTasks.map((item) => (
                   <button
@@ -506,7 +515,9 @@ export function CreateView() {
                       <img className="cr-mention-thumb" src={item.thumbnailUrl} alt="" />
                     )}
                     <span className="cr-mention-label">
-                      {item.origin?.kind === 'edit' ? '✂ 剪辑产物 · ' : '成片 · '}
+                      {item.origin?.kind === 'edit'
+                        ? t('create.mention.editOrigin')
+                        : t('create.mention.renderOrigin')}
                       {item.requestSnapshot.prompt.slice(0, 18)}
                     </span>
                   </button>
@@ -516,7 +527,7 @@ export function CreateView() {
                     key={item.assetId}
                     type="button"
                     className="cr-mention-item"
-                    onClick={() => addRef(refFromAsset(item))}
+                    onClick={() => addRef(refFromAsset(item, t))}
                   >
                     {item.kind === 'image' ? (
                       <img className="cr-mention-thumb" src={item.url} alt="" />
@@ -524,9 +535,11 @@ export function CreateView() {
                       <span className="cr-mention-glyph">🎬</span>
                     )}
                     <span className="cr-mention-label">
-                      资产 · {item.kind === 'image' ? '图片' : '视频'} ·{' '}
                       {/* V2.9（B43）：有原始文件名就显示名字（人认名字，不认编号） */}
-                      {item.name ?? item.assetId.slice(0, 8)}
+                      {t('create.mention.assetLine', {
+                        kind: t(item.kind === 'image' ? 'common.kind.image' : 'common.kind.video'),
+                        name: item.name ?? item.assetId.slice(0, 8),
+                      })}
                     </span>
                   </button>
                 ))}
@@ -534,7 +547,7 @@ export function CreateView() {
             </div>
           ) : null}
 
-          <div className="cr-recipes" aria-label="配方快捷">
+          <div className="cr-recipes" aria-label={t('create.recipes.aria')}>
             {STRIP_RECIPES.map((card) => (
               <button
                 key={card.id}
@@ -551,31 +564,42 @@ export function CreateView() {
               className="cr-recipe cr-recipe-more"
               onClick={() => navigate('#/recipes')}
             >
-              全部配方 →
+              {t('create.recipes.all')}
             </button>
           </div>
 
           {/* V2.23（台账 B71）：行业模板 —— 客户第一次打开时，"你能做什么"不该由他自己想。
               点一下 = 填入**起手式**（提示词骨架 + 画幅/时长/清晰度）；**模式仍由素材与提示词推断**，
               所以这里的措辞是"推荐"，不假装"已切换"。 */}
-          <div className="cr-recipes cr-templates" aria-label="行业模板">
-            <span className="cr-tpl-label">行业模板</span>
+          <div className="cr-recipes cr-templates" aria-label={t('create.templates.aria')}>
+            <span className="cr-tpl-label">{t('create.templates.label')}</span>
             {INDUSTRY_TEMPLATES.map((template) => (
               <button
                 key={template.id}
                 type="button"
                 className="cr-recipe cr-recipe-tpl"
                 data-testid={`cr-template-${template.id}`}
-                title={`${template.summary}\n推荐：${MODE_LABELS[template.recommendedMode]} · ${template.aspectRatio} · ${template.durationSec}s${template.requiresImage ? ' · 需先拖入参考图' : ''}\n（会覆盖当前输入框内容）`}
+                title={t('create.templates.title', {
+                  summary: template.summary,
+                  mode: t(MODE_KEYS[template.recommendedMode]),
+                  ratio: template.aspectRatio,
+                  duration: template.durationSec,
+                  needImage: template.requiresImage ? t('create.templates.needImage') : '',
+                })}
                 onClick={() => {
                   setPrompt(template.skeleton);
                   setAspectRatio(template.aspectRatio);
                   setDurationSec(template.durationSec);
                   setResolutionTier(template.resolutionTier);
                   setNotice(
-                    `已套用「${template.industry} · ${template.title}」起手式：` +
-                      `推荐 ${MODE_LABELS[template.recommendedMode]} · ${template.aspectRatio} · ` +
-                      `${template.durationSec}s · ${template.resolutionTier}（可直接改）`,
+                    t('create.templates.applied', {
+                      industry: template.industry,
+                      title: template.title,
+                      mode: t(MODE_KEYS[template.recommendedMode]),
+                      ratio: template.aspectRatio,
+                      duration: template.durationSec,
+                      tier: template.resolutionTier,
+                    }),
                   );
                 }}
               >
@@ -588,7 +612,7 @@ export function CreateView() {
             <div className="cr-more">
               <div className="cr-more-grid">
                 <div className="wb-field">
-                  <span className="wb-label">画幅</span>
+                  <span className="wb-label">{t('create.more.aspect')}</span>
                   <div className="wb-segmented">
                     {(['16:9', '9:16'] as const).map((ratio) => (
                       <button
@@ -604,7 +628,7 @@ export function CreateView() {
                   </div>
                 </div>
                 <div className="wb-field">
-                  <span className="wb-label">时长</span>
+                  <span className="wb-label">{t('create.more.duration')}</span>
                   <div className="wb-segmented">
                     {DURATION_OPTIONS.map((value) => (
                       <button
@@ -620,7 +644,7 @@ export function CreateView() {
                   </div>
                 </div>
                 <div className="wb-field">
-                  <span className="wb-label">清晰度</span>
+                  <span className="wb-label">{t('create.more.resolution')}</span>
                   <div className="wb-segmented">
                     {RESOLUTION_TIERS.map((tier) => (
                       <button
@@ -636,7 +660,7 @@ export function CreateView() {
                   </div>
                 </div>
                 <div className="wb-field">
-                  <span className="wb-label">引擎</span>
+                  <span className="wb-label">{t('create.more.engine')}</span>
                   <div className="wb-segmented">
                     <button
                       type="button"
@@ -644,7 +668,7 @@ export function CreateView() {
                       aria-pressed={provider === CLOUD_PROVIDER}
                       onClick={() => setProvider(CLOUD_PROVIDER)}
                     >
-                      云端 Seedance
+                      {t('common.engine.cloud')}
                     </button>
                     {/* ⚠️ V2.37（D56）：「本地 H3」这一档已撤掉（与左栏同步）——
                         以前这里摆着一个永远不可用的选项；现在本地轨只有 ComfyUI。 */}
@@ -668,7 +692,7 @@ export function CreateView() {
                     <div
                       className="wb-segmented wb-segmented-engines"
                       role="group"
-                      aria-label="本地 ComfyUI 实例"
+                      aria-label={t('create.more.enginesAria')}
                     >
                       {comfyEngines.map((option) => (
                         <button
@@ -687,11 +711,11 @@ export function CreateView() {
                   ) : null}
                 </div>
                 <div className="wb-field">
-                  <span className="wb-label">seed（留空随机）</span>
+                  <span className="wb-label">{t('create.more.seed')}</span>
                   <input
                     className="wb-input"
                     inputMode="numeric"
-                    placeholder="如 42"
+                    placeholder={t('create.more.seedPlaceholder')}
                     value={seed}
                     onChange={(event) => setSeed(event.target.value.replace(/[^\d-]/g, ''))}
                   />
@@ -707,41 +731,45 @@ export function CreateView() {
               aria-expanded={moreOpen}
               onClick={() => setMoreOpen((open) => !open)}
             >
-              {moreOpen ? '收起设置 ▲' : '更多设置 ▼'}
+              {moreOpen ? t('create.more.collapse') : t('create.more.expand')}
             </button>
             <span className="wb-note">
               {aspectRatio} · {durationSec}s · {resolutionTier} ·{' '}
-              {provider === CLOUD_PROVIDER ? '云端' : '本地'}
+              {provider === CLOUD_PROVIDER ? t('common.scope.cloud') : t('common.scope.local')}
             </span>
           </div>
         </div>
 
         <div className="cr-mode-line">
-          <span className="cr-mode-tag">将按「{MODE_LABELS[selection.mode]}」生成</span>
+          <span className="cr-mode-tag">
+            {t('create.modeLine', { mode: t(MODE_KEYS[selection.mode]) })}
+          </span>
           {ignoredHint === null ? null : <span className="wb-note">{ignoredHint}</span>}
-          {pending ? <span className="wb-note">素材上传中，完成后即可提交。</span> : null}
+          {pending ? <span className="wb-note">{t('create.modeLine.pending')}</span> : null}
         </div>
 
         <div className="cr-actions">
           <div className="wb-note">
             {needsKey ? (
               <>
-                未配置 Key 且服务端无兜底：{' '}
+                {t('create.needsKey')}{' '}
                 <button type="button" className="cr-link" onClick={openByok}>
-                  去填写凭据
+                  {t('create.needsKey.action')}
                 </button>
               </>
             ) : (
               <>
                 {costEstimate === null ? null : (
-                  <span className="cr-cost" title="按公开价目与上游计费式估算；实际以方舟账单为准">
-                    预计花费 {formatYuan(costEstimate.yuan)}
-                    {costEstimate.source === 'local-free' ? '（本地轨：无 API 费用）' : '（预估）'}
-                    {costEstimate.fromPriceTable ? '' : '（自定义档按 2.0 标准口径估算）'}
+                  <span className="cr-cost" title={t('create.cost.title')}>
+                    {t('create.cost.estimated', { amount: formatYuan(costEstimate.yuan) })}
+                    {costEstimate.source === 'local-free'
+                      ? t('create.cost.localFree')
+                      : t('create.cost.estimateOnly')}
+                    {costEstimate.fromPriceTable ? '' : t('create.cost.customTier')}
                     {' · '}
                   </span>
                 )}
-                提交后停留在本页，进度与成片会出现在下方。
+                {t('create.actions.note')}
               </>
             )}
           </div>
@@ -751,25 +779,25 @@ export function CreateView() {
             disabled={submitDisabled}
             onClick={() => void handleSubmit()}
           >
-            {submitting ? '提交中…' : '✦ 生成'}
+            {submitting ? t('create.submit.pending') : t('create.submit')}
           </button>
         </div>
 
         {uploadError === null ? null : (
           <div className="wb-uncertain cr-alert">
-            <span className="wb-uncertain-title">素材上传未成功</span>
+            <span className="wb-uncertain-title">{t('create.alert.uploadFailed')}</span>
             <span className="wb-uncertain-body">{uploadError}</span>
           </div>
         )}
         {poolError === null ? null : (
           <div className="wb-uncertain cr-alert">
-            <span className="wb-uncertain-title">素材库读取失败</span>
+            <span className="wb-uncertain-title">{t('create.alert.poolFailed')}</span>
             <span className="wb-uncertain-body">{poolError}</span>
           </div>
         )}
         {submitError === null ? null : (
           <div className="wb-uncertain cr-alert">
-            <span className="wb-uncertain-title">提交未成功</span>
+            <span className="wb-uncertain-title">{t('create.alert.submitFailed')}</span>
             <span className="wb-uncertain-body">{submitError}</span>
           </div>
         )}
@@ -781,7 +809,7 @@ export function CreateView() {
         )}
         {pollingError === null ? null : (
           <div className="wb-uncertain cr-alert">
-            <span className="wb-uncertain-title">任务状态读取失败</span>
+            <span className="wb-uncertain-title">{t('create.alert.pollFailed')}</span>
             <span className="wb-uncertain-body">{pollingError.failure.message}</span>
           </div>
         )}
@@ -799,24 +827,27 @@ export function CreateView() {
                 }
               >
                 <span className="wb-dot" />
-                {STATUS_TEXT[task.status]}
+                {t(STATUS_KEYS[task.status])}
               </span>
               <span className="wb-note">
-                任务 {task.taskId.slice(0, 8)} · {task.requestSnapshot.prompt.slice(0, 24)}
+                {t('create.task.idLine', {
+                  id: task.taskId.slice(0, 8),
+                  prompt: task.requestSnapshot.prompt.slice(0, 24),
+                })}
               </span>
               <button
                 type="button"
                 className="cr-link"
                 onClick={() => navigate('#/workbench')}
               >
-                去专业模式查看
+                {t('create.task.toWorkbench')}
               </button>
             </div>
 
             {task.status === 'failed' ? (
               <p className="wb-note cr-task-error">
                 {task.error === undefined
-                  ? '任务失败（详情见操作日志）'
+                  ? t('create.task.failedFallback')
                   : `${task.error.code}：${task.error.message}`}
               </p>
             ) : null}
@@ -832,14 +863,14 @@ export function CreateView() {
                 <video className="cr-player" src={outputUrl} controls playsInline />
                 <div className="cr-task-actions">
                   <a className="cr-link" href={outputUrl} download>
-                    ⤓ 下载 MP4
+                    {t('create.task.download')}
                   </a>
                   <button
                     type="button"
                     className="cr-link"
                     onClick={() => navigate(`#/edit?task=${encodeURIComponent(task.taskId)}`)}
                   >
-                    ✂ 送剪辑台
+                    {t('create.task.toEditor')}
                   </button>
                   <button
                     type="button"
@@ -850,7 +881,7 @@ export function CreateView() {
                       setRefs([]);
                     }}
                   >
-                    ↺ 再来一条
+                    {t('create.task.again')}
                   </button>
                 </div>
               </>

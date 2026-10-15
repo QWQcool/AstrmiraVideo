@@ -616,6 +616,7 @@ if (leftPanelText !== undefined) {
     'App.tsx',
     'components/Sidebar.tsx',
     'views/registry.ts',
+    'views/CreateView.tsx',
     'lib/theme.ts',
   ];
   const CJK_PATTERN = /[\u4e00-\u9fa5]/;
@@ -625,18 +626,20 @@ if (leftPanelText !== undefined) {
       failures.push(`i18n 迁移清单里的 ${rel} 不存在 —— 清单过期了（改完文件记得同步这里）`);
       continue;
     }
-    let inJsxComment = false;
+    // 状态机要覆盖**两种**块注释：JSX 注释 `{/* … */}` 与普通块注释 `/* … */`
+    // （后者出现在 `return (` 之后 —— 那不是 JSX 注释，漏掉它会把注释续行误判成文案）
+    let inComment = false;
     text.split('\n').forEach((line, index) => {
-      if (inJsxComment) {
-        if (line.includes('*/}')) inJsxComment = false;
+      if (inComment) {
+        if (line.includes('*/')) inComment = false;
         return;
       }
-      if (/^\s*\{\/\*/.test(line)) {
-        if (!line.includes('*/}')) inJsxComment = true;
+      if (/^\s*(\{\/\*|\/\*)/.test(line)) {
+        if (!line.includes('*/')) inComment = true;
         return;
       }
-      // 注释行跳过：`//`、`*`（JSDoc 续行）、`/**` 与 `/*`（单行注释块也算注释）
-      if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+      // 单行注释：`//`（行注释）与 `*`（JSDoc 续行）
+      if (/^\s*(\/\/|\*)/.test(line)) return;
       // 去掉行尾 `// 注释` 再判（对 `https://` 这类字符串无害：我们只问"还含中文吗"）
       if (!CJK_PATTERN.test(line.replace(/\/\/.*$/, ''))) return;
       failures.push(
