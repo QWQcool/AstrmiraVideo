@@ -3209,6 +3209,42 @@ try {
     `拦截撤销后回到真实配置（未配多台 → 只有一项「本地 ComfyUI」，实际 ${JSON.stringify(realEngineLabels)}）`,
   );
 
+  // ── V2.38（L1 · 语言迁移第一批）：**语言防线** ────────────────────────────────
+  //
+  // 这一段验的是"防半中半英"那条线 —— 视图文案还没迁完，所以：
+  // ① **英文浏览器**（`locale: 'en-US'`）首次进入必须仍是**中文界面**：
+  //    否则他看到的是一半英文一半中文，而他**没点过任何东西**；
+  // ② 外壳文案走了字典之后，**默认中文观感逐字不变**（迁移不该让中文用户看到任何差异）；
+  // ③ 界面上不许漏出**字典键名**（那是漏键的可见形态）。
+  //
+  // 用**新开一个 context** 来做：locale 是 context 级设置（既有 page 上改不了），
+  // 而主会话的语言也不该被这一段改掉。
+  console.log('\n[7g] 语言防线（V2.38：迁移未完成时不许跟随浏览器语言）');
+  const enContext = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    colorScheme: 'dark',
+    locale: 'en-US',
+    extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
+  });
+  const enPage = await enContext.newPage();
+  await enPage.goto(`${baseUrl}/#/create`, { waitUntil: 'load' });
+  await enPage.waitForSelector('.sidebar', { timeout: 10_000 });
+
+  const navLabels = await enPage.locator('.sidebar .nav-label').allInnerTexts();
+  assert(
+    navLabels.includes('创作') && !navLabels.includes('Create'),
+    `英文浏览器首访仍是**中文界面**（侧栏：${navLabels.slice(0, 3).join(' / ')}…）—— 迁移完成前不被浏览器语言带跑`,
+  );
+  assert(
+    !navLabels.some((label) => label.includes('shell.')),
+    '界面上没有任何**字典键名**漏出来（漏键会显示成键名，那是可见的坏）',
+  );
+  assert(
+    (await enPage.locator('.side-row--theme .seg button').allInnerTexts()).join('') === '跟随系统星尘日间',
+    '外壳文案走字典之后，**默认中文逐字不变**（迁移不该让中文用户看到任何差异）',
+  );
+  await enContext.close();
+
   console.log('\n[7f] window 层运行期兜底（V2.29 / B61 片 B / D52：只本地提示、不上报）');
   // 为什么必须**真抛**：这一层唯一的存在理由就是"接住没人接的错误"。直接调它的 report()
   // 只能证明函数能跑，证明不了"浏览器真会把事件送到它手上" —— 而"事件没送到"

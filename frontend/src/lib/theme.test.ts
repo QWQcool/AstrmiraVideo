@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { DICTIONARIES } from './i18n';
 import { STORAGE_KEYS } from './storage';
 import type { StorageAccess } from './storage';
 import {
   DEFAULT_THEME_PREF,
-  THEME_LABELS,
+  THEME_LABEL_KEYS,
   THEME_PREFS,
   readThemePref,
   resolveTheme,
@@ -74,7 +75,11 @@ describe('生效主题推导', () => {
 
   it('每个档位都有中文标签（顶栏不会出现空按钮）', () => {
     for (const pref of THEME_PREFS) {
-      expect(THEME_LABELS[pref]).toBeTruthy();
+      const key = THEME_LABEL_KEYS[pref];
+      expect(key).toBeTruthy();
+      // V2.38：文案进了字典 —— 光有键、字典里没这条 = 界面直接显示键名（可见地坏）
+      expect(DICTIONARIES.zh[key]).toBeTruthy();
+      expect(DICTIONARIES.en[key]).toBeTruthy();
     }
     expect(THEME_PREFS).toContain(DEFAULT_THEME_PREF);
   });

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
+import { useTranslate } from '../lib/i18n';
 import { useShell } from '../lib/shell';
-import { THEME_LABELS, THEME_PREFS, type ThemePref } from '../lib/theme';
+import { THEME_LABEL_KEYS, THEME_PREFS, type ThemePref } from '../lib/theme';
 import { NAV_VIEWS, type ViewIconKey } from '../views/registry';
 
 /**
@@ -123,6 +124,7 @@ export function Sidebar({
   onNavigate,
 }: SidebarProps) {
   const { openByok } = useShell();
+  const t = useTranslate();
 
   return (
     <aside
@@ -130,7 +132,7 @@ export function Sidebar({
       data-rail={rail ? '1' : '0'}
       data-mobile-open={mobileOpen ? '1' : '0'}
     >
-      <nav className="sidebar-nav" aria-label="一级视图">
+      <nav className="sidebar-nav" aria-label={t('shell.nav.aria')}>
         {NAV_VIEWS.map((view) => {
           const active = currentPath === view.path;
           const badge = view.path === '#/logs' && errorLogCount > 0 ? errorLogCount : null;
@@ -141,13 +143,13 @@ export function Sidebar({
               className="nav-item"
               aria-current={active ? 'page' : undefined}
               // 收起态没有文字，用 title 给悬停提示（rail 态的可达性）
-              title={rail ? view.title : undefined}
+              title={rail ? t(view.titleKey) : undefined}
               onClick={onNavigate}
             >
               <SideIcon>{ICONS[view.icon]}</SideIcon>
-              <span className="nav-label">{view.title}</span>
+              <span className="nav-label">{t(view.titleKey)}</span>
               {badge === null ? null : (
-                <span className="nav-badge" title={`有 ${badge} 条失败请求`}>
+                <span className="nav-badge" title={t('shell.nav.failedRequests', { count: badge })}>
                   {badge > 99 ? '99+' : badge}
                 </span>
               )}
@@ -159,16 +161,21 @@ export function Sidebar({
       <div className="sidebar-spacer" />
 
       <div className="sidebar-foot">
-        <button type="button" className="side-row" onClick={openByok} title={rail ? '凭据设置' : undefined}>
+        <button
+          type="button"
+          className="side-row"
+          onClick={openByok}
+          title={rail ? t('shell.foot.byok') : undefined}
+        >
           <SideIcon>{KEY_ICON}</SideIcon>
-          <span className="side-foot-label">凭据设置</span>
+          <span className="side-foot-label">{t('shell.foot.byok')}</span>
         </button>
 
         {/* 主题分段控件：收起态下 56px 放不下三个文字按钮，整行隐藏（展开后再切） */}
         <div className="side-row side-row--theme">
           <SideIcon>{SUN_ICON}</SideIcon>
-          <span className="side-foot-label">主题</span>
-          <span className="seg" role="group" aria-label="主题">
+          <span className="side-foot-label">{t('shell.foot.theme')}</span>
+          <span className="seg" role="group" aria-label={t('shell.foot.theme')}>
             {THEME_PREFS.map((pref) => (
               <button
                 key={pref}
@@ -176,7 +183,7 @@ export function Sidebar({
                 aria-pressed={themePref === pref}
                 onClick={() => onThemeChange(pref)}
               >
-                {THEME_LABELS[pref]}
+                {t(THEME_LABEL_KEYS[pref])}
               </button>
             ))}
           </span>
@@ -187,10 +194,12 @@ export function Sidebar({
           className="side-row rail-toggle"
           onClick={onToggleRail}
           aria-expanded={!rail}
-          title={rail ? '展开侧栏' : '收起侧栏'}
+          title={rail ? t('shell.rail.expand') : t('shell.rail.collapse')}
         >
           <SideIcon>{RAIL_ICON}</SideIcon>
-          <span className="side-foot-label">{rail ? '展开侧栏' : '收起侧栏'}</span>
+          <span className="side-foot-label">
+            {rail ? t('shell.rail.expand') : t('shell.rail.collapse')}
+          </span>
         </button>
       </div>
     </aside>

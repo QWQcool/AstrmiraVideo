@@ -1,13 +1,16 @@
 import { useSyncExternalStore } from 'react';
+import { DICTIONARIES, I18N_MIGRATION_COMPLETE } from './dict/index.js';
+import type { MessageKey } from './dict/index.js';
 import { browserStorage, readLocal, writeLocal, type StorageAccess } from './storage';
 
 /**
  * 界面语言的基础设施（**L1 收官件 · 第二批**；台账见 PLAN §5）。
  *
- * ## 本片只做基础设施（这一点必须写清，免得被当成"已经能切英文了"）
- * 这里落的是**语言状态 / 检测 / 持久化 / 字典查找 / React 接线**。
- * **切换入口与全量文案迁移在下一片一起上线** —— 那之前界面仍是纯中文：
+ * ## 现状（诚实地说，免得被当成"已经能切英文了"）
+ * 基础设施 + **外壳文案已迁移**（侧栏 / 顶栏 / 区域名 / 凭据提示 —— 见 `lib/dict/`）。
+ * 其余视图的文案**仍在迁移中**，所以**切换入口还没上线**：
  * 让用户能切到英文、却看到"半中半英"，比"只有中文"更糟。
+ * **上线条件 = `lib/dict/index.ts` 里列的各域全部迁完**（那份文件同时就是迁移进度表）。
  *
  * ## 三条口径
  * 1. **默认中文**：本项目的文档与产品主线都是中文；浏览器语言不认识 / 检测不到 → `zh`；
@@ -49,12 +52,27 @@ export interface DetectLanguageOptions {
   navigatorLanguage?: string | null;
   /** 默认语言（缺省 `zh`） */
   fallback?: Language;
+  /**
+   * 迁移是否完成（缺省 = `I18N_MIGRATION_COMPLETE`）。
+   *
+   * 为什么做成可注入：这一条**行为分叉**必须两边都测 —— "未完成时不许被浏览器语言带跑"
+   * 与"完成后正常跟随浏览器"各有用例。靠改常量来测，迟早会有人忘了改回来。
+   */
+  migrationComplete?: boolean;
 }
 
-/** 当前该用哪种语言：**显式选择 > 浏览器偏好 > 默认** */
+/**
+ * 当前该用哪种语言：**显式选择 > 浏览器偏好 > 默认**。
+ *
+ * ⚠️ 例外：**迁移未完成时跳过"浏览器偏好"那一环** —— 否则英文浏览器的访客会看到
+ * "外壳英文 + 正文中文"（半中半英，且不是他能控制的：他没点过任何东西）。
+ * 显式选择仍然尊重（那是用户自己的选择）。见 `dict/index.ts` 的 `I18N_MIGRATION_COMPLETE`。
+ */
 export function detectLanguage(options: DetectLanguageOptions = {}): Language {
   const stored = normalizeLanguage(readLocal(options.storage ?? browserStorage(), LANGUAGE_STORAGE_KEY));
   if (stored !== null) return stored;
+
+  if (!(options.migrationComplete ?? I18N_MIGRATION_COMPLETE)) return options.fallback ?? 'zh';
 
   const navigatorLanguage =
     options.navigatorLanguage === undefined
@@ -76,12 +94,13 @@ export type Dictionary = Readonly<Record<string, string>>;
 export type Dictionaries = Readonly<Record<Language, Dictionary>>;
 
 /**
- * 全量文案字典（**下一片填充**）。
+ * 全量文案字典：**组装处只有一处** = `lib/dict/index.ts`（那里也是迁移进度表）。
  *
- * 现在它是空的：本片不迁移任何界面文案 —— 迁移是"要么全做、要么不做"的事
- * （半迁移的界面切到英文就是半中半英）。
+ * 这里只重新导出，调用方继续从 `i18n` 取用即可；依赖方向是**单向**的
+ * （`i18n` → `dict/`，`dict/` 不 import 运行时代码），所以不会有循环依赖。
  */
-export const DICTIONARIES: Dictionaries = { zh: {}, en: {} };
+export { DICTIONARIES };
+export type { MessageKey };
 
 /** 把模板里的 `{key}` 替换成值；没有对应变量时**原样保留**（宁可显示 `{n}` 也不显示空白） */
 export function interpolate(template: string, vars?: Readonly<Record<string, string | number>>): string {
@@ -97,7 +116,7 @@ export function interpolate(template: string, vars?: Readonly<Record<string, str
  */
 export function translate(
   language: Language,
-  key: string,
+  key: MessageKey,
   vars?: Readonly<Record<string, string | number>>,
   dictionaries: Dictionaries = DICTIONARIES,
 ): string {
@@ -139,8 +158,8 @@ export function useLanguage(): Language {
   return useSyncExternalStore(subscribe, getLanguage, getLanguage);
 }
 
-/** 取文案的 hook：`const t = useTranslate(); t('nav.create')` */
-export function useTranslate(): (key: string, vars?: Readonly<Record<string, string | number>>) => string {
+/** 取文案的 hook：`const t = useTranslate(); t('shell.nav.create')` */
+export function useTranslate(): (key: MessageKey, vars?: Readonly<Record<string, string | number>>) => string {
   const language = useLanguage();
   return (key, vars) => translate(language, key, vars);
 }

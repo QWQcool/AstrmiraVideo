@@ -1,3 +1,4 @@
+import type { MessageKey } from './i18n';
 import { STORAGE_KEYS, readLocal, writeLocal } from './storage';
 import type { StorageAccess } from './storage';
 
@@ -20,11 +21,17 @@ export const THEME_PREFS = ['system', 'dark', 'day'] as const;
 
 export const DEFAULT_THEME_PREF: ThemePref = 'system';
 
-/** 顶栏展示用文案 */
-export const THEME_LABELS: Record<ThemePref, string> = {
-  system: '跟随系统',
-  dark: '星尘',
-  day: '日间',
+/**
+ * 顶栏展示用文案的**键**（V2.38：外壳文案已进字典）。
+ *
+ * 为什么是键不是文案：主题档位的名字会出现在侧栏底部的分段控件里，
+ * 而那里是"外壳"的一部分 —— 外壳切英文时它必须跟着切。
+ * 渲染处 `t(THEME_LABEL_KEYS[pref])`（见 `components/Sidebar.tsx`）。
+ */
+export const THEME_LABEL_KEYS: Record<ThemePref, MessageKey> = {
+  system: 'shell.themePref.system',
+  dark: 'shell.themePref.dark',
+  day: 'shell.themePref.day',
 };
 
 const PREF_SET = new Set<string>(THEME_PREFS);

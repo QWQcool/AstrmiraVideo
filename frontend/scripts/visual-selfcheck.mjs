@@ -603,6 +603,59 @@ if (leftPanelText !== undefined) {
       'labels.ts 没把 H3 标成「（已撤）」—— 历史任务 / 旧编排里出现这个值时会显示成一个还在的档位（V2.37）',
     );
   }
+
+  // ── V2.38（L1 · 语言迁移第一批）：**已迁到字典的文件里不得再有硬编码中文文案** ──
+  //
+  // 为什么这条必须有：迁移是**逐文件**推进的，而"漏了一个按钮的文案"不会有任何回归信号 ——
+  // 切到英文时**那一处单独显示中文**，而类型、单测、覆盖率全绿（没人切过英文）。
+  // 这条把"已迁完"变成**机器可查的清单**：迁完一个文件就加进 `I18N_MIGRATED`，
+  // 之后谁再往里面写死中文，这里立刻红。
+  //
+  // 判据 = "这一行（去掉注释后）还含中文"：注释是中文写的（本仓文化），不算文案。
+  const I18N_MIGRATED = [
+    'App.tsx',
+    'components/Sidebar.tsx',
+    'views/registry.ts',
+    'lib/theme.ts',
+  ];
+  const CJK_PATTERN = /[\u4e00-\u9fa5]/;
+  for (const rel of I18N_MIGRATED) {
+    const text = contents.get(path.join(SRC, rel));
+    if (text === undefined) {
+      failures.push(`i18n 迁移清单里的 ${rel} 不存在 —— 清单过期了（改完文件记得同步这里）`);
+      continue;
+    }
+    let inJsxComment = false;
+    text.split('\n').forEach((line, index) => {
+      if (inJsxComment) {
+        if (line.includes('*/}')) inJsxComment = false;
+        return;
+      }
+      if (/^\s*\{\/\*/.test(line)) {
+        if (!line.includes('*/}')) inJsxComment = true;
+        return;
+      }
+      // 注释行跳过：`//`、`*`（JSDoc 续行）、`/**` 与 `/*`（单行注释块也算注释）
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+      // 去掉行尾 `// 注释` 再判（对 `https://` 这类字符串无害：我们只问"还含中文吗"）
+      if (!CJK_PATTERN.test(line.replace(/\/\/.*$/, ''))) return;
+      failures.push(
+        `${rel}:${index + 1} 还有硬编码中文文案（该文件已迁进字典，文案必须走 t()）—— ${line.trim().slice(0, 60)}`,
+      );
+    });
+  }
+
+  // 同一条线的另一头：**迁移未完成时不许跟随浏览器语言**。
+  //
+  // 防空的是"半中半英"：英文浏览器的访客没点过任何东西，若 detectLanguage 跟随
+  // `navigator.language`，他会看到一个只翻译了一半的界面 —— 比只有中文更糟。
+  // 这条静态断言盯住"开关真的接在判定链上"（去掉它不会有任何别的信号）。
+  const i18nText = contents.get(path.join(SRC, 'lib', 'i18n.ts'));
+  if (i18nText !== undefined && !i18nText.includes('I18N_MIGRATION_COMPLETE')) {
+    failures.push(
+      'i18n.ts 没有用 `I18N_MIGRATION_COMPLETE` —— 「迁移未完成时忽略浏览器偏好」这条防线没了（V2.38）',
+    );
+  }
   for (const stale of ['PROVIDER_COMFY', 'CANVAS_PROVIDER_LABELS[']) {
     if (leftPanelText.includes(stale)) {
       failures.push(`LeftPanel 里仍有 \`${stale}\`（V2.36 起实例名单必须来自 /status，不能写死一档）`);
@@ -662,5 +715,6 @@ console.log(
     `编排的三个花钱约定就位（A5 片 A+B：确定性幂等键 + 代数换键的重跑入口 + mode=plan 入口）、` +
     `编排文件入口与失败纪律就位（V2.35：读走 readCanvasPlanFile / 写走 buildCanvasPlanFile + 结果位）、` +
     `多实例引擎名单就位（V2.36：名单来自 /status、两处入口共用一份、自检走 providerLabel）、` +
+    `i18n 迁移清单就位（V2.38：已迁文件零硬编码中文 + 未完成时不跟随浏览器语言）、` +
     `window 层兜底就位且零上报（B61 片 B：两个事件 + D52 只本地提示）`,
 );

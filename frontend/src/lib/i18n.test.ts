@@ -8,6 +8,7 @@ import {
   saveLanguage,
   translate,
   type Dictionaries,
+  type MessageKey,
 } from './i18n';
 
 /**
@@ -56,9 +57,38 @@ describe('detectLanguage（判定顺序：显式选择 > 浏览器 > 默认）',
     expect(detectLanguage({ storage: access(storage), navigatorLanguage: 'zh-CN' })).toBe('en');
   });
 
-  it('没选过 → 跟随浏览器语言', () => {
-    expect(detectLanguage({ storage: access(memoryStorage()), navigatorLanguage: 'en-US' })).toBe('en');
-    expect(detectLanguage({ storage: access(memoryStorage()), navigatorLanguage: 'zh-CN' })).toBe('zh');
+  it('没选过、且迁移已完成 → 跟随浏览器语言', () => {
+    expect(
+      detectLanguage({
+        storage: access(memoryStorage()),
+        navigatorLanguage: 'en-US',
+        migrationComplete: true,
+      }),
+    ).toBe('en');
+    expect(
+      detectLanguage({
+        storage: access(memoryStorage()),
+        navigatorLanguage: 'zh-CN',
+        migrationComplete: true,
+      }),
+    ).toBe('zh');
+  });
+
+  it('**迁移未完成 → 忽略浏览器偏好**（英文浏览器也不许看到"外壳英文 + 正文中文"）', () => {
+    // 这一条是"半中半英"的防线：英文浏览器的访客**没点过任何东西**，
+    // 不该因为 navigator.language 就被扔进一个只翻了一半的界面。
+    expect(
+      detectLanguage({
+        storage: access(memoryStorage()),
+        navigatorLanguage: 'en-US',
+        migrationComplete: false,
+      }),
+    ).toBe('zh');
+    // 但他**显式选过**的语言仍然尊重（那是他的选择，不是我们的推断）
+    const chosen = memoryStorage({ [LANGUAGE_STORAGE_KEY]: 'en' });
+    expect(
+      detectLanguage({ storage: access(chosen), navigatorLanguage: 'zh-CN', migrationComplete: false }),
+    ).toBe('en');
   });
 
   it('都没给 / 都不认识 → 默认中文（本项目的文档与主线是中文）', () => {
@@ -69,13 +99,16 @@ describe('detectLanguage（判定顺序：显式选择 > 浏览器 > 默认）',
       detectLanguage({
         storage: access(memoryStorage({ [LANGUAGE_STORAGE_KEY]: 'klingon' })),
         navigatorLanguage: 'en',
+        migrationComplete: true,
       }),
     ).toBe('en');
   });
 
   it('存储不可用（隐私模式 / SSR）→ 不炸，走浏览器 / 默认', () => {
-    expect(detectLanguage({ storage: {}, navigatorLanguage: 'en' })).toBe('en');
-    expect(detectLanguage({ storage: {}, navigatorLanguage: null })).toBe('zh');
+    expect(detectLanguage({ storage: {}, navigatorLanguage: 'en', migrationComplete: true })).toBe('en');
+    expect(detectLanguage({ storage: {}, navigatorLanguage: null, migrationComplete: true })).toBe('zh');
+    // 迁移未完成时，存储不可用同样不许被浏览器语言带跑
+    expect(detectLanguage({ storage: {}, navigatorLanguage: 'en', migrationComplete: false })).toBe('zh');
   });
 
   it('saveLanguage 落盘（键是登记的 `astrmira.language`）', () => {
@@ -91,17 +124,25 @@ describe('translate / interpolate（缺键不许显示空白）', () => {
     en: { 'nav.create': 'Create' },
   };
 
+  /**
+   * 这一组测的是**回落与插值的机制**，用假字典最干净（真实字典里没有这些键）。
+   *
+   * V2.38 起 `translate` 的 key 是强类型（`MessageKey`）—— 写错键名**编译期就报**；
+   * 代价就是这里要显式 cast：那正是那层保护在起作用，不是测试写错了。
+   */
+  const key = (raw: string): MessageKey => raw as MessageKey;
+
   it('取目标语言；变量插值', () => {
-    expect(translate('en', 'nav.create', undefined, dictionaries)).toBe('Create');
-    expect(translate('zh', 'greet', { name: 'Mira' }, dictionaries)).toBe('你好 Mira');
+    expect(translate('en', key('nav.create'), undefined, dictionaries)).toBe('Create');
+    expect(translate('zh', key('greet'), { name: 'Mira' }, dictionaries)).toBe('你好 Mira');
   });
 
   it('目标语言缺这条 → 回落中文（不显示空白）', () => {
-    expect(translate('en', 'greet', { name: 'Mira' }, dictionaries)).toBe('你好 Mira');
+    expect(translate('en', key('greet'), { name: 'Mira' }, dictionaries)).toBe('你好 Mira');
   });
 
   it('两种语言都没有 → **回落键名本身**（可见地坏，而不是静默空白）', () => {
-    expect(translate('en', 'nav.missing', undefined, dictionaries)).toBe('nav.missing');
+    expect(translate('en', key('nav.missing'), undefined, dictionaries)).toBe('nav.missing');
   });
 
   it('插值变量缺失 → 原样保留 `{name}`（宁可显示占位，也不显示半个句子）', () => {

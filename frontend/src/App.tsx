@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ProjectEntry, ProviderStatus } from '@astrmira/shared';
 import { ByokDrawer } from './components/ByokDrawer';
+import { useTranslate } from './lib/i18n';
 // B61：视图级兜底（崩的是这一块，而不是整页）
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Eyebrow } from './components/Eyebrow';
@@ -99,6 +100,14 @@ export default function App() {
   const [projectError, setProjectError] = useState<string | null>(null);
   /** 清单刷新信号：ProjectSwitcher 在新建 / 改名 / 删除后自增（避免把 refresh 函数穿进 Context 太深） */
   const [projectRefreshTick, setProjectRefreshTick] = useState(0);
+
+  /**
+   * 外壳文案（V2.38：语言迁移第一批 = 外壳）。
+   *
+   * 用 hook 而不是在模块层取一份常量：语言切换时**这个组件必须重渲染**，
+   * 否则文案会停留在切换前的语言（而侧栏已经变了 —— 那种不一致比不翻译更糟）。
+   */
+  const t = useTranslate();
 
   const handleSetActiveProject = useCallback(
     (nextProjectId: string): void => {
@@ -222,9 +231,12 @@ export default function App() {
     // 保存后把"现在能做什么"讲清楚：两条轨各自是否可用，避免"填了文本 Key 却以为视频轨也通了"
     const videoReady = resolveProviderKey(next) !== undefined;
     const textReady = resolveLlmKey(next) !== undefined;
-    const storageText = persist ? '明文保存在本机（仅限信任设备）' : '仅本次会话有效';
     setNotice(
-      `凭据已${storageText}：视频轨${videoReady ? '已填' : '未填'} · 文本扩写${textReady ? '已填' : '未填'}。`,
+      t('shell.byok.saved', {
+        sink: t(persist ? 'shell.byok.sinkLocal' : 'shell.byok.sinkSession'),
+        video: t(videoReady ? 'shell.byok.filled' : 'shell.byok.empty'),
+        text: t(textReady ? 'shell.byok.filled' : 'shell.byok.empty'),
+      }),
     );
   }
 
@@ -232,7 +244,7 @@ export default function App() {
     clearByok(storage);
     setByok(readByok(storage));
     setByokPersist(false);
-    setNotice('已清除本地凭据；服务端不保存任何 Key。');
+    setNotice(t('shell.byok.cleared'));
   }
 
   /**
@@ -243,8 +255,8 @@ export default function App() {
     const videoKey = resolveProviderKey(draft);
     const textKey = resolveLlmKey(draft);
 
-    if (track === 'video' && videoKey === undefined) return '未填写视频轨 Key：无法校验';
-    if (track === 'text' && textKey === undefined) return '未填写文本轨 Key：无法校验';
+    if (track === 'video' && videoKey === undefined) return t('shell.verify.noVideoKey');
+    if (track === 'text' && textKey === undefined) return t('shell.verify.noTextKey');
 
     try {
       const result = await verifyTrackKey(
@@ -265,7 +277,7 @@ export default function App() {
       );
       return result.message;
     } catch (caught) {
-      return `校验失败：${describeError(caught)}`;
+      return t('shell.verify.failed', { reason: describeError(caught) });
     }
   }
 
@@ -305,7 +317,7 @@ export default function App() {
           <button
             type="button"
             className="wb-burger"
-            aria-label="打开导航"
+            aria-label={t('shell.header.openNav')}
             aria-expanded={mobileNavOpen}
             onClick={() => setMobileNavOpen(true)}
           >
@@ -324,17 +336,17 @@ export default function App() {
             {serviceError !== null ? (
               <span className="wb-badge wb-badge-bad" title={serviceError}>
                 <span className="wb-dot wb-dot-bad" />
-                后端未连通
+                {t('shell.service.bad')}
               </span>
             ) : providerStatus === null ? (
               <span className="wb-badge">
                 <span className="wb-dot" />
-                探测中
+                {t('shell.service.probing')}
               </span>
             ) : (
               <span className="wb-badge wb-badge-ok">
                 <span className="wb-dot wb-dot-ok" />
-                服务在线
+                {t('shell.service.ok')}
               </span>
             )}
           </div>
@@ -364,7 +376,12 @@ export default function App() {
             <div className="app-notice" role="status">
               <span className="wb-dot" />
               <span className="wb-note">{notice}</span>
-              <button type="button" className="app-notice-close" onClick={() => setNotice(null)} aria-label="关闭提示">
+              <button
+                type="button"
+                className="app-notice-close"
+                onClick={() => setNotice(null)}
+                aria-label={t('shell.header.closeNotice')}
+              >
                 ✕
               </button>
             </div>
@@ -375,14 +392,14 @@ export default function App() {
               包在 keep-alive 里面而不是外面：这两个视图常驻，包外面会让"隐藏的那一个"的崩溃
               连当前视图一起吃掉。 */}
           <div className="wb-keepalive" hidden={view?.path !== '#/workbench'}>
-            <ErrorBoundary label="工作台">
+            <ErrorBoundary label={t('shell.region.workbench')}>
               <WorkbenchView />
             </ErrorBoundary>
           </div>
 
           {/* 创作入口常驻（同一条纪律，V2.7 / B41）：输入、素材 chips、内联任务卡在切视图后不丢 */}
           <div className="wb-keepalive" hidden={view?.path !== '#/create'}>
-            <ErrorBoundary label="创作入口">
+            <ErrorBoundary label={t('shell.region.create')}>
               <CreateView />
             </ErrorBoundary>
           </div>
@@ -393,7 +410,7 @@ export default function App() {
           ActiveView !== undefined ? (
             // `key={view.path}`：切视图时**重新挂载边界**（React 会复用同位置的实例，
             // 不换 key 的话"上个视图崩过"会把下一个视图也锁在兜底面板里）
-            <ErrorBoundary key={view.path} label={view.title}>
+            <ErrorBoundary key={view.path} label={t(view.titleKey)}>
               <ActiveView />
             </ErrorBoundary>
           ) : null}
