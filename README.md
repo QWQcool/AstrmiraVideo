@@ -2,11 +2,13 @@
 
 > **自然语言描述 + 参考图/参考视频 → 本地/云端双轨 AI 视频生成工作台**（面向 B 端私有化部署）
 
+**中文** | [English](README.en.md)
+
 [![Status](https://img.shields.io/badge/status-%E6%B4%BB%E8%B7%83%E5%BC%80%E5%8F%91%E4%B8%AD-blue)](docs/PLAN.md)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Node%2022%20%2B%20Fastify%205%20%2B%20SQLite-3178c6)](docs/PLAN.md)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20Vite%206-61dafb)](docs/PLAN.md)
-[![Contract](https://img.shields.io/badge/CONTRACT-V2.18-success)](docs/CONTRACT.md)
+[![Contract](https://img.shields.io/badge/CONTRACT-V2.36-success)](docs/CONTRACT.md)
 
 > **当前进度、已完成项与未做项的唯一权威是 [docs/PLAN.md](docs/PLAN.md) §5 与 §9 台账** ——
 > 本文不维护第二份状态描述（历史上正是因为 README 里写了一份"进度"，它最先过期）。
@@ -14,15 +16,17 @@
 ## 30 秒电梯陈述
 
 输入自然语言描述、拖入参考图（首尾帧/风格）或参考视频，按**推荐配置与你自己的选择**路由到生成引擎
-——**云端火山方舟 Seedance（BYOK 自备 Key，Key 只存在你自己的浏览器）**，或**本地 MiniMax H3**
-（由部署者显式启用；⚠️ **本地轨的 provider 尚未实现**，选择它当前会如实返回 `PROVIDER_UNAVAILABLE`，
-见 PLAN §9 台账）。
+——**云端火山方舟 Seedance（BYOK 自备 Key，Key 只存在你自己的浏览器）**，或**你自己机器上的 ComfyUI**
+（`host-comfyui`：引擎与模型都由你装，本仓只做接口适配；**可以配多台** —— 比如一台 3080 跑 480p、
+一台 5090 跑 720p，界面上分别选，见 CONTRACT §19）。
+⚠️ 本地轨**还有另一档「MiniMax H3」尚未实现**（选了会如实返回 `PROVIDER_UNAVAILABLE`，不假装可用）。
 
 拿到成片之后，系统里还有一条**闭环**：**浏览器端剪辑台**（多轨时间轴 · Remotion 预览与导出 · 转场/字幕/音效轨/BGM 淡入淡出）
 → **渲染入库**（剪辑产物就是新素材）→ **血缘画布**（这条片子怎么长出来的）。
 面向 B 端的运维与交付能力包括：**项目维度**、**成本台账（预估价 + 以方舟账单为准）**、
 **交付包（多选导出 / 命名模板 / 平台规格转码 / 归档清单）**、**Webhook 终态回调**、
-**可观测（live/ready 分级 + 指标快照 + 阈值告警）**、**备份与恢复（一致性快照 + 三道恢复闸门）**。
+**可观测（live/ready 分级 + 指标快照 + 阈值告警）**、**备份与恢复（一致性快照 + 三道恢复闸门）**；
+画布上还能**自己编排一条流水线并直接执行**（幂等提交 / 部分重跑 / 固定产物，编排可**导出成文件**带走）。
 
 ## 界面（真实截图，不是概念图）
 
@@ -40,10 +44,10 @@
 | ![总览](docs/assets/ui/desktop-03-overview.png) | ![视频库](docs/assets/ui/desktop-04-library.png) |
 | 今日生成 / 成功率 / 队列 / 存储占用 + 最近成片与操作 feed | 筛选与排序、卡片操作、多选交付包 |
 
-| 剪辑台（`#/edit?task=…`） | 血缘画布（`#/canvas`，只读） |
+| 剪辑台（`#/edit?task=…`） | 画布（`#/canvas`：事实图 ↔ **编排** 两个模式） |
 |---|---|
 | ![剪辑台](docs/assets/ui/desktop-05-edit.png) | ![血缘画布](docs/assets/ui/desktop-06-canvas.png) |
-| 浏览器端合成与导出（WebCodecs，**不占服务端算力**），导出即可入库 | 节点 = 素材/任务，边 = 派生/抽帧/引用；点节点看详情 |
+| 浏览器端合成与导出（WebCodecs，**不占服务端算力**），导出即可入库 | 事实图：节点 = 素材/任务，边 = 派生/抽帧/引用；**编排模式**：自己摆节点连线 → 一次提交（幂等、可部分重跑、可导出/导入编排文件）。<br>（上图是**事实图**模式，编排模式的截图待补） |
 
 ![操作日志](docs/assets/ui/desktop-07-logs.png)
 
@@ -54,7 +58,7 @@
 ## 快速开始
 
 ```bash
-cp .env.example .env   # 按需填入火山 Key / 本地 H3 目录
+cp .env.example .env   # 按需填入火山 Key / 本地 ComfyUI 地址（多台见 GUIDE）
 pnpm install
 pnpm dev               # 并行拉起 backend + frontend（开发用，Vite 热更）
 
@@ -68,8 +72,10 @@ pnpm smoke:ui                    # 真 Chrome 跑一遍生产形态的 UI 冒烟
 > 用 nvm 的话 `nvm use` 会读 `.nvmrc`。
 
 填入自己的火山方舟 Key 即可出片（Key 存在**你的浏览器**，服务端过手不留存）；本地轨由**部署者显式启用**
-（`EXPOSE_HOST_LOCAL_TRACK`），未启用时选择本地引擎会返回 `PROVIDER_UNAVAILABLE`。
-推荐档位与引擎接入详见 [docs/GUIDE.md](docs/GUIDE.md)。
+（`EXPOSE_HOST_LOCAL_TRACK=1` + `COMFYUI_BASE_URL`；**多台**用 `COMFYUI_SERVERS_FILE`），
+未启用时选择本地引擎会返回 `PROVIDER_UNAVAILABLE`。
+**配完 env 重启后，用左栏「🔍 检测本地引擎」确认到底通不通** —— 它会**真的连一次**，并**逐台**报告
+（一台连不上不影响另一台的结论）。推荐档位、多实例配置与引擎接入详见 [docs/GUIDE.md](docs/GUIDE.md)。
 
 > **提示词扩写（✨）另需一把文本 Key**：与视频 Key 是**两套**凭据（可一键复用），在同一个「凭据设置（BYOK）」抽屉里填；
 > 服务端**不设文本侧兜底 Key**（纯 BYOK），没填时按钮置灰并写明原因。
@@ -107,7 +113,7 @@ AstrmiraVideo/
 
 | 不做 / 未做 | 现状与原因 |
 |---|---|
-| **本地轨 provider（MiniMax H3）** | 未实现：选择本地引擎**如实返回 `PROVIDER_UNAVAILABLE`**，不假装可用（PLAN §9-B33） |
+| **本地轨的「MiniMax H3」档** | **未实现**：选它**如实返回 `PROVIDER_UNAVAILABLE`**，不假装可用。本地轨**当前可用于生产的是 `host-comfyui`**（自备 ComfyUI：已真机跑通，且支持多台）。H3 这一档是保留、补齐还是撤掉，列在 [docs/PENDING-DECISIONS.md](docs/PENDING-DECISIONS.md) **N4**（等产品负责人拍板） |
 | **多租户 / 跨租户隔离** | 决策 D42：交付形态是"一家客户一套私有部署"，隔离单位是**项目**而非租户 |
 | **成员角色（管理员/创作者/查看者）** | 需要先有**用户身份系统**；没有登录就做角色只是"假门禁"（PLAN §9-B58） |
 | **水印** | 决策 D45：不做（将来的"客户 logo 贴片"是另一件事，届时另立） |
@@ -118,7 +124,9 @@ AstrmiraVideo/
 
 | 文档 | 职责 | 独家拥有的内容 |
 |---|---|---|
-| **README.md**（本文） | 入口与导航 | 电梯陈述、界面截图、技术选型速览、文档地图、协作规范 |
+| **README.md**（本文） | 入口与导航（中文） | 电梯陈述、界面截图、技术选型速览、文档地图、协作规范 |
+| [README.en.md](README.en.md) | 入口与导航（**英文**） | 上述内容的英文版；**口径以中文文档为准**（英文版是给非中文读者的入口） |
+| **[NOTICE](NOTICE)** | **第三方许可说明** | 直接依赖的许可证清单、**Remotion 的 source-available 边界（B 端交付前必看）**、外部工具（ffmpeg / ComfyUI）与服务条款边界 |
 | [docs/PLAN.md](docs/PLAN.md) | 产品与开发规划 | 架构、功能清单、**七道防线**、**Step+AC**、**进度日志（§5，唯一权威）**、决策记录、安全合规、成本风险、**台账 §9** |
 | [docs/CONTRACT.md](docs/CONTRACT.md) | 接口唯一权威 | TS 类型、**路由表**、错误码字典、存储与资产生命周期、备份与恢复契约 |
 | [docs/GUIDE.md](docs/GUIDE.md) | 上手指南与运维手册 | Tier 0~3 算力矩阵、双轨引擎接入、四种工作流、FAQ、**运维巡检与备份恢复 SOP** |
@@ -154,4 +162,14 @@ AstrmiraVideo/
 
 ## License
 
-[MIT](LICENSE) — 第三方模型与云端 API 各有其服务条款，使用边界见 docs/PLAN.md §7。
+本仓自身是 **[MIT](LICENSE)**。
+
+**但第三方依赖里有两条必须单独看**（详见 **[NOTICE](NOTICE)**）：
+
+1. **剪辑台用的 Remotion 是 source-available 许可，不是 OSI 开源** —— 不在它免费范围内的组织
+   （个人与小团队之外），**商业交付前需自行取得 Remotion 的商业许可**；这一点出现在这里，
+   是因为它属于"B 端交付必须先知道的事"，而不是依赖树里的小字。
+2. 外部工具（**ffmpeg**、用户自备的 **ComfyUI**、云端方舟账号）各有其条款与许可，
+   由**部署者 / 使用者**自己确认。
+
+第三方模型与云端 API 的服务条款边界另见 docs/PLAN.md §7。

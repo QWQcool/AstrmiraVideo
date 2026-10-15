@@ -1,0 +1,71 @@
+# 第三方软件与许可说明（NOTICE）
+
+> 本文件登记**直接依赖**的第三方软件与**外部工具 / 服务**的许可边界。
+> 事实来源：各包 `package.json` 的 `license` 字段（2026-10-15 核对）；完整依赖树与精确版本见 `pnpm-lock.yaml`。
+> 本仓自身的许可是 [MIT](LICENSE)。
+
+---
+
+## 一、必须单独看的两项（**不是** MIT / Apache）
+
+### 1. Remotion（`remotion` · `@remotion/player` · `@remotion/media` · `@remotion/web-renderer`）
+
+**许可：Remotion License —— source-available，不是 OSI 开源许可。**
+四个包在 npm 元数据里分别标注 `SEE LICENSE FILE` / `SEE LICENSE IN LICENSE.md` / **`UNLICENSED`**。
+
+**要点（如实说明；具体条款与规模阈值以官方许可原文为准）**：
+Remotion 对个人与小型团队免费，但**公司用于生产需要购买商业许可**。
+本项目用它实现**浏览器端剪辑台**（多轨预览与导出）。
+
+> 👉 **对 B 端交付的影响（这一条必须讲清，而不是藏在依赖里）**：
+> 如果你的组织不在 Remotion 的免费范围内，**在把本系统用于商业交付前，需要自行取得 Remotion 的商业许可**。
+> 这是**使用者自己的合规动作**，本项目不代办、也不默认它"反正没事"。
+>
+> **如果不想买**：剪辑台的渲染层是隔离的（`frontend/src/edit/`），换成 MIT 许可的合成方案
+> （自写 WebCodecs 合成 / Canvas 录制）在技术上可行 —— 但那是一次独立评估，**当前没有排期**。
+
+### 2. `@remotion/web-renderer` 元数据标 `UNLICENSED`
+
+它随 Remotion 一同使用，受**同一份** Remotion License 约束（不是"无许可 = 随便用"）。
+
+---
+
+## 二、MIT / Apache-2.0（可商用，保留版权与许可声明即可）
+
+| 包 | 许可 |
+|---|---|
+| fastify · @fastify/cors · @fastify/multipart · @fastify/static · fastify-type-provider-zod | MIT |
+| better-sqlite3 · file-type · pino · pino-pretty · zod · tsx | MIT |
+| react · react-dom · @xyflow/react · @vitejs/plugin-react · vite · vitest · @vitest/coverage-v8 · oxlint | MIT |
+| @types/better-sqlite3 · @types/node · @types/react · @types/react-dom（DefinitelyTyped） | MIT |
+| sharp | Apache-2.0 |
+| typescript | Apache-2.0 |
+| playwright（**仅开发与测试期**使用，不随产品分发） | Apache-2.0 |
+
+（`@astrmira/shared` 是本仓自己的包，不属于第三方。）
+
+---
+
+## 三、外部工具（**不随仓库分发**，由部署者环境提供）
+
+| 工具 | 用途 | 许可与边界 |
+|---|---|---|
+| **ffmpeg / ffprobe** | 夹具合成、媒体探测、平台规格转码 | 许可取决于**你装的那一个构建**（常见 LGPL 或 GPL 变体）。本仓**不分发二进制**，`Dockerfile` 用的是基础镜像里的那一个 —— 商用前请确认你所用构建的条款 |
+| **ComfyUI**（用户自备） | 本地推理后端（`host-comfyui`） | 它是**部署者自己机器上的服务**，本仓只做接口适配（CONTRACT §19）。它的许可、插件与模型许可是**使用者自己的事** |
+| **MiniMax H3**（用户自备） | 本地推理后端 | **当前未实现**（选了会如实返回 `PROVIDER_UNAVAILABLE`）—— 见 README「能力边界」 |
+
+---
+
+## 四、云端服务与模型权重
+
+- **云端出片**走**用户自己的方舟（Seedance）账号**（BYOK）：服务条款、计费与内容政策由**上游**决定，
+  本仓只在契约层对接（CONTRACT §5）；
+- **模型权重**（如 Wan2.2 TI2V）的许可是**部署者自己装进 ComfyUI 的那一份** ——
+  本仓**不内置、不分发**任何模型权重（决策 **D53**：模型完全由用户决定）。
+
+---
+
+## 五、参考与借鉴（设计层面，**不是**代码依赖）
+
+- `docs/UPSTREAM.md`：参考 / 复刻的项目与版本追溯（含外部工具的来源 / 版本 / 许可登记）；
+- `docs/N8N-REFERENCE.md`：n8n 的设计借鉴清单与**许可边界**（读源码学设计、**不并入**其源码）。
