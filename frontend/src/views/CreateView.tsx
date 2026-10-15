@@ -761,7 +761,7 @@ export function CreateView() {
               <>
                 {costEstimate === null ? null : (
                   <span className="cr-cost" title={t('common.cost.title')}>
-                    {t('create.cost.estimated', { amount: formatYuan(costEstimate.yuan) })}
+                    {t('common.cost.estimated', { amount: formatYuan(costEstimate.yuan) })}
                     {costEstimate.source === 'local-free'
                       ? t('common.cost.localFree')
                       : t('common.cost.estimateOnly')}
@@ -779,7 +779,7 @@ export function CreateView() {
             disabled={submitDisabled}
             onClick={() => void handleSubmit()}
           >
-            {submitting ? t('create.submit.pending') : t('create.submit')}
+            {submitting ? t('common.submit.pending') : t('create.submit')}
           </button>
         </div>
 

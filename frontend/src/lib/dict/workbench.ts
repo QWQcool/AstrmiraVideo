@@ -90,6 +90,41 @@ export const WORKBENCH_ZH = {
   'workbench.seed.placeholderRandom': '未锁定：每次随机',
   'workbench.seed.note': '锁定后同种子同参数可复现；云端不锁定时由服务商侧随机。',
 
+  // ── 工作台容器（`views/WorkbenchView.tsx`）：这里几乎全是**就地通知**（notice）──
+  'workbench.notice.enhanceUnavailable':
+    '未配置扩写模型：请在「凭据设置（BYOK）」里填入文本轨 Key（本服务不提供文本侧兜底 Key）',
+  'workbench.prompt.demo': '竖屏短剧，女孩站在雨夜街头微笑着说：“我们终于成功了！”，电影感光影',
+  'workbench.notice.framePicked': '已把剪辑台抽出的那一帧放进首帧（I2V）：补一句运动描述就能生成。',
+  'workbench.notice.recipeContext': '已选用配方「{title}」作为扩写上下文（提示词未改动）。',
+  'workbench.notice.recipeSkeleton': '已把配方「{title}」的骨架插入提示词末尾；扩写时也会带上它。',
+  'workbench.notice.videoRefSet':
+    '已把{origin} {id} 设为参考视频（V2V）；线上部署（已配 PUBLIC_BASE_URL）可直接提交。',
+  'workbench.origin.edit': '剪辑产物',
+  'workbench.origin.render': '成片',
+  'workbench.enhanced.head': '已用模型扩写（engine={engine}）',
+  'workbench.enhanced.camera': ' · 镜头建议：{value}',
+  'workbench.enhanced.lighting': ' · 光线建议：{value}',
+  'workbench.enhanced.notice': '（{value}）',
+  'workbench.notice.enhanceFailed': '扩写失败：{reason}',
+  'workbench.notice.cancelled':
+    '已请求取消，并会通知上游停止；若上游已受理，仍可能产生费用，请到服务商后台核对。',
+  'workbench.notice.cancelFailed': '取消失败：{reason}',
+  'workbench.notice.noOutput': '该任务没有可播放的成片（未成功，或成片已被清理）。',
+  'workbench.notice.paramsReused': '已复用该任务的参数（提示词 / 模式 / 画幅 / seed）。',
+  'workbench.notice.paramsReusedWithAssets':
+    '已复用参数，并带回 {count} 份参考资产编号；本地没有备份，因此不显示预览。',
+  'workbench.notice.acknowledged': '已标记核对：请到服务商后台确认是否产生费用。',
+  'workbench.notice.abandoned': '已放弃该任务：本服务不会自动重试，也不会再次向上游提交。',
+  'workbench.submit.cooldown': '冷却中 {seconds}s',
+  'workbench.submit.run': '立即生成视频',
+  'workbench.key.none': '未填写 Key：服务端将回落到其自身配置的兜底 Key（若未配置会返回 KEY_MISSING）。',
+  'workbench.key.local': '已填写 Key · 明文保存在本机（仅限信任设备）',
+  'workbench.key.session': '已填写 Key · 仅本次会话有效',
+  'workbench.alert.submitFailed': '提交未成功',
+  'workbench.footer.lead': '本地演示版本 ·',
+  'workbench.footer.waiting': ' 等待任务',
+  'workbench.footer.recent': ' 最近任务 {id} · 观察 {time}',
+
   // ── 素材槽（`AssetDropZone`）──
   'workbench.drop.previewAlt': '{label}裁切预览',
   'workbench.drop.naturalSize.before': '原图 ',
@@ -180,6 +215,45 @@ export const WORKBENCH_EN = {
   'workbench.seed.placeholderRandom': 'Unlocked: random each time',
   'workbench.seed.note':
     'Locked, the same seed and settings reproduce; on the cloud an unlocked seed is randomized upstream.',
+
+  'workbench.notice.enhanceUnavailable':
+    'No expansion model configured: add a text-track key in “Credentials (BYOK)” (this service ships no text-side fallback key)',
+  'workbench.prompt.demo':
+    'Vertical short drama: a girl on a rainy street at night smiles and says “we finally made it!”, cinematic light',
+  'workbench.notice.framePicked':
+    'Put the frame grabbed in the editor into the first frame (I2V): add one line of motion and you can generate.',
+  'workbench.notice.recipeContext': 'Using recipe “{title}” as expansion context (your prompt is unchanged).',
+  'workbench.notice.recipeSkeleton':
+    'Appended the skeleton of recipe “{title}” to the prompt; expansion will include it too.',
+  'workbench.notice.videoRefSet':
+    'Set {origin} {id} as the reference video (V2V); on a deployed instance (PUBLIC_BASE_URL set) you can submit directly.',
+  'workbench.origin.edit': 'edited clip',
+  'workbench.origin.render': 'render',
+  'workbench.enhanced.head': 'Expanded with a model (engine={engine})',
+  'workbench.enhanced.camera': ' · camera suggestion: {value}',
+  'workbench.enhanced.lighting': ' · lighting suggestion: {value}',
+  'workbench.enhanced.notice': ' ({value})',
+  'workbench.notice.enhanceFailed': 'Expansion failed: {reason}',
+  'workbench.notice.cancelled':
+    'Cancellation requested and upstream will be told to stop; if upstream already accepted it, you may still be charged — check your provider console.',
+  'workbench.notice.cancelFailed': 'Cancel failed: {reason}',
+  'workbench.notice.noOutput': 'This task has no playable output (it did not succeed, or the file was cleaned up).',
+  'workbench.notice.paramsReused': 'Reused this task’s parameters (prompt / mode / aspect / seed).',
+  'workbench.notice.paramsReusedWithAssets':
+    'Reused the parameters and brought back {count} reference asset id(s); there is no local copy, so previews are unavailable.',
+  'workbench.notice.acknowledged': 'Marked as checked: confirm in your provider console whether you were charged.',
+  'workbench.notice.abandoned':
+    'Abandoned this task: this service will not retry it and will not submit it upstream again.',
+  'workbench.submit.cooldown': 'Cooling down {seconds}s',
+  'workbench.submit.run': 'Generate video',
+  'workbench.key.none':
+    'No key entered: the server falls back to its own key (if none is configured it returns KEY_MISSING).',
+  'workbench.key.local': 'Key set · stored in plain text on this device (trusted devices only)',
+  'workbench.key.session': 'Key set · valid for this session only',
+  'workbench.alert.submitFailed': 'Submit failed',
+  'workbench.footer.lead': 'Local demo build ·',
+  'workbench.footer.waiting': ' waiting for a task',
+  'workbench.footer.recent': ' latest task {id} · watching {time}',
 
   'workbench.drop.previewAlt': '{label} crop preview',
   'workbench.drop.naturalSize.before': 'Source ',

@@ -60,11 +60,10 @@ export const CREATE_ZH = {
   'create.modeLine.pending': '素材上传中，完成后即可提交。',
   'create.needsKey': '未配置 Key 且服务端无兜底：',
   'create.needsKey.action': '去填写凭据',
-  // 费用**口径与后缀**（title / localFree / estimateOnly / customTier）提升到 `common.cost.*`：
+  // 费用**整组**（口径 / 后缀 / 金额句式）提升到 `common.cost.*`：
   // 创作入口与工作台显示的是同一件事，两处各写一份必然漂移
-  'create.cost.estimated': '预计花费 {amount}',
   'create.actions.note': '提交后停留在本页，进度与成片会出现在下方。',
-  'create.submit.pending': '提交中…',
+  // （"提交中…"提升到 `common.submit.pending`：工作台的提交按钮也要用同一句）
   'create.submit': '✦ 生成',
 
   // ── 就地告警（标题；正文来自接口，不译）──
@@ -131,9 +130,7 @@ export const CREATE_EN = {
   'create.modeLine.pending': 'Uploading assets — you can submit once it finishes.',
   'create.needsKey': 'No key configured and the server has no fallback:',
   'create.needsKey.action': 'Add credentials',
-  'create.cost.estimated': 'Estimated cost {amount}',
   'create.actions.note': 'You stay on this page; progress and the render show up below.',
-  'create.submit.pending': 'Submitting…',
   'create.submit': '✦ Generate',
 
   'create.alert.uploadFailed': 'Asset upload failed',

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ApiError, createProject, deleteProject, renameProject } from '../lib/api';
+import { useTranslate } from '../lib/i18n';
 import {
   DEFAULT_PROJECT_ID,
   canDeleteProject,
@@ -30,6 +31,7 @@ export function ProjectSwitcher() {
     projectError,
     reportProjectError,
   } = useShell();
+  const t = useTranslate();
 
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -67,7 +69,7 @@ export function ProjectSwitcher() {
       refreshProjects();
       // 新建即切过去：用户的意图就是"到新项目里干活"
       setActiveProject(created.project.projectId);
-      return `已创建并切换到「${created.project.name}」`;
+      return t('shell.project.created', { name: created.project.name });
     });
   };
 
@@ -77,7 +79,7 @@ export function ProjectSwitcher() {
       const updated = await renameProject(projectId, renameTo.trim());
       setRenameTo('');
       refreshProjects();
-      return `已改名为「${updated.project.name}」`;
+      return t('shell.project.renamed', { name: updated.project.name });
     });
   };
 
@@ -90,7 +92,7 @@ export function ProjectSwitcher() {
       refreshProjects();
       // 删掉的正是当前项目 → 回到默认项目（界面绝不能停在"一个不存在的项目"上）
       setActiveProject(DEFAULT_PROJECT_ID);
-      return `已删除「${name}」，已切回默认项目`;
+      return t('shell.project.deleted', { name });
     });
   };
 
@@ -99,7 +101,7 @@ export function ProjectSwitcher() {
       <select
         className="wb-input proj-select"
         value={projectId}
-        aria-label="当前项目"
+        aria-label={t('shell.project.label')}
         onChange={(event) => {
           reportProjectError(null);
           setActiveProject(event.target.value);
@@ -112,7 +114,9 @@ export function ProjectSwitcher() {
         ) : null}
         {projects.map((project) => (
           <option key={project.projectId} value={project.projectId}>
-            {project.isDefault ? `${project.name} · 默认` : project.name}
+            {project.isDefault
+              ? t('shell.project.defaultSuffix', { name: project.name })
+              : project.name}
           </option>
         ))}
       </select>
@@ -121,8 +125,8 @@ export function ProjectSwitcher() {
         type="button"
         className="wb-btn proj-manage"
         aria-expanded={open}
-        aria-label="项目管理"
-        title="新建 / 改名 / 删除项目"
+        aria-label={t('shell.project.manage')}
+        title={t('shell.project.manageTitle')}
         onClick={() => {
           setConfirmDelete(false);
           setOpen((prev) => !prev);
@@ -132,16 +136,21 @@ export function ProjectSwitcher() {
       </button>
 
       {open ? (
-        <div className="proj-pop" role="dialog" aria-label="项目管理">
+        <div className="proj-pop" role="dialog" aria-label={t('shell.project.manage')}>
           <div className="proj-pop-head">
             <span className="wb-note">
-              当前：{active?.name ?? '（未知项目）'}
-              {active === null ? '' : ` · ${active.taskCount} 片 / ${active.assetCount} 素材`}
+              {t('shell.project.current', { name: active?.name ?? t('shell.project.unknown') })}
+              {active === null
+                ? ''
+                : t('shell.project.counts', {
+                    tasks: active.taskCount,
+                    assets: active.assetCount,
+                  })}
             </span>
             <button
               type="button"
               className="proj-pop-close"
-              aria-label="关闭项目管理"
+              aria-label={t('shell.project.close')}
               onClick={() => setOpen(false)}
             >
               ✕
@@ -151,7 +160,7 @@ export function ProjectSwitcher() {
           <div className="proj-row">
             <input
               className="wb-input"
-              placeholder="新项目名（如：2026 双十一 · 主推片）"
+              placeholder={t('shell.project.newPlaceholder')}
               value={newName}
               maxLength={60}
               onChange={(event) => setNewName(event.target.value)}
@@ -165,14 +174,14 @@ export function ProjectSwitcher() {
               disabled={newName.trim() === '' || busy}
               onClick={handleCreate}
             >
-              新建
+              {t('shell.project.create')}
             </button>
           </div>
 
           <div className="proj-row">
             <input
               className="wb-input"
-              placeholder="改名（仅当前项目）"
+              placeholder={t('shell.project.renamePlaceholder')}
               value={renameTo}
               maxLength={60}
               onChange={(event) => setRenameTo(event.target.value)}
@@ -186,19 +195,19 @@ export function ProjectSwitcher() {
               disabled={renameTo.trim() === '' || busy || active === null}
               onClick={handleRename}
             >
-              改名
+              {t('shell.project.rename')}
             </button>
           </div>
 
           <div className="proj-row proj-row-danger">
             {confirmDelete ? (
               <>
-                <span className="wb-note">删除后不可恢复（项目内的任务与素材不会消失，只是不再归属它）。</span>
+                <span className="wb-note">{t('shell.project.deleteNote')}</span>
                 <button type="button" className="wb-btn" disabled={busy} onClick={handleDelete}>
-                  确认删除
+                  {t('shell.project.confirmDelete')}
                 </button>
                 <button type="button" className="wb-btn" onClick={() => setConfirmDelete(false)}>
-                  取消
+                  {t('shell.project.cancel')}
                 </button>
               </>
             ) : (
@@ -209,20 +218,20 @@ export function ProjectSwitcher() {
                   disabled={active === null || !canDeleteProject(active) || busy}
                   title={
                     active === null
-                      ? '当前项目未知'
+                      ? t('shell.project.deleteTitleUnknown')
                       : !canDeleteProject(active)
-                        ? '只有空项目可删：默认项目与仍有任务/素材的项目不可删'
-                        : '删除当前项目'
+                        ? t('shell.project.deleteTitleNotEmpty')
+                        : t('shell.project.deleteAction')
                   }
                   onClick={() => setConfirmDelete(true)}
                 >
-                  删除当前项目
+                  {t('shell.project.deleteAction')}
                 </button>
                 {active !== null && !canDeleteProject(active) ? (
                   <span className="wb-note">
                     {active.isDefault
-                      ? '默认项目不可删（老数据与未指定项目的落点）'
-                      : '项目非空：请先在项目内清理任务与素材'}
+                      ? t('shell.project.deleteDisabledDefault')
+                      : t('shell.project.deleteDisabledNonEmpty')}
                   </span>
                 ) : null}
               </>

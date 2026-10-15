@@ -30,6 +30,7 @@ import {
 } from '../lib/assets';
 import { resolveLlmConfig, resolveLlmKey, resolveProviderKey } from '../lib/byok';
 import { newIdempotencyKey } from '../lib/idempotency';
+import { useTranslate } from '../lib/i18n';
 import { appendSkeleton } from '../lib/recipeInsert';
 import { useHashRoute } from '../lib/router';
 import { useShell } from '../lib/shell';
@@ -58,9 +59,10 @@ const COOLDOWN_MS = 60_000;
 /**
  * 扩写不可用时的提示（V2.0）。**只有一种原因**：没填文本轨 Key。
  * 文案必须同时说"为什么"与"去哪配"，否则置灰的按钮就是一个死胡同。
+ *
+ * ⚠️ V2.40（语言迁移）：这句从模块级常量改成**字典键**（`workbench.notice.enhanceUnavailable`）——
+ * 常量在模块加载时就定死了一种语言，而这句话要在渲染那一刻取（见组件里的 `t(...)` 调用）。
  */
-const ENHANCE_NOTICE =
-  '未配置扩写模型：请在「凭据设置（BYOK）」里填入文本轨 Key（本服务不提供文本侧兜底 Key）';
 
 /** 三槽的固定顺序（清理预览 URL、回填快照都要按同一顺序遍历） */
 const SLOT_KEYS = ['firstFrame', 'lastFrame', 'referenceVideo'] as const satisfies readonly AssetSlotKey[];
@@ -75,6 +77,7 @@ const SLOT_KEYS = ['firstFrame', 'lastFrame', 'referenceVideo'] as const satisfi
 export function WorkbenchView() {
   // V2.11（B47）：出片与上传都归属当前项目（相册 / 剪辑候选也按它过滤）
   const { byok, byokPersist, providerStatus, openByok, projectId } = useShell();
+  const t = useTranslate();
   const storage = useMemo(() => browserStorage(), []);
   /**
    * 每个槽一份 object URL。换图 / 清空时必须 revoke，否则一张张泄漏到会话结束
@@ -83,9 +86,9 @@ export function WorkbenchView() {
   const previewUrls = useRef<Partial<Record<AssetSlotKey, string>>>({});
 
   // ── 创作输入 ──
-  const [prompt, setPrompt] = useState(
-    '竖屏短剧，女孩站在雨夜街头微笑着说：“我们终于成功了！”，电影感光影',
-  );
+  // 初始示例按**首次渲染时的语言**取一次（惰性初始化）：之后它就成了用户自己的内容，
+  // 切语言不该把它改掉（那是"自动改用户输入"，比"示例没跟着翻译"糟糕得多）。
+  const [prompt, setPrompt] = useState(() => t('workbench.prompt.demo'));
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
   // 时长与清晰度：两者都会进入请求（`params.durationSec` / `resolution`），上游按 `--duration` / `--resolution` 使用
   const [durationSec, setDurationSec] = useState<number>(DEFAULT_DURATION_SEC);
@@ -249,7 +252,7 @@ export function WorkbenchView() {
     clearAllSlots();
     setSlot('firstFrame', { assetId, meta: null, previewUrl: `/media/assets/${assetId}.${ext}` });
     setMode('i2v');
-    setNotice('已把剪辑台抽出的那一帧放进首帧（I2V）：补一句运动描述就能生成。');
+    setNotice(t('workbench.notice.framePicked'));
   }, [route]);
 
   /**
@@ -278,12 +281,12 @@ export function WorkbenchView() {
     setActiveRecipeId(card.id);
 
     if (route.query.get('insert') === 'no') {
-      setNotice(`已选用配方「${card.title}」作为扩写上下文（提示词未改动）。`);
+      setNotice(t('workbench.notice.recipeContext', { title: card.title }));
       return;
     }
 
     setPrompt((prev) => appendSkeleton(prev, card.skeleton));
-    setNotice(`已把配方「${card.title}」的骨架插入提示词末尾；扩写时也会带上它。`);
+    setNotice(t('workbench.notice.recipeSkeleton', { title: card.title }));
   }, [route]);
 
   function startCooldown(): void {
@@ -320,7 +323,7 @@ export function WorkbenchView() {
       .then((result) => {
         const first = result.assets[0];
         if (first === undefined) {
-          setUploadError('上传未返回任何资产');
+          setUploadError(t('create.upload.noAsset'));
           replacePreview(slot, null);
           setSlot(slot, null);
           return;
@@ -365,8 +368,12 @@ export function WorkbenchView() {
     setUploadError(null);
     setMode((prev) => modeAfterSlotUpload(prev, 'referenceVideo'));
     setNotice(
-      `已把${selected.origin?.kind === 'edit' ? '剪辑产物' : '成片'} ${selected.taskId.slice(0, 8)} 设为参考视频（V2V）；` +
-        '线上部署（已配 PUBLIC_BASE_URL）可直接提交。',
+      t('workbench.notice.videoRefSet', {
+        origin: t(
+          selected.origin?.kind === 'edit' ? 'workbench.origin.edit' : 'workbench.origin.render',
+        ),
+        id: selected.taskId.slice(0, 8),
+      }),
     );
   }
 
@@ -477,7 +484,7 @@ export function WorkbenchView() {
   async function handleEnhance(): Promise<void> {
     const llmKey = resolveLlmKey(byok);
     if (llmKey === undefined) {
-      setNotice(ENHANCE_NOTICE);
+      setNotice(t('workbench.notice.enhanceUnavailable'));
       return;
     }
 
@@ -501,14 +508,17 @@ export function WorkbenchView() {
       setPrompt(result.enhancedPrompt);
       // `engine` 是必填字段：这里显式读一次，让"到底用的什么引擎"在界面上有据可查
       setNotice(
-        `已用模型扩写（engine=${result.engine}）${
-          result.cameraMovementSuggested === undefined ? '' : ` · 镜头建议：${result.cameraMovementSuggested}`
-        }${result.lightingSuggested === undefined ? '' : ` · 光线建议：${result.lightingSuggested}`}${
-          result.notice === undefined ? '' : `（${result.notice}）`
-        }`,
+        t('workbench.enhanced.head', { engine: result.engine }) +
+          (result.cameraMovementSuggested === undefined
+            ? ''
+            : t('workbench.enhanced.camera', { value: result.cameraMovementSuggested })) +
+          (result.lightingSuggested === undefined
+            ? ''
+            : t('workbench.enhanced.lighting', { value: result.lightingSuggested })) +
+          (result.notice === undefined ? '' : t('workbench.enhanced.notice', { value: result.notice })),
       );
     } catch (caught) {
-      setNotice(`扩写失败：${describeError(caught)}`);
+      setNotice(t('workbench.notice.enhanceFailed', { reason: describeError(caught) }));
     } finally {
       setEnhancing(false);
     }
@@ -526,9 +536,9 @@ export function WorkbenchView() {
     setNotice(null);
     try {
       await cancelTask(taskId);
-      setNotice('已请求取消，并会通知上游停止；若上游已受理，仍可能产生费用，请到服务商后台核对。');
+      setNotice(t('workbench.notice.cancelled'));
     } catch (caught) {
-      setNotice(`取消失败：${describeError(caught)}`);
+      setNotice(t('workbench.notice.cancelFailed', { reason: describeError(caught) }));
     }
   }
 
@@ -541,7 +551,7 @@ export function WorkbenchView() {
    */
   function handlePreview(target: TaskProgress): void {
     if (target.status !== 'succeeded' || target.outputVideoUrl === undefined) {
-      setNotice('该任务没有可播放的成片（未成功，或成片已被清理）。');
+      setNotice(t('workbench.notice.noOutput'));
       return;
     }
 
@@ -592,8 +602,8 @@ export function WorkbenchView() {
 
     setNotice(
       broughtBack.size === 0
-        ? '已复用该任务的参数（提示词 / 模式 / 画幅 / seed）。'
-        : `已复用参数，并带回 ${broughtBack.size} 份参考资产编号；本地没有备份，因此不显示预览。`,
+        ? t('workbench.notice.paramsReused')
+        : t('workbench.notice.paramsReusedWithAssets', { count: broughtBack.size }),
     );
   }
 
@@ -632,17 +642,17 @@ export function WorkbenchView() {
   const assetRequirementHint = missingAssetHint(mode, assets);
 
   const submitLabel = submitting
-    ? '提交中…'
+    ? t('common.submit.pending')
     : cooling
-      ? `冷却中 ${cooldownRemaining}s`
-      : '立即生成视频';
+      ? t('workbench.submit.cooldown', { seconds: cooldownRemaining })
+      : t('workbench.submit.run');
 
   const byokSummary =
     resolveProviderKey(byok) === undefined
-      ? '未填写 Key：服务端将回落到其自身配置的兜底 Key（若未配置会返回 KEY_MISSING）。'
+      ? t('workbench.key.none')
       : byokPersist
-        ? '已填写 Key · 明文保存在本机（仅限信任设备）'
-        : '已填写 Key · 仅本次会话有效';
+        ? t('workbench.key.local')
+        : t('workbench.key.session');
 
   /**
    * V2.12（台账 B48）：**提交前预估价**（与造梦盒同一纪律、同一纯函数 —— 两套入口一套语义）。
@@ -666,9 +676,10 @@ export function WorkbenchView() {
   const costHint =
     costEstimate === null
       ? null
-      : `预计花费 ${formatYuan(costEstimate.yuan)}${
-          costEstimate.source === 'local-free' ? '（本地轨：无 API 费用）' : '（预估）'
-        }`;
+      : t('common.cost.estimated', { amount: formatYuan(costEstimate.yuan) }) +
+        (costEstimate.source === 'local-free'
+          ? t('common.cost.localFree')
+          : t('common.cost.estimateOnly'));
 
   return (
     <>
@@ -679,7 +690,9 @@ export function WorkbenchView() {
           onPromptChange={setPrompt}
           onEnhance={() => void handleEnhance()}
           // 非 null = 不可用；这里是**唯一**的不可用原因（没填文本轨 Key）
-          enhanceNotice={resolveLlmKey(byok) === undefined ? ENHANCE_NOTICE : null}
+          enhanceNotice={
+            resolveLlmKey(byok) === undefined ? t('workbench.notice.enhanceUnavailable') : null
+          }
           enhancing={enhancing}
           aspectRatio={aspectRatio}
           onAspectRatioChange={setAspectRatio}
@@ -721,7 +734,7 @@ export function WorkbenchView() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
           {submitError === null ? null : (
             <div className="wb-uncertain">
-              <span className="wb-uncertain-title">提交未成功</span>
+              <span className="wb-uncertain-title">{t('workbench.alert.submitFailed')}</span>
               <span className="wb-uncertain-body">{submitError}</span>
             </div>
           )}
@@ -740,11 +753,11 @@ export function WorkbenchView() {
             resolutionTier={resolutionTier}
             elapsedSeconds={elapsed.key === elapsedKey ? elapsed.seconds : 0}
             uncertainAcknowledged={false}
-            onAcknowledgeUncertain={() => setNotice('已标记核对：请到服务商后台确认是否产生费用。')}
+            onAcknowledgeUncertain={() => setNotice(t('workbench.notice.acknowledged'))}
             onAbandonUncertain={() => {
               removeLocal(storage, STORAGE_KEYS.activeTaskId);
               setTaskId(null);
-              setNotice('已放弃该任务：本服务不会自动重试，也不会再次向上游提交。');
+              setNotice(t('workbench.notice.abandoned'));
             }}
             onCancel={() => void handleCancel()}
             onRequestReuse={() => {
@@ -769,10 +782,13 @@ export function WorkbenchView() {
       <footer className="wb-footer">
         <span className="wb-watermark">Astrmira · video workbench</span>
         <span>
-          本地演示版本 ·
+          {t('workbench.footer.lead')}
           {task === null
-            ? ' 等待任务'
-            : ` 最近任务 ${task.taskId.slice(0, 8)} · 观察 ${formatClock(elapsed.seconds * 1000)}`}
+            ? t('workbench.footer.waiting')
+            : t('workbench.footer.recent', {
+                id: task.taskId.slice(0, 8),
+                time: formatClock(elapsed.seconds * 1000),
+              })}
         </span>
       </footer>
     </>
