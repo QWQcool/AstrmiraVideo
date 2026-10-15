@@ -40,6 +40,7 @@ import {
   selectMentions,
   type MentionRef,
 } from '../lib/mentions';
+import { comfyUiEngineOptions } from '../lib/engineOptions';
 import { appendSkeleton } from '../lib/recipeInsert';
 import { navigate } from '../lib/router';
 import { useShell } from '../lib/shell';
@@ -60,8 +61,8 @@ import { useTaskPolling } from '../hooks/useTaskPolling';
 
 const CLOUD_PROVIDER: ProviderType = 'cloud-volcano-seedance';
 const LOCAL_PROVIDER: ProviderType = 'local-minimax-h3';
-/** V2.31（A1 片 C / D53）：用户自备的 ComfyUI */
-const COMFY_PROVIDER: ProviderType = 'host-comfyui';
+// V2.31（A1 片 C / D53）：用户自备的 ComfyUI —— V2.36 起**不再是常量**：
+// 它可能有多台（`host-comfyui:<name>`），名单由 `/status` 的 `comfyui.servers` 给出（lib/engineOptions.ts）。
 
 const MODE_LABELS: Record<GenerationMode, string> = {
   t2v: '文生视频',
@@ -160,6 +161,8 @@ export function CreateView() {
   const [resolutionTier, setResolutionTier] = useState<ResolutionTier>(DEFAULT_RESOLUTION_TIER);
   const [provider, setProvider] = useState<ProviderType>(CLOUD_PROVIDER);
   const [seed, setSeed] = useState('');
+  /** V2.36：本地 ComfyUI 可能是**多台**（§19-1）—— 名单来自 `/status`，前端不维护第二份 */
+  const comfyEngines = comfyUiEngineOptions(providerStatus);
 
   // ── 提交与内联任务卡 ──
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -652,17 +655,42 @@ export function CreateView() {
                       本地 H3
                     </button>
                     {/* V2.31（A1 片 C / D53）：自备 ComfyUI —— 与左栏同一档语义，
-                        能不能跑（模型/节点）由服务端在提交时判定并如实报错（CONTRACT §19-2） */}
-                    <button
-                      type="button"
-                      className="wb-segment"
-                      aria-pressed={provider === COMFY_PROVIDER}
-                      onClick={() => setProvider(COMFY_PROVIDER)}
-                      title="本地 ComfyUI（自备引擎与模型；需服务端配置 COMFYUI_BASE_URL）"
-                    >
-                      本地 ComfyUI
-                    </button>
+                        能不能跑（模型/节点）由服务端在提交时判定并如实报错（§19-2）。
+                        V2.36：可能有多台（§19-1）—— 单台时就在这一行，多台时另起一行。 */}
+                    {comfyEngines.length === 1 && comfyEngines[0] !== undefined ? (
+                      <button
+                        type="button"
+                        className="wb-segment"
+                        data-testid={`cr-engine-${comfyEngines[0].id}`}
+                        aria-pressed={provider === comfyEngines[0].id}
+                        onClick={() => setProvider(comfyEngines[0].id)}
+                        title={comfyEngines[0].hint}
+                      >
+                        {comfyEngines[0].label}
+                      </button>
+                    ) : null}
                   </div>
+                  {comfyEngines.length > 1 ? (
+                    <div
+                      className="wb-segmented wb-segmented-engines"
+                      role="group"
+                      aria-label="本地 ComfyUI 实例"
+                    >
+                      {comfyEngines.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className="wb-segment"
+                          data-testid={`cr-engine-${option.id}`}
+                          aria-pressed={provider === option.id}
+                          onClick={() => setProvider(option.id)}
+                          title={option.hint}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="wb-field">
                   <span className="wb-label">seed（留空随机）</span>

@@ -303,6 +303,15 @@
   padding: 3px;
 }
 
+/* V2.36（A1 后续）：本地 ComfyUI 可能是**多台实例** —— 实例按钮另成一组、
+   按栏宽自动折行（`.wb-segmented` 默认 `grid-auto-flow: column` 等宽，
+   三四台时会挤成一排读不出来的细条）。 */
+.wb-segmented-engines {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  margin-top: 4px;
+}
+
 .wb-segmented-compact .wb-segment {
   padding: 5px 10px;
   font-size: var(--fs-note);

@@ -1,4 +1,4 @@
-import type { GenerationMode, ProviderType } from '@astrmira/shared';
+import type { GenerationMode, ProviderBaseType } from '@astrmira/shared';
 
 /**
  * 画布层的显示文案（V2.26 / 台账 A5 片 A 收拢）。
@@ -14,7 +14,7 @@ export const CANVAS_MODE_LABELS: Record<GenerationMode, string> = {
   v2v: '视频参考',
 };
 
-export const CANVAS_PROVIDER_LABELS: Record<ProviderType, string> = {
+export const CANVAS_PROVIDER_LABELS: Record<ProviderBaseType, string> = {
   'cloud-volcano-seedance': '云端 Seedance',
   'local-minimax-h3': '本地 MiniMax H3',
   // V2.30（A1 片 B / D53）：用户自备的 ComfyUI（引擎与模型都由用户装）

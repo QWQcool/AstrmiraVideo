@@ -547,6 +547,44 @@ if (canvasText !== undefined && !canvasText.includes('buildCanvasPlanFile')) {
   );
 }
 
+// ── V2.36（A1 · 后续）：**多台 ComfyUI 的引擎名单必须来自服务端**（不能写死一档）──
+//
+// 与 ⑭ 同一条理由：写死一档时"功能看起来完全正常"（一台能选、能跑），
+// 而**配了三台却只显示一台**这种问题没有任何视觉 / 类型 / 测试症状 —— 只有真配了两台才会发现。
+// 同理，自检结果若用「裸索引查表」显示具名实例（`host-comfyui:office`），会显示成**空白**。
+const ENGINE_OPTIONS = path.join(SRC, 'lib', 'engineOptions.ts');
+const LEFT_PANEL = path.join(SRC, 'components', 'LeftPanel.tsx');
+const leftPanelText = contents.get(LEFT_PANEL);
+const createViewText = contents.get(path.join(SRC, 'views', 'CreateView.tsx'));
+
+if (contents.get(ENGINE_OPTIONS) === undefined) {
+  failures.push(
+    '找不到 lib/engineOptions.ts（V2.36 的引擎名单生成器不见了 —— 界面会退回"写死一档"）',
+  );
+}
+for (const [name, text] of [
+  ['LeftPanel.tsx', leftPanelText],
+  ['CreateView.tsx', createViewText],
+]) {
+  if (text !== undefined && !text.includes('comfyUiEngineOptions(')) {
+    failures.push(
+      `${name} 没有用 \`comfyUiEngineOptions\` —— 引擎名单又变成写死的一档（配了多台也只显示一台）`,
+    );
+  }
+}
+if (leftPanelText !== undefined) {
+  if (!leftPanelText.includes('providerLabel(')) {
+    failures.push(
+      'LeftPanel 没有用 `providerLabel` 显示自检结果 —— 具名实例（host-comfyui:xxx）会显示成空白',
+    );
+  }
+  for (const stale of ['PROVIDER_COMFY', 'CANVAS_PROVIDER_LABELS[']) {
+    if (leftPanelText.includes(stale)) {
+      failures.push(`LeftPanel 里仍有 \`${stale}\`（V2.36 起实例名单必须来自 /status，不能写死一档）`);
+    }
+  }
+}
+
 // ── ⑮ window 层运行期兜底还在，且**没有偷偷上报**（台账 B61 片 B / 决策 D52）──
 //
 // 与 ⑪ 同一条理由：这一层在**没出错时什么都不渲染** —— 被摘掉不会有任何视觉回归、
@@ -598,5 +636,6 @@ console.log(
     `画布规模抓手就位（B44：分页游标 + 视口裁剪）、` +
     `编排的三个花钱约定就位（A5 片 A+B：确定性幂等键 + 代数换键的重跑入口 + mode=plan 入口）、` +
     `编排文件入口与失败纪律就位（V2.35：读走 readCanvasPlanFile / 写走 buildCanvasPlanFile + 结果位）、` +
+    `多实例引擎名单就位（V2.36：名单来自 /status、两处入口共用一份、自检走 providerLabel）、` +
     `window 层兜底就位且零上报（B61 片 B：两个事件 + D52 只本地提示）`,
 );

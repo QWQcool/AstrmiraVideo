@@ -3097,6 +3097,108 @@ try {
   assert(afterBad?.name === '冒烟导入的编排', '坏文件被拒之后当前编排**一动不动**（没有半成品装进来）');
   rmSync(planFile, { force: true });
 
+  // ── V2.36（A1 · 后续）：**多台 ComfyUI** 的引擎名单来自服务端（前端不写死一档）──────────
+  //
+  // 为什么不直接改服务端 env（真实的 `COMFYUI_SERVERS_FILE`）：那会把 [4] 段"**未配置**时如实说缺什么"
+  // 的断言一起改掉 —— 而那条正是 B4 最值钱的地方。这里用**请求拦截**只在这一段内伪造
+  // `/status`（三台实例）与 `/selfcheck`（逐台结果），验的是**前端渲染**：
+  // ① 有几台就列几个按钮；② 看得出选中了哪一台；③ 自检里具名实例**不能显示成空白**
+  // （裸索引查表就会 —— `CANVAS_PROVIDER_LABELS['host-comfyui:office']` 是 undefined）。
+  const FAKE_SERVERS = [
+    { id: 'host-comfyui', label: '默认引擎', available: true },
+    { id: 'host-comfyui:office', label: '办公室的 3080', available: true },
+    {
+      id: 'host-comfyui:home',
+      label: '家里的 5090',
+      available: false,
+      reason: '地址不合规：本地引擎只允许回环或内网地址（http / https）',
+    },
+  ];
+  await page.route('**/api/providers/status', (route) =>
+    route.fulfill({
+      json: {
+        cloud: { available: false, provider: 'volcano-seedance', acceptsClientKey: true },
+        local: { available: false, provider: 'minimax-h3' },
+        comfyui: {
+          available: true,
+          provider: 'comfyui',
+          servers: FAKE_SERVERS,
+          reason: '本服务已配置 3 台 ComfyUI（合规 2 台；能跑哪些模式在提交时判定）',
+        },
+        llm: { available: false, provider: 'openai-compatible', acceptsClientKey: true },
+        defaultProvider: 'cloud-volcano-seedance',
+      },
+    }),
+  );
+  await page.route('**/api/providers/selfcheck', (route) =>
+    route.fulfill({
+      json: {
+        checkedAt: new Date().toISOString(),
+        entries: [
+          {
+            provider: 'local-minimax-h3',
+            available: false,
+            reason: '本服务没有可用的本地 MiniMax H3 后端（只有配置约定，没有可执行的推理 provider）',
+          },
+          { provider: 'host-comfyui', available: true, reason: '默认引擎：能跑 t2v / i2v' },
+          { provider: 'host-comfyui:office', available: false, reason: '连不上（办公室那台没开机）' },
+        ],
+      },
+    }),
+  );
+
+  await page.evaluate(() => {
+    location.hash = '#/workbench';
+  });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('[data-testid=wb-engine-host-comfyui]', { timeout: 15_000 });
+
+  const officeButton = page.getByTestId('wb-engine-host-comfyui:office').first();
+  assert(
+    await officeButton.isVisible(),
+    '第二台（办公室的 3080）也列出来了 —— 引擎名单来自 /status，不是写死一档',
+  );
+  const engineLabels = await page.locator('[data-testid^=wb-engine-]:visible').allTextContents();
+  assert(engineLabels.length === 3, `三台实例 → 三个引擎按钮（实际 ${engineLabels.length}）`);
+  assert(
+    engineLabels.some((text) => text.includes('办公室的 3080')),
+    '按钮上带实例名（否则用户分不清自己选了哪一台）',
+  );
+
+  await officeButton.click();
+  await page.waitForTimeout(300);
+  assert(
+    (await officeButton.getAttribute('aria-pressed')) === 'true',
+    '点第二台 → 它成为选中项（引擎切换落到具名实例 id 上）',
+  );
+  const engineNote = await page.locator('[data-testid=wb-panel-engine-note]:visible').first().innerText();
+  assert(engineNote.trim().length > 0, `上方说明跟着切到那一台：${engineNote.slice(0, 40)}…`);
+
+  await page.locator('[data-testid=wb-selfcheck]:visible').first().click();
+  const fakeSelfCheck = page.locator('[data-testid=wb-selfcheck-result]:visible').first();
+  await fakeSelfCheck.waitFor({ state: 'visible', timeout: 15_000 });
+  const fakeSelfCheckText = (await fakeSelfCheck.textContent()) ?? '';
+  assert(
+    fakeSelfCheckText.includes('ComfyUI · 办公室的 3080'),
+    `自检结果里具名实例显示为实例名（不是空白）：${fakeSelfCheckText.slice(0, 70)}…`,
+  );
+  assert(
+    fakeSelfCheckText.includes('连不上'),
+    '逐台结论照实：一台连不上不影响另一台的结论（多台最需要的可观测性）',
+  );
+
+  // 创作入口的引擎区在"更多设置"折叠层里（它的多实例渲染由**同一份** `comfyUiEngineOptions`
+  // + 视觉自检的静态红线覆盖；这里不为了点开一个折叠层把冒烟写脆）
+  await page.unroute('**/api/providers/status');
+  await page.unroute('**/api/providers/selfcheck');
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('[data-testid=wb-engine-host-comfyui]', { timeout: 15_000 });
+  const realEngineLabels = await page.locator('[data-testid^=wb-engine-]:visible').allTextContents();
+  assert(
+    realEngineLabels.length === 1 && realEngineLabels[0] === '本地 ComfyUI',
+    `拦截撤销后回到真实配置（未配多台 → 只有一项「本地 ComfyUI」，实际 ${JSON.stringify(realEngineLabels)}）`,
+  );
+
   console.log('\n[7f] window 层运行期兜底（V2.29 / B61 片 B / D52：只本地提示、不上报）');
   // 为什么必须**真抛**：这一层唯一的存在理由就是"接住没人接的错误"。直接调它的 report()
   // 只能证明函数能跑，证明不了"浏览器真会把事件送到它手上" —— 而"事件没送到"

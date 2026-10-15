@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type ReactElement } from 'react';
 import type {
   AspectRatio,
   GenerationMode,
@@ -8,7 +8,12 @@ import type {
   TaskProgress,
 } from '@astrmira/shared';
 import { ApiError, fetchSelfCheck } from '../lib/api';
-import { CANVAS_PROVIDER_LABELS } from '../canvas/labels';
+import {
+  comfyUiEngineOptions,
+  isComfyUiEngine,
+  providerLabel,
+  type EngineOption,
+} from '../lib/engineOptions';
 import { AssetDropZone } from './AssetDropZone';
 import { Eyebrow } from './Eyebrow';
 import type { AssetSlotKey, AssetSlots } from '../lib/assets';
@@ -96,8 +101,8 @@ export interface LeftPanelProps {
 
 const PROVIDER_CLOUD: ProviderType = 'cloud-volcano-seedance';
 const PROVIDER_LOCAL: ProviderType = 'local-minimax-h3';
-/** V2.31（A1 片 C / D53）：用户自备的 ComfyUI（引擎与模型都由用户装） */
-const PROVIDER_COMFY: ProviderType = 'host-comfyui';
+// V2.36：ComfyUI 那一档**不再是常量** —— 它可能有多台（`host-comfyui:<name>`），
+// 名单由 `/status` 的 `comfyui.servers` 给出（见 lib/engineOptions.ts）。
 
 /** 自检结果的错误文案（与各视图同一份口径：ApiError 带契约码） */
 function describeError(caught: unknown): string {
@@ -187,11 +192,40 @@ export function LeftPanel(props: LeftPanelProps) {
    * 两个本地档各有自己的状态（H3 / ComfyUI）—— V2.31 起必须分开看：
    * 用 `local.available` 去判断 ComfyUI 会出现"选了 ComfyUI 但提示写的是 H3 的配置"。
    */
+  /**
+   * V2.36：ComfyUI 可能是**多台实例**（`host-comfyui:<name>`，§19-1）——
+   * 判分支必须用 `isComfyUiEngine`：写成 `=== 'host-comfyui'` 会让"选了具名实例"的用户
+   * 看到 H3 那一档的配置提示（V2.31 修过一次同类问题）。
+   */
+  const comfyEngines = comfyUiEngineOptions(providerStatus);
+  const selectedComfyEngine = comfyEngines.find((item) => item.id === provider);
+
   const engineConfigured =
     isCloud ||
-    (provider === PROVIDER_COMFY
-      ? providerStatus?.comfyui.available === true
+    (isComfyUiEngine(provider)
+      ? (selectedComfyEngine?.configured ?? providerStatus?.comfyui.available === true)
       : providerStatus?.local.available === true);
+
+  /**
+   * 一台 ComfyUI 实例的按钮。
+   *
+   * 单台与多台两种布局**共用这一份渲染**（免得两处的 title / testid / 选中态各写一遍而漂移）。
+   * 状态只影响文案（`hint`）与下方的"推荐配置"提示，**不置灰按钮** —— §2 V1.8：
+   * 状态端点只陈述"本服务配没配"，不替访客判断能不能用。
+   */
+  const renderComfyEngineButton = (option: EngineOption): ReactElement => (
+    <button
+      key={option.id}
+      type="button"
+      className="wb-segment"
+      data-testid={`wb-engine-${option.id}`}
+      aria-pressed={provider === option.id}
+      onClick={() => onProviderChange(option.id)}
+      title={option.hint}
+    >
+      {option.label}
+    </button>
+  );
 
   /**
    * V2.34（台账 B4 / CONTRACT §20）：**本地引擎运行时自检**的结果。
@@ -449,28 +483,29 @@ export function LeftPanel(props: LeftPanelProps) {
           >
             本地 MiniMax H3
           </button>
-          {/* V2.31（A1 片 C / D53）：用户自备的 ComfyUI —— 引擎与模型都由用户装，
-              我们只对接接口（CONTRACT §19）。与上一个按钮同款处理：状态说"本服务配没配"，
-              能不能跑（模型 / 节点）在提交时判定并如实报错。 */}
-          <button
-            type="button"
-            className="wb-segment"
-            aria-pressed={provider === PROVIDER_COMFY}
-            onClick={() => onProviderChange(PROVIDER_COMFY)}
-            title={
-              providerStatus?.comfyui.available === true
-                ? '使用本服务已配置的 ComfyUI（自备引擎与模型）'
-                : '本服务未配置 ComfyUI；仍可选择，提交时会返回 PROVIDER_UNAVAILABLE'
-            }
-          >
-            本地 ComfyUI
-          </button>
+          {/* V2.31（A1 片 C / D53）：用户自备的 ComfyUI —— 引擎与模型都由用户装，我们只对接接口（§19）。
+              V2.36：它可能是**多台**（§19-1）—— 名单来自 `/status` 的 `comfyui.servers`（前端不维护第二份，
+              否则必然与服务端漂移）。只有一台时仍渲染在这一行（观感与 V2.35 一致）；多台时另起一行（见下）。 */}
+          {comfyEngines.length === 1 && comfyEngines[0] !== undefined
+            ? renderComfyEngineButton(comfyEngines[0])
+            : null}
         </div>
-        <span className="wb-note">
+        {comfyEngines.length > 1 ? (
+          <div
+            className="wb-segmented wb-segmented-engines"
+            role="group"
+            aria-label="本地 ComfyUI 实例"
+          >
+            {comfyEngines.map((option) => renderComfyEngineButton(option))}
+          </div>
+        ) : null}
+        <span className="wb-note" data-testid="wb-panel-engine-note">
           {isCloud
             ? byokSummary
-            : provider === PROVIDER_COMFY
-              ? (providerStatus?.comfyui.reason ?? '本地 ComfyUI 状态未知')
+            : isComfyUiEngine(provider)
+              ? (selectedComfyEngine?.hint ??
+                providerStatus?.comfyui.reason ??
+                '本地 ComfyUI 状态未知')
               : (providerStatus?.local.reason ?? '本地引擎状态未知')}
         </span>
 
@@ -507,7 +542,8 @@ export function LeftPanel(props: LeftPanelProps) {
                 <strong className={entry.available ? 'cv-plan-ok' : 'cv-plan-bad'}>
                   {entry.available ? '✓' : '✗'}
                 </strong>{' '}
-                {CANVAS_PROVIDER_LABELS[entry.provider]}：{entry.reason ?? '可用'}
+                {/* V2.36：逐实例自检 —— 名字走同一份显示名口径（`host-comfyui:office` → 「ComfyUI · …」） */}
+                {providerLabel(entry.provider, providerStatus)}：{entry.reason ?? '可用'}
               </div>
             ))}
             <div>
