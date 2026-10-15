@@ -3,6 +3,7 @@ import type { ChangeEvent, DragEvent } from 'react';
 import type { AspectRatio } from '@astrmira/shared';
 import type { AssetState } from '../lib/assets';
 import { formatBytes, resolveTargetSize, toCssAspectRatio } from '../lib/format';
+import { useTranslate } from '../lib/i18n';
 
 /**
  * 参考资产上传槽（PLAN §4 Step 3：拖拽槽 + **32 倍数裁切预览**）。
@@ -51,6 +52,7 @@ export function AssetDropZone({
   onSelect,
   onClear,
 }: AssetDropZoneProps) {
+  const t = useTranslate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
@@ -84,7 +86,7 @@ export function AssetDropZone({
         <span className="wb-label">{label}</span>
         {asset === null ? null : (
           <button type="button" className="wb-btn" onClick={onClear} disabled={disabled}>
-            移除
+            {t('common.remove')}
           </button>
         )}
       </div>
@@ -112,7 +114,7 @@ export function AssetDropZone({
             ) : (
               <img
                 src={asset.previewUrl}
-                alt={`${label}裁切预览`}
+                alt={t('workbench.drop.previewAlt', { label })}
                 onLoad={(event) => {
                   const image = event.currentTarget;
                   setNaturalSize({ width: image.naturalWidth, height: image.naturalHeight });
@@ -124,33 +126,33 @@ export function AssetDropZone({
           <div className="wb-preview-meta">
             {naturalSize === null ? null : (
               <span>
-                原图{' '}
+                {t('workbench.drop.naturalSize.before')}
                 <code>
                   {naturalSize.width}×{naturalSize.height}
                 </code>
               </span>
             )}
             {isVideo ? (
-              <span className="wb-note">
-                参考视频原样上传，不做裁切与转码；是否被上游接受取决于引擎
-                （云端 `reference_image` 字段对视频的支持度属【待验证】，见 PLAN §5 批次 3-⑤）。
-              </span>
+              <span className="wb-note">{t('workbench.drop.videoNote')}</span>
             ) : (
               <>
                 <span>
-                  裁切为{' '}
+                  {t('workbench.drop.cropTo.before')}
                   <code>
                     {target.width}×{target.height}
-                  </code>{' '}
-                  （32 的倍数）
+                  </code>
+                  {t('workbench.drop.cropTo.after')}
                 </span>
-                <span className="wb-note">预览即服务端即将裁出的区域（居中裁切）</span>
+                <span className="wb-note">{t('workbench.drop.previewNote')}</span>
               </>
             )}
             {asset.meta === null ? null : (
               <span>
-                {asset.meta.kind === 'video' ? '视频' : '图片'} · {asset.meta.mime} ·{' '}
-                {formatBytes(asset.meta.size)}
+                {t('workbench.drop.metaLine', {
+                  kind: t(asset.meta.kind === 'video' ? 'common.kind.video' : 'common.kind.image'),
+                  mime: asset.meta.mime,
+                  size: formatBytes(asset.meta.size),
+                })}
               </span>
             )}
           </div>
@@ -159,13 +161,12 @@ export function AssetDropZone({
         <div className="wb-preview">
           <div className="wb-preview-meta">
             <span>
-              已复用参考资产 <code>{asset.assetId.slice(0, 8)}</code>
+              {t('workbench.drop.reused.before')}
+              <code>{asset.assetId.slice(0, 8)}</code>
             </span>
-            <span className="wb-note">
-              参数复用只带回资产编号，本地没有这份素材 —— 预览不可用，直接提交仍会使用该资产。
-            </span>
+            <span className="wb-note">{t('workbench.drop.reusedNote')}</span>
             <button type="button" className="wb-btn" onClick={onClear} disabled={disabled}>
-              改为重新上传
+              {t('workbench.drop.reupload')}
             </button>
           </div>
         </div>
@@ -191,12 +192,10 @@ export function AssetDropZone({
           <span className="wb-dropzone-icon">{isVideo ? '🎬' : '🖼'}</span>
           <span className="wb-note">
             {uploading
-              ? '上传中…'
-              : isVideo
-                ? '点击选择或拖拽视频到这里（mp4 / mov，≤100MB）'
-                : '点击选择或拖拽图片到这里（≤100MB）'}
+              ? t('common.uploading')
+              : t(isVideo ? 'workbench.drop.pickVideo' : 'workbench.drop.pickImage')}
           </span>
-          <span className="wb-note">服务端按魔数嗅探真实类型，不信任文件名与 Content-Type</span>
+          <span className="wb-note">{t('workbench.drop.sniffNote')}</span>
         </div>
       )}
 

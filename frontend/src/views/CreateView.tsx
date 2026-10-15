@@ -461,7 +461,7 @@ export function CreateView() {
                     <span className="cr-chip-glyph">{item.kind === 'video' ? '🎬' : '🖼'}</span>
                   )}
                   <span className="cr-chip-label">
-                    {item.ref === '' ? t('create.chip.uploading') : (item.label ?? item.ref.slice(0, 10))}
+                    {item.ref === '' ? t('common.uploading') : (item.label ?? item.ref.slice(0, 10))}
                   </span>
                   <button
                     type="button"
@@ -516,8 +516,8 @@ export function CreateView() {
                     )}
                     <span className="cr-mention-label">
                       {item.origin?.kind === 'edit'
-                        ? t('create.mention.editOrigin')
-                        : t('create.mention.renderOrigin')}
+                        ? t('common.origin.editBadge')
+                        : t('common.origin.renderBadge')}
                       {item.requestSnapshot.prompt.slice(0, 18)}
                     </span>
                   </button>
@@ -760,12 +760,12 @@ export function CreateView() {
             ) : (
               <>
                 {costEstimate === null ? null : (
-                  <span className="cr-cost" title={t('create.cost.title')}>
+                  <span className="cr-cost" title={t('common.cost.title')}>
                     {t('create.cost.estimated', { amount: formatYuan(costEstimate.yuan) })}
                     {costEstimate.source === 'local-free'
-                      ? t('create.cost.localFree')
-                      : t('create.cost.estimateOnly')}
-                    {costEstimate.fromPriceTable ? '' : t('create.cost.customTier')}
+                      ? t('common.cost.localFree')
+                      : t('common.cost.estimateOnly')}
+                    {costEstimate.fromPriceTable ? '' : t('common.cost.customTier')}
                     {' · '}
                   </span>
                 )}

@@ -33,6 +33,20 @@ export const COMMON_ZH = {
   'common.scope.cloud': '云端',
   'common.scope.local': '本地',
   'common.engine.cloud': '云端 Seedance',
+
+  // ── 通用动作 / 状态 ──
+  'common.remove': '移除',
+  'common.uploading': '上传中…',
+
+  // ── 产物来源的**行内前缀**（引用弹层 / 成片下拉都用同一对）──
+  'common.origin.editBadge': '✂ 剪辑产物 · ',
+  'common.origin.renderBadge': '成片 · ',
+
+  // ── 费用（**口径与后缀**：创作入口与工作台显示的是同一件事，必须同一份）──
+  'common.cost.title': '按公开价目与上游计费式估算；实际以方舟账单为准',
+  'common.cost.localFree': '（本地轨：无 API 费用）',
+  'common.cost.estimateOnly': '（预估）',
+  'common.cost.customTier': '（自定义档按 2.0 标准口径估算）',
 };
 
 export const COMMON_EN = {
@@ -53,4 +67,15 @@ export const COMMON_EN = {
   'common.scope.cloud': 'Cloud',
   'common.scope.local': 'Local',
   'common.engine.cloud': 'Cloud Seedance',
+
+  'common.remove': 'Remove',
+  'common.uploading': 'Uploading…',
+
+  'common.origin.editBadge': '✂ Edited · ',
+  'common.origin.renderBadge': 'Render · ',
+
+  'common.cost.title': 'Estimated from public pricing and upstream billing; your Ark bill is authoritative',
+  'common.cost.localFree': ' (local track: no API cost)',
+  'common.cost.estimateOnly': ' (estimate)',
+  'common.cost.customTier': ' (custom tier estimated at the 2.0 rate)',
 };

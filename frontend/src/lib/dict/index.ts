@@ -1,6 +1,7 @@
 import { COMMON_EN, COMMON_ZH } from './common';
 import { CREATE_EN, CREATE_ZH } from './create';
 import { SHELL_EN, SHELL_ZH } from './shell';
+import { WORKBENCH_EN, WORKBENCH_ZH } from './workbench';
 
 /**
  * 字典组装处（**唯一**）。
@@ -15,9 +16,11 @@ import { SHELL_EN, SHELL_ZH } from './shell';
  *    `i18n.ts` 单向依赖这里，这样既不会有循环依赖，字典也能被任何地方安全引用。
  *
  * ## 分批迁移的状态（改这里就等于改了进度）
- * 已迁：`common`（跨视图共享：模式名 / 状态名 / 素材种类 / 算力归属）、
- * `shell`（侧栏 / 顶栏 / 区域名 / 凭据提示）、`create`（创作入口）。
- * 未迁：工作台 / 画布 / 视频库 / 成本台账 / 配方库 / 操作日志 / 剪辑台 / 各抽屉与组件。
+ * 已迁：`common`（跨视图共享：模式名 / 状态名 / 素材种类 / 算力归属 / 费用口径）、
+ * `shell`（侧栏 / 顶栏 / 区域名 / 凭据提示）、`create`（创作入口）、
+ * `workbench`（专业模式左栏 + 通用参考素材槽）。
+ * 未迁：工作台容器（队列 / 进度 / 通知）/ 画布 / 视频库 / 成本台账 / 配方库 / 操作日志 /
+ * 剪辑台 / 各抽屉与组件。
  * **切换入口在全部迁移完成前不上线**（半中半英比只有中文更糟）。
  *
  * ⚠️ **`common` 域的意义**：模式名与状态名在多个视图里出现，各写一份中文必然漂移
@@ -43,6 +46,7 @@ export const ZH = {
   ...COMMON_ZH,
   ...SHELL_ZH,
   ...CREATE_ZH,
+  ...WORKBENCH_ZH,
 };
 
 /** 字典的键集合（全站文案键的唯一权威） */
@@ -58,6 +62,7 @@ export const EN: Record<MessageKey, string> = {
   ...COMMON_EN,
   ...SHELL_EN,
   ...CREATE_EN,
+  ...WORKBENCH_EN,
 };
 
 export const DICTIONARIES = { zh: ZH, en: EN };

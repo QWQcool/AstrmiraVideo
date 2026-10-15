@@ -24,6 +24,7 @@ import {
   resolveTargetSize,
   type ResolutionTier,
 } from '../lib/format';
+import { useTranslate, type MessageKey } from '../lib/i18n';
 
 /**
  * 左栏控制台（PLAN §4 Step 3）。
@@ -122,28 +123,34 @@ function describeError(caught: unknown): string {
  */
 const MODE_OPTIONS: ReadonlyArray<{
   value: GenerationMode;
-  label: string;
-  title: string;
-  requirement: string;
+  /** 显示名走 `common.mode.*`（与其它视图**同一份**）；title / requirement 是本屏专属说明 */
+  labelKey: MessageKey;
+  titleKey: MessageKey;
+  requirementKey: MessageKey;
 }> = [
-  { value: 't2v', label: '文生视频', title: '仅凭文字描述生成', requirement: '不需要参考素材' },
+  {
+    value: 't2v',
+    labelKey: 'common.mode.t2v',
+    titleKey: 'workbench.mode.t2v.title',
+    requirementKey: 'workbench.mode.t2v.requirement',
+  },
   {
     value: 'i2v',
-    label: '图生视频',
-    title: '以参考首帧为起点生成',
-    requirement: '需要「参考首帧」',
+    labelKey: 'common.mode.i2v',
+    titleKey: 'workbench.mode.i2v.title',
+    requirementKey: 'workbench.mode.i2v.requirement',
   },
   {
     value: 'fl2v',
-    label: '首尾帧',
-    title: '给定首帧与尾帧，由模型补出中间运动',
-    requirement: '需要「参考首帧 + 参考尾帧」',
+    labelKey: 'common.mode.fl2v',
+    titleKey: 'workbench.mode.fl2v.title',
+    requirementKey: 'workbench.mode.fl2v.requirement',
   },
   {
     value: 'v2v',
-    label: '视频参考',
-    title: '以参考视频做风格 / 动作迁移',
-    requirement: '需要「参考视频」',
+    labelKey: 'common.mode.v2v',
+    titleKey: 'workbench.mode.v2v.title',
+    requirementKey: 'workbench.mode.v2v.requirement',
   },
 ];
 
@@ -185,7 +192,15 @@ export function LeftPanel(props: LeftPanelProps) {
     submitLabel,
   } = props;
 
+  const t = useTranslate();
   const isCloud = provider === PROVIDER_CLOUD;
+  /**
+   * 当前模式的选项（按钮下方的"需要哪格素材"说明要用它）。
+   *
+   * 提成变量而不是在 JSX 里再 `.find()` 一次：说明行现在要过字典（`t(...)`），
+   * 内联会写成一个难读的立即调用表达式；而且"按钮与说明看同一份"这件事也更明显。
+   */
+  const activeMode = MODE_OPTIONS.find((option) => option.value === mode);
   /**
    * 当前选中的引擎在**本服务这边**是否已配置好（只影响提示文案与"推荐配置"，**不置灰按钮**）。
    *
@@ -258,20 +273,20 @@ export function LeftPanel(props: LeftPanelProps) {
   return (
     <section className="wb-panel">
       <Eyebrow index={1} tone="gold" as="h2">
-        创作输入
+        {t('workbench.section.create')}
       </Eyebrow>
 
       <div className="wb-field">
         <div className="wb-field-head">
-          <span className="wb-label">提示词</span>
+          <span className="wb-label">{t('workbench.prompt.label')}</span>
           <button
             type="button"
             className="wb-btn wb-btn-gold"
             onClick={onEnhance}
             disabled={enhancing || enhanceNotice !== null}
-            title={enhanceNotice ?? '用模型把提示词写得更完整'}
+            title={enhanceNotice ?? t('workbench.prompt.enhanceTitle')}
           >
-            {enhancing ? '扩写中…' : '✨ 扩写'}
+            {enhancing ? t('workbench.prompt.enhancing') : t('workbench.prompt.enhance')}
           </button>
         </div>
 
@@ -280,14 +295,12 @@ export function LeftPanel(props: LeftPanelProps) {
           value={prompt}
           onChange={(event) => onPromptChange(event.target.value)}
           rows={5}
-          placeholder="镜头运动、主体动作、氛围；对白写在引号里，例如：她笑着说“我们终于成功了！”"
+          placeholder={t('workbench.prompt.placeholder')}
         />
 
         <div className="wb-field-head">
-          <span className="wb-note">
-            对白引号内 {dialogue} 字（5 秒镜头建议 ≤ 20 字）
-          </span>
-          <span className="wb-counter">{prompt.length} 字符</span>
+          <span className="wb-note">{t('workbench.prompt.dialogue', { count: dialogue })}</span>
+          <span className="wb-counter">{t('workbench.prompt.chars', { count: prompt.length })}</span>
         </div>
 
         {enhanceNotice === null ? null : <span className="wb-note">{enhanceNotice}</span>}
@@ -298,11 +311,11 @@ export function LeftPanel(props: LeftPanelProps) {
           注意 t2v 仍显示首帧槽：它是进入图生视频的入口（上传后自动切换模式）。 */}
       {mode === 'v2v' ? null : (
         <AssetDropZone
-          label="参考首帧"
+          label={t('workbench.slot.firstFrame')}
           hint={
             mode === 't2v'
-              ? '可选：上传后会切到「图生视频」；仅文生视频可直接忽略此槽'
-              : '必需：作为首帧（起点画面）。⚠️ 含真人 / 拟真人脸的图会被上游隐私检测拒绝 —— 可换非人物素材，或改用文生视频'
+              ? t('workbench.slot.firstFrame.hintOptional')
+              : t('workbench.slot.firstFrame.hint')
           }
           kind="image"
           aspectRatio={aspectRatio}
@@ -316,8 +329,8 @@ export function LeftPanel(props: LeftPanelProps) {
 
       {mode === 'fl2v' ? (
         <AssetDropZone
-          label="参考尾帧"
-          hint="必需：作为尾帧（终点画面）；与首帧一起交给上游补中间运动。⚠️ 含真人 / 拟真人脸的图会被上游隐私检测拒绝"
+          label={t('workbench.slot.lastFrame')}
+          hint={t('workbench.slot.lastFrame.hint')}
           kind="image"
           aspectRatio={aspectRatio}
           asset={assets.lastFrame}
@@ -331,8 +344,8 @@ export function LeftPanel(props: LeftPanelProps) {
       {mode === 'v2v' ? (
         <>
           <AssetDropZone
-            label="参考视频"
-            hint="必需：作为风格 / 动作迁移的参考（mp4 / mov）"
+            label={t('workbench.slot.video')}
+            hint={t('workbench.slot.video.hint')}
             kind="video"
             aspectRatio={aspectRatio}
             asset={assets.referenceVideo}
@@ -345,15 +358,15 @@ export function LeftPanel(props: LeftPanelProps) {
             <select
               className="wb-input wb-tref-pick"
               value=""
-              aria-label="从成片库选择参考视频"
+              aria-label={t('workbench.slot.pickFromLibrary')}
               onChange={(event) => {
                 if (event.target.value !== '') onVideoRefTaskSelect(event.target.value);
               }}
             >
-              <option value="">或直接从已有成片 / 剪辑产物选…</option>
+              <option value="">{t('workbench.slot.pickPlaceholder')}</option>
               {videoRefCandidates.map((item) => (
                 <option key={item.taskId} value={item.taskId}>
-                  {item.origin?.kind === 'edit' ? '✂ 剪辑产物 · ' : ''}
+                  {item.origin?.kind === 'edit' ? t('common.origin.editBadge') : ''}
                   {item.taskId.slice(0, 8)} · {item.requestSnapshot.prompt.slice(0, 16)}
                 </option>
               ))}
@@ -363,7 +376,7 @@ export function LeftPanel(props: LeftPanelProps) {
       ) : null}
 
       <div className="wb-field">
-        <span className="wb-label">生成模式</span>
+        <span className="wb-label">{t('workbench.mode.label')}</span>
         <div className="wb-segmented">
           {MODE_OPTIONS.map((option) => (
             <button
@@ -372,23 +385,26 @@ export function LeftPanel(props: LeftPanelProps) {
               className="wb-segment"
               aria-pressed={mode === option.value}
               onClick={() => onModeChange(option.value)}
-              title={`${option.title}（${option.requirement}）`}
+              title={t('workbench.mode.optionTitle', {
+                title: t(option.titleKey),
+                requirement: t(option.requirementKey),
+              })}
             >
-              {option.label}
+              {t(option.labelKey)}
             </button>
           ))}
         </div>
         <span className="wb-note">
-          {MODE_OPTIONS.find((option) => option.value === mode)?.requirement}
-          {mode === 'fl2v' || mode === 'v2v' ? '；该模式的上游字段接受度待真实冒烟核对' : ''}
+          {activeMode === undefined ? null : t(activeMode.requirementKey)}
+          {mode === 'fl2v' || mode === 'v2v' ? t('workbench.mode.upstreamPending') : ''}
         </span>
       </div>
 
       <div className="wb-field">
         <div className="wb-field-head">
-          <span className="wb-label">画幅</span>
+          <span className="wb-label">{t('workbench.aspect.label')}</span>
           <span className="wb-note">
-            渲染为 {target.width}×{target.height}
+            {t('workbench.aspect.target', { width: target.width, height: target.height })}
           </span>
         </div>
         <div className="wb-segmented">
@@ -414,7 +430,7 @@ export function LeftPanel(props: LeftPanelProps) {
             aria-pressed={aspectRatio === '1:1'}
             onClick={() => onAspectRatioChange('1:1')}
             disabled={!isCloud}
-            title={isCloud ? undefined : '方画幅仅云端引擎支持'}
+            title={isCloud ? undefined : t('workbench.aspect.squareCloudOnly')}
           >
             1:1
           </button>
@@ -423,8 +439,8 @@ export function LeftPanel(props: LeftPanelProps) {
 
       <div className="wb-field">
         <div className="wb-field-head">
-          <span className="wb-label">时长</span>
-          <span className="wb-note">单段上限 10 秒（公网部署防线，CONTRACT §1）</span>
+          <span className="wb-label">{t('workbench.duration.label')}</span>
+          <span className="wb-note">{t('workbench.duration.note')}</span>
         </div>
         <div className="wb-segmented">
           {DURATION_OPTIONS.map((seconds) => (
@@ -443,8 +459,8 @@ export function LeftPanel(props: LeftPanelProps) {
 
       <div className="wb-field">
         <div className="wb-field-head">
-          <span className="wb-label">清晰度</span>
-          <span className="wb-note">透传上游 `--resolution`；目标尺寸随之变化</span>
+          <span className="wb-label">{t('workbench.resolution.label')}</span>
+          <span className="wb-note">{t('workbench.resolution.note')}</span>
         </div>
         <div className="wb-segmented">
           {RESOLUTION_TIERS.map((tier) => (
@@ -462,7 +478,7 @@ export function LeftPanel(props: LeftPanelProps) {
       </div>
 
       <div className="wb-field">
-        <span className="wb-label">执行引擎</span>
+        <span className="wb-label">{t('workbench.engine.label')}</span>
         <div className="wb-segmented">
           <button
             type="button"
@@ -470,7 +486,7 @@ export function LeftPanel(props: LeftPanelProps) {
             aria-pressed={isCloud}
             onClick={() => onProviderChange(PROVIDER_CLOUD)}
           >
-            云端 Seedance
+            {t('common.engine.cloud')}
           </button>
           {/* ⚠️ V2.37（D56）：「本地 MiniMax H3」这一档**已撤掉** ——
               这里曾经有一个**永远不可用**的按钮（点了才知道不行，提交必 503），
@@ -486,7 +502,7 @@ export function LeftPanel(props: LeftPanelProps) {
           <div
             className="wb-segmented wb-segmented-engines"
             role="group"
-            aria-label="本地 ComfyUI 实例"
+            aria-label={t('workbench.engine.instancesAria')}
           >
             {comfyEngines.map((option) => renderComfyEngineButton(option))}
           </div>
@@ -497,8 +513,8 @@ export function LeftPanel(props: LeftPanelProps) {
             : isComfyUiEngine(provider)
               ? (selectedComfyEngine?.hint ??
                 providerStatus?.comfyui.reason ??
-                '本地 ComfyUI 状态未知')
-              : (providerStatus?.local.reason ?? '本地引擎状态未知')}
+                t('workbench.engine.localUnknown'))
+              : (providerStatus?.local.reason ?? t('workbench.engine.localReasonFallback'))}
         </span>
 
         {/* V2.34（台账 B4 / CONTRACT §20）：**检测本地引擎** ——
@@ -511,19 +527,19 @@ export function LeftPanel(props: LeftPanelProps) {
           disabled={checking}
           title={
             checking
-              ? '正在连一次本地引擎（ComfyUI 的模型清单较大，通常一两秒）'
-              : '真的去连一次本机 / 内网的引擎，如实报告能不能跑、能跑哪些模式'
+              ? t('workbench.selfcheck.checkingHint')
+              : t('workbench.selfcheck.idleHint')
           }
           onClick={() => {
             void runSelfCheck();
           }}
         >
-          {checking ? '🔍 检测中…' : '🔍 检测本地引擎'}
+          {checking ? t('workbench.selfcheck.checking') : t('workbench.selfcheck.run')}
         </button>
 
         {selfCheckError === null ? null : (
           <span className="wb-note cv-plan-bad" data-testid="wb-selfcheck-error">
-            检测失败：{selfCheckError}
+            {t('workbench.selfcheck.failed', { reason: selfCheckError })}
           </span>
         )}
 
@@ -535,12 +551,15 @@ export function LeftPanel(props: LeftPanelProps) {
                   {entry.available ? '✓' : '✗'}
                 </strong>{' '}
                 {/* V2.36：逐实例自检 —— 名字走同一份显示名口径（`host-comfyui:office` → 「ComfyUI · …」） */}
-                {providerLabel(entry.provider, providerStatus)}：{entry.reason ?? '可用'}
+                {providerLabel(entry.provider, providerStatus)}：{entry.reason ?? t('workbench.selfcheck.entryOk')}
               </div>
             ))}
             <div>
-              （{new Date(selfCheck.checkedAt).toLocaleTimeString()} 检测 ——
-              它反映的是<strong>此刻</strong>能不能连上，与上面那行"配没配"是两件事）
+              {t('workbench.selfcheck.checkedAt.before', {
+                time: new Date(selfCheck.checkedAt).toLocaleTimeString(),
+              })}
+              <strong>{t('workbench.selfcheck.checkedAt.emphasis')}</strong>
+              {t('workbench.selfcheck.checkedAt.after')}
             </div>
           </div>
         )}
@@ -549,17 +568,22 @@ export function LeftPanel(props: LeftPanelProps) {
             状态端点只陈述"本服务有没有配"，不替访客判断能不能用（CONTRACT §2 V1.8）。 */}
         {engineConfigured ? null : (
           <span className="wb-note">
-            推荐配置（可选）：本服务自身配置 ComfyUI 后重启即可开放，需在服务端设置
-            <code> COMFYUI_BASE_URL </code>（已运行的 ComfyUI 地址，仅回环 / 内网；
-            多台用 <code>COMFYUI_SERVERS_FILE</code>），再置 <code>EXPOSE_HOST_LOCAL_TRACK=1</code>。
-            在此之前选择本地轨提交，会如实返回 <code>PROVIDER_UNAVAILABLE</code>。
+            {t('workbench.localConfig.before')}
+            <code>COMFYUI_BASE_URL</code>
+            {t('workbench.localConfig.mid1')}
+            <code>COMFYUI_SERVERS_FILE</code>
+            {t('workbench.localConfig.mid2')}
+            <code>EXPOSE_HOST_LOCAL_TRACK=1</code>
+            {t('workbench.localConfig.after')}
+            <code>PROVIDER_UNAVAILABLE</code>
+            {t('workbench.localConfig.tail')}
           </span>
         )}
 
         {/* V2.0：抽屉里现在有**两条轨**的凭据（视频 + 文本扩写），
             所以入口不再挂在"云端 Seedance"分支下 —— 选本地轨的访客同样需要填扩写 Key */}
         <button type="button" className="wb-btn" onClick={onOpenByok}>
-          凭据设置（BYOK）
+          {t('workbench.byok.open')}
         </button>
       </div>
 
@@ -572,7 +596,7 @@ export function LeftPanel(props: LeftPanelProps) {
               checked={seedLocked}
               onChange={(event) => onSeedLockedChange(event.target.checked)}
             />
-            <span>锁定复现</span>
+            <span>{t('workbench.seed.lock')}</span>
           </label>
         </div>
         <input
@@ -581,11 +605,13 @@ export function LeftPanel(props: LeftPanelProps) {
           onChange={(event) => onSeedChange(event.target.value)}
           disabled={!seedLocked}
           inputMode="numeric"
-          placeholder={seedLocked ? '填写整数种子' : '未锁定：每次随机'}
+          placeholder={
+            seedLocked
+              ? t('workbench.seed.placeholderLocked')
+              : t('workbench.seed.placeholderRandom')
+          }
         />
-        <span className="wb-note">
-          锁定后同种子同参数可复现；云端不锁定时由服务商侧随机。
-        </span>
+        <span className="wb-note">{t('workbench.seed.note')}</span>
       </div>
 
       {/* 缺素材时按钮是灰的 —— 原因必须同时写在按钮上方，否则用户只能靠猜 */}
@@ -595,7 +621,7 @@ export function LeftPanel(props: LeftPanelProps) {
 
       {/* V2.12（B48）：提交前预估价（用户点生成之前就该看到要花多少钱） */}
       {costHint === null || costHint === undefined ? null : (
-        <span className="wb-note cr-cost" title="按公开价目与上游计费式估算；实际以方舟账单为准">
+        <span className="wb-note cr-cost" title={t('common.cost.title')}>
           {costHint}
         </span>
       )}

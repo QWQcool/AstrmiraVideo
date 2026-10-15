@@ -22,7 +22,7 @@ export const CREATE_ZH = {
   'create.input.placeholder': '例如：雨夜街头，女孩撑伞回头微笑着说：我们终于成功了。电影感光影',
   'create.hint.mention': '＠ 引用素材 / 成片',
   'create.hint.mentionNote': '或在框里直接输入 @；也可以把图 / 视频拖进来、直接粘贴',
-  'create.chip.uploading': '上传中…',
+  // （"上传中…" 提升到 `common.uploading`：素材槽与创作入口都要用同一句）
   'create.chip.remove': '移除素材',
   'create.chip.imageShort': '图',
   'create.realperson': '提示：含真人 / 拟真人脸的图做首帧·尾帧会被上游隐私检测拒绝 —— 可换非人物素材（风景 / 物体 / 动漫风格），或改用文字描述人物（T2V）。',
@@ -31,8 +31,8 @@ export const CREATE_ZH = {
   'create.mention.select': '选择素材',
   'create.mention.search': '搜素材 / 成片…（Enter 选第一条，Esc 关闭）',
   'create.mention.empty': '没有匹配的素材。可以把图/视频直接拖进来上传，或先去工作台生成一条成片。',
-  'create.mention.editOrigin': '✂ 剪辑产物 · ',
-  'create.mention.renderOrigin': '成片 · ',
+  // （"✂ 剪辑产物 · " / "成片 · " 这两个行内前缀提升到 `common.origin.*Badge`：
+  //   左栏的成片下拉也要用同一对）
   'create.mention.assetLine': '资产 · {kind} · {name}',
 
   // ── 配方 / 模板 ──
@@ -60,11 +60,9 @@ export const CREATE_ZH = {
   'create.modeLine.pending': '素材上传中，完成后即可提交。',
   'create.needsKey': '未配置 Key 且服务端无兜底：',
   'create.needsKey.action': '去填写凭据',
-  'create.cost.title': '按公开价目与上游计费式估算；实际以方舟账单为准',
+  // 费用**口径与后缀**（title / localFree / estimateOnly / customTier）提升到 `common.cost.*`：
+  // 创作入口与工作台显示的是同一件事，两处各写一份必然漂移
   'create.cost.estimated': '预计花费 {amount}',
-  'create.cost.localFree': '（本地轨：无 API 费用）',
-  'create.cost.estimateOnly': '（预估）',
-  'create.cost.customTier': '（自定义档按 2.0 标准口径估算）',
   'create.actions.note': '提交后停留在本页，进度与成片会出现在下方。',
   'create.submit.pending': '提交中…',
   'create.submit': '✦ 生成',
@@ -99,7 +97,6 @@ export const CREATE_EN = {
     'e.g. Rainy street at night; a girl turns with an umbrella and smiles: "we finally made it." Cinematic light',
   'create.hint.mention': '＠ Reference assets / renders',
   'create.hint.mentionNote': 'Or type @ in the box; you can also drag images / videos in, or paste them',
-  'create.chip.uploading': 'Uploading…',
   'create.chip.remove': 'Remove reference',
   'create.chip.imageShort': 'img',
   'create.realperson':
@@ -109,8 +106,6 @@ export const CREATE_EN = {
   'create.mention.search': 'Search assets / renders… (Enter picks the first, Esc closes)',
   'create.mention.empty':
     'No matching assets. You can drag images/videos in to upload, or generate a render in the Workbench first.',
-  'create.mention.editOrigin': '✂ Edited · ',
-  'create.mention.renderOrigin': 'Render · ',
   'create.mention.assetLine': 'Asset · {kind} · {name}',
 
   'create.recipes.aria': 'Recipe shortcuts',
@@ -136,11 +131,7 @@ export const CREATE_EN = {
   'create.modeLine.pending': 'Uploading assets — you can submit once it finishes.',
   'create.needsKey': 'No key configured and the server has no fallback:',
   'create.needsKey.action': 'Add credentials',
-  'create.cost.title': 'Estimated from public pricing and upstream billing; your Ark bill is authoritative',
   'create.cost.estimated': 'Estimated cost {amount}',
-  'create.cost.localFree': ' (local track: no API cost)',
-  'create.cost.estimateOnly': ' (estimate)',
-  'create.cost.customTier': ' (custom tier estimated at the 2.0 rate)',
   'create.actions.note': 'You stay on this page; progress and the render show up below.',
   'create.submit.pending': 'Submitting…',
   'create.submit': '✦ Generate',

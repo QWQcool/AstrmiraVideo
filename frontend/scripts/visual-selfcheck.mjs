@@ -615,6 +615,8 @@ if (leftPanelText !== undefined) {
   const I18N_MIGRATED = [
     'App.tsx',
     'components/Sidebar.tsx',
+    'components/AssetDropZone.tsx',
+    'components/LeftPanel.tsx',
     'views/registry.ts',
     'views/CreateView.tsx',
     'lib/theme.ts',
