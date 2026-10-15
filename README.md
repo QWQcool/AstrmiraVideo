@@ -8,18 +8,25 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Node%2022%20%2B%20Fastify%205%20%2B%20SQLite-3178c6)](docs/PLAN.md)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20Vite%206-61dafb)](docs/PLAN.md)
-[![Contract](https://img.shields.io/badge/CONTRACT-V2.36-success)](docs/CONTRACT.md)
+[![Contract](https://img.shields.io/badge/CONTRACT-V2.37-success)](docs/CONTRACT.md)
 
 > **当前进度、已完成项与未做项的唯一权威是 [docs/PLAN.md](docs/PLAN.md) §5 与 §9 台账** ——
 > 本文不维护第二份状态描述（历史上正是因为 README 里写了一份"进度"，它最先过期）。
+
+> **项目定位（如实）**：这是一个**面向"有私有化客户"的形态去写的学习向项目** ——
+> 功能与防线按 B 端私有化交付的样子来写，但**当前没有真实客户**（也没有交付排期，见 PLAN §6-**D56**）。
+> 版权与许可按**私人仓库 / 自己学习用**处理：[NOTICE](NOTICE) 保留为**事实登记**（事实不该因为
+> "当下用不上"就删掉），但**不作为交付门槛**。
 
 ## 30 秒电梯陈述
 
 输入自然语言描述、拖入参考图（首尾帧/风格）或参考视频，按**推荐配置与你自己的选择**路由到生成引擎
 ——**云端火山方舟 Seedance（BYOK 自备 Key，Key 只存在你自己的浏览器）**，或**你自己机器上的 ComfyUI**
 （`host-comfyui`：引擎与模型都由你装，本仓只做接口适配；**可以配多台** —— 比如一台 3080 跑 480p、
-一台 5090 跑 720p，界面上分别选，见 CONTRACT §19）。
-⚠️ 本地轨**还有另一档「MiniMax H3」尚未实现**（选了会如实返回 `PROVIDER_UNAVAILABLE`，不假装可用）。
+一台 5090 跑 720p，界面上分别选，见 CONTRACT §19）。**H3 的模型也可以在 ComfyUI 里跑**。
+
+> 本地轨此前还有「MiniMax H3」一档，**已在 V2.37 撤掉**（决策 **D56**）：它只有配置约定、
+> 没有执行实现 —— 留着就是一个"**点了才知道不行**"的按钮。现在本地轨只有 ComfyUI 这一条路。
 
 拿到成片之后，系统里还有一条**闭环**：**浏览器端剪辑台**（多轨时间轴 · Remotion 预览与导出 · 转场/字幕/音效轨/BGM 淡入淡出）
 → **渲染入库**（剪辑产物就是新素材）→ **血缘画布**（这条片子怎么长出来的）。
@@ -113,7 +120,7 @@ AstrmiraVideo/
 
 | 不做 / 未做 | 现状与原因 |
 |---|---|
-| **本地轨的「MiniMax H3」档** | **未实现**：选它**如实返回 `PROVIDER_UNAVAILABLE`**，不假装可用。本地轨**当前可用于生产的是 `host-comfyui`**（自备 ComfyUI：已真机跑通，且支持多台）。H3 这一档是保留、补齐还是撤掉，列在 [docs/PENDING-DECISIONS.md](docs/PENDING-DECISIONS.md) **N4**（等产品负责人拍板） |
+| **本地轨的「MiniMax H3」档** | **已在 V2.37 撤掉**（决策 **D56**）：它只有配置约定、没有执行实现，留着就是一个"点了才知道不行"的按钮。本地轨**唯一形态 = `host-comfyui`**（自备 ComfyUI：已真机跑通，支持多台）；**H3 的模型可以在 ComfyUI 里跑**。（id 与 `/status` 的 `local` 段**保留**，只为兼容旧前端产物与历史请求体 —— 它们会得到 `503` 而不是被 schema 判成 `400`） |
 | **多租户 / 跨租户隔离** | 决策 D42：交付形态是"一家客户一套私有部署"，隔离单位是**项目**而非租户 |
 | **成员角色（管理员/创作者/查看者）** | 需要先有**用户身份系统**；没有登录就做角色只是"假门禁"（PLAN §9-B58） |
 | **水印** | 决策 D45：不做（将来的"客户 logo 贴片"是另一件事，届时另立） |
@@ -164,7 +171,11 @@ AstrmiraVideo/
 
 本仓自身是 **[MIT](LICENSE)**。
 
-**但第三方依赖里有两条必须单独看**（详见 **[NOTICE](NOTICE)**）：
+> **口径（2026-10-15 明确）**：本项目按**私人仓库 / 自己学习用**维护（见上方"项目定位"与 PLAN §6-**D56**）。
+> 下面的两条**不是交付门槛**，而是"**将来真要对外分发时该看的东西**"——
+> 它们仍然留在 [NOTICE](NOTICE) 里，是因为**事实不该因为"当下用不上"就被删掉**。
+
+**第三方依赖里有两条必须单独看**（详见 **[NOTICE](NOTICE)**）：
 
 1. **剪辑台用的 Remotion 是 source-available 许可，不是 OSI 开源** —— 不在它免费范围内的组织
    （个人与小团队之外），**商业交付前需自行取得 Remotion 的商业许可**；这一点出现在这里，

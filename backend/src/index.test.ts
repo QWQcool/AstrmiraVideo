@@ -1,6 +1,3 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HealthResponseSchema, ProviderStatusSchema, SelfCheckResponseSchema } from '@astrmira/shared';
 import { buildApp } from './index.js';
@@ -84,13 +81,17 @@ describe('GET /api/providers/status（CONTRACT §2 V1.8 / PLAN §6-D22、D27）'
     expect(body.cloud.acceptsClientKey).toBe(true);
   });
 
-  it('本地段只陈述本服务自身：未开放本地轨时 available=false + 对应 reason + 无 tier', async () => {
+  it('`local` 段如实说明「这一档已撤掉」（V2.37 / D56）—— 且仍不给硬件字段', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/providers/status' });
     const body = res.json();
 
     expect(body.local.available).toBe(false);
     expect(body.local.tier).toBeUndefined();
-    expect(body.local.reason).toBe('本服务未向访客开放本地轨');
+    // 撤掉之后这一段的唯一口径：说清"没有了、该改用哪个"
+    expect(body.local.reason).toContain('已撤掉');
+    expect(body.local.reason).toContain('host-comfyui');
+    // 字段**保留**的理由钉在这里：它现在是一句人话；删掉字段会让旧前端读到 undefined
+    expect(Object.keys(body.local).sort()).toEqual(['available', 'provider', 'reason']);
   });
 
   it('文案纪律 + 脱敏：不得替访客判断设备，也不得出现任何硬件细节', async () => {
@@ -101,7 +102,7 @@ describe('GET /api/providers/status（CONTRACT §2 V1.8 / PLAN §6-D22、D27）'
     expect(res.json().defaultProvider).toBe('cloud-volcano-seedance');
   });
 
-  it('AC6：EXPOSE=1 但未配置引擎 → available:false + 原因点名缺哪个 env', async () => {
+  it('AC6：EXPOSE=1 但未配置 ComfyUI → 原因点名缺哪个 env（V2.37 起这件事归 `comfyui` 段）', async () => {
     process.env.EXPOSE_HOST_LOCAL_TRACK = '1';
     const local = await buildApp();
 
@@ -109,11 +110,9 @@ describe('GET /api/providers/status（CONTRACT §2 V1.8 / PLAN §6-D22、D27）'
       const res = await local.inject({ method: 'GET', url: '/api/providers/status' });
       const body = res.json();
 
-      expect(body.local.available).toBe(false);
-      // V2.32：`local` 段 = 自装 MiniMax H3 这一档，原因要点名缺 H3_WORKDIR
-      // （ComfyUI 的配置事实走 `comfyui` 段 —— 一个后端一段，不互相代言）
-      expect(body.local.reason).toContain('H3_WORKDIR');
-      expect(body.local.tier).toBeUndefined();
+      expect(body.comfyui.available).toBe(false);
+      expect(body.comfyui.reason).toContain('COMFYUI_BASE_URL');
+      expect(body.comfyui.servers).toEqual([]);
       // 与 R1 同源的取反断言：**未配置态**的文案同样不得夹带任何硬件细节（型号 / 显存数字）
       expect(res.body).not.toMatch(HARDWARE_DETAIL_PATTERN);
     } finally {
@@ -122,11 +121,9 @@ describe('GET /api/providers/status（CONTRACT §2 V1.8 / PLAN §6-D22、D27）'
     }
   });
 
-  it('AC6：EXPOSE=1 且 H3_WORKDIR 合法 → available:true、tier 来自显式声明，且不回显路径/型号', async () => {
-    const workdir = mkdtempSync(path.join(tmpdir(), 'astrmira-probe-int-'));
+  it('AC6：EXPOSE=1 且配了回环 ComfyUI → 那一段可用，而 `local` 段**照样**说已撤（不互相代言）', async () => {
     process.env.EXPOSE_HOST_LOCAL_TRACK = '1';
-    process.env.H3_WORKDIR = workdir;
-    process.env.H3_TIER = '2';
+    process.env.COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
 
     const local = await buildApp();
 
@@ -134,19 +131,19 @@ describe('GET /api/providers/status（CONTRACT §2 V1.8 / PLAN §6-D22、D27）'
       const res = await local.inject({ method: 'GET', url: '/api/providers/status' });
       const body = res.json();
 
-      expect(body.local.available).toBe(true);
-      expect(body.local.tier).toBe(2);
-      // 键集合仍与契约一致：不得因"可用"就塞回硬件字段
-      expect(Object.keys(body.local).sort()).toEqual(['available', 'provider', 'reason', 'tier']);
+      expect(body.comfyui.available).toBe(true);
+      expect(body.comfyui.servers).toEqual([
+        { id: 'host-comfyui', label: '默认引擎', available: true },
+      ]);
+      // V2.32 的"一个后端一段"在撤档之后**仍然成立**：ComfyUI 配好了，不代表 H3 那一档能用了 ——
+      // 它已经不是"没配"，而是"没有了"
+      expect(body.local.available).toBe(false);
+      expect(body.local.reason).toContain('已撤掉');
       expect(res.body).not.toMatch(HARDWARE_DETAIL_PATTERN);
-      // 脱敏：不得回显部署者的绝对路径
-      expect(res.body).not.toContain(workdir);
     } finally {
       await local.close();
       delete process.env.EXPOSE_HOST_LOCAL_TRACK;
-      delete process.env.H3_WORKDIR;
-      delete process.env.H3_TIER;
-      rmSync(workdir, { recursive: true, force: true, maxRetries: 3 });
+      delete process.env.COMFYUI_BASE_URL;
     }
   });
 });
@@ -161,15 +158,18 @@ describe('GET /api/providers/selfcheck（CONTRACT §20 V2.34 / 台账 B4）', ()
     expect(Number.isNaN(Date.parse(res.json().checkedAt))).toBe(false);
   });
 
-  it('只自检**本地两档**（云端是配置事实、不需要联网探测 —— 它的答案在 /status 里）', async () => {
+  it('只自检 ComfyUI 实例（云端是配置事实，不联网探测；**H3 那一档已撤** —— V2.37 / D56）', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/providers/selfcheck' });
     const ids = (res.json().entries as { provider: string }[]).map((entry) => entry.provider);
 
-    expect(ids).toEqual(['local-minimax-h3', 'host-comfyui']);
+    // 一台都没配时仍列出默认那一档 —— B4 的价值就是"点一下就知道缺什么"
+    expect(ids).toEqual(['host-comfyui']);
     expect(ids).not.toContain('cloud-volcano-seedance');
+    // 撤掉的档位不该继续出现在自检里：它已经不是"没配"，而是"没有了"
+    expect(ids).not.toContain('local-minimax-h3');
   });
 
-  it('默认（未开放本地轨）→ 两档都不可用，且**原因里点名那个 env**（不是一句"不可用"）', async () => {
+  it('默认（未开放本地轨）→ 每一项都不可用，且**原因里点名那个 env**（不是一句"不可用"）', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/providers/selfcheck' });
     const entries = res.json().entries as { available: boolean; reason?: string }[];
 

@@ -1,6 +1,20 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.36 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.37 · 已冻结（变更需先改本文，再改代码）**
+> **V2.37 修订（2026-10-15）**：**撤掉「本地 MiniMax H3」档（决策 **D56**；用户 2026-10-15 拍板 N4 = ①）** ——
+>   这一档**只有配置约定、没有执行实现**（选了如实 503），摆着它等于"界面上有一个点了才知道不行的档"
+>   （正是本仓最反感的形态）。现在：
+>   ① **产品面移除**：界面不再提供该档、`/status` 的 `local` 段不再宣称可用、`/selfcheck` **不再检测它**、
+>   `statusProbe.ts` 里的 `H3_WORKDIR` / `H3_TIER` 支持一并删除；
+>   ② **但 id 与字段保留**（这是刻意的取舍）：`ProviderType` 里的 `local-minimax-h3` 与 `/status` 的 `local` 段
+>   **不删** —— 旧前端产物（浏览器里缓存的 dist）与历史请求体只会拿到 **`503 PROVIDER_UNAVAILABLE`**（人话），
+>   而不是被 schema 判成 `400`（那对用户就是"我什么都没改，怎么突然参数不合法"）；
+>   `local` 段的 `reason` 改为如实说明"**该档已撤掉**"；
+>   ③ **本地轨唯一可用形态 = `host-comfyui`**（§19；支持多台）。**H3 的模型仍然可以在 ComfyUI 里跑** ——
+>   那正是 D53 的取向：模型由你决定，引擎是 ComfyUI。
+>   **无新路由、无新错误码、无新表**。
+>
+> **状态（上一版）：V2.36 · 已冻结**
 > **V2.36 修订（2026-10-14）**：**一份服务连多台 ComfyUI（台账 A1 后续；§19-1 / §2 / §20）** ——
 >   此前"本地 ComfyUI 只有一个地址"（`COMFYUI_BASE_URL`），而真实场景是**多台机器**：
 >   3080 跑 480p、5090 跑 720p，或"公司一台 / 家里一台"。
@@ -338,8 +352,10 @@ export type AspectRatio = '16:9' | '9:16' | '1:1'; // 1:1 仅云端可选，本�
 // 默认关闭、不出现在产品线能力位；前端不得为它们硬编码任何分支。
 export type ProviderBaseType =
   | 'cloud-volcano-seedance'
-  | 'local-minimax-h3'
-  | 'host-comfyui'      // V2.30：用户自备的 ComfyUI（§19；executedBy 仍判 host-local）
+  | 'local-minimax-h3' // ⚠️ V2.37：**已撤（D56）** —— 产品面不再提供（界面 / 状态 / 自检都没有它）。
+  // 保留这个 id 只为**兼容**：旧前端产物与历史请求体提交它会得到 503（人话），而不是被 schema 判成 400。
+  // 本地轨请用 host-comfyui；H3 的模型可以在 ComfyUI 里跑。
+  | 'host-comfyui'      // V2.30：用户自备的 ComfyUI（§19；executedBy 仍判 host-local；V2.36 支持多台实例）
   | 'stock-local'
   | 'fixture-local';
 
@@ -446,18 +462,17 @@ export interface ProviderStatus {
     reason?: string;
   };
   local: {
+    // ⚠️ **V2.37：这一档已撤（D56）** —— `available` 恒为 `false`，`reason` 如实说明"该档已撤掉"。
+    // 字段**保留不删**（与 `ProviderType` 的 id 同理）：删掉会让旧前端产物读到 `undefined`
+    // 而走进"状态未知"分支；保留则它读到的是**一句人话**（"这一档没有了，本地轨请用 ComfyUI"）。
     available: boolean;
     provider: 'minimax-h3';
     // V1.8：语义 = 部署者显式配置并自检通过的引擎档位；未配置时缺省。
-    // 不再是硬件扫描结论，也不得用于"自动锁定/置灰"判定
+    // V2.37 起：**撤掉后它不可能再出现**（H3_TIER 支持已删除）—— 保留字段只为兼容旧客户端的读取。
     tier?: HardwareTier;
     // V1.8：删除 gpuName / vramFreeGB —— 面向访客的端点不得携带硬件型号与显存数字（D27）
-    // reason 三类口径（文案纪律见 PLAN §3 铁律 2）：
-    //  - 「本服务未配置本地 MiniMax H3（缺 H3_WORKDIR）」（V2.32 起：**这一段只说 H3**）
-    //  - 「本服务已配置本地 MiniMax H3（自检通过）」
-    //  - 「本服务未向访客开放本地轨」（EXPOSE_HOST_LOCAL_TRACK=0，默认）
-    // ⚠️ V2.32 收窄：此前只要 COMFYUI_BASE_URL 合规也会让这一段宣称可用 —— 而
-    //    `local-minimax-h3` 这个 provider **根本没实现**（提交必 503）。ComfyUI 归 `comfyui` 段。
+    // reason 口径（V2.37 起只剩一类，文案纪律见 PLAN §3 铁律 2）：
+    //  - 「本地 MiniMax H3 档已撤掉：本地轨请用 host-comfyui（自备 ComfyUI，且 H3 的模型可以在它里面跑）」
     reason?: string;
   };
   comfyui: {
@@ -495,7 +510,7 @@ export interface ProviderStatus {
 }
 ```
 
-> **`EXPOSE_HOST_LOCAL_TRACK`（V1.8 新增）**：env 开关，**默认 `0`**。为 `0` 时本地轨对访客不可用（`local.available:false` + 上述第二类 `reason`）；部署者自用需显式置 `1` 并配置 `H3_WORKDIR` / `COMFYUI_BASE_URL`（白名单校验见 PLAN §7-2）。host 本地轨的 scope 与防线落点见 PLAN §6-D26。
+> **`EXPOSE_HOST_LOCAL_TRACK`（V1.8 新增）**：env 开关，**默认 `0`**。为 `0` 时本地轨对访客不可用（`comfyui.servers[].available:false` + 对应 `reason`）；部署者自用需显式置 `1` 并配置 `COMFYUI_BASE_URL`（多台用 `COMFYUI_SERVERS_FILE`，见 §19-1；白名单校验见 PLAN §7-2）。host 本地轨的 scope 与防线落点见 PLAN §6-D26。
 
 ---
 
@@ -1926,14 +1941,14 @@ interface SelfCheckEntry {
 
 interface SelfCheckResponse {
   checkedAt: string;          // ISO 时刻 —— 它回答的是"刚才"
-  entries: SelfCheckEntry[];  // 逐项：本地 H3 + **每一个** ComfyUI 实例（V2.36；一台一台列，谁连不上说谁）
+  entries: SelfCheckEntry[];  // 逐项：**每一个** ComfyUI 实例（V2.36 多台；V2.37 起不再有 H3 那一项）
 }
 ```
 
 **七条口径**：
 
-1. **只自检本地档**：`local-minimax-h3` + **每一个配置好的 ComfyUI 实例**（V2.36：一台一台列，
-   谁连不上说谁 —— 这正是多台引擎最需要的可观测性）。云端不联网探测 ——
+1. **只自检 ComfyUI 实例**（V2.36 起一台一台列，谁连不上说谁 —— 这正是多台引擎最需要的可观测性；
+   **V2.37 起 H3 那一项已随该档撤掉**，见 D56）。云端不联网探测 ——
    它的"可用"是"有没有 env 兜底 Key"这种配置事实，§2 已经答了。
 2. **逐项独立**：各自 try/catch、**并行**执行。一个后端炸了不影响另一项的结论 ——
    这正是自检相对"提交时才发现"的价值（后者一次只暴露一个错误）。

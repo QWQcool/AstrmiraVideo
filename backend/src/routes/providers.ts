@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
-import { ProviderStatusSchema, SelfCheckResponseSchema, providerBaseType } from '@astrmira/shared';
+import { ProviderStatusSchema, SelfCheckResponseSchema } from '@astrmira/shared';
 import type {
   ComfyUiServerStatus,
   ProviderStatus,
@@ -8,7 +8,6 @@ import type {
 } from '@astrmira/shared';
 import { getProvider } from '../providers/registry.js';
 import { DEFAULT_COMFY_SERVER_ID, resolveComfyServers } from '../providers/comfyui/comfyuiServers.js';
-import { runLocalEngineSelfCheck } from '../providers/statusProbe.js';
 
 /** 部署者是否向访客开放 host 本地轨（CONTRACT §2：`EXPOSE_HOST_LOCAL_TRACK`，默认 0） */
 function isHostLocalTrackExposed(): boolean {
@@ -37,26 +36,23 @@ function resolveCloudStatus(): ProviderStatus['cloud'] {
 }
 
 /**
- * 本地段：只报告本服务的配置状态，**不替访客判断设备能力**。
- * 文案纪律（PLAN §3 铁律 2）：reason 不得出现「你的设备 / 你没有显卡」类判断。
+ * `local` 段（**V2.37：这一档已撤** —— 决策 D56；用户 2026-10-15 拍板）。
+ *
+ * 为什么**保留字段**而不是从响应里删掉：旧前端产物（浏览器里缓存的 dist）读的是这个字段 ——
+ * 保留时它读到一句**人话**（"这一档没有了，本地轨请用 ComfyUI"）；删掉它会读到 `undefined`
+ * 而落进"状态未知"分支，那比"这一档已撤"更难懂。
+ *
+ * `available` **恒为 false**：它确实不可用（注册表里没有实现，提交得到 503）。
+ * `tier` 不再出现（`H3_TIER` 支持已随该档删除）。
+ *
+ * 文案纪律（PLAN §3 铁律 2）不变：reason 不得出现「你的设备 / 你没有显卡」类判断。
  */
 function resolveLocalStatus(): ProviderStatus['local'] {
-  if (!isHostLocalTrackExposed()) {
-    return {
-      available: false,
-      provider: 'minimax-h3',
-      reason: '本服务未向访客开放本地轨',
-    };
-  }
-
-  // V2.32：**现算**（与 `comfyui` 段同源同法）——此前读的是"启动时写一次"的缓存，
-  // 而 comfyui 段读 env，两者在同一次请求里可能给出不同口径的事实。
-  const selfCheck = runLocalEngineSelfCheck();
   return {
-    available: selfCheck.available,
+    available: false,
     provider: 'minimax-h3',
-    ...(selfCheck.tier === undefined ? {} : { tier: selfCheck.tier }),
-    reason: selfCheck.reason,
+    reason:
+      '本地 MiniMax H3 档已撤掉：本地轨请用 host-comfyui（自备 ComfyUI，且 H3 的模型可以在它里面跑）',
   };
 }
 
@@ -171,9 +167,9 @@ export function buildProviderStatus(): ProviderStatus {
  */
 function selfCheckTargets(): string[] {
   const ids = resolveComfyServers().servers.map((server) => server.id);
-  // ⚠️ **一台都没配时不把 ComfyUI 藏起来**：B4 的价值正是"点一下就知道缺什么"——
-  // 因为"没配置"就从列表里消失，用户只会看到一条 H3 的结论，然后不知道 ComfyUI 那一档去哪了。
-  return ['local-minimax-h3', ...(ids.length === 0 ? [DEFAULT_COMFY_SERVER_ID] : ids)];
+  // ⚠️ **一台都没配时不把 ComfyUI 藏起来**：B4 的价值正是"点一下就知道缺什么"。
+  // V2.37（D56）：H3 那一项已随该档撤掉 —— 不再检测一个不存在的档位。
+  return ids.length === 0 ? [DEFAULT_COMFY_SERVER_ID] : ids;
 }
 
 /**
@@ -226,9 +222,7 @@ function describeUnregistered(id: string): string {
   if (!isHostLocalTrackExposed()) {
     return '本服务未向访客开放本地轨（部署者自用需显式设 EXPOSE_HOST_LOCAL_TRACK=1）';
   }
-  if (providerBaseType(id) !== 'host-comfyui') {
-    return '本服务没有可用的本地 MiniMax H3 后端（只有配置约定，没有可执行的推理 provider）';
-  }
+  // V2.37（D56）：H3 那一档已撤掉 —— 走到这里只可能是"某个 ComfyUI 实例不在表里"
   // V2.36：逐实例说清"是哪一台的问题、问题是什么"（比一句"ComfyUI 不可用"可行动得多）
   const { servers } = resolveComfyServers();
   if (servers.length === 0) {

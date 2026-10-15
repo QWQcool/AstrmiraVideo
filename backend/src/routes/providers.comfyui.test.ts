@@ -72,7 +72,8 @@ describe('providers/status · comfyui 段', () => {
     const status = buildProviderStatus();
     expect(status.comfyui.available).toBe(true);
     expect(status.local.available).toBe(false);
-    expect(status.local.reason).toContain('H3_WORKDIR');
+    // V2.37（D56）：这一档**已撤掉** —— 它不再是"缺 H3_WORKDIR"，而是"没有了"
+    expect(status.local.reason).toContain('已撤掉');
   });
 
   it('reason 里不得出现硬件型号 / 显存数字（§2 / D27 的文案纪律同样适用于新段）', () => {

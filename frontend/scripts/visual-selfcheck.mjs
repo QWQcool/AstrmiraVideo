@@ -578,6 +578,31 @@ if (leftPanelText !== undefined) {
       'LeftPanel 没有用 `providerLabel` 显示自检结果 —— 具名实例（host-comfyui:xxx）会显示成空白',
     );
   }
+
+  // ── V2.37（D56）：H3 那一档**已撤掉** —— 撤掉的东西最容易"悄悄回来" ──
+  //
+  // 盯的是"决策有没有落到底"：撤掉的是一个**永远不可用的按钮**（点了才知道不行），
+  // 而它一旦被谁顺手加回来（比如合并旧分支），界面上不会有任何视觉回归 ——
+  // 类型、单测、覆盖率**全绿**，只有真点一次才会发现。
+  for (const [name, text, markers] of [
+    ['LeftPanel.tsx', leftPanelText, ['PROVIDER_LOCAL', "'local-minimax-h3'"]],
+    ['CreateView.tsx', createViewText, ['LOCAL_PROVIDER', "'local-minimax-h3'"]],
+  ]) {
+    if (text === undefined) continue;
+    for (const marker of markers) {
+      if (text.includes(marker)) {
+        failures.push(
+          `${name} 里还有 \`${marker}\` —— H3 那一档已在 V2.37 / D56 **撤掉**，不该再有可选入口`,
+        );
+      }
+    }
+  }
+  const engineLabelsText = contents.get(path.join(SRC, 'canvas', 'labels.ts'));
+  if (engineLabelsText !== undefined && !engineLabelsText.includes('本地 MiniMax H3（已撤）')) {
+    failures.push(
+      'labels.ts 没把 H3 标成「（已撤）」—— 历史任务 / 旧编排里出现这个值时会显示成一个还在的档位（V2.37）',
+    );
+  }
   for (const stale of ['PROVIDER_COMFY', 'CANVAS_PROVIDER_LABELS[']) {
     if (leftPanelText.includes(stale)) {
       failures.push(`LeftPanel 里仍有 \`${stale}\`（V2.36 起实例名单必须来自 /status，不能写死一档）`);

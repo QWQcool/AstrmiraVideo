@@ -60,7 +60,7 @@ import { useTaskPolling } from '../hooks/useTaskPolling';
  */
 
 const CLOUD_PROVIDER: ProviderType = 'cloud-volcano-seedance';
-const LOCAL_PROVIDER: ProviderType = 'local-minimax-h3';
+// ⚠️ V2.37（D56）：本地 H3 那一档的常量已随该档撤掉一起删除（与左栏同步）。
 // V2.31（A1 片 C / D53）：用户自备的 ComfyUI —— V2.36 起**不再是常量**：
 // 它可能有多台（`host-comfyui:<name>`），名单由 `/status` 的 `comfyui.servers` 给出（lib/engineOptions.ts）。
 
@@ -646,14 +646,8 @@ export function CreateView() {
                     >
                       云端 Seedance
                     </button>
-                    <button
-                      type="button"
-                      className="wb-segment"
-                      aria-pressed={provider === LOCAL_PROVIDER}
-                      onClick={() => setProvider(LOCAL_PROVIDER)}
-                    >
-                      本地 H3
-                    </button>
+                    {/* ⚠️ V2.37（D56）：「本地 H3」这一档已撤掉（与左栏同步）——
+                        以前这里摆着一个永远不可用的选项；现在本地轨只有 ComfyUI。 */}
                     {/* V2.31（A1 片 C / D53）：自备 ComfyUI —— 与左栏同一档语义，
                         能不能跑（模型/节点）由服务端在提交时判定并如实报错（§19-2）。
                         V2.36：可能有多台（§19-1）—— 单台时就在这一行，多台时另起一行。 */}

@@ -733,6 +733,12 @@ try {
     (await page.locator('.wb-segment:visible', { hasText: '本地 ComfyUI' }).count()) >= 1,
     '执行引擎里有「本地 ComfyUI」档（自备引擎与模型；能否跑由提交时判定）',
   );
+  // V2.37（D56）：H3 那一档**已撤掉** —— 这里验的是"界面上真的没有了"。
+  // 撤掉的正是一个"点了才知道不行"的按钮，所以这条断言就是那次决策的验收点。
+  assert(
+    (await page.locator('.wb-segment:visible', { hasText: '本地 MiniMax H3' }).count()) === 0,
+    '执行引擎里**不再有**「本地 MiniMax H3」那一档（V2.37 / D56）',
+  );
 
   // V2.34（台账 B4 / CONTRACT §20）：本地引擎**运行时自检** —— 真点一次，看它是否如实回答。
   // ⚠️ 冒烟起的服务**没有配**本地引擎，所以这里的**正确**结果是"两档都如实说不可用"。
@@ -745,8 +751,12 @@ try {
   await selfCheckResult.waitFor({ state: 'visible', timeout: 15_000 });
   const selfCheckText = (await selfCheckResult.textContent()) ?? '';
   assert(
-    selfCheckText.includes('本地 ComfyUI') && selfCheckText.includes('本地 MiniMax H3'),
-    `自检如实列出本地两档（${selfCheckText.slice(0, 60)}…）`,
+    selfCheckText.includes('本地 ComfyUI'),
+    `自检列出本地档（${selfCheckText.slice(0, 60)}…）`,
+  );
+  assert(
+    !selfCheckText.includes('MiniMax H3'),
+    'V2.37（D56）：**撤掉的 H3 档不再出现在自检结果里**（它已经不是"没配"，而是"没有了"）',
   );
   assert(
     selfCheckText.includes('EXPOSE_HOST_LOCAL_TRACK'),

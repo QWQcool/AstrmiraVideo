@@ -116,7 +116,8 @@ describe('comfyUiEngineOptions（多实例）', () => {
 describe('providerLabel / isComfyUiEngine', () => {
   it('固定档位的显示名', () => {
     expect(providerLabel('cloud-volcano-seedance', null)).toBe('云端 Seedance');
-    expect(providerLabel('local-minimax-h3', null)).toBe('本地 MiniMax H3');
+    // V2.37（D56）：这一档已撤 —— 显示名要如实（历史任务 / 旧编排里仍可能出现这个值）
+    expect(providerLabel('local-minimax-h3', null)).toBe('本地 MiniMax H3（已撤）');
     expect(providerLabel('fixture-local', null)).toBe('开发期夹具');
   });
 

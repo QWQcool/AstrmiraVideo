@@ -8,13 +8,20 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Node%2022%20%2B%20Fastify%205%20%2B%20SQLite-3178c6)](docs/PLAN.md)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20Vite%206-61dafb)](docs/PLAN.md)
-[![Contract](https://img.shields.io/badge/CONTRACT-V2.36-success)](docs/CONTRACT.md)
+[![Contract](https://img.shields.io/badge/CONTRACT-V2.37-success)](docs/CONTRACT.md)
 
 > **The single source of truth for progress — what is finished and what is not — is
 > [docs/PLAN.md](docs/PLAN.md) §5 (progress log) and §9 (backlog).** This file deliberately keeps no second copy of it.
 >
 > **All planning / contract / runbook documents are written in Chinese.** This English README exists so that
 > non-Chinese readers can find their way around; **where the two disagree, the Chinese documents win.**
+>
+> **What this project is (honestly)**: a **learning project written in the shape of an on-prem B2B product** —
+> the features and guardrails are built the way a private-deployment delivery would need them, but
+> **there is no real customer today** (and no delivery schedule; see PLAN §6 **D56**).
+> Copyright and licensing are handled as a **private repository / self-study** project: the
+> [NOTICE](NOTICE) is kept as a **factual record** (facts should not be deleted just because they are not
+> needed right now) rather than as a delivery gate.
 
 ## 30-second pitch
 
@@ -26,8 +33,10 @@ and the system routes the job to the engine **configured for this deployment**:
 - **Local — `host-comfyui`**: **your own ComfyUI** (engine and models are yours; this repo only adapts the
   interface — CONTRACT §19). **Multiple instances are supported**: e.g. a 3080 box at 480p and a 5090 box at 720p,
   each selectable in the UI (`COMFYUI_SERVERS_FILE`).
-- ⚠️ A second local slot — **MiniMax H3** — is **not implemented**: selecting it returns `PROVIDER_UNAVAILABLE`
-  honestly instead of pretending to work (open item **N4** in [docs/PENDING-DECISIONS.md](docs/PENDING-DECISIONS.md)).
+- **H3 models can also be run inside ComfyUI.**
+  A second local slot — **MiniMax H3** — was **removed in V2.37** (decision **D56**): it only ever had
+  configuration conventions and no execution implementation, so keeping it meant shipping a button that
+  only tells you "no" after you click it. The local track is now ComfyUI only.
 
 Once a shot exists, the workbench closes the loop:
 
@@ -126,7 +135,7 @@ AstrmiraVideo/
 
 | Not done / not planned | Reality & reason |
 |---|---|
-| **Local “MiniMax H3” slot** | **Not implemented** — selecting it returns `PROVIDER_UNAVAILABLE` honestly. The local track that *is* production-ready is **`host-comfyui`** (real-machine validated, multi-instance). Whether the H3 slot is kept, implemented or removed is open item **N4** ([docs/PENDING-DECISIONS.md](docs/PENDING-DECISIONS.md)) |
+| **Local “MiniMax H3” slot** | **Removed in V2.37** (decision **D56**): it only had configuration conventions and no execution implementation, so it was a button that only says "no" after you click it. The local track is **`host-comfyui`** only (your own ComfyUI — real-machine validated, multi-instance); **H3 models can run inside ComfyUI**. (The id and the `/status` `local` section are **kept** purely for compatibility with stale frontend bundles and historical request bodies — they get `503`, not a schema `400`.) |
 | **Multi-tenancy / cross-tenant isolation** | Decision D42: the delivery shape is "one deployment per customer"; the isolation unit is the **project**, not a tenant |
 | **Member roles (admin/creator/viewer)** | Requires a user identity system first; roles without login would be fake gating (PLAN §9-B58) |
 | **Watermarks** | Decision D45: not doing it (a future "customer logo overlay" is a separate feature) |
@@ -166,6 +175,11 @@ The short version:
 ## License
 
 This repository is **[MIT](LICENSE)**.
+
+> **How to read this (2026-10-15)**: the project is maintained as a **private repository / self-study**
+> effort (see the project note at the top and PLAN §6 **D56**). The two items below are therefore **not
+> delivery gates** — they are what to look at **if this ever gets distributed**; they stay in
+> [NOTICE](NOTICE) because **facts should not be deleted just because they are not needed right now**.
 
 **Two things in the dependency tree must be read separately** (details in **[NOTICE](NOTICE)**):
 

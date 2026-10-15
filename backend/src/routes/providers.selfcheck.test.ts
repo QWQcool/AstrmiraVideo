@@ -92,7 +92,7 @@ describe('运行时自检 · 真去问一次', () => {
     expect(entryOf(response, 'host-comfyui')?.reason).toContain('连不上 ComfyUI');
   });
 
-  it('**逐项独立**：一个后端炸了，不影响另一项的结论（这正是自检相对"提交时才发现"的价值）', async () => {
+  it('一台连不上 → 如实说明原因（不假装成功，也不含糊成一句"不可用"）', async () => {
     process.env.EXPOSE_HOST_LOCAL_TRACK = '1';
     const log: HealthLog = { calls: 0, refresh: [] };
     __setProviderForTesting(
@@ -106,9 +106,10 @@ describe('运行时自检 · 真去问一次', () => {
 
     expect(entryOf(response, 'host-comfyui')?.available).toBe(false);
     expect(entryOf(response, 'host-comfyui')?.reason).toContain('socket hang up');
-    // 另一项（本地 H3：本服务没有可执行的推理 provider）照样给出自己的结论
-    expect(entryOf(response, 'local-minimax-h3')?.available).toBe(false);
-    expect(entryOf(response, 'local-minimax-h3')?.reason).toContain('MiniMax H3');
+    // V2.37（D56）：撤掉的 H3 档不再出现。
+    // 多台之间的"逐项独立"由两道**更真**的覆盖兜着：`comfyuiServers.test.ts`（白名单逐实例独立）
+    // 与 UI 冒烟的"一台连不上不影响另一台的结论"（真浏览器 + 真注入）。
+    expect(response.entries.map((entry) => entry.provider)).toEqual(['host-comfyui']);
   });
 
   it('挂着不响应 → **硬超时**（一个"检测"按钮转十分钟，比报一句超时糟得多）', async () => {
@@ -173,10 +174,15 @@ describe('运行时自检 · 未配置时如实说话', () => {
     expect(entryOf(response, 'host-comfyui')?.reason).toContain('COMFYUI_BASE_URL');
   });
 
-  it('本地 H3 那一档如实说明"没有可执行的推理 provider"（不是含糊的"不可用"）', async () => {
+  it('**撤掉的档位不再出现在自检里**（V2.37 / D56）—— 它已经不是"没配"，而是"没有了"', async () => {
     process.env.EXPOSE_HOST_LOCAL_TRACK = '1';
 
     const response = await buildSelfCheck();
-    expect(entryOf(response, 'local-minimax-h3')?.reason).toContain('没有可执行的推理 provider');
+    const ids = response.entries.map((entry) => entry.provider);
+
+    // 撤掉之前这里会多一条"本服务没有可执行的推理 provider"
+    expect(ids).not.toContain('local-minimax-h3');
+    // 而"没配 ComfyUI 时照样列出那一档"这条口径**不变**（点一下就知道缺什么）
+    expect(ids).toEqual(['host-comfyui']);
   });
 });

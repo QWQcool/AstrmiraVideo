@@ -36,6 +36,10 @@ describe('执行位置 executedBy（V2.27 / A1 片 A）', () => {
 
   it('resolveExecutedBy：云端 Seedance = cloud，其余（本地轨 / 开发期 provider）= host-local', () => {
     expect(resolveExecutedBy('cloud-volcano-seedance')).toBe('cloud');
+    expect(resolveExecutedBy('host-comfyui')).toBe('host-local');
+    expect(resolveExecutedBy('host-comfyui:office')).toBe('host-local'); // V2.36 具名实例
+    // V2.37（D56）：H3 档**已撤**（产品面不再提供）—— 但这个判定函数**仍要认它**：
+    // 历史任务与旧编排文件里可能带着这个值，而"算力在哪"的答案没有变（host-local）。
     expect(resolveExecutedBy('local-minimax-h3')).toBe('host-local');
     expect(resolveExecutedBy('fixture-local')).toBe('host-local');
     expect(resolveExecutedBy('stock-local')).toBe('host-local');

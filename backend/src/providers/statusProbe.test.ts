@@ -1,24 +1,16 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
-import {
-  isAllowedEngineHost,
-  isAllowedEngineUrl,
-  isAllowedWorkdir,
-  runLocalEngineSelfCheck,
-} from './statusProbe.js';
+import { describe, expect, it } from 'vitest';
+import { isAllowedEngineHost, isAllowedEngineUrl } from './statusProbe.js';
 
 /**
- * S5a / AC6：本地引擎**配置自检**的口径（CONTRACT §2 V1.8）。
- * 关键纪律：探针不扫描硬件、不替访客判断设备能力、不回显型号与路径。
+ * 本地引擎**地址白名单**的口径（CONTRACT §2 / §19-1；PLAN §7-2）。
+ *
+ * ⚠️ V2.37（D56）：这个文件原先还测「MiniMax H3 档的配置自检」（`runLocalEngineSelfCheck` /
+ * `isAllowedWorkdir` / `H3_WORKDIR` / `H3_TIER`）—— **那些函数与它们的用例已随该档撤掉一并删除**。
+ * 撤掉的是"一个只有配置约定、没有执行实现的档位"，而**白名单本身一条都没变**
+ * （它现在只服务 ComfyUI 实例，见 `comfyuiServers.ts`）。
+ *
+ * 纪律（不变）：探针不扫描硬件、不替访客判断设备能力、不回显型号与路径明文。
  */
-
-const TMP_DIR = mkdtempSync(path.join(tmpdir(), 'astrmira-probe-'));
-
-afterAll(() => {
-  rmSync(TMP_DIR, { recursive: true, force: true });
-});
 
 describe('isAllowedEngineHost（白名单：仅回环 / RFC1918）', () => {
   it('放行回环与内网', () => {
@@ -48,6 +40,11 @@ describe('isAllowedEngineHost（白名单：仅回环 / RFC1918）', () => {
       expect(isAllowedEngineHost(host), `${host} 应拒绝`).toBe(false);
     }
   });
+
+  it('大小写与 IPv6 括号：归一后才判断（`LOCALHOST` / `[::1]` 同样放行）', () => {
+    expect(isAllowedEngineHost('LOCALHOST')).toBe(true);
+    expect(isAllowedEngineHost('[::1]')).toBe(true);
+  });
 });
 
 describe('isAllowedEngineUrl', () => {
@@ -63,109 +60,11 @@ describe('isAllowedEngineUrl', () => {
     expect(isAllowedEngineUrl('ftp://127.0.0.1')).toBe(false);
     expect(isAllowedEngineUrl('not-a-url')).toBe(false);
   });
-});
 
-describe('isAllowedWorkdir', () => {
-  it('放行存在的绝对目录', () => {
-    expect(isAllowedWorkdir(TMP_DIR)).toBe(true);
-  });
-
-  it('拒绝相对路径与不存在的路径', () => {
-    expect(isAllowedWorkdir('relative/dir')).toBe(false);
-    expect(isAllowedWorkdir(path.join(TMP_DIR, 'not-here'))).toBe(false);
-  });
-});
-
-describe('runLocalEngineSelfCheck（配置事实陈述）', () => {
-  it('未配 H3_WORKDIR → available:false，且原因点名缺哪个 env（V2.32 起说"MiniMax H3"）', () => {
-    const result = runLocalEngineSelfCheck({} as NodeJS.ProcessEnv);
-
-    expect(result.available).toBe(false);
-    expect(result.reason).toContain('MiniMax H3');
-    expect(result.reason).toContain('H3_WORKDIR');
-    expect(result.tier).toBeUndefined();
-  });
-
-  it('配置了存在的 H3_WORKDIR → available:true；档位由 H3_TIER 显式声明', () => {
-    const result = runLocalEngineSelfCheck({
-      H3_WORKDIR: TMP_DIR,
-      H3_TIER: '2',
-    } as NodeJS.ProcessEnv);
-
-    expect(result.available).toBe(true);
-    expect(result.tier).toBe(2);
-  });
-
-  it('未声明 H3_TIER 时 tier 缺省（不由探测推导）', () => {
-    const result = runLocalEngineSelfCheck({ H3_WORKDIR: TMP_DIR } as NodeJS.ProcessEnv);
-
-    expect(result.available).toBe(true);
-    expect(result.tier).toBeUndefined();
-  });
-
-  it('非法 H3_TIER 忽略（不报错、不猜）', () => {
-    const result = runLocalEngineSelfCheck({
-      H3_WORKDIR: TMP_DIR,
-      H3_TIER: '9',
-    } as NodeJS.ProcessEnv);
-
-    expect(result.available).toBe(true);
-    expect(result.tier).toBeUndefined();
-  });
-
-  it('配置了不存在的路径 → available:false + 自检失败说明', () => {
-    const result = runLocalEngineSelfCheck({
-      H3_WORKDIR: path.join(TMP_DIR, 'missing'),
-    } as NodeJS.ProcessEnv);
-
-    expect(result.available).toBe(false);
-    expect(result.reason).toContain('自检失败');
-    expect(result.reason).toContain('H3_WORKDIR');
-  });
-
-  it('**只配 COMFYUI_BASE_URL（回环）→ H3 这一段仍不可用**（V2.32 收窄：一个后端一段）', () => {
-    // 修的是一个真实缺陷：此前配了 ComfyUI 也会让 `local`（= 自装 MiniMax H3）宣称可用，
-    // 而 `local-minimax-h3` 这个 provider **根本没实现** —— 界面说"可用"、提交却是 503。
-    // ComfyUI 的配置事实由 `/api/providers/status` 的 `comfyui` 段独立陈述（同一份白名单）。
-    const result = runLocalEngineSelfCheck({
-      COMFYUI_BASE_URL: 'http://127.0.0.1:8188',
-    } as NodeJS.ProcessEnv);
-
-    expect(result.available).toBe(false);
-    expect(result.reason).toContain('H3_WORKDIR');
-  });
-
-  it('COMFYUI_BASE_URL 的合规性归 `comfyui` 段管（这里不再复述白名单结论）', () => {
-    const result = runLocalEngineSelfCheck({
-      COMFYUI_BASE_URL: 'http://example.com:8188',
-    } as NodeJS.ProcessEnv);
-
-    expect(result.available).toBe(false);
-    // 不复述 = 不会出现"同一件事在两个段里各说一遍、文案还可能不一致"
-    expect(result.reason).not.toContain('COMFYUI_BASE_URL');
-  });
-
-  it('脱敏：自检结果不得回显路径明文', () => {
-    const failed = runLocalEngineSelfCheck({
-      H3_WORKDIR: path.join(TMP_DIR, 'missing-xyz'),
-    } as NodeJS.ProcessEnv);
-    const ok = runLocalEngineSelfCheck({ H3_WORKDIR: TMP_DIR } as NodeJS.ProcessEnv);
-
-    expect(failed.reason).not.toContain(TMP_DIR);
-    expect(ok.reason).not.toContain(TMP_DIR);
-  });
-
-  it('文案纪律：不得出现对访问者设备的判断', () => {
-    const cases = [
-      runLocalEngineSelfCheck({} as NodeJS.ProcessEnv),
-      runLocalEngineSelfCheck({ H3_WORKDIR: TMP_DIR } as NodeJS.ProcessEnv),
-      runLocalEngineSelfCheck({
-        H3_WORKDIR: path.join(TMP_DIR, 'x'),
-      } as NodeJS.ProcessEnv),
-    ];
-
-    for (const result of cases) {
-      expect(result.reason).not.toMatch(/你的设备|你的显存|你没有显卡|不支持你的/);
-    }
+  it('**V2.37 之后它服务的是 ComfyUI 实例**（每台各校验一次，见 comfyuiServers.test.ts）', () => {
+    // 这条不是新逻辑，而是把"职责变化"钉在测试里：白名单函数仍然只认回环 / 内网，
+    // 而"谁在被校验"从"一个 H3 目录 + 一个 ComfyUI 地址"变成了"每一个配置好的 ComfyUI 实例"。
+    expect(isAllowedEngineUrl('http://172.20.5.5:8188')).toBe(true);
+    expect(isAllowedEngineUrl('http://172.32.5.5:8188')).toBe(false);
   });
 });

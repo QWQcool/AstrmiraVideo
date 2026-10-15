@@ -64,7 +64,9 @@ export function comfyUiEngineOptions(status: ProviderStatus | null): EngineOptio
  */
 export function providerLabel(id: string, status: ProviderStatus | null): string {
   if (id === 'cloud-volcano-seedance') return '云端 Seedance';
-  if (id === 'local-minimax-h3') return '本地 MiniMax H3';
+  // V2.37（D56）：这一档**已撤掉** —— 但它仍可能出现在**历史任务**与**旧编排文件**里，
+  // 显示名必须如实（既不能显示成空白，也不能假装它还在）
+  if (id === 'local-minimax-h3') return '本地 MiniMax H3（已撤）';
   if (id === 'fixture-local') return '开发期夹具';
   if (id === 'stock-local') return '素材库（未实现）';
 

@@ -100,8 +100,8 @@ export interface LeftPanelProps {
 }
 
 const PROVIDER_CLOUD: ProviderType = 'cloud-volcano-seedance';
-const PROVIDER_LOCAL: ProviderType = 'local-minimax-h3';
-// V2.36：ComfyUI 那一档**不再是常量** —— 它可能有多台（`host-comfyui:<name>`），
+// ⚠️ V2.37（D56）：本地 H3 那一档的常量已随该档撤掉一起删除（撤的是"点了才知道不行"的入口）。
+// V2.36：ComfyUI 那一档**不是常量** —— 它可能有多台（`host-comfyui:<name>`），
 // 名单由 `/status` 的 `comfyui.servers` 给出（见 lib/engineOptions.ts）。
 
 /** 自检结果的错误文案（与各视图同一份口径：ApiError 带契约码） */
@@ -204,7 +204,9 @@ export function LeftPanel(props: LeftPanelProps) {
     isCloud ||
     (isComfyUiEngine(provider)
       ? (selectedComfyEngine?.configured ?? providerStatus?.comfyui.available === true)
-      : providerStatus?.local.available === true);
+      // 其余情况（当前只可能是**已撤掉的 H3 档**或未知 id）→ 视为"没配"：
+      // V2.37（D56）起 `local` 段恒为 `available:false`，这里不再去读它。
+      : false);
 
   /**
    * 一台 ComfyUI 实例的按钮。
@@ -470,19 +472,9 @@ export function LeftPanel(props: LeftPanelProps) {
           >
             云端 Seedance
           </button>
-          <button
-            type="button"
-            className="wb-segment"
-            aria-pressed={!isCloud}
-            onClick={() => onProviderChange(PROVIDER_LOCAL)}
-            title={
-              providerStatus?.local.available === true
-                ? '使用本服务已配置的本地引擎'
-                : '本服务未配置本地引擎；仍可选择，提交时会返回 PROVIDER_UNAVAILABLE'
-            }
-          >
-            本地 MiniMax H3
-          </button>
+          {/* ⚠️ V2.37（D56）：「本地 MiniMax H3」这一档**已撤掉** ——
+              这里曾经有一个**永远不可用**的按钮（点了才知道不行，提交必 503），
+              那正是本仓最反感的一种形态。本地轨现在只有 ComfyUI（下面那组，可能有多台）。 */}
           {/* V2.31（A1 片 C / D53）：用户自备的 ComfyUI —— 引擎与模型都由用户装，我们只对接接口（§19）。
               V2.36：它可能是**多台**（§19-1）—— 名单来自 `/status` 的 `comfyui.servers`（前端不维护第二份，
               否则必然与服务端漂移）。只有一台时仍渲染在这一行（观感与 V2.35 一致）；多台时另起一行（见下）。 */}
@@ -557,10 +549,9 @@ export function LeftPanel(props: LeftPanelProps) {
             状态端点只陈述"本服务有没有配"，不替访客判断能不能用（CONTRACT §2 V1.8）。 */}
         {engineConfigured ? null : (
           <span className="wb-note">
-            推荐配置（可选）：本服务自身配置本地引擎后重启即可开放，需在服务端设置
-            <code> H3_WORKDIR </code>（本地推理工作目录）或
-            <code> COMFYUI_BASE_URL </code>（已运行的 ComfyUI 地址，仅回环 / 内网），
-            再置 <code>EXPOSE_HOST_LOCAL_TRACK=1</code>。
+            推荐配置（可选）：本服务自身配置 ComfyUI 后重启即可开放，需在服务端设置
+            <code> COMFYUI_BASE_URL </code>（已运行的 ComfyUI 地址，仅回环 / 内网；
+            多台用 <code>COMFYUI_SERVERS_FILE</code>），再置 <code>EXPOSE_HOST_LOCAL_TRACK=1</code>。
             在此之前选择本地轨提交，会如实返回 <code>PROVIDER_UNAVAILABLE</code>。
           </span>
         )}

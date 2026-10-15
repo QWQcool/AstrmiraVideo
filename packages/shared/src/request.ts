@@ -26,6 +26,8 @@ export const AspectRatioSchema = z.enum(['16:9', '9:16', '1:1']);
  */
 export const PROVIDER_BASE_TYPES = [
   'cloud-volcano-seedance',
+  // ⚠️ V2.37（D56）：**已撤掉**（产品面不再提供）。保留它只为**兼容**：
+  // 旧前端产物与历史请求体带着这个值来，应当得到 503（人话），而不是形状校验 400。
   'local-minimax-h3',
   'host-comfyui',
   'stock-local',

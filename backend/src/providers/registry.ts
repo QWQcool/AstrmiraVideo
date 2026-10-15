@@ -195,7 +195,9 @@ const REGISTRY: Record<ProviderBaseType, ProviderFactory> = {
   'stock-local': () => null,
   // 云端轨（S5b 落地）：每任务一份实例，凭据由调度器注入
   'cloud-volcano-seedance': (ctx) => createCloudProvider(ctx),
-  // host 本地轨（自装 MiniMax H3）：未实现（到达路径 = 配 env + 重启，见 providers/statusProbe.ts）
+  // ⚠️ **V2.37（D56）：这一档已撤掉** —— 产品面不再提供它（界面 / `/status` / `/selfcheck` 都没有它）。
+  // 注册表**保留这一行且返回 `null`** 是刻意的：旧前端产物（浏览器缓存的 dist）与历史请求体
+  // 提交它会走既有的「未注册 → 503 PROVIDER_UNAVAILABLE」（**人话**），而不是被 schema 判成 400。
   'local-minimax-h3': () => null,
   // host 本地轨（用户自备 ComfyUI，V2.30 / A1 片 B / D53）：配 COMFYUI_BASE_URL 即启用。
   // **具名实例**（V2.36，`host-comfyui:<name>`）由 `getProvider` 按 id 分流 ——

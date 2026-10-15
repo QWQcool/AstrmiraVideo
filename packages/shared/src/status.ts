@@ -27,14 +27,16 @@ export const CloudProviderStatusSchema = z.object({
 });
 
 export const LocalProviderStatusSchema = z.object({
+  // ⚠️ **V2.37（D56）：这一档已撤掉** —— `available` 恒 `false`，`reason` 如实说明"该档已撤"。
+  // 字段**保留不删**（与 `ProviderType` 的 id 同理）：旧前端产物读到的是一句人话；
+  // 删掉它会读到 `undefined` 而落进"状态未知"分支 —— 那更难懂。
   available: z.boolean(),
   provider: z.literal('minimax-h3'),
-  // 部署者显式配置并自检通过的引擎档位；未配置时缺省（V1.8：不再是硬件扫描结论）
+  // V1.8：部署者显式配置并自检通过的引擎档位。
+  // V2.37 起：**它不可能再出现**（`H3_TIER` 支持已随该档删除）—— 保留字段只为兼容旧客户端的读取。
   tier: HardwareTierSchema.optional(),
-  // V1.8（D27）：删除 gpuName / vramFreeGB —— 面向访客的端点不得携带硬件型号与显存数字
-  // reason 两类口径：
-  //  - 「本服务未配置本地引擎」（未配 env）
-  //  - 「本服务未向访客开放本地轨」（EXPOSE_HOST_LOCAL_TRACK=0，默认）
+  // V1.8（D27）：删除 gpuName / vramFreeGB —— 面向访客的端点不得携带硬件型号与显存数字。
+  // V2.37 起 reason 只剩一类：「本地 MiniMax H3 档已撤掉：本地轨请用 host-comfyui（…）」
   reason: z.string().optional(),
 });
 
