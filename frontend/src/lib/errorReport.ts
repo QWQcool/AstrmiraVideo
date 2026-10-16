@@ -229,3 +229,13 @@ export function buildRuntimeErrorNotice(input: {
     benign: isBenignRuntimeNoise(message),
   };
 }
+
+/**
+ * 去重时那一行"另有 N 次同类"的文案（`runtimeErrorNotice.ts` 用它原地更新计数）。
+ *
+ * 为什么单独抽出来：它是**用户可见文案**，而生成它的地方是原生 DOM 薄壳（不可测）。
+ * 抽成纯函数后，中英两边与插值都能被钉住 —— 与"报告正文放这里、DOM 只做壳"是同一条纪律。
+ */
+export function buildRepeatCountLine(count: number, language: Language = getLanguage()): string {
+  return translate(language, 'error.runtime.moreCount', { count });
+}

@@ -631,6 +631,7 @@ if (leftPanelText !== undefined) {
     'lib/byok.ts',
     'lib/theme.ts',
     'lib/errorReport.ts',
+    'lib/runtimeErrorNotice.ts',
   ];
   const CJK_PATTERN = /[\u4e00-\u9fa5]/;
   for (const rel of I18N_MIGRATED) {
@@ -653,8 +654,28 @@ if (leftPanelText !== undefined) {
       }
       // 单行注释：`//`（行注释）与 `*`（JSDoc 续行）
       if (/^\s*(\/\/|\*)/.test(line)) return;
-      // 去掉行尾 `// 注释` 再判（对 `https://` 这类字符串无害：我们只问"还含中文吗"）
-      if (!CJK_PATTERN.test(line.replace(/\/\/.*$/, ''))) return;
+      /**
+       * **开发者输出不是文案**：`console.*` 是写给开 DevTools 的人看的。
+       *
+       * 判据故意写成**"行首就是 `console.`"**，而不是"这一行含 console"：
+       * 后者会给"把用户文案塞进一个变量名带 console 的调用里"开口子，
+       * 那这条断言就等于没了。例外目前只有一个真实用例
+       * （`lib/runtimeErrorNotice.ts` 的两条前缀：`[运行期错误]` / `[运行期噪声·已忽略，不提示]`）——
+       * 它们**必须**保持中文：用户贴过来的控制台片段若随界面语言变成两种语言，
+       * 报障时的比对与检索就没法做了。
+       */
+      if (/^\s*console\./.test(line)) return;
+      /**
+       * 去掉行尾 `// 注释` 再判（对 `https://` 这类字符串无害：我们只问"还含中文吗"）。
+       *
+       * ⚠️ 这里**不能写 `\/\/.*$`**（2026-10-16 真实踩到）：本仓检出是 **CRLF**，
+       * 而 `.` 不匹配 `\r`、`$`（无 `m`）又只认字符串末尾 —— 于是 `// 中文注释` 剥不掉，
+       * 一条**合法的行尾注释**被报成"硬编码中文文案"。
+       * 更阴的是它**只在 Windows/CRLF 下失败**（Linux CI 上是 LF，会静默放过）：
+       * 同一份代码"本地红、CI 绿"，正是本仓最想避免的那类"只有一处看得见"。
+       * 去掉 `$` 锚点即可（`.*` 不吃 `\r`，但允许它留在后面）。
+       */
+      if (!CJK_PATTERN.test(line.replace(/\/\/.*/, ''))) return;
       failures.push(
         `${rel}:${index + 1} 还有硬编码中文文案（该文件已迁进字典，文案必须走 t()）—— ${line.trim().slice(0, 60)}`,
       );

@@ -92,7 +92,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           </a>
         </div>
         <details className="wb-crash-details">
-          <summary className="wb-note">{translate(getLanguage(), 'error.boundary.details')}</summary>
+          <summary className="wb-note">{translate(getLanguage(), 'error.details')}</summary>
           <pre className="wb-crash-pre">{report.details}</pre>
         </details>
       </div>

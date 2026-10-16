@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCrashReport,
+  buildRepeatCountLine,
   buildRuntimeErrorNotice,
   describeThrown,
   isBenignRuntimeNoise,
@@ -289,6 +290,25 @@ describe('英文（V8.51）：三句承诺必须说全，且整段零中文', ()
     expect(notice.title).not.toMatch(CJK);
     // 标题**不许指认**某个视图（"你的这块坏了"是撒谎）—— 英文里同样只用泛指
     expect(notice.title).not.toContain('Canvas');
+  });
+});
+
+/**
+ * 去重计数行（`runtimeErrorNotice.ts` 用它原地更新）—— 迁移第七批的第二个微片。
+ *
+ * 它值得单独测：整条通知里**只有它会动态变化**（提示条先弹、计数后到），
+ * 用户很可能只看到这一行 —— 而"只在本机提示"这句承诺必须它自己也带上。
+ */
+describe('buildRepeatCountLine：计数行不能丢承诺', () => {
+  it('数量插值正确（zh）', () => {
+    expect(buildRepeatCountLine(2, 'zh')).toBe('另有 2 次同类错误（同样只在本机提示）');
+  });
+
+  it('英文侧同样带上"只在本机"，且零中文', () => {
+    const line = buildRepeatCountLine(2, 'en');
+    expect(line).toContain('2 more');
+    expect(line).toContain('only on this machine');
+    expect(line).not.toMatch(CJK);
   });
 });
 

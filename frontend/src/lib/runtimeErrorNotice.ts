@@ -1,4 +1,10 @@
-import { buildRuntimeErrorNotice, type RuntimeErrorNotice, type RuntimeErrorSource } from './errorReport';
+import {
+  buildRepeatCountLine,
+  buildRuntimeErrorNotice,
+  type RuntimeErrorNotice,
+  type RuntimeErrorSource,
+} from './errorReport';
+import { getLanguage, translate } from './i18n';
 
 /**
  * window 层的**运行期出错通知**（台账 B61 · 片 B；决策 D52 = **只本地提示，不上报**）。
@@ -35,6 +41,18 @@ import { buildRuntimeErrorNotice, type RuntimeErrorNotice, type RuntimeErrorSour
  * **一个什么也没做错的用户会看到"界面里有一处代码出错了"**。
  * 那比静默更糟：提示条一旦开始误报，真出事时用户就不看了（狼来了）。
  * 所以：这类**只留控制台、不弹提示**（判定见 `errorReport.ts` 的 `BENIGN_RUNTIME_NOISE`）。
+ *
+ * ## 语言迁移第七批：界面文案走字典，`console` 前缀**保持中文**（这是刻意的）
+ * 用户可见的三处（"知道了" / "技术细节…" / "另有 N 次同类…"）全部走字典 ——
+ * 它们和前后的标题、摘要必须在**同一种语言**里，否则一个提示条会半中半英。
+ * 但两条 `console.error` 前缀**不译**，理由是它们**不是界面文案**：
+ * 那是写给开 DevTools 的人看的，翻成界面语言只会让**报障时的检索变难**
+ * （用户贴过来的控制台片段会随他切换语言而变成两种语言，比对无从下手）。
+ * 为此视觉自检的"已迁文件零硬编码中文"给了一条例外：**只豁免行首 `console.` 的行**
+ * （见 `scripts/visual-selfcheck.mjs`；口径写成通用的，而不是给本文件开后门）。
+ *
+ * ⚠️ **代价如实**：文案在**事件发生那一刻**定格（`getLanguage()` 现取，本层没有 React 订阅）——
+ * 与崩溃面板同一取舍；而它本来就是个"事后快照"，用户关掉就没了。
  */
 
 /** 冒烟用它点关闭按钮（`data-testid`） */
@@ -96,7 +114,7 @@ export function installRuntimeErrorNotice(): RuntimeErrorNoticeHandle {
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'wb-btn';
-    close.textContent = '知道了';
+    close.textContent = translate(getLanguage(), 'error.runtime.dismiss');
     close.dataset.testid = RUNTIME_ERROR_DISMISS_TESTID;
     close.addEventListener('click', dismiss);
 
@@ -111,7 +129,7 @@ export function installRuntimeErrorNotice(): RuntimeErrorNoticeHandle {
     const details = document.createElement('details');
     const summary = document.createElement('summary');
     summary.className = 'wb-note';
-    summary.textContent = '技术细节（报障时复制这一段）';
+    summary.textContent = translate(getLanguage(), 'error.details');
     const pre = document.createElement('pre');
     pre.className = 'wb-crash-pre';
     pre.textContent = notice.details; // 纯文本写入（红线 B15，见文件头纪律 2）
@@ -124,7 +142,7 @@ export function installRuntimeErrorNotice(): RuntimeErrorNoticeHandle {
       const count = document.createElement('div');
       count.className = 'wb-note';
       count.dataset.testid = RUNTIME_ERROR_COUNT_TESTID;
-      count.textContent = `另有 ${extra} 次同类错误（同样只在本机提示）`;
+      count.textContent = buildRepeatCountLine(extra);
       host.append(count);
     }
   };

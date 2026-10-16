@@ -23,7 +23,14 @@ export const ERROR_ZH = {
   // ── 视图级兜底面板的按钮（`ErrorBoundary`）──
   'error.boundary.retry': '重试渲染',
   'error.boundary.backToCreate': '回到创作入口',
-  'error.boundary.details': '技术细节（报障时复制这一段）',
+  /**
+   * ⚠️ 这一条**不属于 boundary**，两层共用（所以没有 `boundary` 前缀）。
+   *
+   * 崩溃面板与运行期通知的 `<details>` 折叠标题是**同一句话**（同一个承诺：让用户
+   * 复制一段能带走的技术细节）。各写一条必然漂移，所以共用 —— 键名跟着**用处**走，
+   * 不跟着"谁先用到它"走（那正是"半年后没人知道为什么通知条在用 boundary 的键"的来源）。
+   */
+  'error.details': '技术细节（报障时复制这一段）',
 
   // ── 崩溃面板正文（`buildCrashReport`）──
   // `{label}` 是掉进去的那个区域的**人话名**（"画布" / "工作台" / "界面"），
@@ -63,12 +70,21 @@ export const ERROR_ZH = {
    * 用户看到"出错"两个字时最该问的就是"你把它发哪去了"，所以它必须每次都在。
    */
   'error.runtime.localOnly': '（本提示只出现在本机，没有上报到服务器）',
+  /** 通知条上那个"知道了"按钮（关掉它）—— 语气刻意平实：不是"确定"、也不假装问题解决了 */
+  'error.runtime.dismiss': '知道了',
+  /**
+   * 同一条错误被忽略过 N 次时追加的计数行（去重不能把信息一起丢掉）。
+   *
+   * 它**必须再写一遍"只在本机"**：这一行是整条通知里唯一会**动态更新**的部分，
+   * 用户很可能只看到它（提示条先弹、计数后到），所以那句承诺不能只挂在摘要里。
+   */
+  'error.runtime.moreCount': '另有 {count} 次同类错误（同样只在本机提示）',
 };
 
 export const ERROR_EN = {
   'error.boundary.retry': 'Try rendering again',
   'error.boundary.backToCreate': 'Back to Create',
-  'error.boundary.details': 'Technical details (copy this when reporting)',
+  'error.details': 'Technical details (copy this when reporting)',
 
   'error.report.title': '{label} failed to render',
   'error.report.summary':
@@ -97,4 +113,6 @@ export const ERROR_EN = {
   'error.runtime.source.rejection': 'Unhandled promise rejection',
   'error.runtime.line.source': 'Source: {source}',
   'error.runtime.localOnly': '(This notice appears only on this machine; nothing is reported)',
+  'error.runtime.dismiss': 'Got it',
+  'error.runtime.moreCount': '{count} more of the same error (also shown only on this machine)',
 };
