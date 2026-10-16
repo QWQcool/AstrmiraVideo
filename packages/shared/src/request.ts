@@ -5,8 +5,18 @@ import { z } from 'zod';
  * 本文件是类型与运行时校验的**唯一事实源**（PLAN §6-D18）；CONTRACT 中的 TS 代码块为文档投影。
  */
 
-/** 生成模式：文生视频 | 首帧图生 | 首尾帧 | 视频参考 */
-export const GenerationModeSchema = z.enum(['t2v', 'i2v', 'fl2v', 'v2v']);
+/**
+ * 生成模式：文生视频 | 首帧图生 | 首尾帧 | 视频参考 | **文生图**。
+ *
+ * V2.40 新增 `t2i`（台账「文生图最小闭环」）：产物是**图片**（`TaskProgress.outputImageUrl`），
+ * 不是视频。三条边界：
+ * 1. **只有本地 ComfyUI 轨在模板里声明了它才可用**（能力位按模板声明判定，见 CONTRACT §19-2）——
+ *    云端 Seedance 轨不做图片，提交时如实 `503 PROVIDER_UNAVAILABLE`；
+ * 2. 它**不需要任何输入素材**（与 t2v 一样从提示词开始）；
+ * 3. 它用的是**别的模型**（Flux 系）与**别的模板** —— 同一台 ComfyUI 里
+ *    "出图"与"出视频"是**两份模板**（一个实例可以同时挂两份，按模式挑）。
+ */
+export const GenerationModeSchema = z.enum(['t2v', 'i2v', 'fl2v', 'v2v', 't2i']);
 
 /** 画面比例。1:1 仅云端可选，本地 H3 支持度【待验证】 */
 export const AspectRatioSchema = z.enum(['16:9', '9:16', '1:1']);

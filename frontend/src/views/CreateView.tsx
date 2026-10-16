@@ -12,6 +12,7 @@ import {
   RECIPE_CARDS,
   estimateCostFromRequest,
   formatYuan,
+  taskOutput,
 } from '@astrmira/shared';
 import {
   ApiError,
@@ -76,6 +77,7 @@ const MODE_KEYS: Record<GenerationMode, MessageKey> = {
   i2v: 'common.mode.i2v',
   fl2v: 'common.mode.fl2v',
   v2v: 'common.mode.v2v',
+  t2i: 'common.mode.t2i',
 };
 
 const STATUS_KEYS: Record<TaskProgress['status'], MessageKey> = {
@@ -392,7 +394,11 @@ export function CreateView() {
     if (firstAsset !== undefined) addRef(refFromAsset(firstAsset, t));
   };
 
-  const outputUrl = task === null ? null : resolveMediaUrl(task.outputVideoUrl);
+  // V2.40：产物可能是视频或图片（`t2i`）—— 用 shared 的 `taskOutput()` 收口
+  const output = task === null ? { kind: 'none' as const } : taskOutput(task);
+  const outputUrl =
+    output.kind === 'video' || output.kind === 'image' ? resolveMediaUrl(output.url) : null;
+  const outputKind: 'video' | 'image' | 'none' = output.kind;
 
   return (
     /* 单列页面容器 `wb-page`，**不是** `wb-main`：后者是工作台三栏栅格
@@ -860,18 +866,25 @@ export function CreateView() {
 
             {task.status === 'succeeded' && outputUrl !== null ? (
               <>
-                <video className="cr-player" src={outputUrl} controls playsInline />
+                {outputKind === 'image' ? (
+                  <img className="cr-player" src={outputUrl} alt={t('create.task.imageAlt')} />
+                ) : (
+                  <video className="cr-player" src={outputUrl} controls playsInline />
+                )}
                 <div className="cr-task-actions">
                   <a className="cr-link" href={outputUrl} download>
                     {t('create.task.download')}
                   </a>
-                  <button
-                    type="button"
-                    className="cr-link"
-                    onClick={() => navigate(`#/edit?task=${encodeURIComponent(task.taskId)}`)}
-                  >
-                    {t('create.task.toEditor')}
-                  </button>
+                  {/* V2.40：图片产物**送不了剪辑台**（剪辑台要视频源片）—— 不摆一个点了会报错的按钮 */}
+                  {outputKind === 'video' ? (
+                    <button
+                      type="button"
+                      className="cr-link"
+                      onClick={() => navigate(`#/edit?task=${encodeURIComponent(task.taskId)}`)}
+                    >
+                      {t('create.task.toEditor')}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="cr-link"

@@ -115,7 +115,7 @@ function describeError(caught: unknown): string {
 }
 
 /**
- * 四种生成模式（CONTRACT §1 `GenerationMode`）。
+ * 五种生成模式（CONTRACT §1 `GenerationMode`；V2.40 加 `t2i`）。
  *
  * `requirement` 只说"需要哪格素材"，**不用它禁用按钮** —— 素材还没上传就点不了模式，
  * 用户会被卡在"想选首尾帧 → 按钮灰着 → 不知道该先传图"的循环里。
@@ -151,6 +151,14 @@ const MODE_OPTIONS: ReadonlyArray<{
     labelKey: 'common.mode.v2v',
     titleKey: 'workbench.mode.v2v.title',
     requirementKey: 'workbench.mode.v2v.requirement',
+  },
+  // V2.40：文生图（产物是**图片**）—— 需要本地引擎装好图片模板；云端轨不支持，
+  // 选了会在提交时如实拿到 503（不在这里假装禁用，理由同上面那段的注释）。
+  {
+    value: 't2i',
+    labelKey: 'common.mode.t2i',
+    titleKey: 'workbench.mode.t2i.title',
+    requirementKey: 'workbench.mode.t2i.requirement',
   },
 ];
 

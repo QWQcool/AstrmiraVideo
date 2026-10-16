@@ -536,7 +536,9 @@ function CanvasInspector({
   const t = useTranslate();
   const taskId = node.kind === 'task' ? node.taskId : undefined;
   const assetId = node.kind === 'asset' ? node.assetId : undefined;
-  const outputUrl = resolveMediaUrl(node.outputVideoUrl ?? undefined);
+  // V2.40：产物可能是视频或图片（`t2i`）—— 两条各自解析，渲染时按类型分支
+  const videoUrl = resolveMediaUrl(node.outputVideoUrl ?? undefined);
+  const imageUrl = resolveMediaUrl(node.outputImageUrl ?? undefined);
   const task = node.task;
   const asset = node.asset;
   const request = task?.requestSnapshot;
@@ -599,7 +601,10 @@ function CanvasInspector({
         <p className="wb-note cv-drawer-ghost">{t('canvas.insp.ghost')}</p>
       ) : null}
 
-      {outputUrl === null ? null : <video className="cv-player" src={outputUrl} controls playsInline />}
+      {videoUrl === null ? null : <video className="cv-player" src={videoUrl} controls playsInline />}
+      {imageUrl === null ? null : (
+        <img className="cv-player" src={imageUrl} alt={t('canvas.insp.imageAlt')} />
+      )}
 
       {task === undefined ? null : (
         <>

@@ -85,10 +85,13 @@ export interface JobQueue {
    *
    * `thumbnailUrl`（V1.9）同理可选：抽帧失败**不得**影响任务成功 ——
    * 缩略图是画廊体验优化，不是任务结果的一部分。
+   *
+   * `imageUrl`（V2.40）是**图片产物**（`t2i`）：与 `videoUrl` **至多填一个**
+   * （视频任务 `videoUrl` 有值、图片任务 `imageUrl` 有值；另一个传空/缺省）。
    */
   complete(
     taskId: string,
-    output: { videoUrl: string; thumbnailUrl?: string; message?: string },
+    output: { videoUrl: string; imageUrl?: string; thumbnailUrl?: string; message?: string },
   ): Promise<void>;
 
   fail(taskId: string, error: TaskProgress['error']): Promise<void>;

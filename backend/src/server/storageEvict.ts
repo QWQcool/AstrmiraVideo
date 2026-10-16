@@ -111,14 +111,13 @@ export async function runStorageEvict(
       continue;
     }
 
-    const videoFile = path.join(
-      options.outputsDir,
-      path.basename(task.outputVideoUrl ?? `${task.taskId}.mp4`),
-    );
+    // V2.40：产物可能是**视频或图片**（`t2i`）—— 只认 outputVideoUrl 会让图片占的盘永远不回收
+    const mediaUrl = task.outputVideoUrl ?? task.outputImageUrl;
+    const mediaFile = path.join(options.outputsDir, path.basename(mediaUrl ?? `${task.taskId}.mp4`));
     const thumbFile = path.join(options.outputsDir, THUMBNAIL_DIR_NAME, `${task.taskId}.jpg`);
 
-    const freedForTask = (await sizeOf(videoFile)) + (await sizeOf(thumbFile));
-    await rm(videoFile, { force: true }).catch(() => undefined);
+    const freedForTask = (await sizeOf(mediaFile)) + (await sizeOf(thumbFile));
+    await rm(mediaFile, { force: true }).catch(() => undefined);
     await rm(thumbFile, { force: true }).catch(() => undefined);
 
     if (freedForTask <= 0) continue; // 文件本就不在（例如此前手动删过）：不算"淘汰"

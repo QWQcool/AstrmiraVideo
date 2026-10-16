@@ -97,6 +97,8 @@ export const LIBRARY_ZH = {
   // ── 详情抽屉 ──
   'library.drawer.closeAria': '关闭详情',
   'library.drawer.noPlayable': '{status}：没有可播放的成片',
+  // V2.40：图片产物（`t2i`）—— 抽屉里显示图片而不是播放器
+  'library.drawer.imageAlt': '本次生成的图片产物',
   'library.drawer.kv.prompt': '提示词',
   'library.drawer.kv.mode': '模式',
   'library.drawer.kv.engine': '引擎',
@@ -213,6 +215,7 @@ export const LIBRARY_EN = {
 
   'library.drawer.closeAria': 'Close details',
   'library.drawer.noPlayable': '{status}: no playable clip',
+  'library.drawer.imageAlt': 'The generated still image',
   'library.drawer.kv.prompt': 'Prompt',
   'library.drawer.kv.mode': 'Mode',
   'library.drawer.kv.engine': 'Engine',

@@ -30,6 +30,7 @@ const CANVAS_MODE_LABEL_KEYS: Record<GenerationMode, MessageKey> = {
   i2v: 'common.mode.i2v',
   fl2v: 'common.mode.fl2v',
   v2v: 'common.mode.v2v',
+  t2i: 'common.mode.t2i',
 };
 
 /**

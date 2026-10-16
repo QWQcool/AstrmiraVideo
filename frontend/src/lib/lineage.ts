@@ -53,6 +53,8 @@ export interface LineageNode {
   thumbnailUrl?: string | null;
   /** 成片同源直链（`/media/<taskId>.mp4`）；详情抽屉的播放器与下载用 */
   outputVideoUrl?: string | null;
+  /** V2.40：**图片产物**的同源直链（`/media/<taskId>.png`，`t2i` 任务）；与上面至多有一个 */
+  outputImageUrl?: string | null;
 
   // ── asset 专属 ──
   assetId?: string;
@@ -151,6 +153,8 @@ export interface RecipePackTask {
   createdAt: number;
   isEdit: boolean;
   outputVideoUrl?: string;
+  /** V2.40：图片产物的同源直链（`t2i` 任务） */
+  outputImageUrl?: string;
   warnings?: string[];
 }
 
@@ -246,6 +250,7 @@ export function buildRecipePack(
         createdAt: task.createdAt,
         isEdit: task.origin?.kind === 'edit',
         ...(task.outputVideoUrl === undefined ? {} : { outputVideoUrl: task.outputVideoUrl }),
+        ...(task.outputImageUrl === undefined ? {} : { outputImageUrl: task.outputImageUrl }),
         ...(task.warnings === undefined ? {} : { warnings: task.warnings }),
       });
       continue;
@@ -341,9 +346,11 @@ export function buildLineage(input: LineageInput): LineageGraph {
             taskId,
             status: task.status,
             isEdit: task.origin?.kind === 'edit',
-            hasOutput: task.outputVideoUrl !== undefined,
+            // V2.40：图片产物（`t2i`）也算"有产物"
+            hasOutput: task.outputVideoUrl !== undefined || task.outputImageUrl !== undefined,
             thumbnailUrl: task.thumbnailUrl ?? null,
             outputVideoUrl: task.outputVideoUrl ?? null,
+            outputImageUrl: task.outputImageUrl ?? null,
             task,
           };
     nodes.set(id, node);

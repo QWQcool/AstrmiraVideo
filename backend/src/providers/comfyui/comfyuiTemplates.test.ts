@@ -9,8 +9,10 @@ import {
 } from './comfyuiProtocol.js';
 import {
   COMFYUI_DEFAULT_TEMPLATE_NAME,
+  COMFYUI_IMAGE_TEMPLATE_NAME,
   isWorkflowTemplate,
   loadWorkflowTemplate,
+  loadWorkflowTemplates,
 } from './comfyuiTemplates.js';
 
 /**
@@ -142,11 +144,19 @@ describe('loadWorkflowTemplate · 从哪拿模板', () => {
     });
   });
 
-  it('**读不到就抛错，绝不回落内置**（回落会让用户以为自己的模板生效了）', () => {
+  it('**空目录 → 抛错**（不静默回落内置：那会让用户以为自己的模板生效了）', () => {
     const dir = tempDir();
     expect(() =>
       loadWorkflowTemplate({ COMFYUI_TEMPLATE_DIR: dir, COMFYUI_TEMPLATE: 'nope' } as NodeJS.ProcessEnv),
-    ).toThrow(/读不到工作流模板/);
+    ).toThrow(/模板目录里没有/);
+  });
+
+  it('**指定了目录里没有的模板名 → 抛错**（并列出目录里有什么）', () => {
+    const dir = tempDir();
+    writeFileSync(path.join(dir, 'a.api.json'), JSON.stringify({ '1': { class_type: 'X', inputs: {} } }), 'utf8');
+    expect(() =>
+      loadWorkflowTemplate({ COMFYUI_TEMPLATE_DIR: dir, COMFYUI_TEMPLATE: 'nope' } as NodeJS.ProcessEnv),
+    ).toThrow(/在目录里找不到/);
   });
 
   it('非法 JSON → 抛错并带上文件路径', () => {
@@ -230,5 +240,57 @@ describe('loadWorkflowTemplate · 从哪拿模板', () => {
     expect(isWorkflowTemplate([])).toBe(false);
     expect(isWorkflowTemplate({ '1': { inputs: {} } })).toBe(false);
     expect(isWorkflowTemplate({ '1': { class_type: 'X', inputs: {} } })).toBe(true);
+  });
+});
+
+/**
+ * 清单式加载（V2.40）—— 一台 ComfyUI 同时装"视频模型"与"图片模型"是常态，
+ * 而一套模型 = 一张节点图，所以模板必须是**清单**（每份各自声明能做什么）。
+ */
+describe('loadWorkflowTemplates · 清单', () => {
+  it('零配置 → **两份内置**（视频 + 图片），defaultIndex 指向视频那份', () => {
+    const loaded = loadWorkflowTemplates({} as NodeJS.ProcessEnv);
+    expect(loaded.templates.map((item) => item.name)).toEqual([
+      COMFYUI_DEFAULT_TEMPLATE_NAME,
+      COMFYUI_IMAGE_TEMPLATE_NAME,
+    ]);
+    expect(loaded.defaultIndex).toBe(0);
+    // 图片那份的声明必须写着 t2i（否则能力位不会亮）
+    expect(loaded.templates[1]?.declaration?.modes).toEqual(['t2i']);
+  });
+
+  it('目录里每份 `<name>.api.json` 各成一条（**加一份模板 = 多一种能力**）', () => {
+    const dir = tempDir();
+    writeFileSync(path.join(dir, 'a.api.json'), JSON.stringify({ '1': { class_type: 'X', inputs: {} } }), 'utf8');
+    writeFileSync(path.join(dir, 'b.api.json'), JSON.stringify({ '2': { class_type: 'Y', inputs: {} } }), 'utf8');
+
+    const loaded = loadWorkflowTemplates({ COMFYUI_TEMPLATE_DIR: dir } as NodeJS.ProcessEnv);
+    expect(loaded.templates.map((item) => item.name)).toEqual(['a', 'b']);
+    expect(loaded.defaultIndex).toBe(0);
+  });
+
+  it('`COMFYUI_TEMPLATE` 决定 defaultIndex（多份都能跑同一模式时优先它）', () => {
+    const dir = tempDir();
+    writeFileSync(path.join(dir, 'a.api.json'), JSON.stringify({ '1': { class_type: 'X', inputs: {} } }), 'utf8');
+    writeFileSync(path.join(dir, 'b.api.json'), JSON.stringify({ '2': { class_type: 'Y', inputs: {} } }), 'utf8');
+
+    const loaded = loadWorkflowTemplates({
+      COMFYUI_TEMPLATE_DIR: dir,
+      COMFYUI_TEMPLATE: 'b',
+    } as NodeJS.ProcessEnv);
+    expect(loaded.defaultIndex).toBe(1);
+  });
+
+  it('没配目录时指定了非内置名 → 抛错（只能选内置的那几份，且如实列出）', () => {
+    expect(() =>
+      loadWorkflowTemplates({ COMFYUI_TEMPLATE: 'my-own-template' } as NodeJS.ProcessEnv),
+    ).toThrow(/只能用内置模板/);
+  });
+
+  it('配了目录就不再叠加内置（与 V2.33 起的既有行为一致）', () => {
+    const dir = tempDir();
+    writeFileSync(path.join(dir, 'only.api.json'), JSON.stringify({ '1': { class_type: 'X', inputs: {} } }), 'utf8');
+    const loaded = loadWorkflowTemplates({ COMFYUI_TEMPLATE_DIR: dir } as NodeJS.ProcessEnv);
+    expect(loaded.templates.map((item) => item.name)).toEqual(['only']);
   });
 });

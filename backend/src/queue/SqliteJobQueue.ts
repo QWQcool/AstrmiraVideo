@@ -111,7 +111,7 @@ export class SqliteJobQueue implements JobQueue {
 
   async complete(
     taskId: string,
-    output: { videoUrl: string; thumbnailUrl?: string; message?: string },
+    output: { videoUrl: string; imageUrl?: string; thumbnailUrl?: string; message?: string },
   ): Promise<void> {
     const before = this.store.get(taskId);
     // V2.12（台账 B48）：**成本在终态结算一次**（失败任务不结算；本地轨记 0 元）。
@@ -121,7 +121,11 @@ export class SqliteJobQueue implements JobQueue {
     this.store.update(taskId, {
       status: 'succeeded',
       progressPercent: 100,
-      outputVideoUrl: output.videoUrl,
+      // V2.40：产物**恰好一个** —— 图片任务（t2i）的 videoUrl 传的是空串，别把它写成空字段
+      ...(output.videoUrl === '' ? {} : { outputVideoUrl: output.videoUrl }),
+      ...(output.imageUrl === undefined || output.imageUrl === ''
+        ? {}
+        : { outputImageUrl: output.imageUrl }),
       ...(output.thumbnailUrl === undefined ? {} : { thumbnailUrl: output.thumbnailUrl }),
       ...(cost === null ? {} : { cost }),
       submitting: false,

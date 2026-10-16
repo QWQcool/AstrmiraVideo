@@ -1,6 +1,22 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.39 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.40 · 已冻结（变更需先改本文，再改代码）**
+> **V2.40 修订（2026-10-16）**：**文生图（`t2i`）落地 · 工作流模板改「清单」（§1 / §4 / §19）** ——
+>   起因：本机验通"FLUX.2 Klein 出图 → 当 i2v 首帧 → 出片"（PLAN §5 的实测评测条目）后，
+>   把"出图"变成产品能力。三处变更：
+>   ① **`GenerationMode` 新增 `t2i`**：产物是**图片**而不是视频，且**不需要任何输入素材**；
+>      **只有本地 ComfyUI 轨在模板里声明了它才可用**（云端 Seedance 不做图片 → 提交时如实 `503`）；
+>   ② **产物字段新增 `outputImageUrl`**（§4）：与 `outputVideoUrl` **至多有一个**（**写侧保证** ——
+>      刻意不做成 `superRefine`：那会把 `TaskProgressSchema` 变成 `ZodEffects`，而它是 Fastify 的响应 schema）；
+>      读取收口在 **`taskOutput()`**（前后端共用同一份），6 个渲染点不各写一遍分支；
+>   ③ **工作流模板从"一份"改为"清单"**（§19-3）：一台 ComfyUI 同时装"视频模型 + 图片模型"是常态，
+>      每份模板各自声明能力，**按请求的 `mode` 挑那一份**（内置两份：`wan22-ti2v-5b` 视频 + `flux2-klein-t2i` 图片）；
+>      能力位与自检结论**按每份模板分别回答**（并对重复原因去重，不把同一句话复读 N 遍）。
+>   **另修一处既有文案不精确**：超预算缩放的告警原先写的是**未对齐**尺寸（实测说"缩到 632×632"、
+>   而实际提交与落盘的是对齐后的 640×640）。
+>   **无新路由、无新错误码**；`tasks` 表**加一列** `output_image_url`（走既有 ALTER 迁移，不是"新表"）。
+>
+> **状态（上一版）：V2.39 · 已冻结**
 > **V2.39 修订（2026-10-16）**：**能力判定改由「模板声明」（sidecar `<name>.meta.json`）· 产物挑选按容器判视频（§19-2 / §19-3 / §19-5）** ——
 >   起因：H3 这类模型**一个模型同时支持 t2v / i2v / 首尾帧 / 多参考 / 音频**，而文件名里既没有 `ti2v` 也不含 `i2v` ——
 >   `comfyCapabilities()` 原先"按文件名猜"必然**判错**，而且最后那句「fl2v / v2v 需要另外的模型」是**写死**的。
@@ -364,7 +380,9 @@
 ## 1. 任务请求契约 `VideoGenerateRequest`
 
 ```ts
-export type GenerationMode = 't2v' | 'i2v' | 'fl2v' | 'v2v';
+// V2.40：新增 't2i'（文生图）—— 产物是**图片**（见 §4 的 outputImageUrl），且不需要输入素材；
+// 只有本地 ComfyUI 轨在模板里声明了它才可用（云端 Seedance 不做图片 → 提交时如实 503）。
+export type GenerationMode = 't2v' | 'i2v' | 'fl2v' | 'v2v' | 't2i';
 export type AspectRatio = '16:9' | '9:16' | '1:1'; // 1:1 仅云端可选，本地 H3 支持度【待验证】
 // V1.5：补入 OI provider id。'stock-local' / 'fixture-local' 为开发期校验专用（PLAN §4「Step 2 补充」），
 // 默认关闭、不出现在产品线能力位；前端不得为它们硬编码任何分支。
@@ -395,7 +413,7 @@ export interface VideoGenerateRequest {
   // 核心文本描述（可配合 LLM 扩写）
   prompt: string;
 
-  // 生成模式：文生视频 | 首帧图生 | 首尾帧 | 视频参考
+  // 生成模式：文生视频 | 首帧图生 | 首尾帧 | 视频参考 | **文生图（V2.40）**
   mode: GenerationMode;
 
   // 参考资产（服务端分配的资产 ID，见 §7 资产生命周期）
@@ -591,9 +609,12 @@ export interface TaskProgress {
   currentStep?: number;
   totalSteps?: number;
   message?: string;
-  outputVideoUrl?: string;        // 成功后的视频访问直链
+  outputVideoUrl?: string;        // 成功后的**视频**访问直链
                                   // V2.8：**文件不存在时省略该字段**（容量淘汰 / 手动删除后）——
                                   // 与 `outputSizeBytes` 同纪律：不填一个必然 404 的 URL
+  outputImageUrl?: string;        // V2.40：成功后的**图片**访问直链（`t2i` 任务，`/media/<taskId>.png`）
+                                  // 与 outputVideoUrl **至多有一个**（写侧保证；读侧用 `taskOutput()` 收口）
+                                  // 同样遵守"文件不存在时省略该字段"
   thumbnailUrl?: string;          // V1.9：成片首帧缩略图（同源 `/media/thumbs/<taskId>.jpg`），画廊封面用
                                   // 可选：抽帧失败 / 旧记录缺该字段时界面回落为 `<video preload="metadata">`
   warnings?: string[];            // 用户可见的非阻断告警（如"素材短于请求时长，已循环播放"、"循环素材自带音轨，已静音"）
@@ -1836,8 +1857,10 @@ export interface BackupManifest {
 
 | 情形 | 结果 |
 |---|---|
-| 声明的模式 ∈ 本仓**已接线的输入通道**（当前 = `t2v` / `i2v`），且（若为 `i2v`）模板里有 `{{START_IMAGE}}` / `{{START_IMAGE_NAME}}` 占位 | **进入能力位** |
+| 声明的模式 ∈ 本仓**已接线的输入通道**（当前 = `t2v` / `i2v` / **`t2i`**），且（若为 `i2v`）模板里有 `{{START_IMAGE}}` / `{{START_IMAGE_NAME}}` 占位 | **进入能力位** |
 | 声明了**本仓未接线**的模式（`fl2v` / `v2v` —— 首尾帧 / 参考视频的输入通道还没接） | **剔除**，原因写明"本仓还没把它的输入接进工作流（见 §19-8）" |
+| 声明了 `t2i`（V2.40） | 它也"已接线"（**不需要任何输入素材**，模板里有 `SaveImage` 即可）；但**模型关键词没命中就不给**（见下一行） |
+| 声明的 `modelMatch.unet` 关键词**没命中**挑中的模型 | **整套模板不可用**并说明（"装了别的图片模型却拿这份模板去跑"必须挡住 —— 见 §19-3） |
 | 声明 `i2v` 但模板里**没有任何首帧占位** | **剔除**，原因写明"模板里没有 START_IMAGE / START_IMAGE_NAME 占位" |
 | 声明文件读不出来 / 不是合法 JSON / `modes` 里有不认识的值 | **抛错**（配了就读出来 —— 与"模板读不出来"同一条铁律：不静默回落） |
 
@@ -1867,12 +1890,21 @@ export interface BackupManifest {
 
 ### 19-3 工作流与参数映射（全部来自真机实测，见 PLAN V8.34 / V8.35）
 
-**工作流模板是数据，不是代码（V2.33）**：
+**工作流模板是数据，不是代码（V2.33；V2.40 起是「清单」）**：
 
-- 内置一份 **Wan2.2 TI2V-5B** 的 API 格式模板（与官方 `video_wan2_2_5B_ti2v.json` 同构）；
+- **模板是清单，按模式挑**（V2.40）：一台 ComfyUI 同时装"视频模型 + 图片模型"是常态，
+  而**一套模型 = 一张节点图** —— 所以把模板做成**清单**，每份各自声明能力，
+  提交时**按请求的 `mode` 挑那一份**（多份都能跑同一模式时，用 `COMFYUI_TEMPLATE` 指定的那份；
+  未指定 = 清单里第一份）；
+- **内置两份**（零配置就都能用）：
+  ① **Wan2.2 TI2V-5B**（与官方 `video_wan2_2_5B_ti2v.json` 同构）→ 声明 `t2v` / `i2v`；
+  ② **FLUX.2 Klein 4B（distilled）· 文生图**（与官方 `image_flux2_klein_text_to_image.json` 的子图同构）
+  → 声明 `t2i`（4 步 / CFG 1 **写死在模板里**：那是蒸馏版的参数特征；换 base 版模型 = 换模板）；
+  **没装对应模型的那份会如实不可用**（模型关键词命中不了 / 模板所需节点缺失），不假装能跑；
 - 用户可用 **`COMFYUI_TEMPLATE_DIR`** + **`COMFYUI_TEMPLATE`** 指向**自己的模板**
-  （约定文件名 `<name>.api.json`，API 格式 —— 在 ComfyUI 里用「另存为 API 格式」导出）；
-  **换节点图不同的模型不再需要改代码**；
+  （**目录里每一份 `<name>.api.json` 各成一条**；API 格式 —— 在 ComfyUI 里用「另存为 API 格式」导出）；
+  **换节点图不同的模型不再需要改代码**，**加一份模板 = 多一种能力**；
+  ⚠️ 配了目录就**不再叠加内置**（那是"我要自己管模板"的意思，与 V2.33 起的既有行为一致）；
 - **模板 sidecar —— 能力声明（V2.39 新增）**：同目录同名的 **`<name>.meta.json`**（**可选**）。
   形状（示例，一行）：`{"modes":["t2v","i2v"],"modelMatch":{"unet":"minimax_h3","clip":"qwen3vl","vae":"minimax","clipType":"minimax"},"label":"MiniMax H3（t2v / i2v）","notes":"一个模型支持多种用法（音频随视频封装）"}`
   - **为什么是独立文件而不是写进 `.api.json`**：在 ComfyUI 里重新「另存为 API 格式」会**覆盖**模板文件 ——
@@ -1913,7 +1945,10 @@ export interface BackupManifest {
   **非法值一律回落到默认**（不抛错、也不悄悄取一半）：档位是"能用"的旋钮，不是"配错就起不来"的开关；
   真配错了，用户会在提交后的耗时上看见；
 
-- **尺寸**：有 `request.resolution` 就用它，否则按画幅给 480p 档（16:9 → 832×480，9:16 → 480×832，1:1 → 640×640）；
+- **尺寸**：有 `request.resolution` 就用它，否则按画幅给档 —— **视频模式** 480p 档
+  （16:9 → 832×480，9:16 → 480×832，1:1 → 640×640）；**图片模式（`t2i`，V2.40）走图片档**
+  （16:9 → 1024×576，9:16 → 576×1024，1:1 → 1024×1024；Flux 系原生 1024，缩到 480 会明显糊），
+  两份像素预算**各自独立**（视频 `COMFYUI_MAX_PIXELS` / 图片 `COMFYUI_IMAGE_MAX_PIXELS`，默认 1024×1024）；
   一律**对齐 32**（`Wan22ImageToVideoLatent` 的 step=32）；超过 **`COMFY_MAX_PIXELS` = 832×480** 时
   **等比缩小并写进 `warnings[]`**（不静默改参数、也不硬跑）；
 - **帧数**：`durationSec × 24`（fps 与模板一致）后**取最近的 `4n+1`** —— Wan 的时序要求，
@@ -1939,13 +1974,17 @@ export interface BackupManifest {
 
 - 产物按实测形状解析：`outputs[<任意节点 id>]` 下的任意数组里、带 `filename` 的项
   （实测是 `images[]` + `animated:[true]`；**不假设保存节点的 id** —— 用户换模板会变）；
-- **挑选规则（V2.39）**：从产物清单里**按容器后缀优先挑视频**（`.mp4` / `.webm` / `.mkv` / `.mov` / `.avi`），
-  **绝不把音频**（`.wav` / `.mp3` / `.flac` / `.m4a` / `.aac` / `.opus` / `.ogg`）当视频 ——
+- **挑选规则（V2.39 / V2.40）**：**按产物类型挑** —— 视频模式挑**视频容器**
+  （`.mp4` / `.webm` / `.mkv` / `.mov` / `.avi`），图片模式（`t2i`）挑**图片容器**
+  （`.png` / `.jpg` / `.jpeg` / `.webp`）；**绝不把音频**
+  （`.wav` / `.mp3` / `.flac` / `.m4a` / `.aac` / `.opus` / `.ogg`）当视频 ——
   原先"取第一个"的顺序取决于节点 id，而 H3 这类模板可能**同时输出视频 + 音频两个文件**，
   取到音频会把音频字节写成 `<taskId>.mp4`（**静默出错**：任务报成功、用户拿到一个打不开的"视频"）；
   都没有扩展名时保持"取第一个"的老行为；**只有音频产物 → 如实失败**（`UPSTREAM_ERROR` + 人话），不硬塞；
 - 下载走 `GET /view?filename=&subfolder=&type=`（三个参数缺一不可）；
-- 落地为本服务的 `/media/<taskId>.mp4`（与其它 provider 同一约定：`taskId` 命名，落 `OUTPUT_DIR`）；
+- 落地为本服务的 `/media/<taskId>.mp4`（视频；图片模式落 `/media/<taskId>.<ext>`，`ext` 取产物自己的图片后缀，
+  异常值收敛到 `.png`），与其它 provider 同一约定：**`taskId` 命名**、落 `OUTPUT_DIR`；
+  图片产物写 **`outputImageUrl`**（不写 `outputVideoUrl`），且**不抽缩略图**（图片本身就是封面）；
 - **ComfyUI 侧的原件保留**（不去删别人的 `output/` 目录 —— 那是用户自己的资产）。
 
 ### 19-6 取消：**做不到，且不许假装**

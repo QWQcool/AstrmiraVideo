@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openDatabase } from './db.js';
-import { TaskStore, type TaskRecord } from './taskStore.js';
+import { TaskStore, toTaskProgress, type TaskRecord } from './taskStore.js';
 
 /**
  * `listRecent` 的三档查询口径（CONTRACT §5 / V2.4 / V2.6）。
@@ -43,6 +43,8 @@ beforeAll(async () => {
   // 两条生成产物 + 两代剪辑产物（旧 EDL / 新工程），源片各一、其中一条同源自 'gen-a'
   seed({ taskId: 'gen-a', outputVideoUrl: '/media/gen-a.mp4' });
   seed({ taskId: 'gen-b', outputVideoUrl: '/media/gen-b.mp4' });
+  // V2.40：图片产物（`t2i`）—— 它只有 outputImageUrl，没有 outputVideoUrl
+  seed({ taskId: 'gen-img', outputImageUrl: '/media/gen-img.png' });
   seed({
     taskId: 'edit-legacy',
     outputVideoUrl: '/media/edit-legacy.mp4',
@@ -64,6 +66,29 @@ afterAll(async () => {
   } catch {
     /* 临时目录残留无碍 */
   }
+});
+
+/**
+ * V2.40：图片产物（`t2i`）的**往返**。
+ *
+ * 为什么单独钉：真机验收时抓到的第一个缺陷正是"**出图成功了，接口里却看不到产物地址**" ——
+ * 写侧（provider → 队列 → 库）改了，读路径（`toTaskProgress`）漏了一行，单测全绿也发现不了。
+ */
+describe('图片产物（V2.40）', () => {
+  it('insert → get → toTaskProgress：`outputImageUrl` 一路不丢，且**不写** outputVideoUrl', () => {
+    const record = store.get('gen-img');
+    expect(record?.outputImageUrl).toBe('/media/gen-img.png');
+    expect(record?.outputVideoUrl).toBeUndefined();
+
+    const progress = toTaskProgress(record as TaskRecord);
+    expect(progress.outputImageUrl).toBe('/media/gen-img.png');
+    expect(progress.outputVideoUrl).toBeUndefined();
+  });
+
+  it('`listOldestWithOutput` 也认图片产物（否则图片占的盘永远不回收）', () => {
+    const ids = store.listOldestWithOutput(50).map((item) => item.taskId);
+    expect(ids).toContain('gen-img');
+  });
 });
 
 describe('listRecent · 三档口径', () => {

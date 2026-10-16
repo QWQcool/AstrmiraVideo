@@ -26,6 +26,11 @@ export interface TaskRecord {
   progressPercent: number;
   requestSnapshot: VideoGenerateRequest;
   outputVideoUrl?: string;
+  /**
+   * V2.40：**图片产物的地址**（`t2i` 任务）。
+   * 与 `outputVideoUrl` **至多有一个**（写侧保证：provider 按模式只填一个）。
+   */
+  outputImageUrl?: string;
   /** V1.9：成片首帧缩略图（同源 `/media/thumbs/<taskId>.jpg`）；抽帧失败时缺省 */
   thumbnailUrl?: string;
   warnings: string[];
@@ -76,6 +81,7 @@ interface TaskRow {
   progress_percent: number;
   request_snapshot: string;
   output_video_url: string | null;
+  output_image_url: string | null;
   thumbnail_url: string | null;
   warnings: string | null;
   error: string | null;
@@ -103,6 +109,7 @@ function rowToRecord(row: TaskRow): TaskRecord {
     progressPercent: row.progress_percent,
     requestSnapshot: JSON.parse(row.request_snapshot) as VideoGenerateRequest,
     outputVideoUrl: row.output_video_url ?? undefined,
+    outputImageUrl: row.output_image_url ?? undefined,
     thumbnailUrl: row.thumbnail_url ?? undefined,
     warnings: row.warnings === null ? [] : (JSON.parse(row.warnings) as string[]),
     error: row.error === null ? undefined : (JSON.parse(row.error) as TaskError),
@@ -206,6 +213,9 @@ export function toTaskProgress(record: TaskRecord): TaskProgress {
     progressPercent: record.progressPercent,
     requestSnapshot: record.requestSnapshot,
     ...(record.outputVideoUrl === undefined ? {} : { outputVideoUrl: record.outputVideoUrl }),
+    // V2.40：图片产物（`t2i`）—— 漏了这一行会让"真机出图成功、接口里却看不到产物地址"
+    // （正是本片真机验收抓到的第一个缺陷）
+    ...(record.outputImageUrl === undefined ? {} : { outputImageUrl: record.outputImageUrl }),
     ...(record.thumbnailUrl === undefined ? {} : { thumbnailUrl: record.thumbnailUrl }),
     ...(record.warnings.length === 0 ? {} : { warnings: record.warnings }),
     ...(record.error === undefined ? {} : { error: record.error }),
@@ -237,12 +247,14 @@ export class TaskStore {
     this.db
       .prepare(
         `INSERT INTO tasks (task_id, track, provider, status, progress_percent, request_snapshot,
-                            output_video_url, thumbnail_url, warnings, error, upstream_task_id,
+                            output_video_url, output_image_url, thumbnail_url, warnings, error,
+                            upstream_task_id,
                             submitting, message, edit_script, edit_origin, extracted_asset_ids,
                             project_id, executed_by, cost_yuan, cost_source, cost_detail,
                             created_at, updated_at)
          VALUES (@taskId, @track, @provider, @status, @progressPercent, @requestSnapshot,
-                 @outputVideoUrl, @thumbnailUrl, @warnings, @error, @upstreamTaskId, @submitting,
+                 @outputVideoUrl, @outputImageUrl, @thumbnailUrl, @warnings, @error, @upstreamTaskId,
+                 @submitting,
                  @message, @editScript, @editOrigin, @extractedAssetIds, @projectId, @executedBy,
                  @costYuan, @costSource, @costDetail, @createdAt, @updatedAt)`,
       )
@@ -254,6 +266,7 @@ export class TaskStore {
         progressPercent: record.progressPercent,
         requestSnapshot: JSON.stringify(record.requestSnapshot),
         outputVideoUrl: record.outputVideoUrl ?? null,
+        outputImageUrl: record.outputImageUrl ?? null,
         thumbnailUrl: record.thumbnailUrl ?? null,
         warnings: JSON.stringify(record.warnings),
         error: record.error === undefined ? null : JSON.stringify(record.error),
@@ -292,9 +305,10 @@ export class TaskStore {
     this.db
       .prepare(
         `UPDATE tasks SET track = @track, provider = @provider, status = @status,
-                         progress_percent = @progressPercent, request_snapshot = @requestSnapshot,
-                         output_video_url = @outputVideoUrl, thumbnail_url = @thumbnailUrl,
-                         warnings = @warnings, error = @error,
+                        progress_percent = @progressPercent, request_snapshot = @requestSnapshot,
+                        output_video_url = @outputVideoUrl, output_image_url = @outputImageUrl,
+                        thumbnail_url = @thumbnailUrl,
+                        warnings = @warnings, error = @error,
                          upstream_task_id = @upstreamTaskId, submitting = @submitting,
                          message = @message,
                          edit_script = @editScript, edit_origin = @editOrigin,
@@ -313,6 +327,7 @@ export class TaskStore {
         progressPercent: next.progressPercent,
         requestSnapshot: JSON.stringify(next.requestSnapshot),
         outputVideoUrl: next.outputVideoUrl ?? null,
+        outputImageUrl: next.outputImageUrl ?? null,
         thumbnailUrl: next.thumbnailUrl ?? null,
         warnings: JSON.stringify(next.warnings),
         error: next.error === undefined ? null : JSON.stringify(next.error),
@@ -615,7 +630,8 @@ export class TaskStore {
       .prepare(
         `SELECT * FROM tasks
           WHERE status = 'succeeded'
-            AND output_video_url IS NOT NULL AND output_video_url != ''
+            AND ((output_video_url IS NOT NULL AND output_video_url != '')
+              OR (output_image_url IS NOT NULL AND output_image_url != ''))
           ORDER BY created_at ASC LIMIT ?`,
       )
       .all(limit) as TaskRow[];

@@ -257,6 +257,9 @@ export class JobDispatcher {
 
         await this.options.queue.complete(job.taskId, {
           videoUrl: progress.outputVideoUrl ?? '',
+          // V2.40：图片产物（t2i）走 `imageUrl`；缩略图对图片任务天然为空（图片本身就是封面，
+          // 不需要抽帧 —— 上面把 videoUrl 传空串正好让抽帧短路）
+          ...(progress.outputImageUrl === undefined ? {} : { imageUrl: progress.outputImageUrl }),
           ...(thumbnailUrl === null ? {} : { thumbnailUrl }),
           // 带上 provider 的终态文案，覆盖轮询阶段残留的"生成中"
           ...(progress.message === undefined ? {} : { message: progress.message }),

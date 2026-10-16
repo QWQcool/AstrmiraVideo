@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   progress_percent   REAL NOT NULL DEFAULT 0,
   request_snapshot   TEXT NOT NULL,
   output_video_url   TEXT,
+  output_image_url   TEXT,
   thumbnail_url      TEXT,
   warnings           TEXT,
   error              TEXT,
@@ -140,6 +141,8 @@ export function resolveDatabasePath(): string {
 const COLUMN_MIGRATIONS: ReadonlyArray<{ table: string; column: string; ddl: string }> = [
   // V1.9：成片首帧缩略图（画廊不再挂 50 个 <video>）
   { table: 'tasks', column: 'thumbnail_url', ddl: 'TEXT' },
+  // V2.40：图片产物的地址（`t2i` 任务；与 output_video_url **至多有一个**）
+  { table: 'tasks', column: 'output_image_url', ddl: 'TEXT' },
   // V9 · B9（CONTRACT §11-2）：剪辑任务的 EDL（JSON）——
   // 它同时是"这条任务是不是剪辑产物"的判据（有值 = `origin.kind='edit'`，见 toTaskProgress）
   { table: 'tasks', column: 'edit_script', ddl: 'TEXT' },

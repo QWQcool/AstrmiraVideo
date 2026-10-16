@@ -9,8 +9,11 @@ import {
   COMFY_DEFAULT_TUNING,
   COMFY_MAX_PIXELS,
   describeComfySubmissionError,
+  FLUX2_KLEIN_T2I_DECLARATION,
+  FLUX2_KLEIN_T2I_TEMPLATE,
   parseComfyOutputs,
   parseTemplateDeclaration,
+  pickComfyImageArtifact,
   pickComfyModels,
   pickComfyVideoArtifact,
   planComfyDimensions,
@@ -231,6 +234,82 @@ describe('ComfyUI 协议 · 模板声明（V2.39）', () => {
   it('内置模板的声明把**现状**写实（t2v + i2v，且模型关键词与启发式一致）', () => {
     expect(WAN22_TI2V_5B_DECLARATION.modes).toEqual(['t2v', 'i2v']);
     expect(WAN22_TI2V_5B_DECLARATION.modelMatch).toEqual({ unet: 'ti2v', clip: 'umt5', vae: 'wan' });
+  });
+});
+
+/**
+ * 文生图（`t2i`，V2.40）—— 一台 ComfyUI 同时装视频与图片模型时，
+ * "哪份模板能跑哪个模式"必须由**模板自己的声明**回答，而不是靠模型文件名的巧合。
+ */
+describe('ComfyUI 协议 · 文生图（t2i）', () => {
+  /** `/object_info` 的 FLUX 版（按图片模板动态补节点，与视频版的 fixture 同理） */
+  function fluxObjectInfo(overrides: { unet?: string[] } = {}): unknown {
+    const info: Record<string, unknown> = {
+      UNETLoader: {
+        input: {
+          required: {
+            unet_name: [overrides.unet ?? ['flux-2-klein-4b.safetensors']],
+            weight_dtype: [['default', 'fp8_e4m3fn'], { advanced: true }],
+          },
+        },
+      },
+      CLIPLoader: {
+        input: { required: { clip_name: [['qwen_3_4b.safetensors']], type: [['flux2', 'wan']] } },
+      },
+      VAELoader: { input: { required: { vae_name: [['flux2-vae.safetensors']] } } },
+    };
+    for (const type of templateNodeTypes(FLUX2_KLEIN_T2I_TEMPLATE)) {
+      if (info[type] === undefined) info[type] = { input: { required: {} } };
+    }
+    return info;
+  }
+
+  it('内置图片模板：声明只有 t2i，且**不需要分块解码**（那是视频模板的要求）', () => {
+    expect(FLUX2_KLEIN_T2I_DECLARATION.modes).toEqual(['t2i']);
+    expect(FLUX2_KLEIN_T2I_DECLARATION.modelMatch?.unet).toBe('klein');
+    const types = templateNodeTypes(FLUX2_KLEIN_T2I_TEMPLATE);
+    expect(types).toContain('EmptyFlux2LatentImage');
+    expect(types).toContain('SaveImage');
+    expect(types).not.toContain('VAEDecodeTiled');
+  });
+
+  it('模型命中（候选里有 klein）→ 图片模板给 t2i', () => {
+    const info = fluxObjectInfo();
+    const models = pickComfyModels(info, undefined, FLUX2_KLEIN_T2I_DECLARATION);
+    expect(models.unet).toBe('flux-2-klein-4b.safetensors');
+    const caps = comfyCapabilities(info, models, FLUX2_KLEIN_T2I_TEMPLATE, FLUX2_KLEIN_T2I_DECLARATION);
+    expect(caps.modes).toEqual(['t2i']);
+  });
+
+  it('模型**没命中** → 该模板如实不可用（不拿别的模型硬跑），原因里点出要什么', () => {
+    const info = fluxObjectInfo({ unet: ['wan2.2_ti2v_5B_fp16.safetensors'] });
+    const models = pickComfyModels(info, undefined, FLUX2_KLEIN_T2I_DECLARATION);
+    const caps = comfyCapabilities(info, models, FLUX2_KLEIN_T2I_TEMPLATE, FLUX2_KLEIN_T2I_DECLARATION);
+    expect(caps.modes).toEqual([]);
+    expect(caps.unavailableReasons.join('')).toContain('klein');
+  });
+
+  it('t2i 走**图片尺寸档**（1024 系），不是视频的 480p 档', () => {
+    const square = planComfyDimensions(
+      request({ mode: 't2i', aspectRatio: '1:1' }),
+    );
+    expect(square).toMatchObject({ width: 1024, height: 1024 });
+    expect(square.warnings).toEqual([]);
+
+    const wide = planComfyDimensions(request({ mode: 't2i', aspectRatio: '16:9' }));
+    expect(wide).toMatchObject({ width: 1024, height: 576 });
+  });
+
+  it('图片产物挑选：**只认图片容器**（mp4 不会被当图片）', () => {
+    expect(
+      pickComfyImageArtifact([{ filename: 'a.mp4', subfolder: 'astrmira', type: 'output' }]),
+    ).toBeUndefined();
+    expect(
+      pickComfyImageArtifact([
+        { filename: 'a.mp4', subfolder: 'astrmira', type: 'output' },
+        { filename: 'a_00001_.png', subfolder: 'astrmira', type: 'output' },
+      ]),
+    ).toMatchObject({ filename: 'a_00001_.png' });
   });
 });
 

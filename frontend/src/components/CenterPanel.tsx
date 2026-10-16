@@ -1,4 +1,4 @@
-import type { AspectRatio, TaskProgress } from '@astrmira/shared';
+import { taskOutput, type AspectRatio, type TaskProgress } from '@astrmira/shared';
 import { Eyebrow } from './Eyebrow';
 import { ProgressRing } from './ProgressRing';
 import { UncertainNotice } from './UncertainNotice';
@@ -47,7 +47,16 @@ export function CenterPanel({
 }: CenterPanelProps) {
   const t = useTranslate();
   const target = resolveTargetSize(aspectRatio, resolutionTier);
-  const videoUrl = task === null ? null : resolveMediaUrl(task.outputVideoUrl);
+  // V2.40：产物可能是视频或图片（`t2i`）—— 用 shared 的 `taskOutput()` 收口
+  const output = task === null ? { kind: 'none' as const } : taskOutput(task);
+  const videoUrl = output.kind === 'video' ? resolveMediaUrl(output.url) : null;
+  const imageUrl = output.kind === 'image' ? resolveMediaUrl(output.url) : null;
+  /** 下载按钮用（视频或图片都算"有产物"）；扩展名按类型给 */
+  const outputUrl = videoUrl ?? imageUrl;
+  const downloadName =
+    task === null
+      ? undefined
+      : `${task.taskId}${output.kind === 'image' ? imageUrl?.slice(imageUrl.lastIndexOf('.')) ?? '.png' : '.mp4'}`;
 
   return (
     // data-status 是 V9 · B6 的动效挂接点：生成中/排队中时，CSS 会给视窗加一层呼吸微光晕
@@ -86,10 +95,10 @@ export function CenterPanel({
 
             <a
               className="wb-btn"
-              href={videoUrl ?? undefined}
-              download={videoUrl === null ? undefined : `${task?.taskId ?? 'video'}.mp4`}
-              aria-disabled={videoUrl === null}
-              style={videoUrl === null ? { opacity: 0.45, pointerEvents: 'none' } : undefined}
+              href={outputUrl ?? undefined}
+              download={outputUrl === null ? undefined : downloadName}
+              aria-disabled={outputUrl === null}
+              style={outputUrl === null ? { opacity: 0.45, pointerEvents: 'none' } : undefined}
             >
               {t('workbench.center.download')}
             </a>
@@ -133,6 +142,18 @@ export function CenterPanel({
             </span>
           </span>
         </>
+      );
+    }
+
+    // V2.40：图片产物（`t2i`）—— 复用播放器的框，按 contain 展示（不裁切）
+    if (task.status === 'succeeded' && imageUrl !== null) {
+      return (
+        <img
+          className="wb-video"
+          src={imageUrl}
+          alt={t('workbench.center.imageAlt')}
+          style={{ objectFit: 'contain' }}
+        />
       );
     }
 

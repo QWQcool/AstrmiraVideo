@@ -17,6 +17,7 @@ export const COMMON_ZH = {
   'common.mode.i2v': '图生视频',
   'common.mode.fl2v': '首尾帧',
   'common.mode.v2v': '视频参考',
+  'common.mode.t2i': '文生图',
 
   // ── 任务状态（`TaskProgress['status']`）──
   'common.status.queued': '排队中',
@@ -150,6 +151,7 @@ export const COMMON_EN = {
   'common.mode.i2v': 'Image to video',
   'common.mode.fl2v': 'First/last frame',
   'common.mode.v2v': 'Video reference',
+  'common.mode.t2i': 'Text to image',
 
   'common.status.queued': 'Queued',
   'common.status.running': 'Generating',

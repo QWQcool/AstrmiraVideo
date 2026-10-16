@@ -22,6 +22,8 @@ export const WORKBENCH_ZH = {
   'workbench.mode.fl2v.requirement': '需要「参考首帧 + 参考尾帧」',
   'workbench.mode.v2v.title': '以参考视频做风格 / 动作迁移',
   'workbench.mode.v2v.requirement': '需要「参考视频」',
+  'workbench.mode.t2i.title': '仅凭文字描述生成一张图片',
+  'workbench.mode.t2i.requirement': '不需要参考素材（需要本地引擎装好图片模板）',
 
   // ── 左栏：创作输入 ──
   'workbench.section.create': '创作输入',
@@ -137,7 +139,9 @@ export const WORKBENCH_ZH = {
   'workbench.center.waitingNote': '配置左侧提示词与参考首帧后，点击「立即生成视频」。',
   'workbench.center.doneMark': '生成完成',
   'workbench.center.doneNoUrl': '任务已完成',
-  'workbench.center.doneNoUrlNote': '但成片地址缺失（outputVideoUrl 为空）。这属于异常，请检查服务端输出目录。',
+  'workbench.center.doneNoUrlNote':
+    '但产物地址缺失（outputVideoUrl / outputImageUrl 都为空）。这属于异常，请检查服务端输出目录。',
+  'workbench.center.imageAlt': '本次生成的图片产物',
   'workbench.center.uncertain': '结果不明',
   'workbench.center.failedTitle': '未完成 · {code}',
   'workbench.center.unknownError': '未知错误',
@@ -221,6 +225,8 @@ export const WORKBENCH_EN = {
   'workbench.mode.fl2v.requirement': 'Needs a first frame and a last frame',
   'workbench.mode.v2v.title': 'Style / motion transfer from a reference video',
   'workbench.mode.v2v.requirement': 'Needs a reference video',
+  'workbench.mode.t2i.title': 'Generate a single still image from text alone',
+  'workbench.mode.t2i.requirement': 'No reference material (needs an image template on the local engine)',
 
   'workbench.section.create': 'Creation input',
   'workbench.prompt.label': 'Prompt',
@@ -338,7 +344,8 @@ export const WORKBENCH_EN = {
   'workbench.center.doneMark': 'Generation finished',
   'workbench.center.doneNoUrl': 'Task finished',
   'workbench.center.doneNoUrlNote':
-    'but the output URL is missing (outputVideoUrl is empty). That is abnormal — check the server output directory.',
+    'but the output URL is missing (both outputVideoUrl and outputImageUrl are empty). That is abnormal — check the server output directory.',
+  'workbench.center.imageAlt': 'The generated still image',
   'workbench.center.uncertain': 'Result unclear',
   'workbench.center.failedTitle': 'Not finished · {code}',
   'workbench.center.unknownError': 'unknown error',

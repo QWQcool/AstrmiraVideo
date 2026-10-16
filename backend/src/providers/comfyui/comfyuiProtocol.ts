@@ -65,6 +65,22 @@ const BASE_DIMENSIONS: Record<AspectRatio, { width: number; height: number }> = 
   '1:1': { width: 640, height: 640 },
 };
 
+/**
+ * **图片模式**（`t2i`）的画幅基础尺寸（V2.40）。
+ *
+ * 为什么与视频档分开：480p 那档（832×480）是"**10GB 卡跑视频**"的实测上限，
+ * 而对文生图来说太小（Flux 系原生 1024，缩到 480 会明显糊）。
+ * 实测 10GB 卡跑 1024×1024 / 4 步没问题（PLAN §8）。
+ */
+const IMAGE_BASE_DIMENSIONS: Record<AspectRatio, { width: number; height: number }> = {
+  '16:9': { width: 1024, height: 576 },
+  '9:16': { width: 576, height: 1024 },
+  '1:1': { width: 1024, height: 1024 },
+};
+
+/** 图片模式的像素预算默认值（`COMFYUI_IMAGE_MAX_PIXELS` 可覆盖） */
+export const COMFY_IMAGE_MAX_PIXELS = 1024 * 1024;
+
 /** 尺寸必须对齐 32（`Wan22ImageToVideoLatent` 的 step=32 —— 不来自猜测，来自 /object_info） */
 const DIMENSION_STEP = 32;
 
@@ -95,7 +111,7 @@ export interface ComfyModels {
  * 而 fl2v / v2v 的**首尾帧 / 参考视频我们还没接**（契约 §19-8 明写不做）。
  * 两者取交集才是"真的能用"：声明了却没接线的模式会被**剔除并说明**，不报成可用。
  */
-export const COMFY_WIRED_MODES: readonly GenerationMode[] = ['t2v', 'i2v'];
+export const COMFY_WIRED_MODES: readonly GenerationMode[] = ['t2v', 'i2v', 't2i'];
 
 /** sidecar 里"挑哪个模型文件"的关键词（大小写不敏感的子串匹配） */
 export interface ComfyModelMatch {
@@ -310,8 +326,27 @@ export function comfyCapabilities(
     unavailableReasons.push('models/diffusion_models 里没有模型文件');
   }
 
+  /**
+   * V2.40：**声明的模型关键词要真的命中**才算这套模板可用。
+   *
+   * 为什么必须有：`pickComfyModels` 在候选里挑不到关键词时会**回落到第一个**候选 ——
+   * 那意味着"用户装了 LTX、系统却拿内置的 Flux 模板去跑它"。旧版视频轨靠"只有一个模型"侥幸避开，
+   * 而图片模板（Flux 系）与视频模板（Wan 系）共存时，这种错配一定会发生。
+   * 命中不了就**如实不可用**，不假装能跑。
+   */
+  const unetKeyword = declaration?.modelMatch?.unet;
+  const modelMismatch =
+    unetKeyword !== undefined &&
+    models.unet !== '' &&
+    !models.unet.toLowerCase().includes(unetKeyword.toLowerCase());
+  if (modelMismatch) {
+    unavailableReasons.push(
+      `当前挑到的模型 ${models.unet} 与这套模板的声明不匹配（需要文件名含 "${unetKeyword}"）`,
+    );
+  }
+
   let declarationNote: string | undefined;
-  if (missingNodes.length === 0 && models.unet !== '') {
+  if (missingNodes.length === 0 && models.unet !== '' && !modelMismatch) {
     if (declaration !== undefined) {
       // V2.39：**声明优先**（换模型/换工作流不必改代码，也不靠文件命名）
       const resolved = resolveDeclaredModes(declaration, template, unavailableReasons);
@@ -495,38 +530,45 @@ export interface ComfyDimensionPlan {
 /**
  * 请求的画幅/分辨率 → ComfyUI 的 `width × height`。
  *
- * 三条规则：
+ * 四条规则：
  * 1. 有 `request.resolution` 就用它（用户明确要的尺寸优先）；
- * 2. 否则按 `aspectRatio` 取实测基础档；
- * 3. 超出像素预算（`COMFY_MAX_PIXELS`）→ **等比缩小**并如实告警。
- * 两种情况最后都对齐 32。
+ * 2. 否则按 `aspectRatio` 取实测基础档（**图片模式走图片档**，V2.40）；
+ * 3. 超出像素预算 → **等比缩小**并如实告警（图片档与视频档预算各自独立）；
+ * 4. 最后一律对齐 32。
+ *
+ * ⚠️ 告警里的数字是**对齐之后**的值 —— 早先写的是未对齐值（实测：告警说"缩到 632×632"，
+ * 而实际提交/落盘的是 640×640），用户看到的数字与事实对不上，2026-10-16 顺手修掉。
  */
 export function planComfyDimensions(
   request: VideoGenerateRequest,
   maxPixels: number = COMFY_DEFAULT_TUNING.maxPixels,
+  imageMaxPixels: number = COMFY_IMAGE_MAX_PIXELS,
 ): ComfyDimensionPlan {
   const warnings: string[] = [];
+  const isImage = request.mode === 't2i';
+  const budget = isImage ? imageMaxPixels : maxPixels;
+  const table = isImage ? IMAGE_BASE_DIMENSIONS : BASE_DIMENSIONS;
   const base =
     request.resolution === undefined
-      ? (BASE_DIMENSIONS[request.aspectRatio] ?? BASE_DIMENSIONS['16:9'])
+      ? (table[request.aspectRatio] ?? table['16:9'])
       : { width: request.resolution.width, height: request.resolution.height };
 
   const pixels = base.width * base.height;
   let scale = 1;
-  if (pixels > maxPixels) {
-    scale = Math.sqrt(maxPixels / pixels);
+  if (pixels > budget) scale = Math.sqrt(budget / pixels);
+
+  const width = alignDimension(base.width * scale);
+  const height = alignDimension(base.height * scale);
+
+  if (pixels > budget) {
     warnings.push(
-      `请求尺寸 ${base.width}×${base.height}（${Math.round(pixels / 1000)}K 像素）超过本地档上限 ` +
-        `${Math.round(maxPixels / 1000)}K 像素 —— 已等比缩小到 ${Math.round(base.width * scale)}×${Math.round(base.height * scale)}` +
-        '（这个上限可用 COMFYUI_MAX_PIXELS 调 —— 默认值是 10GB 档的实测上限）',
+      `请求尺寸 ${base.width}×${base.height}（${Math.round(pixels / 1000)}K 像素）超过本地${isImage ? '图片' : ''}档上限 ` +
+        `${Math.round(budget / 1000)}K 像素 —— 已等比缩小到 ${width}×${height}` +
+        `（这个上限可用 ${isImage ? 'COMFYUI_IMAGE_MAX_PIXELS' : 'COMFYUI_MAX_PIXELS'} 调 —— 默认值是 10GB 档的实测上限）`,
     );
   }
 
-  return {
-    width: alignDimension(base.width * scale),
-    height: alignDimension(base.height * scale),
-    warnings,
-  };
+  return { width, height, warnings };
 }
 
 /** 时长 → 帧数（`fps` 固定 24，与官方模板一致；帧数再对齐 `4n+1`） */
@@ -708,6 +750,70 @@ export const WAN22_TI2V_5B_TEMPLATE: WorkflowTemplate = {
   },
 };
 
+/**
+ * 内置模板②：**FLUX.2 Klein 4B（distilled）· 文生图**（V2.40）。
+ *
+ * 与官方 `image_flux2_klein_text_to_image.json` 的子图
+ * "Text to Image (Flux.2 Klein 4B Distilled)" **同构**；节点与字段名都取自
+ * `GET /object_info`（实测过，不是猜的）。三处刻意的写法：
+ * - **`steps: 4` / `cfg: 1` 写死在模板里** —— 那是"蒸馏版"的参数特征（换 base 版模型 = 换模板）；
+ * - **不用负向提示词**：蒸馏版 CFG=1，负向走 `ConditioningZeroOut`（给它负向词没有意义，
+ *   这一点写在声明 notes 里，而不是让用户填了以后**静默无效**）；
+ * - 产物交给 `SaveImage`（→ 图片产物走 `outputImageUrl`，不是视频）。
+ */
+export const FLUX2_KLEIN_T2I_TEMPLATE: WorkflowTemplate = {
+  '70': {
+    class_type: 'UNETLoader',
+    inputs: { unet_name: '{{UNET_NAME}}', weight_dtype: '{{WEIGHT_DTYPE}}' },
+  },
+  '71': {
+    class_type: 'CLIPLoader',
+    inputs: { clip_name: '{{CLIP_NAME}}', type: '{{CLIP_TYPE}}' },
+  },
+  '72': { class_type: 'VAELoader', inputs: { vae_name: '{{VAE_NAME}}' } },
+  '74': { class_type: 'CLIPTextEncode', inputs: { text: '{{PROMPT}}', clip: ['71', 0] } },
+  '76': { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['74', 0] } },
+  '63': {
+    class_type: 'CFGGuider',
+    inputs: { model: ['70', 0], positive: ['74', 0], negative: ['76', 0], cfg: 1 },
+  },
+  '62': {
+    class_type: 'Flux2Scheduler',
+    inputs: { steps: 4, width: '{{WIDTH}}', height: '{{HEIGHT}}' },
+  },
+  '61': { class_type: 'KSamplerSelect', inputs: { sampler_name: 'euler' } },
+  '73': { class_type: 'RandomNoise', inputs: { noise_seed: '{{SEED}}' } },
+  '66': {
+    class_type: 'EmptyFlux2LatentImage',
+    inputs: { width: '{{WIDTH}}', height: '{{HEIGHT}}', batch_size: 1 },
+  },
+  '64': {
+    class_type: 'SamplerCustomAdvanced',
+    inputs: {
+      noise: ['73', 0],
+      guider: ['63', 0],
+      sampler: ['61', 0],
+      sigmas: ['62', 0],
+      latent_image: ['66', 0],
+    },
+  },
+  '65': { class_type: 'VAEDecode', inputs: { samples: ['64', 0], vae: ['72', 0] } },
+  '9': {
+    class_type: 'SaveImage',
+    inputs: { images: ['65', 0], filename_prefix: '{{OUTPUT_PREFIX}}' },
+  },
+};
+
+/** 内置图片模板的声明（`modelMatch` 是**错配防护**：装了别的图片模型时如实不可用，不硬跑） */
+export const FLUX2_KLEIN_T2I_DECLARATION: ComfyTemplateDeclaration = {
+  modes: ['t2i'],
+  modelMatch: { unet: 'klein', clip: 'qwen_3', vae: 'flux2', clipType: 'flux2' },
+  label: 'FLUX.2 Klein 4B（distilled · 文生图）',
+  notes:
+    '4 步 / CFG 1（蒸馏版参数写死在模板里）；不使用负向提示词；' +
+    '需要 diffusion_models 里有 flux-2-klein-4b、text_encoders 里有 qwen_3_4b、vae 里有 flux2-vae',
+};
+
 export interface ComfyWorkflowInput {
   models: ComfyModels;
   prompt: string;
@@ -825,20 +931,36 @@ const AUDIO_EXTENSIONS = ['.wav', '.mp3', '.flac', '.m4a', '.aac', '.opus', '.og
  * （调用方据此如实报错，而不是硬塞一个音频文件当视频）。
  */
 export function pickComfyVideoArtifact(artifacts: ComfyArtifact[]): ComfyArtifact | undefined {
-  const extension = (filename: string): string => {
-    const dot = filename.lastIndexOf('.');
-    return dot < 0 ? '' : filename.slice(dot).toLowerCase();
-  };
-
   const video = artifacts.find((item) =>
-    (VIDEO_EXTENSIONS as readonly string[]).includes(extension(item.filename)),
+    (VIDEO_EXTENSIONS as readonly string[]).includes(extensionOf(item.filename)),
   );
   if (video !== undefined) return video;
 
   const nonAudio = artifacts.filter(
-    (item) => !(AUDIO_EXTENSIONS as readonly string[]).includes(extension(item.filename)),
+    (item) => !(AUDIO_EXTENSIONS as readonly string[]).includes(extensionOf(item.filename)),
   );
   return nonAudio[0];
+}
+
+/** 图片容器后缀（`SaveImage` 落 png；webp / jpeg 一并认下） */
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'] as const;
+
+/**
+ * 从产物清单里挑**图片**（V2.40）。
+ *
+ * 与视频挑选同一条纪律：不假设节点 id、**不把别的类型当图片**；
+ * 一个都没有就返回 `undefined`（调用方据此如实报错，而不是塞一个 mp4 当图片）。
+ */
+export function pickComfyImageArtifact(artifacts: ComfyArtifact[]): ComfyArtifact | undefined {
+  return artifacts.find((item) =>
+    (IMAGE_EXTENSIONS as readonly string[]).includes(extensionOf(item.filename)),
+  );
+}
+
+/** 取小写扩展名（含点）；没有点则空串 */
+function extensionOf(filename: string): string {
+  const dot = filename.lastIndexOf('.');
+  return dot < 0 ? '' : filename.slice(dot).toLowerCase();
 }
 
 /** `/view` 的下载地址（按实测的形状拼：filename + subfolder + type 三个都要带） */

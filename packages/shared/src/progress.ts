@@ -102,6 +102,17 @@ export const TaskProgressSchema = z.object({
   totalSteps: z.number().int().optional(),
   message: z.string().optional(),
   outputVideoUrl: z.string().optional(),
+  /**
+   * V2.40（台账「文生图最小闭环」）：**图片产物的地址**（同源 `/media/<taskId>.<ext>`）。
+   *
+   * 与 `outputVideoUrl` **至多有一个**：一次生成要么出视频、要么出图（由 `mode` 决定）。
+   * 旧记录只有 video —— 缺省即"不是图片产物"，向后兼容零迁移。
+   *
+   * ⚠️ **这条约束刻意不写成 `superRefine`**：那会把 `TaskProgressSchema` 变成 `ZodEffects`，
+   * 而它被用作 Fastify 的**响应 schema**（`routes/tasks.ts`）—— 序列化链路上不值得冒这个险。
+   * 改为：**写侧保证**（provider 只填一个）+ **读侧收口**（用下面的 `taskOutput()` 读，不要各处自己 if）。
+   */
+  outputImageUrl: z.string().optional(),
   // V1.9：成片首帧缩略图（同源 `/media/thumbs/<taskId>.jpg`）。
   // 画廊此前用 50 个 `<video preload="metadata">` 当缩略图 —— 每个元素都要发起一次请求，
   // 50 条历史就是 50 个媒体元素同时抢带宽。抽帧成 JPEG 后画廊只加载图片。
@@ -187,3 +198,29 @@ export type ErrorDisposition = z.infer<typeof ErrorDispositionSchema>;
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
 export type TaskError = z.infer<typeof TaskErrorSchema>;
 export type TaskProgress = z.infer<typeof TaskProgressSchema>;
+
+/** 一条任务的产物（V2.40）：视频 / 图片 / 还没有（未终态 · 失败 · 已被清理） */
+export type TaskOutput =
+  | { kind: 'video'; url: string }
+  | { kind: 'image'; url: string }
+  | { kind: 'none' };
+
+/**
+ * 读**这条任务的产物**（V2.40）—— 所有渲染点都该走它，别各自 `if`。
+ *
+ * 为什么要有这个函数：产物现在有两个字段（`outputVideoUrl` / `outputImageUrl`），
+ * 而"两者至多有一个"这条约束**不在 schema 上**（见 `outputImageUrl` 的注释）。
+ * 前端至少 5 处要按产物类型分支（画廊卡 / 中央视窗 / 视频库 / 画布 / 创作入口）——
+ * 六处各写一遍迟早会漂移，所以把"怎么读"收口到这一处。
+ *
+ * **视频优先**：万一出现脏数据（两个都有），按视频读 —— 那是 V2.40 之前唯一存在过的形状。
+ */
+export function taskOutput(
+  progress: Pick<TaskProgress, 'outputVideoUrl' | 'outputImageUrl'>,
+): TaskOutput {
+  const video = progress.outputVideoUrl;
+  if (video !== undefined && video !== '') return { kind: 'video', url: video };
+  const image = progress.outputImageUrl;
+  if (image !== undefined && image !== '') return { kind: 'image', url: image };
+  return { kind: 'none' };
+}

@@ -192,6 +192,7 @@ export const CANVAS_ZH = {
   'canvas.insp.aria': '节点详情',
   'canvas.insp.close': '关闭详情',
   'canvas.insp.ghost': '这个对象已不在当前列表里（删除过或超出最近 50 条）——仅作为血缘占位显示。',
+  'canvas.insp.imageAlt': '本次生成的图片产物',
   'canvas.insp.section.prompt': '提示词',
   'canvas.insp.noSnapshot': '（无快照）',
   'canvas.insp.kv.mode': '模式',
@@ -482,6 +483,7 @@ export const CANVAS_EN = {
   'canvas.insp.close': 'Close details',
   'canvas.insp.ghost':
     'This object is no longer in the current list (deleted, or beyond the latest 50) — shown as a lineage placeholder only.',
+  'canvas.insp.imageAlt': 'The generated still image',
   'canvas.insp.section.prompt': 'Prompt',
   'canvas.insp.noSnapshot': '(no snapshot)',
   'canvas.insp.kv.mode': 'Mode',

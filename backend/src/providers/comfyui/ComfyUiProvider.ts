@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type {
+  GenerationMode,
   ProviderType,
   TaskProgress,
   VideoGenerateRequest,
@@ -16,18 +17,24 @@ import {
   COMFY_OUTPUT_SUBDIR,
   describeComfySubmissionError,
   parseComfyOutputs,
+  pickComfyImageArtifact,
   pickComfyModels,
   pickComfyVideoArtifact,
   planComfyDimensions,
   planComfyFrames,
   resolveComfyTuning,
+  WAN22_TI2V_5B_TEMPLATE,
   type ComfyCapabilities,
   type ComfyModels,
   type ComfyTemplateDeclaration,
   type ComfyTuning,
   type WorkflowTemplate,
 } from './comfyuiProtocol.js';
-import { loadWorkflowTemplate, type LoadedTemplate } from './comfyuiTemplates.js';
+import {
+  loadWorkflowTemplates,
+  type LoadedTemplate,
+  type LoadedTemplates,
+} from './comfyuiTemplates.js';
 
 /**
  * `host-comfyui` provider（CONTRACT §19；台账 A1 片 B；形态 = 决策 **D53**）。
@@ -102,6 +109,25 @@ interface JobRecord {
   deliveredUrl?: string;
 }
 
+/**
+ * 一份模板 + 它在**当前** `/object_info` 下的判定结果（V2.40）。
+ *
+ * 为什么按模板各存一份 `models`：不同模板要的是**不同模型**
+ * （视频模板挑 Wan、图片模板挑 Klein）—— 用一份全局的 `models` 会把它们搅在一起。
+ */
+interface TemplateRuntime {
+  loaded: LoadedTemplate;
+  models: ComfyModels;
+  capabilities: ComfyCapabilities;
+}
+
+/** 图片产物的落盘扩展名（只认图片容器；异常值收敛到 `.png` —— 不拿不可信后缀去拼路径） */
+function imageExtensionOf(filename: string): string {
+  const dot = filename.lastIndexOf('.');
+  const extension = dot < 0 ? '' : filename.slice(dot).toLowerCase();
+  return ['.png', '.jpg', '.jpeg', '.webp'].includes(extension) ? extension : '.png';
+}
+
 const DEFAULT_INVENTORY_TTL_MS = 10 * 60 * 1000;
 
 /**
@@ -132,13 +158,14 @@ export class ComfyUiProvider implements VideoProvider {
   private readonly resolveAssetUrl?: (assetId: string) => Promise<string | null>;
   private readonly inventoryTtlMs: number;
 
-  private inventory: { models: ComfyModels; capabilities: ComfyCapabilities; at: number } | null = null;
+  /** 每份模板各自挑到的模型与判定出的能力位（V2.40：清单式） */
+  private inventory: { runtimes: TemplateRuntime[]; at: number } | null = null;
   private readonly jobs = new Map<string, JobRecord>();
   private readonly injectedTemplate?: WorkflowTemplate;
   /** 注入路径的模板声明（V2.39；与 `injectedTemplate` 配对） */
   private readonly injectedDeclaration?: ComfyTemplateDeclaration;
-  /** 懒加载的工作流模板（配错路径时**每次调用都会抛**，所以不缓存错误态 —— 用户改好即可用） */
-  private loadedTemplate: LoadedTemplate | null = null;
+  /** 懒加载的工作流模板清单（配错路径时**每次调用都会抛**，所以不缓存错误态 —— 用户改好即可用） */
+  private loadedTemplates: LoadedTemplates | null = null;
 
   constructor(options: ComfyUiProviderOptions) {
     this.id = options.id ?? 'host-comfyui';
@@ -163,19 +190,38 @@ export class ComfyUiProvider implements VideoProvider {
    * **为什么不放在构造函数里**：`COMFYUI_TEMPLATE_DIR` 配错时应当"**提交时报一句人话**"，
    * 而不是让整个服务起不来（其它 provider 还得能用）。错误态刻意不缓存 —— 用户改好路径就该立刻生效。
    */
-  private template(): LoadedTemplate {
-    if (this.loadedTemplate !== null) return this.loadedTemplate;
-    this.loadedTemplate =
-      this.injectedTemplate === undefined
-        ? loadWorkflowTemplate(process.env, this.templateName)
-        : {
-            template: this.injectedTemplate,
+  private templates(): LoadedTemplates {
+    if (this.loadedTemplates !== null) return this.loadedTemplates;
+    // 注入路径：**只要给了 template 或 declaration 之一就走这里** ——
+    // 早先只在 `injectedTemplate !== undefined` 时才用注入值，于是"只注入声明"会被**静默忽略**
+    // （走 env 那一路，声明失效）；这是 2026-10-16 加"模型关键词命中校验"时露出来的。
+    if (this.injectedTemplate !== undefined || this.injectedDeclaration !== undefined) {
+      this.loadedTemplates = {
+        templates: [
+          {
+            name: this.templateName ?? 'injected',
+            template: this.injectedTemplate ?? WAN22_TI2V_5B_TEMPLATE,
             source: '注入（测试 / 调用方指定）',
             ...(this.injectedDeclaration === undefined
               ? {}
               : { declaration: this.injectedDeclaration }),
-          };
-    return this.loadedTemplate;
+          },
+        ],
+        defaultIndex: 0,
+      };
+      return this.loadedTemplates;
+    }
+    this.loadedTemplates = loadWorkflowTemplates(process.env, this.templateName);
+    return this.loadedTemplates;
+  }
+
+  /** 按模式挑模板（V2.40）：能跑该模式的模板里，优先 `defaultIndex` 指的那份 */
+  private pickTemplateForMode(runtimes: TemplateRuntime[], mode: GenerationMode): TemplateRuntime | undefined {
+    const candidates = runtimes.filter((item) => item.capabilities.modes.includes(mode));
+    if (candidates.length === 0) return undefined;
+    const loaded = this.templates();
+    const preferredName = loaded.templates[loaded.defaultIndex]?.name;
+    return candidates.find((item) => item.loaded.name === preferredName) ?? candidates[0];
   }
 
   // ── 探测与自检 ─────────────────────────────────────────────────────────────
@@ -186,26 +232,31 @@ export class ComfyUiProvider implements VideoProvider {
    * `force` 用于"用户显式点自检"这种场合：他多半是刚换了模型，
    * 拿 10 分钟前的清单回答他就没意义了（见 `routes/providers.ts` 的 `RefreshableHealth`）。
    */
-  private async readInventory(
-    force = false,
-  ): Promise<{ models: ComfyModels; capabilities: ComfyCapabilities }> {
+  private async readInventory(force = false): Promise<TemplateRuntime[]> {
     const now = Date.now();
     if (!force && this.inventory !== null && now - this.inventory.at < this.inventoryTtlMs) {
-      return { models: this.inventory.models, capabilities: this.inventory.capabilities };
+      return this.inventory.runtimes;
     }
     const response = await this.fetchImpl(`${this.baseUrl}/object_info`, {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(`ComfyUI /object_info → HTTP ${response.status}`);
     const objectInfo: unknown = await response.json();
-    // V2.39：模板声明（sidecar / 内置）**优先**决定"挑哪个模型文件"与"能做哪些模式" ——
-    // 缺声明时才回落文件名启发式（老模板行为一字不变）
-    const loaded = this.template();
-    const models = pickComfyModels(objectInfo, undefined, loaded.declaration);
-    // V2.33：能力位**按当前模板引用的节点**判定（换了模板，缺什么就报什么）
-    const capabilities = comfyCapabilities(objectInfo, models, loaded.template, loaded.declaration);
-    this.inventory = { models, capabilities, at: now };
-    return { models, capabilities };
+
+    // V2.40：**每份模板各判一次**（挑模型与能力位都按它自己的声明走）——
+    // 单份时结果与 V2.39 完全一致；多份时才能回答"这台机器分别能出什么"。
+    const runtimes: TemplateRuntime[] = this.templates().templates.map((item) => {
+      const models = pickComfyModels(objectInfo, undefined, item.declaration);
+      return {
+        loaded: item,
+        models,
+        // V2.33：能力位**按该模板引用的节点**判定（换了模板，缺什么就报什么）
+        capabilities: comfyCapabilities(objectInfo, models, item.template, item.declaration),
+      };
+    });
+
+    this.inventory = { runtimes, at: now };
+    return runtimes;
   }
 
   async checkHealth(options?: { refresh?: boolean }): Promise<{ available: boolean; reason?: string }> {
@@ -216,25 +267,55 @@ export class ComfyUiProvider implements VideoProvider {
       if (!response.ok) {
         return { available: false, reason: `ComfyUI 可达但 /system_stats 返回 HTTP ${response.status}` };
       }
-      const { capabilities, models } = await this.readInventory(options?.refresh === true);
-      // 模板来源也报出来（V2.33）：出问题时第一件事是搞清"跑的是哪张图"
-      const templateSource = this.template().source;
-      if (capabilities.modes.length === 0) {
+      const runtimes = await this.readInventory(options?.refresh === true);
+      const usable = runtimes.filter((item) => item.capabilities.modes.length > 0);
+      const multi = runtimes.length > 1;
+      /** 多份模板时给原因加模板名前缀 —— 否则"缺 VAEDecodeTiled"分不清是哪张图的问题 */
+      const withName = (item: TemplateRuntime, reason: string): string =>
+        multi ? `${item.loaded.name}：${reason}` : reason;
+
+      if (usable.length === 0) {
         return {
           available: false,
           reason:
-            `ComfyUI 可达但当前不能跑视频：${capabilities.unavailableReasons.join('；')}` +
-            `（模板：${templateSource}）`,
+            'ComfyUI 可达但**没有可用的模板**：' +
+            runtimes
+              .map((item) => withName(item, item.capabilities.unavailableReasons.join('；')))
+              .join(' · '),
         };
       }
+
+      // 可用：把"能跑什么（哪份模板）/ 不能跑什么（为什么）"一并说清（界面照实展示，不藏）
+      const supported = usable
+        .map(
+          (item) =>
+            `${item.capabilities.modes.join(' / ')}（模板 ${item.loaded.name} → ${item.models.unet}）`,
+        )
+        .join(' · ');
+      // 去重：多个模板会对同一件事说同一句话（"fl2v / v2v 本仓没接线"），
+      // 复读一遍读起来像出错 —— 同一句话只说一次，第一次出现时带上模板名。
+      const seen = new Set<string>();
+      const unsupported: string[] = [];
+      for (const item of runtimes) {
+        for (const reason of item.capabilities.unavailableReasons) {
+          if (seen.has(reason)) continue;
+          seen.add(reason);
+          unsupported.push(withName(item, reason));
+        }
+      }
+      const notes = runtimes
+        .map((item) => item.capabilities.declarationNote)
+        .filter((note): note is string => note !== undefined)
+        .map((note, index) =>
+          multi ? `${runtimes[index]?.loaded.name ?? ''} ${note}`.trim() : note,
+        );
+
       return {
-        // 可用，但把"能跑什么 / 不能跑什么"一并说清（界面照实展示，不藏）；
-        // 走声明判定时再说一句"依据"—— 让"这个判断是从哪来的"可回答（V2.39）
         available: true,
         reason:
-          `模型：${models.unet} · 模板：${templateSource} · 支持 ${capabilities.modes.join(' / ')}` +
-          `${capabilities.declarationNote === undefined ? '' : `（${capabilities.declarationNote}）`}；` +
-          `不支持 ${capabilities.unavailableReasons.join('；')}`,
+          `支持 ${supported}` +
+          (notes.length === 0 ? '' : `（${notes.join(' · ')}）`) +
+          `；不支持 ${unsupported.join('；')}`,
       };
     } catch (error) {
       // 这里可能失败在两处：连不上 ComfyUI，或**模板读不出来**（COMFYUI_TEMPLATE_DIR 配错）——
@@ -249,16 +330,25 @@ export class ComfyUiProvider implements VideoProvider {
   // ── 提交 ───────────────────────────────────────────────────────────────────
 
   async submit(request: VideoGenerateRequest): Promise<{ taskId: string }> {
-    const { models, capabilities } = await this.readInventory();
+    const runtimes = await this.readInventory();
+    const target = this.pickTemplateForMode(runtimes, request.mode);
 
-    if (!capabilities.modes.includes(request.mode)) {
-      // **不假装可用**：模式不在能力位里就直说，而不是提交上去等上游 400
+    if (target === undefined) {
+      // **不假装可用**：没有模板能跑这个模式就直说，而不是提交上去等上游 400
+      const supported = [...new Set(runtimes.flatMap((item) => item.capabilities.modes))];
+      const multi = runtimes.length > 1;
+      const reasons = runtimes.flatMap((item) =>
+        item.capabilities.unavailableReasons.map((reason) =>
+          multi ? `${item.loaded.name}：${reason}` : reason,
+        ),
+      );
       throw new Error(
-        `本地 ComfyUI 当前不支持 ${request.mode}（支持：${capabilities.modes.join(' / ')}）。` +
-          `原因：${capabilities.unavailableReasons.join('；')}`,
+        `本地 ComfyUI 当前不支持 ${request.mode}（支持：${supported.join(' / ') || '无'}）。` +
+          `原因：${reasons.join('；')}`,
       );
     }
 
+    const { models, loaded } = target;
     const dimensions = planComfyDimensions(request, this.tuning.maxPixels);
     const frames = planComfyFrames(request.params?.durationSec, this.tuning.fps);
     const startImageName =
@@ -280,7 +370,7 @@ export class ComfyUiProvider implements VideoProvider {
       dtype: this.tuning.dtype,
       outputPrefix: this.outputPrefix,
       ...(startImageName === undefined ? {} : { startImageName }),
-    }, this.template().template);
+    }, loaded.template);
 
     const response = await this.fetchImpl(`${this.baseUrl}/prompt`, {
       method: 'POST',
@@ -408,23 +498,30 @@ export class ComfyUiProvider implements VideoProvider {
         );
       }
 
-      // V2.39：**挑视频**而不是"取第一个" —— H3 这类模板可能同时输出视频 + 音频两个文件，
-      // 而产物顺序取决于节点 id；取到音频会把音频字节写成 <taskId>.mp4（静默出错）。
-      const artifact = pickComfyVideoArtifact(outputs);
+      // V2.39 / V2.40：**按产物类型挑**而不是"取第一个"（顺序取决于节点 id）。
+      // 视频模式挑视频（H3 这类模板可能视频 + 音频同时输出，取到音频会把音频字节写成 .mp4）；
+      // 图片模式（`t2i`）挑图片。
+      const isImage = requestSnapshot.mode === 't2i';
+      const artifact = isImage ? pickComfyImageArtifact(outputs) : pickComfyVideoArtifact(outputs);
       if (artifact === undefined) {
+        const names = outputs.map((item) => item.filename).join('、');
         return this.fail(
           taskId,
           requestSnapshot,
           createdAt,
-          `ComfyUI 执行结束但产物里没有视频（产物：${outputs.map((item) => item.filename).join('、')}）——` +
-            ' 本仓只接视频产物（音频随视频封装可以，独立音频文件不接，见 CONTRACT §19-5）',
+          isImage
+            ? `ComfyUI 执行结束但产物里没有图片（产物：${names}）`
+            : `ComfyUI 执行结束但产物里没有视频（产物：${names}）——` +
+                ' 本仓只接视频产物（音频随视频封装可以，独立音频文件不接，见 CONTRACT §19-5）',
         );
       }
       const mediaResponse = await this.fetchImpl(`${this.baseUrl}${comfyViewPath(artifact)}`);
       if (!mediaResponse.ok) {
         return this.fail(taskId, requestSnapshot, createdAt, `取产物失败：HTTP ${mediaResponse.status}`);
       }
-      const outputName = `${taskId}.mp4`;
+
+      // 落盘名：视频统一 `.mp4`（既有约定）；图片沿用产物的图片扩展名（`<img>` 靠它拿对 content-type）
+      const outputName = `${taskId}${isImage ? imageExtensionOf(artifact.filename) : '.mp4'}`;
       await mkdir(this.outputDir, { recursive: true });
       await writeFile(path.join(this.outputDir, outputName), Buffer.from(await mediaResponse.arrayBuffer()));
 
@@ -435,10 +532,11 @@ export class ComfyUiProvider implements VideoProvider {
         status: 'succeeded',
         progressPercent: 100,
         requestSnapshot,
-        outputVideoUrl: url,
+        // V2.40：**恰好一个**产物字段（写侧保证 —— 见 shared 的 outputImageUrl 注释）
+        ...(isImage ? { outputImageUrl: url } : { outputVideoUrl: url }),
         createdAt,
         ...(warnings.length === 0 ? {} : { warnings }),
-        message: '本地 ComfyUI 已出片',
+        message: isImage ? '本地 ComfyUI 已出图' : '本地 ComfyUI 已出片',
       };
     } catch (error) {
       return this.fail(

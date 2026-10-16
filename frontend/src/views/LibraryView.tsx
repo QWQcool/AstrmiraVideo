@@ -4,7 +4,7 @@ import {
   PLATFORM_PRESETS,
   findPlatformPreset,
 } from '@astrmira/shared';
-import type { HistoryResponse, TaskProgress } from '@astrmira/shared';
+import { taskOutput, type HistoryResponse, type TaskProgress } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
 import { EDIT_OPERATION_KEYS, describeEditOrigin } from '../edit/model';
 import { ApiError, deleteHistory, fetchHistory, resolveMediaUrl } from '../lib/api';
@@ -617,16 +617,26 @@ export function LibraryView() {
 
             <div className="lib-drawer-body">
               <div className="lib-preview">
-                {selected.outputVideoUrl === undefined ? (
-                  <span className="wb-note">
-                    {t('library.drawer.noPlayable', {
-                      status: t(TASK_STATUS_KEYS[selected.status]),
-                    })}
-                    {selected.error === undefined ? '' : `（${selected.error.code}）`}
-                  </span>
-                ) : (
-                  <video src={mediaHref(selected.outputVideoUrl)} controls preload="metadata" />
-                )}
+                {/* V2.40：产物可能是视频或图片（`t2i`）—— 用 shared 的 `taskOutput()` 收口 */}
+                {(() => {
+                  const output = taskOutput(selected);
+                  if (output.kind === 'video') {
+                    return <video src={mediaHref(output.url)} controls preload="metadata" />;
+                  }
+                  if (output.kind === 'image') {
+                    return (
+                      <img src={mediaHref(output.url)} alt={t('library.drawer.imageAlt')} />
+                    );
+                  }
+                  return (
+                    <span className="wb-note">
+                      {t('library.drawer.noPlayable', {
+                        status: t(TASK_STATUS_KEYS[selected.status]),
+                      })}
+                      {selected.error === undefined ? '' : `（${selected.error.code}）`}
+                    </span>
+                  );
+                })()}
               </div>
 
               <dl className="lib-kv">

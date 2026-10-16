@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { VideoGenerateRequest } from '@astrmira/shared';
 import { ComfyUiProvider } from './ComfyUiProvider.js';
 import {
+  FLUX2_KLEIN_T2I_DECLARATION,
+  FLUX2_KLEIN_T2I_TEMPLATE,
   templateNodeTypes,
   WAN22_TI2V_5B_TEMPLATE,
   type ComfyTemplateDeclaration,
@@ -48,6 +50,26 @@ const OBJECT_INFO: unknown = (() => {
     VAELoader: { input: { required: { vae_name: [['wan2.2_vae.safetensors']] } } },
   };
   for (const type of templateNodeTypes(WAN22_TI2V_5B_TEMPLATE)) {
+    if (info[type] === undefined) info[type] = { input: { required: {} } };
+  }
+  return info;
+})();
+
+/** 装了 FLUX 图片模型的那台机器的 `/object_info`（V2.40：`t2i` 路径要用它） */
+const FLUX_OBJECT_INFO: unknown = (() => {
+  const info: Record<string, unknown> = {
+    UNETLoader: {
+      input: {
+        required: {
+          unet_name: [['flux-2-klein-4b.safetensors']],
+          weight_dtype: [['default', 'fp8_e4m3fn'], { advanced: true }],
+        },
+      },
+    },
+    CLIPLoader: { input: { required: { clip_name: [['qwen_3_4b.safetensors']], type: [['flux2']] } } },
+    VAELoader: { input: { required: { vae_name: [['flux2-vae.safetensors']] } } },
+  };
+  for (const type of templateNodeTypes(FLUX2_KLEIN_T2I_TEMPLATE)) {
     if (info[type] === undefined) info[type] = { input: { required: {} } };
   }
   return info;
@@ -344,6 +366,54 @@ describe('ComfyUiProvider · 查状态', () => {
     expect(progress.status).toBe('failed');
     // 失败原因在 `error.message`（`fail()` 的既有形状：terminal 的错误码 + 人话）
     expect(progress.error?.message).toContain('没有视频');
+  });
+
+  it('t2i（V2.40）：出图 → 落 `<taskId>.png` 并返回 **outputImageUrl**（不是 outputVideoUrl）', async () => {
+    const bytes = Buffer.from('real-png-bytes');
+    const { provider } = setup(
+      {
+        queued: false,
+        objectInfo: FLUX_OBJECT_INFO,
+        videoBytes: bytes,
+        historyEntry: {
+          status: { status_str: 'success' },
+          outputs: {
+            '9': {
+              images: [{ filename: 'flux-klein_00001_.png', subfolder: 'astrmira', type: 'output' }],
+            },
+          },
+        },
+      },
+      { template: FLUX2_KLEIN_T2I_TEMPLATE, declaration: FLUX2_KLEIN_T2I_DECLARATION },
+    );
+
+    const { taskId } = await provider.submit(request({ mode: 't2i' }));
+    const progress = await provider.queryStatus(taskId);
+
+    expect(progress.status).toBe('succeeded');
+    expect(progress.outputImageUrl).toBe(`/media/${taskId}.png`);
+    expect(progress.outputVideoUrl).toBeUndefined();
+    expect(progress.message).toContain('已出图');
+    expect(readFileSync(path.join(dirs.at(-1) as string, `${taskId}.png`))).toEqual(bytes);
+  });
+
+  it('t2i 但产物里是 mp4 → **如实失败**（不把视频当图片塞进 outputImageUrl）', async () => {
+    const { provider } = setup(
+      {
+        queued: false,
+        objectInfo: FLUX_OBJECT_INFO,
+        historyEntry: {
+          status: { status_str: 'success' },
+          outputs: { '9': { images: [{ filename: 'oops.mp4', subfolder: 'astrmira', type: 'output' }] } },
+        },
+      },
+      { template: FLUX2_KLEIN_T2I_TEMPLATE, declaration: FLUX2_KLEIN_T2I_DECLARATION },
+    );
+
+    const { taskId } = await provider.submit(request({ mode: 't2i' }));
+    const progress = await provider.queryStatus(taskId);
+    expect(progress.status).toBe('failed');
+    expect(progress.error?.message).toContain('没有图片');
   });
 
   it('重复查询 → 直接返回同一个结果，**不重复下载**（调度器会反复查）', async () => {

@@ -1,4 +1,4 @@
-import type { TaskProgress } from '@astrmira/shared';
+import { taskOutput, type TaskProgress } from '@astrmira/shared';
 import { Eyebrow } from './Eyebrow';
 import { resolveMediaUrl } from '../lib/api';
 import { EXECUTED_BY_LABEL_KEYS, EXECUTED_BY_TITLE_KEYS, formatIndex, statusLabel } from '../lib/format';
@@ -44,18 +44,25 @@ export function GalleryCard({
   onDelete,
 }: GalleryCardProps) {
   const t = useTranslate();
-  const videoUrl = resolveMediaUrl(task.outputVideoUrl);
+  // V2.40：产物可能是**视频或图片**（`t2i`）—— 用 shared 的 `taskOutput()` 读，
+  // 六处渲染点各写一遍分支迟早会漂移（口径见其注释）
+  const output = taskOutput(task);
+  const videoUrl = output.kind === 'video' ? resolveMediaUrl(output.url) : null;
+  const imageUrl = output.kind === 'image' ? resolveMediaUrl(output.url) : null;
   const thumbnailUrl = resolveMediaUrl(task.thumbnailUrl);
   // `?? ''` 只为满足 <img src> 的类型；真正的分支判据是 `showThumbnail`
   const thumbnailSrc = thumbnailUrl ?? '';
   const showThumbnail = thumbnailUrl !== null;
   const snapshot = task.requestSnapshot;
   const prompt = snapshot.prompt.trim();
-  /** 只有"成功且成片地址可用"的任务才可播 —— 其余（未完成/失败/已被清理）保持不可点 */
-  const playable = videoUrl !== null && task.status === 'succeeded';
+  /** 只有"成功且产物地址可用"的任务才可点 —— 其余（未完成/失败/已被清理）保持不可点 */
+  const playable = (videoUrl !== null || imageUrl !== null) && task.status === 'succeeded';
 
   const thumbContent =
-    videoUrl === null ? (
+    // 图片产物：它本身就是封面（不需要抽帧），点开在中栏看大图
+    imageUrl !== null ? (
+      <img src={imageUrl} alt="" loading="lazy" decoding="async" />
+    ) : videoUrl === null ? (
       <span>{statusLabel(task.status)}</span>
     ) : showThumbnail ? (
       <>

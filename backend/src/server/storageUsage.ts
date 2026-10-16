@@ -44,10 +44,20 @@ async function sumDir(
   return { bytes, count: results.filter((size) => size > 0).length };
 }
 
-/** 读一次输出目录占用（成片 + 缩略图 + 参考资产） */
+/**
+ * 成片类产物的扩展名（V2.40：**视频或图片**）。
+ *
+ * 为什么要扩到图片：`t2i` 任务的产物是 `<taskId>.png` —— 只认 `.mp4` 会让
+ * "输出目录占用"漏掉图片，进而让容量淘汰的阈值判断偏小（该淘汰时不淘汰）。
+ * 计数字段沿用既有的 `videoBytes` / `videoCount`（形状不变，老客户端零影响），
+ * 语义在契约 §4 里补一句"**成片类产物**（视频或图片）"。
+ */
+const MEDIA_EXTENSIONS = ['.mp4', '.webm', '.mkv', '.mov', '.avi', '.png', '.jpg', '.jpeg', '.webp'];
+
+/** 读一次输出目录占用（成片类产物 + 缩略图 + 参考资产） */
 export async function readStorageUsage(outputsDir: string): Promise<StorageUsage> {
   const [videos, thumbs, assets] = await Promise.all([
-    sumDir(outputsDir, (name) => name.endsWith('.mp4')),
+    sumDir(outputsDir, (name) => MEDIA_EXTENSIONS.some((extension) => name.endsWith(extension))),
     sumDir(path.join(outputsDir, 'thumbs')),
     sumDir(path.join(outputsDir, 'assets')),
   ]);
@@ -87,12 +97,14 @@ export async function withOutputFileFacts(
 ): Promise<TaskProgress> {
   let next = task;
 
-  const url = task.outputVideoUrl;
-  if (url !== undefined && url !== '') {
+  // V2.40：产物可能是**视频或图片** —— 两条走同一套"文件在不在"的口径
+  for (const field of ['outputVideoUrl', 'outputImageUrl'] as const) {
+    const url = next[field];
+    if (url === undefined || url === '') continue;
     const size = await sizeIfFile(path.join(outputsDir, path.basename(url)));
     if (size === null) {
       next = { ...next };
-      delete next.outputVideoUrl;
+      delete next[field];
     } else {
       next = { ...next, outputSizeBytes: size };
     }
