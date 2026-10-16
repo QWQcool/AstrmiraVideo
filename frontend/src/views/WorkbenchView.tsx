@@ -645,7 +645,8 @@ export function WorkbenchView() {
     ? t('common.submit.pending')
     : cooling
       ? t('workbench.submit.cooldown', { seconds: cooldownRemaining })
-      : t('workbench.submit.run');
+      // V2.40：图片任务（`t2i`）不该叫"生成视频"（端到端验收抓到的文案缺陷）
+      : t(mode === 't2i' ? 'workbench.submit.runImage' : 'workbench.submit.run');
 
   const byokSummary =
     resolveProviderKey(byok) === undefined

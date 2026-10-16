@@ -119,6 +119,8 @@ export const WORKBENCH_ZH = {
   'workbench.notice.abandoned': '已放弃该任务：本服务不会自动重试，也不会再次向上游提交。',
   'workbench.submit.cooldown': '冷却中 {seconds}s',
   'workbench.submit.run': '立即生成视频',
+  // V2.40：文生图（`t2i`）—— 产物是图片，按钮不该写"视频"
+  'workbench.submit.runImage': '立即生成图片',
   'workbench.key.none': '未填写 Key：服务端将回落到其自身配置的兜底 Key（若未配置会返回 KEY_MISSING）。',
   'workbench.key.local': '已填写 Key · 明文保存在本机（仅限信任设备）',
   'workbench.key.session': '已填写 Key · 仅本次会话有效',
@@ -136,7 +138,8 @@ export const WORKBENCH_ZH = {
   'workbench.center.unavailable': '任务不可用',
   'workbench.center.unavailableNote': '任务可能已被清理；可从右栏历史重新发起。',
   'workbench.center.waiting': '等待生成任务下发',
-  'workbench.center.waitingNote': '配置左侧提示词与参考首帧后，点击「立即生成视频」。',
+  // V2.40：不再写死按钮名（`t2i` 下那个按钮叫"生成图片"，写死就撒谎）
+  'workbench.center.waitingNote': '在左侧配置提示词与参考素材，再点生成按钮。',
   'workbench.center.doneMark': '生成完成',
   'workbench.center.doneNoUrl': '任务已完成',
   'workbench.center.doneNoUrlNote':
@@ -321,6 +324,7 @@ export const WORKBENCH_EN = {
     'Abandoned this task: this service will not retry it and will not submit it upstream again.',
   'workbench.submit.cooldown': 'Cooling down {seconds}s',
   'workbench.submit.run': 'Generate video',
+  'workbench.submit.runImage': 'Generate image',
   'workbench.key.none':
     'No key entered: the server falls back to its own key (if none is configured it returns KEY_MISSING).',
   'workbench.key.local': 'Key set · stored in plain text on this device (trusted devices only)',
@@ -340,7 +344,7 @@ export const WORKBENCH_EN = {
     'The task may have been cleaned up; start again from the history in the right column.',
   'workbench.center.waiting': 'Waiting for a generation task',
   'workbench.center.waitingNote':
-    'Set the prompt and first frame on the left, then hit “Generate video”.',
+    'Set the prompt and reference material on the left, then press the generate button.',
   'workbench.center.doneMark': 'Generation finished',
   'workbench.center.doneNoUrl': 'Task finished',
   'workbench.center.doneNoUrlNote':

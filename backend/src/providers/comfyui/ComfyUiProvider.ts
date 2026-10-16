@@ -105,8 +105,12 @@ interface JobRecord {
   request: VideoGenerateRequest;
   outputPrefix: string;
   createdAt: number;
-  /** 已下载的产物（幂等：queryStatus 被调多次不会重复下载） */
-  deliveredUrl?: string;
+  /**
+   * 已下载的产物（幂等：`queryStatus` 被调多次不会重复下载）。
+   * V2.40 起带**类型** —— 早先只有一个 `deliveredUrl: string`，幂等分支会把它写进
+   * `outputVideoUrl`（图片任务就成了"指向 png 的 video 字段"）。
+   */
+  delivered?: { kind: 'video' | 'image'; url: string };
 }
 
 /**
@@ -119,6 +123,13 @@ interface TemplateRuntime {
   loaded: LoadedTemplate;
   models: ComfyModels;
   capabilities: ComfyCapabilities;
+}
+
+/** 宽松地当对象看（ComfyUI 的响应里到处是 `unknown` 结构；调用方只读几个已知键） */
+function asRecordOf(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 /** 图片产物的落盘扩展名（只认图片容器；异常值收敛到 `.png` —— 不拿不可信后缀去拼路径） */
@@ -443,16 +454,19 @@ export class ComfyUiProvider implements VideoProvider {
     const warnings = this.pendingWarnings.get(taskId) ?? [];
 
     // ① 已交付过（幂等：调度器可能再查一次）
-    if (job?.deliveredUrl !== undefined) {
+    if (job?.delivered !== undefined) {
       return {
         taskId,
         status: 'succeeded',
         progressPercent: 100,
         requestSnapshot,
-        outputVideoUrl: job.deliveredUrl,
+        // V2.40：按**产物类型**填对应的字段（图片任务不能写进 outputVideoUrl）
+        ...(job.delivered.kind === 'image'
+          ? { outputImageUrl: job.delivered.url }
+          : { outputVideoUrl: job.delivered.url }),
         createdAt,
         ...(warnings.length === 0 ? {} : { warnings }),
-        message: '本地 ComfyUI 已出片',
+        message: job.delivered.kind === 'image' ? '本地 ComfyUI 已出图' : '本地 ComfyUI 已出片',
       };
     }
 
@@ -488,8 +502,26 @@ export class ComfyUiProvider implements VideoProvider {
         );
       }
 
-      const outputs = parseComfyOutputs((entry as { outputs?: unknown }).outputs);
+      const entryRecord = asRecordOf(entry);
+      const outputs = parseComfyOutputs(entryRecord['outputs']);
       if (outputs.length === 0) {
+        // ⚠️ **兼容层可能在任务还没跑完时就写一条 history**（`status.completed === false`）——
+        // 例如 `comfyui_lb`（V2.40 接它时实测：入队就写了 `queued`，被旧逻辑判成"执行结束但没有产物"的**假失败**）。
+        // 原生 ComfyUI 只在完成时才写 history，所以这条分支对原生路径不会走到；对兼容层是必需的。
+        // "执行结束"的两条判据：跑完了（`completed === true`）**或**报错了（`status_str === 'error'`）
+        const statusRecord = asRecordOf(entryRecord['status']);
+        const completed = statusRecord['completed'] === true || statusRecord['status_str'] === 'error';
+        if (!completed) {
+          return {
+            taskId,
+            status: 'running',
+            progressPercent: 0,
+            requestSnapshot,
+            createdAt,
+            ...(warnings.length === 0 ? {} : { warnings }),
+            message: 'ComfyUI 正在执行（它不上报进度百分比 —— 本地轨以出片为准）',
+          };
+        }
         return this.fail(
           taskId,
           requestSnapshot,
@@ -526,7 +558,7 @@ export class ComfyUiProvider implements VideoProvider {
       await writeFile(path.join(this.outputDir, outputName), Buffer.from(await mediaResponse.arrayBuffer()));
 
       const url = `/media/${outputName}`;
-      if (job !== undefined) job.deliveredUrl = url;
+      if (job !== undefined) job.delivered = { kind: isImage ? 'image' : 'video', url };
       return {
         taskId,
         status: 'succeeded',

@@ -368,6 +368,47 @@ describe('ComfyUiProvider · 查状态', () => {
     expect(progress.error?.message).toContain('没有视频');
   });
 
+  it('兼容层**提前写 history**（`completed=false`）→ 继续 running，不判假失败（V2.40 接 comfyui_lb 实测抓到）', async () => {
+    const { provider } = setup({
+      queued: false,
+      historyEntry: { status: { status_str: 'queued', completed: false, messages: [] }, outputs: {} },
+    });
+    await provider.submit(request());
+    const progress = await provider.queryStatus('p-1');
+    expect(progress.status).toBe('running');
+    expect(progress.error).toBeUndefined();
+  });
+
+  it('t2i 幂等：重复查询返回同一产物，且写的是 **outputImageUrl**（不是 outputVideoUrl）', async () => {
+    const bytes = Buffer.from('real-png-bytes');
+    const { provider } = setup(
+      {
+        queued: false,
+        objectInfo: FLUX_OBJECT_INFO,
+        videoBytes: bytes,
+        historyEntry: {
+          status: { status_str: 'success', completed: true },
+          outputs: {
+            '9': {
+              images: [{ filename: 'flux-klein_00001_.png', subfolder: 'astrmira', type: 'output' }],
+            },
+          },
+        },
+      },
+      { template: FLUX2_KLEIN_T2I_TEMPLATE, declaration: FLUX2_KLEIN_T2I_DECLARATION },
+    );
+
+    const { taskId } = await provider.submit(request({ mode: 't2i' }));
+    const first = await provider.queryStatus(taskId);
+    expect(first.outputImageUrl).toBe(`/media/${taskId}.png`);
+
+    const second = await provider.queryStatus(taskId); // 幂等分支
+    expect(second.status).toBe('succeeded');
+    expect(second.outputImageUrl).toBe(`/media/${taskId}.png`);
+    expect(second.outputVideoUrl).toBeUndefined();
+    expect(second.message).toContain('已出图');
+  });
+
   it('t2i（V2.40）：出图 → 落 `<taskId>.png` 并返回 **outputImageUrl**（不是 outputVideoUrl）', async () => {
     const bytes = Buffer.from('real-png-bytes');
     const { provider } = setup(
