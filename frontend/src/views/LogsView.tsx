@@ -3,6 +3,7 @@ import { LOG_ACTIONS, logActionLabel } from '@astrmira/shared';
 import type { EventLogEntry, LogListResponse } from '@astrmira/shared';
 import { ApiError, clearLogs, deleteLog, fetchLogs } from '../lib/api';
 import { Eyebrow } from '../components/Eyebrow';
+import { useTranslate, type MessageKey } from '../lib/i18n';
 
 /**
  * 操作日志（V9 · B5；CONTRACT §10）。
@@ -23,11 +24,18 @@ import { Eyebrow } from '../components/Eyebrow';
 
 type RangeKey = '1h' | '24h' | '7d' | 'all';
 
-const RANGE_LABELS: Record<RangeKey, string> = {
-  '1h': '最近 1 小时',
-  '24h': '最近 24 小时',
-  '7d': '最近 7 天',
-  all: '全部',
+/**
+ * 时间范围档位的**键表**（语言迁移第十四批）。
+ *
+ * 与 `lib/libraryFilter.ts` / `lib/costView.ts` 同一处理：模块级常量只留"取值 → 键"，
+ * 显示名在渲染时取（否则语言在模块加载那一刻就定死了）。
+ * ⚠️ 键名的段**不能以数字开头**（字典单测的"键名规范"），所以是 `hour1` / `day7` 而不是 `1h` / `7d`。
+ */
+const RANGE_LABEL_KEYS: Record<RangeKey, MessageKey> = {
+  '1h': 'logs.range.hour1',
+  '24h': 'logs.range.hour24',
+  '7d': 'logs.range.day7',
+  all: 'logs.range.all',
 };
 
 const RANGE_MS: Record<Exclude<RangeKey, 'all'>, number> = {
@@ -57,6 +65,7 @@ function describeFailure(error: unknown): string {
 }
 
 export function LogsView() {
+  const t = useTranslate();
   const [range, setRange] = useState<RangeKey>('24h');
   const [ip, setIp] = useState('');
   const [action, setAction] = useState('');
@@ -122,13 +131,13 @@ export function LogsView() {
       errorCode.trim() !== '' ||
       keyword.trim() !== '' ||
       range !== 'all';
-    const scope = hasFilters ? '当前筛选条件下的' : '全部';
-    if (!window.confirm(`确定要清空${scope}操作日志吗？此操作不可撤销。`)) return;
+    const scope = t(hasFilters ? 'logs.clear.scopeFiltered' : 'logs.clear.scopeAll');
+    if (!window.confirm(t('logs.clear.confirm', { scope }))) return;
 
     setBusy(true);
     try {
       const { deleted } = await clearLogs(query);
-      setError(deleted === 0 ? '没有匹配的日志可清空' : null);
+      setError(deleted === 0 ? t('logs.clear.none') : null);
       setPage(0);
       await reload();
     } catch (caught) {
@@ -173,7 +182,7 @@ export function LogsView() {
     <section className="wb-page">
       <div className="wb-page-head wb-page-head-row">
         <div>
-          <h1 className="wb-page-title">操作日志</h1>
+          <h1 className="wb-page-title">{t('logs.title')}</h1>
           <Eyebrow tone="gold">Logs</Eyebrow>
         </div>
       </div>
@@ -181,10 +190,8 @@ export function LogsView() {
       <div className="wb-log-panel">
         <div className="wb-log-head">
           <div className="wb-log-title">
-            <span className="wb-label">记录</span>
-            <span className="wb-note">
-              共 {total} 条 · 只记写操作与失败请求（`/media`、`/api/health`、日志页自身不记，避免自我污染）
-            </span>
+            <span className="wb-label">{t('logs.records.label')}</span>
+            <span className="wb-note">{t('logs.records.summary', { total })}</span>
           </div>
           <div className="wb-log-head-actions">
             <label className="wb-checkbox wb-checkbox-inline">
@@ -193,13 +200,13 @@ export function LogsView() {
                 checked={autoRefresh}
                 onChange={(event) => setAutoRefresh(event.target.checked)}
               />
-              <span>自动刷新 3s</span>
+              <span>{t('logs.autoRefresh')}</span>
             </label>
             <button type="button" className="wb-btn" onClick={() => void reload()} disabled={busy}>
-              刷新
+              {t('logs.refresh')}
             </button>
             <button type="button" className="wb-btn" onClick={() => void handleClear()} disabled={busy}>
-              清空
+              {t('logs.clear')}
             </button>
             <button
               type="button"
@@ -207,14 +214,14 @@ export function LogsView() {
               onClick={handleExport}
               disabled={items.length === 0}
             >
-              导出 JSON
+              {t('logs.export')}
             </button>
           </div>
         </div>
 
         <div className="wb-log-filters">
           <label className="wb-field wb-field-inline">
-            <span className="wb-label">时间范围</span>
+            <span className="wb-label">{t('logs.range.aria')}</span>
             <select
               className="wb-input"
               value={range}
@@ -223,16 +230,16 @@ export function LogsView() {
                 setPage(0);
               }}
             >
-              {(Object.keys(RANGE_LABELS) as RangeKey[]).map((key) => (
+              {(Object.keys(RANGE_LABEL_KEYS) as RangeKey[]).map((key) => (
                 <option key={key} value={key}>
-                  {RANGE_LABELS[key]}
+                  {t(RANGE_LABEL_KEYS[key])}
                 </option>
               ))}
             </select>
           </label>
 
           <label className="wb-field wb-field-inline">
-            <span className="wb-label">动作</span>
+            <span className="wb-label">{t('logs.filter.action')}</span>
             <select
               className="wb-input"
               value={action}
@@ -241,7 +248,7 @@ export function LogsView() {
                 setPage(0);
               }}
             >
-              <option value="">全部动作</option>
+              <option value="">{t('logs.filter.allActions')}</option>
               {LOG_ACTIONS.map((value) => (
                 <option key={value} value={value}>
                   {logActionLabel(value)}
@@ -251,11 +258,11 @@ export function LogsView() {
           </label>
 
           <label className="wb-field wb-field-inline">
-            <span className="wb-label">来源 IP</span>
+            <span className="wb-label">{t('logs.filter.ip')}</span>
             <input
               className="wb-input wb-input-mono"
               value={ip}
-              placeholder="精确匹配"
+              placeholder={t('logs.filter.ipPlaceholder')}
               onChange={(event) => {
                 setIp(event.target.value);
                 setPage(0);
@@ -264,11 +271,11 @@ export function LogsView() {
           </label>
 
           <label className="wb-field wb-field-inline">
-            <span className="wb-label">错误码</span>
+            <span className="wb-label">{t('logs.filter.errorCode')}</span>
             <input
               className="wb-input wb-input-mono"
               value={errorCode}
-              placeholder="如 UPSTREAM_ERROR"
+              placeholder={t('logs.filter.errorCodePlaceholder')}
               onChange={(event) => {
                 setErrorCode(event.target.value);
                 setPage(0);
@@ -277,11 +284,11 @@ export function LogsView() {
           </label>
 
           <label className="wb-field wb-field-inline wb-log-keyword">
-            <span className="wb-label">关键词</span>
+            <span className="wb-label">{t('logs.filter.keyword')}</span>
             <input
               className="wb-input"
               value={keyword}
-              placeholder="requestId / 路径 / 请求体 / 上游 Request id"
+              placeholder={t('logs.filter.keywordPlaceholder')}
               onChange={(event) => {
                 setKeyword(event.target.value);
                 setPage(0);
@@ -294,7 +301,7 @@ export function LogsView() {
 
         <div className="wb-log-list">
           {items.length === 0 ? (
-            <span className="wb-note">没有匹配的记录。换个时间范围或清掉筛选试试。</span>
+            <span className="wb-note">{t('logs.empty')}</span>
           ) : (
             items.map((entry) => (
               <LogRow
@@ -316,10 +323,10 @@ export function LogsView() {
             disabled={page === 0}
             onClick={() => setPage((value) => Math.max(0, value - 1))}
           >
-            上一页
+            {t('logs.pager.prev')}
           </button>
           <span className="wb-note">
-            第 {page + 1} / {maxPage + 1} 页
+            {t('logs.pager.page', { page: page + 1, max: maxPage + 1 })}
           </span>
           <button
             type="button"
@@ -327,7 +334,7 @@ export function LogsView() {
             disabled={page >= maxPage}
             onClick={() => setPage((value) => value + 1)}
           >
-            下一页
+            {t('logs.pager.next')}
           </button>
         </div>
       </div>
@@ -344,6 +351,7 @@ interface LogRowProps {
 }
 
 function LogRow({ entry, expanded, onToggle, onDelete, busy }: LogRowProps) {
+  const t = useTranslate();
   return (
     <div className={`wb-log-row${expanded ? ' wb-log-row-open' : ''}`}>
       <button type="button" className="wb-log-row-main" onClick={onToggle}>
@@ -362,7 +370,7 @@ function LogRow({ entry, expanded, onToggle, onDelete, busy }: LogRowProps) {
       </button>
 
       <button type="button" className="wb-btn wb-log-del" onClick={onDelete} disabled={busy}>
-        删除
+        {t('logs.row.delete')}
       </button>
 
       {expanded ? (
@@ -376,13 +384,13 @@ function LogRow({ entry, expanded, onToggle, onDelete, busy }: LogRowProps) {
           )}
           {entry.body === undefined ? null : (
             <>
-              <span className="wb-label">请求体</span>
+              <span className="wb-label">{t('logs.detail.requestBody')}</span>
               <pre className="wb-log-pre">{entry.body}</pre>
             </>
           )}
           {entry.detail === undefined ? null : (
             <>
-              <span className="wb-label">诊断字段</span>
+              <span className="wb-label">{t('logs.detail.diagnostics')}</span>
               <pre className="wb-log-pre">{JSON.stringify(entry.detail, null, 2)}</pre>
             </>
           )}

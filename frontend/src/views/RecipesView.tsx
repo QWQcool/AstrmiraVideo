@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { RECIPE_CARDS, RECIPE_CATEGORY_LABELS, type RecipeCategory } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
+import { useTranslate } from '../lib/i18n';
 import { staggerStyle } from '../lib/motion';
 import { navigate } from '../lib/router';
 
@@ -33,6 +34,7 @@ function filterCards(category: CategoryFilter, query: string): readonly (typeof 
 }
 
 export function RecipesView() {
+  const t = useTranslate();
   const [category, setCategory] = useState<CategoryFilter>('all');
   const [query, setQuery] = useState('');
 
@@ -42,10 +44,10 @@ export function RecipesView() {
     <section className="wb-page">
       <div className="wb-page-head wb-page-head-row">
         <div>
-          <h1 className="wb-page-title">提示词配方库</h1>
+          <h1 className="wb-page-title">{t('recipes.title')}</h1>
           <Eyebrow tone="gold">Recipe Library</Eyebrow>
         </div>
-        <span className="wb-note">配方是经验骨架，不承诺效果；插入后可自由编辑。</span>
+        <span className="wb-note">{t('recipes.intro')}</span>
       </div>
 
       <div className="lib-toolbar">
@@ -54,19 +56,19 @@ export function RecipesView() {
             className="wb-input"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索配方…"
-            aria-label="搜索配方"
+            placeholder={t('recipes.search.placeholder')}
+            aria-label={t('recipes.search.aria')}
           />
         </label>
 
-        <div className="chips" role="group" aria-label="按分类筛选">
+        <div className="chips" role="group" aria-label={t('recipes.categoryFilter.aria')}>
           <button
             type="button"
             className="lib-chip"
             aria-pressed={category === 'all'}
             onClick={() => setCategory('all')}
           >
-            全部
+            {t('recipes.categoryFilter.all')}
           </button>
           {(Object.keys(RECIPE_CATEGORY_LABELS) as RecipeCategory[]).map((key) => (
             <button
@@ -82,14 +84,12 @@ export function RecipesView() {
         </div>
 
         <span className="wb-note" style={{ marginLeft: 'auto' }}>
-          {cards.length} / {RECIPE_CARDS.length} 张
+          {t('recipes.count', { shown: cards.length, total: RECIPE_CARDS.length })}
         </span>
       </div>
 
       {cards.length === 0 ? (
-        <p className="wb-note">
-          没有匹配的配方：换个关键词，或把分类切回「全部」。
-        </p>
+        <p className="wb-note">{t('recipes.empty')}</p>
       ) : (
         <div className="recipe-grid">
           {cards.map((card, index) => (
@@ -114,23 +114,25 @@ export function RecipesView() {
 
               <div className="recipe-card-foot">
                 {card.durationHint === undefined ? null : (
-                  <span className="recipe-tag">建议 {card.durationHint}</span>
+                  <span className="recipe-tag">
+                    {t('recipes.card.durationHint', { hint: card.durationHint })}
+                  </span>
                 )}
                 <span className="recipe-card-actions">
                   <button
                     type="button"
                     className="wb-btn"
-                    title="不改提示词，只在 ✨ 扩写时把这张配方作为风格上下文"
+                    title={t('recipes.card.contextTitle')}
                     onClick={() => navigate(`#/workbench?recipe=${encodeURIComponent(card.id)}&insert=no`)}
                   >
-                    仅作扩写上下文
+                    {t('recipes.card.contextAction')}
                   </button>
                   <button
                     type="button"
                     className="wb-btn wb-btn-gold"
                     onClick={() => navigate(`#/workbench?recipe=${encodeURIComponent(card.id)}`)}
                   >
-                    插入骨架到提示词
+                    {t('recipes.card.insertAction')}
                   </button>
                 </span>
               </div>
