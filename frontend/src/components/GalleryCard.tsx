@@ -1,8 +1,7 @@
 import type { TaskProgress } from '@astrmira/shared';
-import { EXECUTED_BY_LABELS, EXECUTED_BY_TITLES } from '@astrmira/shared';
 import { Eyebrow } from './Eyebrow';
 import { resolveMediaUrl } from '../lib/api';
-import { formatIndex, statusLabel } from '../lib/format';
+import { EXECUTED_BY_LABEL_KEYS, EXECUTED_BY_TITLE_KEYS, formatIndex, statusLabel } from '../lib/format';
 import { useTranslate } from '../lib/i18n';
 
 /**
@@ -114,9 +113,9 @@ export function GalleryCard({
           <span
             className="wb-note"
             data-testid="gallery-executed-by"
-            title={EXECUTED_BY_TITLES[task.executedBy]}
+            title={t(EXECUTED_BY_TITLE_KEYS[task.executedBy])}
           >
-            {t('workbench.gallery.executedAt', { label: EXECUTED_BY_LABELS[task.executedBy] })}
+            {t('workbench.gallery.executedAt', { label: t(EXECUTED_BY_LABEL_KEYS[task.executedBy]) })}
           </span>
         )}
 

@@ -1,4 +1,4 @@
-import type { AspectRatio } from '@astrmira/shared';
+import type { AspectRatio, ExecutedBy } from '@astrmira/shared';
 import { getLanguage, translate, type MessageKey } from './i18n';
 
 /**
@@ -109,12 +109,58 @@ export function formatClock(ms: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+/**
+ * 任务状态 → 文案键（**"徽章口径"**：失败就说"失败"）。
+ *
+ * ⚠️ 与下面 `STATUS_LABEL_KEYS`（"中央视窗口径"：失败说"**未完成**"）**不是同一套**，
+ * 这是**刻意保留的两套**（见 `dict/common.ts` 的说明）：徽章是一个判定，
+ * 而视窗那条连成片都没有、说"失败"过重。语言迁移第十二批把视频库原来的
+ * `STATUS_TEXT` 表换成这份键表 —— 它当年抄的就是"徽章口径"，所以换成**同一处定义**即可
+ * （文案一字未改）。别再新写第三份。
+ */
+export const TASK_STATUS_KEYS: Record<string, MessageKey> = {
+  queued: 'common.status.queued',
+  running: 'common.status.running',
+  succeeded: 'common.status.succeeded',
+  failed: 'common.status.failed',
+  cancelled: 'common.status.cancelled',
+};
+
 const STATUS_LABEL_KEYS: Record<string, MessageKey> = {
   queued: 'common.statusLabel.queued',
   running: 'common.statusLabel.running',
   succeeded: 'common.statusLabel.succeeded',
   failed: 'common.statusLabel.failed',
   cancelled: 'common.statusLabel.cancelled',
+};
+
+/**
+ * 执行位置（`executedBy`）的**键表**（V2.27 / 台账 B11；语言迁移第十二批收敛）。
+ *
+ * 为什么从 `@astrmira/shared` 的 `EXECUTED_BY_LABELS` / `EXECUTED_BY_TITLES` 收敛过来：
+ * 那两个常量是**中文**，而三处前端（画布节点卡 / 工作台画廊卡 / 视频库）都在显示它们 ——
+ * 英文界面下它们只能显示中文。收敛后前端走字典，共享包那两个常量**保留**（后端将来可用），
+ * 由 `format.test.ts` 里**逐字比对**的断言钉住"两份中文不许悄悄漂移"。
+ *
+ * 组件直接用 `t(EXECUTED_BY_LABEL_KEYS[id])` 取（这样语言一变就会重渲染）；
+ * 只有非 React 上下文才需要 `executedByLabel()` 那种现取函数。
+ */
+export const EXECUTED_BY_LABEL_KEYS: Record<ExecutedBy, MessageKey> = {
+  cloud: 'common.executedBy.cloud',
+  'host-local': 'common.executedBy.hostLocal',
+  'client-worker': 'common.executedBy.clientWorker',
+};
+
+/**
+ * 完整说法（悬停用）的键表。
+ *
+ * 它比短标签重要：三个位置对"**数据去了哪**"的含义完全不同，用户有权一眼看到 ——
+ * 所以中英语气必须同样明确，不能弱化成 "probably local"。
+ */
+export const EXECUTED_BY_TITLE_KEYS: Record<ExecutedBy, MessageKey> = {
+  cloud: 'common.executedBy.title.cloud',
+  'host-local': 'common.executedBy.title.hostLocal',
+  'client-worker': 'common.executedBy.title.clientWorker',
 };
 
 /**

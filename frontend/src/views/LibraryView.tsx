@@ -7,7 +7,6 @@ import {
   findPlatformPreset,
 } from '@astrmira/shared';
 import type { HistoryResponse, TaskProgress } from '@astrmira/shared';
-import { EXECUTED_BY_LABELS, EXECUTED_BY_TITLES } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
 import { ApiError, deleteHistory, fetchHistory, resolveMediaUrl } from '../lib/api';
 import {
@@ -15,10 +14,12 @@ import {
   planDeliverablePackage,
   saveDeliverable,
 } from '../lib/deliverablePackage';
+import { TASK_STATUS_KEYS, EXECUTED_BY_LABEL_KEYS, EXECUTED_BY_TITLE_KEYS } from '../lib/format';
+import { useTranslate } from '../lib/i18n';
 import { useShell } from '../lib/shell';
 import {
-  LIBRARY_SORT_LABELS,
-  LIBRARY_STATUS_LABELS,
+  LIBRARY_SORT_LABEL_KEYS,
+  LIBRARY_STATUS_LABEL_KEYS,
   filterLibrary,
   hasActiveFilters,
   type LibrarySort,
@@ -54,13 +55,7 @@ function statusDot(status: TaskProgress['status']): 'ok' | 'warn' | 'bad' {
   return 'warn'; // queued / running
 }
 
-const STATUS_TEXT: Record<TaskProgress['status'], string> = {
-  queued: '排队中',
-  running: '生成中',
-  succeeded: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
-};
+
 
 /**
  * `resolveMediaUrl` 的返回值是 `string | null`（内部要处理"没配 PUBLIC_BASE_URL"等情况），
@@ -74,6 +69,7 @@ function mediaHref(url: string | undefined): string | undefined {
 
 export function LibraryView() {
   const route = useHashRoute();
+  const t = useTranslate();
   // V2.11（B47）：视频库按当前项目过滤（切项目即重拉）
   const { projectId, projects } = useShell();
   // ── 交付包（V2.13 / 台账 B49）：多选 + 规格预设 + 命名 + 归档清单 ──
@@ -142,6 +138,9 @@ export function LibraryView() {
   );
   const activeProject = projects.find((project) => project.projectId === projectId) ?? null;
   const effectiveProjectName = deliverProjectName.trim() === ''
+    // 这是**包名前缀的数据兜底值**（会进交付包的文件名），不是界面文案 ——
+    // 与 `createEmptyPlan` 的名字同一条口径（数据不跟界面语言走）；输入框的 placeholder 另有字典键。
+    // i18n-exempt: 交付包名前缀的数据兜底值（理由见上两行）
     ? (activeProject?.name ?? '交付')
     : deliverProjectName.trim();
   const chosenPreset = findPlatformPreset(presetId) ?? PLATFORM_PRESETS[0]!;
@@ -182,7 +181,7 @@ export function LibraryView() {
     if (deliverBusy) return;
     setDeliverBusy(true);
     setDeliverError(null);
-    setDeliverProgress('准备中…');
+    setDeliverProgress(t('library.deliver.progressPreparing'));
     try {
       const built = await buildDeliverableZip(
         deliverPlan,
@@ -198,9 +197,13 @@ export function LibraryView() {
       );
       saveDeliverable(built);
       setNotice(
-        `交付包已生成：${built.packageName}（${built.entryNames.length} 个文件，含 ${
-          includeManifest ? '交付清单' : '无清单'
-        }）。`,
+        t('library.deliver.done', {
+          name: built.packageName,
+          files: built.entryNames.length,
+          manifest: t(
+            includeManifest ? 'library.deliver.manifestYes' : 'library.deliver.manifestNo',
+          ),
+        }),
       );
       setDeliverOpen(false);
     } catch (caught) {
@@ -218,9 +221,9 @@ export function LibraryView() {
       await deleteHistory(taskId);
       if (selectedId === taskId) setSelectedId(null);
       await reload();
-      setNotice('已删除该成片并释放磁盘。');
+      setNotice(t('library.delete.done'));
     } catch (caught) {
-      setNotice(`删除失败：${describeError(caught)}`);
+      setNotice(t('library.delete.failed', { reason: describeError(caught) }));
     } finally {
       setDeletingId(null);
     }
@@ -230,17 +233,17 @@ export function LibraryView() {
     <section className="wb-page">
       <div className="wb-page-head wb-page-head-row">
         <div>
-          <h1 className="wb-page-title">视频库</h1>
+          <h1 className="wb-page-title">{t('library.title')}</h1>
           <Eyebrow tone="gold">Library</Eyebrow>
         </div>
         <button type="button" className="wb-btn" onClick={() => void reload()} disabled={loading}>
-          {loading ? '读取中…' : '刷新'}
+          {t(loading ? 'library.refresh.loading' : 'library.refresh.label')}
         </button>
       </div>
 
       {error === null ? null : (
         <div className="wb-uncertain" style={{ marginBottom: 14 }}>
-          <span className="wb-uncertain-title">读取失败</span>
+          <span className="wb-uncertain-title">{t('library.load.error')}</span>
           <span className="wb-uncertain-body">{error}</span>
         </div>
       )}
@@ -257,13 +260,13 @@ export function LibraryView() {
             className="wb-input"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索提示词…"
-            aria-label="搜索提示词"
+            placeholder={t('library.search.placeholder')}
+            aria-label={t('library.search.aria')}
           />
         </label>
 
-        <div className="chips" role="group" aria-label="按状态筛选">
-          {(Object.keys(LIBRARY_STATUS_LABELS) as LibraryStatusFilter[]).map((key) => (
+        <div className="chips" role="group" aria-label={t('library.statusFilter.aria')}>
+          {(Object.keys(LIBRARY_STATUS_LABEL_KEYS) as LibraryStatusFilter[]).map((key) => (
             <button
               key={key}
               type="button"
@@ -271,30 +274,32 @@ export function LibraryView() {
               aria-pressed={status === key}
               onClick={() => setStatus(key)}
             >
-              {LIBRARY_STATUS_LABELS[key]}
+              {t(LIBRARY_STATUS_LABEL_KEYS[key])}
             </button>
           ))}
         </div>
 
         <label className="wb-field lib-sort">
-          <span className="wb-label">排序</span>
+          <span className="wb-label">{t('library.sort.label')}</span>
           <select
             className="wb-input"
             value={sort}
             onChange={(event) => setSort(event.target.value as LibrarySort)}
-            aria-label="排序方式"
+            aria-label={t('library.sort.aria')}
           >
-            {(Object.keys(LIBRARY_SORT_LABELS) as LibrarySort[]).map((key) => (
+            {(Object.keys(LIBRARY_SORT_LABEL_KEYS) as LibrarySort[]).map((key) => (
               <option key={key} value={key}>
-                {LIBRARY_SORT_LABELS[key]}
+                {t(LIBRARY_SORT_LABEL_KEYS[key])}
               </option>
             ))}
           </select>
         </label>
 
         <span className="wb-note" style={{ marginLeft: 'auto' }}>
-          {items.length} / {allItems.length} 条
-          {history === null ? '' : ` · 共 ${formatBytes(history.storage.totalBytes)}`}
+          {t('library.count', { shown: items.length, total: allItems.length })}
+          {history === null
+            ? ''
+            : t('library.totalSize', { size: formatBytes(history.storage.totalBytes) })}
         </span>
 
         {/* 交付包入口（V2.13 / B49）：勾选 ≥1 条才可用 —— 灰按钮上写明为什么要先勾选 */}
@@ -302,34 +307,37 @@ export function LibraryView() {
           type="button"
           className="wb-btn wb-btn-gold dl-open"
           disabled={pickedTasks.length === 0}
-          title={
-            pickedTasks.length === 0
-              ? '先在卡片上勾选要交付的成片（卡片右下角的 ☐）'
-              : '把选中的成片打成交付包（命名 + 规格校验 + 归档清单）'
-          }
+          title={t(
+            pickedTasks.length === 0 ? 'library.deliver.hintPick' : 'library.deliver.hintReady',
+          )}
           onClick={() => {
             setDeliverError(null);
             setDeliverOpen(true);
           }}
         >
-          📦 交付包{pickedTasks.length === 0 ? '' : `（${pickedTasks.length}）`}
+          {pickedTasks.length === 0
+            ? t('library.deliver.button')
+            : t('library.deliver.buttonWithCount', { count: pickedTasks.length })}
         </button>
       </div>
 
       {deliverOpen && pickedTasks.length > 0 ? (
-        <section className="wb-panel dl-panel" role="dialog" aria-label="交付包">
+        <section className="wb-panel dl-panel" role="dialog" aria-label={t('library.deliver.title')}>
           <div className="wb-field-head">
             <Eyebrow tone="gold" as="h2">
-              交付包
+              {t('library.deliver.title')}
             </Eyebrow>
             <span className="wb-note">
-              {pickedTasks.length} 条 · 包内 {deliverPlan.plannedEntryCount} 个文件 ·{' '}
-              {deliverPlan.packageName}
+              {t('library.deliver.summary', {
+                count: pickedTasks.length,
+                files: deliverPlan.plannedEntryCount,
+                name: deliverPlan.packageName,
+              })}
             </span>
             <button
               type="button"
               className="wb-btn lib-icon"
-              aria-label="关闭交付面板"
+              aria-label={t('library.deliver.closeAria')}
               onClick={() => setDeliverOpen(false)}
             >
               ✕
@@ -338,11 +346,11 @@ export function LibraryView() {
 
           <div className="dl-row">
             <label className="wb-field">
-              <span className="wb-label">平台规格</span>
+              <span className="wb-label">{t('library.deliver.presetLabel')}</span>
               <select
                 className="wb-input dl-preset"
                 value={presetId}
-                aria-label="平台规格预设"
+                aria-label={t('library.deliver.presetAria')}
                 onChange={(event) => setPresetId(event.target.value)}
               >
                 {PLATFORM_PRESETS.map((preset) => (
@@ -354,20 +362,21 @@ export function LibraryView() {
               </select>
             </label>
             <label className="wb-field">
-              <span className="wb-label">项目前缀（命名用）</span>
+              <span className="wb-label">{t('library.deliver.prefixLabel')}</span>
               <input
                 className="wb-input dl-project"
                 value={deliverProjectName}
                 maxLength={30}
-                placeholder={activeProject?.name ?? '交付'}
-                aria-label="项目前缀"
+                placeholder={activeProject?.name ?? t('library.deliver.prefixPlaceholder')}
+                aria-label={t('library.deliver.prefixAria')}
                 onChange={(event) => setDeliverProjectName(event.target.value)}
               />
             </label>
           </div>
 
           <p className="wb-note dl-note">
-            {chosenPreset.note} —— 本工具**只做命名与规格校验，不转码**（口径：{chosenPreset.basis}）。
+            {chosenPreset.note}
+            {t('library.deliver.note', { basis: chosenPreset.basis })}
           </p>
 
           <div className="dl-checks">
@@ -377,7 +386,7 @@ export function LibraryView() {
                 checked={includeVideo}
                 onChange={(event) => setIncludeVideo(event.target.checked)}
               />
-              成片 MP4
+              {t('library.deliver.includeVideo')}
             </label>
             <label>
               <input
@@ -385,7 +394,7 @@ export function LibraryView() {
                 checked={includeProject}
                 onChange={(event) => setIncludeProject(event.target.checked)}
               />
-              剪辑工程 JSON（仅剪辑产物有）
+              {t('library.deliver.includeProject')}
             </label>
             <label>
               <input
@@ -393,7 +402,7 @@ export function LibraryView() {
                 checked={includeCover}
                 onChange={(event) => setIncludeCover(event.target.checked)}
               />
-              封面图
+              {t('library.deliver.includeCover')}
             </label>
             <label>
               <input
@@ -401,11 +410,14 @@ export function LibraryView() {
                 checked={includeManifest}
                 onChange={(event) => setIncludeManifest(event.target.checked)}
               />
-              交付清单.json
+              {t('library.deliver.includeManifest')}
             </label>
             <label
               className="dl-transcode"
-              title={`在浏览器内把成片重新渲染成 ${chosenPreset.width}×${chosenPreset.height}（画幅按 cover 裁切，不拉伸；时长不变；耗时与片长成正比）`}
+              title={t('library.deliver.transcodeTitle', {
+                width: chosenPreset.width,
+                height: chosenPreset.height,
+              })}
             >
               <input
                 type="checkbox"
@@ -413,14 +425,17 @@ export function LibraryView() {
                 data-testid="dl-transcode"
                 onChange={(event) => setTranscode(event.target.checked)}
               />
-              按预设重新渲染（{chosenPreset.width}×{chosenPreset.height}）
+              {t('library.deliver.transcodeLabel', {
+                width: chosenPreset.width,
+                height: chosenPreset.height,
+              })}
             </label>
           </div>
 
           {warnedItems.length === 0 ? null : (
             <div className="wb-uncertain dl-warn">
               <span className="wb-uncertain-title">
-                {warnedItems.length} 条与所选规格不一致（**只提示，不阻断**）
+                {t('library.deliver.warnTitle', { count: warnedItems.length })}
               </span>
               <ul className="dl-warn-list">
                 {warnedItems.slice(0, 3).map((item) => (
@@ -430,14 +445,16 @@ export function LibraryView() {
                 ))}
               </ul>
               {warnedItems.length > 3 ? (
-                <span className="wb-note">另有 {warnedItems.length - 3} 条，同类提示见交付清单。</span>
+                <span className="wb-note">
+                  {t('library.deliver.warnMore', { count: warnedItems.length - 3 })}
+                </span>
               ) : null}
             </div>
           )}
 
           {deliverError === null ? null : (
             <div className="wb-uncertain dl-warn">
-              <span className="wb-uncertain-title">打包失败</span>
+              <span className="wb-uncertain-title">{t('library.deliver.failed')}</span>
               <span className="wb-uncertain-body">{deliverError}</span>
             </div>
           )}
@@ -445,7 +462,9 @@ export function LibraryView() {
           <div className="dl-actions">
             <span className="wb-note dl-hint">
               {deliverProgress === null
-                ? `命名示例：${deliverPlan.items[0]?.videoFileName ?? '—'}`
+                ? t('library.deliver.fileNameExample', {
+                    name: deliverPlan.items[0]?.videoFileName ?? '—',
+                  })
                 : deliverProgress}
             </span>
             <button
@@ -455,7 +474,7 @@ export function LibraryView() {
               disabled={deliverBusy || deliverPlan.plannedEntryCount === 0}
               onClick={() => void handleBuildDeliverable()}
             >
-              {deliverBusy ? '打包中…' : '📦 生成并下载'}
+              {t(deliverBusy ? 'library.deliver.buildBusy' : 'library.deliver.build')}
             </button>
           </div>
         </section>
@@ -468,9 +487,7 @@ export function LibraryView() {
             Array.from({ length: 6 }, (_, index) => <div key={index} className="wb-skeleton" />)
           ) : items.length === 0 ? (
             <p className="wb-note lib-empty">
-              {filtered
-                ? '没有匹配的成片：换个关键词，或把筛选切回「全部」。'
-                : '还没有成片。到 生成工作台 提交第一条任务吧。'}
+              {t(filtered ? 'library.empty.filtered' : 'library.empty.none')}
             </p>
           ) : (
             items.map((task, index) => (
@@ -485,10 +502,10 @@ export function LibraryView() {
                   type="button"
                   className="lib-thumb"
                   onClick={() => setSelectedId(task.taskId)}
-                  aria-label={`查看 ${task.taskId} 的详情`}
+                  aria-label={t('library.card.detailAria', { id: task.taskId })}
                 >
                   {task.thumbnailUrl === undefined ? (
-                    <span className="lib-thumb-empty">无封面</span>
+                    <span className="lib-thumb-empty">{t('library.card.noCover')}</span>
                   ) : (
                     <img src={task.thumbnailUrl} alt="" loading="lazy" />
                   )}
@@ -501,8 +518,13 @@ export function LibraryView() {
                   <span className="lib-idx">{String(index + 1).padStart(3, '0')}</span>
                   {/* V9 · B9：剪辑产物带来源徽标（B4 留的位在这里填上） */}
                   {task.origin?.kind === 'edit' ? (
-                    <span className="recipe-tag recipe-tag--gold" title={`剪辑自 ${task.origin.sourceTaskId}`}>
-                      剪辑自 {task.origin.sourceTaskId.slice(0, 8)}
+                    <span
+                      className="recipe-tag recipe-tag--gold"
+                      title={t('library.card.editOriginTitle', { id: task.origin.sourceTaskId })}
+                    >
+                      {t('library.card.editOrigin', {
+                        id: task.origin.sourceTaskId.slice(0, 8),
+                      })}
                     </span>
                   ) : null}
                   {/* V2.27（A1 片 A / B11）：执行位置如实标注（缺省 = 老任务 —— 不猜、不写） */}
@@ -511,11 +533,14 @@ export function LibraryView() {
                     title={
                       task.executedBy === undefined
                         ? undefined
-                        : EXECUTED_BY_TITLES[task.executedBy]
+                        : t(EXECUTED_BY_TITLE_KEYS[task.executedBy])
                     }
                   >
-                    {STATUS_TEXT[task.status]} · {formatRelativeTime(task.createdAt, Date.now())}
-                    {task.executedBy === undefined ? '' : ` · ${EXECUTED_BY_LABELS[task.executedBy]}`}
+                    {t(TASK_STATUS_KEYS[task.status])} ·{' '}
+                    {formatRelativeTime(task.createdAt, Date.now())}
+                    {task.executedBy === undefined
+                      ? ''
+                      : ` · ${t(EXECUTED_BY_LABEL_KEYS[task.executedBy])}`}
                   </span>
                   <span className="lib-acts">
                     {/* 交付包多选（V2.13 / B49）：data-picked 是给冒烟读的渲染事实 */}
@@ -524,7 +549,7 @@ export function LibraryView() {
                       className={`wb-btn lib-icon dl-pick${pickedIds.includes(task.taskId) ? ' dl-pick-on' : ''}`}
                       aria-pressed={pickedIds.includes(task.taskId)}
                       data-picked={pickedIds.includes(task.taskId) ? '1' : '0'}
-                      title="加入 / 移出交付包"
+                      title={t('library.card.pickTitle')}
                       onClick={() => togglePick(task.taskId)}
                     >
                       {pickedIds.includes(task.taskId) ? '☑' : '☐'}
@@ -532,7 +557,11 @@ export function LibraryView() {
                     <button
                       type="button"
                       className="wb-btn lib-icon"
-                      title={task.status === 'succeeded' ? '剪辑' : '失败任务不可剪辑'}
+                      title={t(
+                        task.status === 'succeeded'
+                          ? 'library.card.editTitle'
+                          : 'library.card.editDisabledTitle',
+                      )}
                       disabled={task.status !== 'succeeded'}
                       onClick={() => navigate(`#/edit?task=${encodeURIComponent(task.taskId)}`)}
                     >
@@ -541,7 +570,7 @@ export function LibraryView() {
                     <button
                       type="button"
                       className="wb-btn lib-icon"
-                      title="复用参数"
+                      title={t('library.card.reuseTitle')}
                       onClick={() => navigate(`#/workbench?reuse=${encodeURIComponent(task.taskId)}`)}
                     >
                       ⟲
@@ -549,7 +578,7 @@ export function LibraryView() {
                     {task.outputVideoUrl === undefined ? null : (
                       <a
                         className="wb-btn lib-icon"
-                        title="下载"
+                        title={t('library.card.downloadTitle')}
                         href={mediaHref(task.outputVideoUrl)}
                         download
                       >
@@ -559,7 +588,7 @@ export function LibraryView() {
                     <button
                       type="button"
                       className="wb-btn lib-icon lib-icon-danger"
-                      title="删除（释放磁盘）"
+                      title={t('library.card.deleteTitle')}
                       disabled={deletingId === task.taskId}
                       onClick={() => void handleDelete(task.taskId)}
                     >
@@ -581,7 +610,7 @@ export function LibraryView() {
                 type="button"
                 className="wb-btn lib-icon"
                 onClick={() => setSelectedId(null)}
-                aria-label="关闭详情"
+                aria-label={t('library.drawer.closeAria')}
               >
                 ✕
               </button>
@@ -591,7 +620,9 @@ export function LibraryView() {
               <div className="lib-preview">
                 {selected.outputVideoUrl === undefined ? (
                   <span className="wb-note">
-                    {STATUS_TEXT[selected.status]}：没有可播放的成片
+                    {t('library.drawer.noPlayable', {
+                      status: t(TASK_STATUS_KEYS[selected.status]),
+                    })}
                     {selected.error === undefined ? '' : `（${selected.error.code}）`}
                   </span>
                 ) : (
@@ -600,28 +631,28 @@ export function LibraryView() {
               </div>
 
               <dl className="lib-kv">
-                <dt>提示词</dt>
+                <dt>{t('library.drawer.kv.prompt')}</dt>
                 <dd>{selected.requestSnapshot.prompt}</dd>
-                <dt>模式</dt>
+                <dt>{t('library.drawer.kv.mode')}</dt>
                 <dd>{selected.requestSnapshot.mode}</dd>
-                <dt>引擎</dt>
+                <dt>{t('library.drawer.kv.engine')}</dt>
                 <dd>{selected.requestSnapshot.provider}</dd>
                 {selected.requestSnapshot.options?.model === undefined ? null : (
                   <>
-                    <dt>模型</dt>
+                    <dt>{t('library.drawer.kv.model')}</dt>
                     <dd>{String(selected.requestSnapshot.options.model)}</dd>
                   </>
                 )}
-                <dt>创建时间</dt>
+                <dt>{t('library.drawer.kv.createdAt')}</dt>
                 <dd>{new Date(selected.createdAt).toLocaleString()}</dd>
-                <dt>文件大小</dt>
+                <dt>{t('library.drawer.kv.size')}</dt>
                 <dd>
                   {selected.outputSizeBytes === undefined
-                    ? '—（文件已清理或未产出）'
+                    ? t('library.drawer.kv.sizeMissing')
                     : formatBytes(selected.outputSizeBytes)}
                 </dd>
-                <dt>状态</dt>
-                <dd>{STATUS_TEXT[selected.status]}</dd>
+                <dt>{t('library.drawer.kv.status')}</dt>
+                <dd>{t(TASK_STATUS_KEYS[selected.status])}</dd>
               </dl>
 
               {selected.warnings === undefined || selected.warnings.length === 0 ? null : (
@@ -634,17 +665,17 @@ export function LibraryView() {
 
               {/* 剪辑产物（V2.5 起两代：旧 EDL 记 script、多轨工程记 project） */}
               <div className="lib-edl-slot">
-                <Eyebrow>剪辑来源</Eyebrow>
+                <Eyebrow>{t('library.drawer.edlTitle')}</Eyebrow>
                 {selected.origin?.kind === 'edit' ? (
                   <>
                     <p className="wb-note">
-                      剪辑自 {selected.origin.sourceTaskId.slice(0, 8)} ——{' '}
-                      {describeEditOrigin(selected.origin)}
+                      {t('library.drawer.edlOrigin', {
+                        id: selected.origin.sourceTaskId.slice(0, 8),
+                        origin: describeEditOrigin(selected.origin),
+                      })}
                     </p>
                     {selected.origin.script === undefined ? (
-                      <p className="wb-note">
-                        多轨工程产物（工程随任务落库；点 ✂ 可载入继续编辑）。
-                      </p>
+                      <p className="wb-note">{t('library.drawer.projectProduct')}</p>
                     ) : (
                       <ol className="edit-history">
                         {selected.origin.script.operations.map((operation, index) => (
@@ -657,7 +688,7 @@ export function LibraryView() {
                     )}
                   </>
                 ) : (
-                  <p className="wb-note">这条还没有剪辑记录（在视频库里点它的 ✂ 就能开始剪）。</p>
+                  <p className="wb-note">{t('library.drawer.noEditRecord')}</p>
                 )}
               </div>
 
@@ -667,7 +698,7 @@ export function LibraryView() {
                   className="wb-btn wb-btn-gold"
                   onClick={() => navigate(`#/workbench?reuse=${encodeURIComponent(selected.taskId)}`)}
                 >
-                  复用参数
+                  {t('library.drawer.action.reuse')}
                 </button>
                 <button
                   type="button"
@@ -675,11 +706,11 @@ export function LibraryView() {
                   disabled={selected.status !== 'succeeded'}
                   onClick={() => navigate(`#/edit?task=${encodeURIComponent(selected.taskId)}`)}
                 >
-                  ✂ 剪辑
+                  {t('library.drawer.action.edit')}
                 </button>
                 {selected.outputVideoUrl === undefined ? null : (
                   <a className="wb-btn" href={mediaHref(selected.outputVideoUrl)} download>
-                    下载
+                    {t('library.drawer.action.download')}
                   </a>
                 )}
                 <button
@@ -688,7 +719,7 @@ export function LibraryView() {
                   disabled={deletingId === selected.taskId}
                   onClick={() => void handleDelete(selected.taskId)}
                 >
-                  删除
+                  {t('library.drawer.action.delete')}
                 </button>
               </div>
             </div>

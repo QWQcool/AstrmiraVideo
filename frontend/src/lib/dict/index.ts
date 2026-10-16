@@ -3,6 +3,7 @@ import { CANVAS_EN, CANVAS_ZH } from './canvas';
 import { COMMON_EN, COMMON_ZH } from './common';
 import { CREATE_EN, CREATE_ZH } from './create';
 import { ERROR_EN, ERROR_ZH } from './error';
+import { LIBRARY_EN, LIBRARY_ZH } from './library';
 import { SHELL_EN, SHELL_ZH } from './shell';
 import { WORKBENCH_EN, WORKBENCH_ZH } from './workbench';
 
@@ -24,9 +25,11 @@ import { WORKBENCH_EN, WORKBENCH_ZH } from './workbench';
  * `workbench`（工作台**整屏**：左栏 / 中栏 / 右栏 / 容器 / 核对卡 / 画廊卡 / 素材槽）、
  * `byok`（凭据抽屉）、`error`（**整条兜底线**：`ErrorBoundary` 的按钮 +
  * `lib/errorReport.ts` 拼的崩溃面板与运行期通知正文 + `lib/runtimeErrorNotice.ts` 的壳）、
- * `canvas`（画布 —— **片 A**：四种节点卡里的便签 + 编排节点卡 + 编排检查器抽屉）。
- * 未迁：画布**片 B**（`views/CanvasView.tsx` + `canvas/labels.ts` + `lib/canvasPlan*.ts`）/
- * 视频库 / 成本台账 / 配方库 / 操作日志 / 剪辑台 / 总览。
+ * `canvas`（画布 —— **整屏**：节点卡 / 编排检查器 / 词表 / 画布纯函数 / 视图壳）、
+ * `library`（视频库：页头 / 工具条 / 筛选排序取值 / 交付包面板 / 卡片 / 详情抽屉）。
+ * 未迁：成本台账 / 配方库 / 操作日志 / 剪辑台 / 总览，以及一批零散库
+ * （`lib/lineage.ts` / `costView.ts` / `workerClient.ts` / `deliverablePackage.ts` /
+ * `engineOptions.ts` / `api.ts` 等 —— 精确剩余见迁移期盘点脚本）。
  *
  * ## 已定的一个口径（语言迁移第八批）：`console.*` 不是界面文案，保持中文
  * 用户 2026-10-16 授权按此执行。理由：`console.*` 是写给**开 DevTools 的人**看的，
@@ -64,6 +67,7 @@ export const ZH = {
   ...BYOK_ZH,
   ...ERROR_ZH,
   ...CANVAS_ZH,
+  ...LIBRARY_ZH,
 };
 
 /** 字典的键集合（全站文案键的唯一权威） */
@@ -83,6 +87,7 @@ export const EN: Record<MessageKey, string> = {
   ...BYOK_EN,
   ...ERROR_EN,
   ...CANVAS_EN,
+  ...LIBRARY_EN,
 };
 
 export const DICTIONARIES = { zh: ZH, en: EN };

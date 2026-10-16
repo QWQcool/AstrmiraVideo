@@ -1,5 +1,6 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
-import { EXECUTED_BY_LABELS, EXECUTED_BY_TITLES } from '@astrmira/shared';
+import { EXECUTED_BY_LABEL_KEYS, EXECUTED_BY_TITLE_KEYS } from '../lib/format';
+import { useTranslate } from '../lib/i18n';
 import { isProblemNode, lineageStatusClass, type LineageNode } from '../lib/lineage';
 
 /**
@@ -15,6 +16,7 @@ export type LineageFlowNode = Node<{ node: LineageNode; near?: boolean }, 'linea
 
 export function LineageNodeCard({ data, selected }: NodeProps<LineageFlowNode>) {
   const { node } = data;
+  const t = useTranslate();
   const status = lineageStatusClass(node);
   const classes = [
     'cv-node',
@@ -61,9 +63,9 @@ export function LineageNodeCard({ data, selected }: NodeProps<LineageFlowNode>) 
           <span
             className="cv-node-sub"
             data-testid="cv-node-executed-by"
-            title={EXECUTED_BY_TITLES[node.task.executedBy]}
+            title={t(EXECUTED_BY_TITLE_KEYS[node.task.executedBy])}
           >
-            ▸ {EXECUTED_BY_LABELS[node.task.executedBy]}
+            ▸ {t(EXECUTED_BY_LABEL_KEYS[node.task.executedBy])}
           </span>
         )}
       </div>

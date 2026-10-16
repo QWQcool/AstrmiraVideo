@@ -47,6 +47,29 @@ export const COMMON_ZH = {
   'common.scope.local': '本地',
   'common.engine.cloud': '云端 Seedance',
 
+  /**
+   * ── 执行位置 `executedBy` 的显示名（V2.27 / 台账 B11；语言迁移第十二批收敛）──
+   *
+   * 这三对（短标签 + 完整说法）原先来自 `@astrmira/shared` 的 `EXECUTED_BY_LABELS` /
+   * `EXECUTED_BY_TITLES`，**三处前端都在用它**（画布节点卡 / 工作台画廊卡 / 视频库）——
+   * 那正是"两处各写一遍必然漂移"的形态，只是漂移发生在**共享包与界面语言之间**：
+   * 共享包里的是中文常量，英文界面下只能显示中文。
+   *
+   * 收敛做法：**前端改用这份字典**；共享包那两个常量**保留**（它们是"前后端唯一一份"的声明，
+   * 后端将来要用仍可用）。为了不让两份中文**悄悄漂移**，`lib/format.test.ts` 里有一条
+   * **逐字比对**的断言（把字典的中文与共享常量对拍）—— 改一边而忘了另一边会立刻变红。
+   *
+   * ⚠️ **完整说法那三句比标签重要**：三个位置对"数据去了哪"的含义完全不同，
+   * 用户有权一眼看到（`title` 悬停）。中英语气必须同样明确，不能弱化成 "probably local"。
+   */
+  'common.executedBy.cloud': '云端',
+  'common.executedBy.hostLocal': '本机',
+  'common.executedBy.clientWorker': '你的电脑',
+  'common.executedBy.title.cloud': '产物在云端生成：提示词与参考图会发到上游服务商',
+  'common.executedBy.title.hostLocal': '在本服务所在机器上跑：数据不出这台机器',
+  'common.executedBy.title.clientWorker':
+    '在你的设备上执行（含浏览器端渲染的剪辑产物）：服务端不持有中间产物',
+
   // ── 通用动作 / 状态 ──
   'common.remove': '移除',
   'common.uploading': '上传中…',
@@ -89,6 +112,16 @@ export const COMMON_EN = {
   'common.scope.cloud': 'Cloud',
   'common.scope.local': 'Local',
   'common.engine.cloud': 'Cloud Seedance',
+
+  'common.executedBy.cloud': 'Cloud',
+  'common.executedBy.hostLocal': 'This machine',
+  'common.executedBy.clientWorker': 'Your device',
+  'common.executedBy.title.cloud':
+    'Produced in the cloud: the prompt and reference images are sent to the upstream provider',
+  'common.executedBy.title.hostLocal':
+    'Runs on the machine hosting this service: data never leaves it',
+  'common.executedBy.title.clientWorker':
+    'Runs on your device (including browser-rendered edit output): the server holds no intermediate files',
 
   'common.remove': 'Remove',
   'common.uploading': 'Uploading…',

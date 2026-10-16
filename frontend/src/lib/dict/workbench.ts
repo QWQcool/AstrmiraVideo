@@ -165,9 +165,9 @@ export const WORKBENCH_ZH = {
   'workbench.uncertain.abandon': '放弃任务',
 
   // ── 画廊卡（`components/GalleryCard.tsx`）──
-  // ⚠️ `executedBy` 的**显示名**目前来自 `@astrmira/shared` 的 `EXECUTED_BY_LABELS`（中文）——
-  //    本批只把"执行于…"这层壳译了，标签值留待**画布 / 视频库批次**与 `NodeCard` / `LibraryView`
-  //    一并收敛（那时三处一起改，避免只改一处反而不同步）。
+  // ✅ `executedBy` 的显示名已收敛（语言迁移第十二批）：三处前端（`GalleryCard` / `NodeCard` /
+  //    `LibraryView`）统一走 `common.executedBy.*`（键表在 `lib/format.ts`）；
+  //    共享包那两个中文常量**保留**，并由 `lib/format.test.ts` 的**逐字对拍**钉住"两份不许漂移"。
   'workbench.gallery.playTitle': '在中栏播放这条成片',
   'workbench.gallery.playAria': '播放第 {index} 条成片',
   'workbench.gallery.noOutput': '该任务没有可播放的成片',

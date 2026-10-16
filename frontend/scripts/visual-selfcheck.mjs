@@ -649,6 +649,10 @@ if (leftPanelText !== undefined) {
     'lib/canvasPlan.ts',
     'lib/canvasPlanRunner.ts',
     'views/CanvasView.tsx',
+    'canvas/NodeCard.tsx',
+    'lib/format.ts',
+    'lib/libraryFilter.ts',
+    'views/LibraryView.tsx',
   ];
   const CJK_PATTERN = /[\u4e00-\u9fa5]/;
   for (const rel of I18N_MIGRATED) {

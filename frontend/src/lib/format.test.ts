@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import type { AspectRatio } from '@astrmira/shared';
+import {
+  EXECUTED_BY_LABELS,
+  EXECUTED_BY_TITLES,
+  type AspectRatio,
+  type ExecutedBy,
+} from '@astrmira/shared';
 import {
   DEFAULT_DURATION_SEC,
   DEFAULT_RESOLUTION_TIER,
   DURATION_OPTIONS,
+  EXECUTED_BY_LABEL_KEYS,
+  EXECUTED_BY_TITLE_KEYS,
   RESOLUTION_TIERS,
   clampDurationSec,
   dialogueLength,
@@ -12,6 +19,7 @@ import {
   tierForSize,
   type ResolutionTier,
 } from './format';
+import { translate } from './i18n';
 
 /**
  * 目标尺寸表 / 时长 / 档位的纯函数契约（V8.3 批次 1）。
@@ -105,5 +113,36 @@ describe('对白长度提示（防线 6 的前端半边）', () => {
     expect(dialogueLength('她说"hi"')).toBe(2);
     expect(dialogueLength('没有对白')).toBe(0);
     expect(dialogueLength('“甲”“乙”')).toBe(2);
+  });
+});
+
+/**
+ * `executedBy` 的显示名：**前端字典的中文必须与共享包常量逐字一致**。
+ *
+ * ## 为什么需要这条（它是一个真实的漂移风险）
+ * 语言迁移第十二批把三处前端（画布节点卡 / 工作台画廊卡 / 视频库）从
+ * `@astrmira/shared` 的 `EXECUTED_BY_LABELS` / `EXECUTED_BY_TITLES` 收敛到字典
+ * （共享包里是**中文常量**，英文界面只能显示中文）。
+ *
+ * 收敛之后"中文"就有了**两份**：共享包那份（后端将来可能用）与字典那份（前端显示用）。
+ * 两份各改一边就会漂移，而漂移的后果很具体：**同一个执行位置在画布与视频库里叫不同名字**
+ * （"本机" vs "这台机器"），用户会以为是两回事。
+ *
+ * 所以这里**逐字对拍**：改任何一边而忘了另一边，这条立刻红。
+ * （`.trim()` 是给英文对拍留的余地 —— 中文这边本来就不允许有任何差异。）
+ */
+describe('executedBy 显示名：字典的中文与共享包常量逐字一致（防两份漂移）', () => {
+  const ids: ExecutedBy[] = ['cloud', 'host-local', 'client-worker'];
+
+  it('短标签逐字一致', () => {
+    for (const id of ids) {
+      expect(translate('zh', EXECUTED_BY_LABEL_KEYS[id]), id).toBe(EXECUTED_BY_LABELS[id]);
+    }
+  });
+
+  it('完整说法（悬停）逐字一致 —— 它比标签重要（三个位置对"数据去了哪"的含义完全不同）', () => {
+    for (const id of ids) {
+      expect(translate('zh', EXECUTED_BY_TITLE_KEYS[id]), id).toBe(EXECUTED_BY_TITLES[id]);
+    }
   });
 });

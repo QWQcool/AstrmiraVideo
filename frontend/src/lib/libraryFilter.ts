@@ -1,4 +1,5 @@
 import type { TaskProgress } from '@astrmira/shared';
+import type { MessageKey } from './i18n';
 
 /**
  * 视频库的筛选与排序（V9 · B4，纯函数 + 单测）。
@@ -21,17 +22,27 @@ export interface LibraryFilterOptions {
   sort: LibrarySort;
 }
 
-export const LIBRARY_SORT_LABELS: Record<LibrarySort, string> = {
-  'time-desc': '按时间（新→旧）',
-  'time-asc': '按时间（旧→新）',
-  'size-desc': '按文件大小（大→小）',
+/**
+ * 排序 / 筛选取值的**键表**（语言迁移第十二批）。
+ *
+ * 为什么不在这里写文案：这里是模块级常量，**在模块加载那一刻就把语言定死**；
+ * 而这两个下拉/ chips 要在渲染那一刻取文案。所以只留"取值 → 键"的映射，
+ * 显示名由视图用 `t(LIBRARY_SORT_LABEL_KEYS[key])` 取（与 `lib/format.ts` 的
+ * `STATUS_LABEL_KEYS` 同一手法）。
+ *
+ * ⚠️ 键的**顺序**就是界面上的顺序（`Object.keys` 直接用来渲染）—— 别随意重排。
+ */
+export const LIBRARY_SORT_LABEL_KEYS: Record<LibrarySort, MessageKey> = {
+  'time-desc': 'library.sort.timeDesc',
+  'time-asc': 'library.sort.timeAsc',
+  'size-desc': 'library.sort.sizeDesc',
 };
 
-export const LIBRARY_STATUS_LABELS: Record<LibraryStatusFilter, string> = {
-  all: '全部',
-  succeeded: '成功',
-  failed: '失败',
-  active: '进行中',
+export const LIBRARY_STATUS_LABEL_KEYS: Record<LibraryStatusFilter, MessageKey> = {
+  all: 'library.statusFilter.all',
+  succeeded: 'library.statusFilter.succeeded',
+  failed: 'library.statusFilter.failed',
+  active: 'library.statusFilter.active',
 };
 
 function matchesStatus(task: TaskProgress, status: LibraryStatusFilter): boolean {
