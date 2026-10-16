@@ -48,6 +48,7 @@ import type {
   VideoGenerateRequest,
 } from '@astrmira/shared';
 import type { z } from 'zod';
+import { getLanguage, translate } from './i18n';
 
 /**
  * 前端唯一网络入口（PLAN §6-D4：不引入 axios / react-query）。
@@ -124,7 +125,10 @@ async function parsePayload(response: Response, path: string): Promise<unknown> 
     throw new ApiError({
       kind: 'network',
       status: response.status,
-      message: `响应不是合法 JSON（${path}，HTTP ${response.status}）`,
+      message: translate(getLanguage(), 'common.api.notJson', {
+        path,
+        status: response.status,
+      }),
     });
   }
 }
@@ -167,7 +171,10 @@ async function request<S extends z.ZodType>(
     throw new ApiError({
       kind: 'network',
       status: 0,
-      message: `网络请求失败（${path}）：${err instanceof Error ? err.message : String(err)}`,
+      message: translate(getLanguage(), 'common.api.networkFailed', {
+        path,
+        reason: err instanceof Error ? err.message : String(err),
+      }),
     });
   }
 
@@ -184,7 +191,7 @@ async function request<S extends z.ZodType>(
     throw new ApiError({
       kind: 'contract',
       status: response.status,
-      message: `响应不符合契约（${path}）：${detail}`,
+      message: translate(getLanguage(), 'common.api.contractViolation', { path, detail }),
     });
   }
 
@@ -430,7 +437,9 @@ export async function uploadAssets(files: File[], projectId?: string): Promise<U
     throw new ApiError({
       kind: 'network',
       status: 0,
-      message: `上传失败：${err instanceof Error ? err.message : String(err)}`,
+      message: translate(getLanguage(), 'common.api.uploadFailed', {
+      reason: err instanceof Error ? err.message : String(err),
+    }),
     });
   }
 
@@ -442,7 +451,7 @@ export async function uploadAssets(files: File[], projectId?: string): Promise<U
     throw new ApiError({
       kind: 'contract',
       status: response.status,
-      message: '上传响应不符合契约',
+      message: translate(getLanguage(), 'common.api.uploadContract'),
     });
   }
 
@@ -480,7 +489,9 @@ export async function submitEditRender(input: {
     throw new ApiError({
       kind: 'network',
       status: 0,
-      message: `入库失败：${err instanceof Error ? err.message : String(err)}`,
+      message: translate(getLanguage(), 'common.api.ingestFailed', {
+      reason: err instanceof Error ? err.message : String(err),
+    }),
     });
   }
 
@@ -492,7 +503,7 @@ export async function submitEditRender(input: {
     throw new ApiError({
       kind: 'contract',
       status: response.status,
-      message: '入库响应不符合契约',
+      message: translate(getLanguage(), 'common.api.ingestContract'),
     });
   }
   return parsed.data;

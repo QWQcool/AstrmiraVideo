@@ -12,6 +12,7 @@ import {
   type WorkerJobRequest,
   type WorkerJobStatus,
 } from '@astrmira/shared';
+import { getLanguage, translate } from './i18n';
 import { ApiError } from './api';
 
 /**
@@ -64,8 +65,15 @@ export class WorkerError extends Error {
   }
 }
 
-export const WORKER_UNAVAILABLE_HINT =
-  '先在本机启动 Astrmira worker（它默认监听 127.0.0.1:8765），再点重试';
+/**
+ * 连不上 worker 时给的那句可执行提示（语言迁移第十五批）。
+ *
+ * 从**常量改成函数**：常量在模块加载那一刻就把语言定死了，而这句要跟着界面语言走。
+ * （此前它是导出的；全仓只有本文件自己用，所以改成函数不影响任何调用点。）
+ */
+export function workerUnavailableHint(): string {
+  return translate(getLanguage(), 'common.worker.unreachableHint');
+}
 
 function defaultBaseUrl(): string {
   return `http://127.0.0.1:${WORKER_DEFAULT_PORT}`;
@@ -87,31 +95,44 @@ export function createWorkerClient(options: WorkerClientOptions = {}): WorkerCli
       const timedOut = caught instanceof Error && caught.name === 'AbortError';
       throw new WorkerError(
         'PROVIDER_UNAVAILABLE',
-        timedOut ? `worker 在 ${timeoutMs}ms 内没有响应` : `连不上本地 worker（${baseUrl}）`,
-        WORKER_UNAVAILABLE_HINT,
+        timedOut
+          ? translate(getLanguage(), 'common.worker.timeout', { ms: timeoutMs })
+          : translate(getLanguage(), 'common.worker.unreachable', { baseUrl }),
+        workerUnavailableHint(),
       );
     } finally {
       clearTimeout(timer);
     }
 
     if (response.status === 404) {
-      throw new WorkerError('TASK_NOT_FOUND', `worker 不认识这个任务或端点：${path}`);
+      throw new WorkerError(
+        'TASK_NOT_FOUND',
+        translate(getLanguage(), 'common.worker.taskNotFound', { path }),
+      );
     }
     if (response.status === 409) {
-      throw new WorkerError('GPU_BUSY', 'worker 正在跑另一条任务（本地单卡互斥）', '等它跑完或先取消');
+      throw new WorkerError(
+        'GPU_BUSY',
+        translate(getLanguage(), 'common.worker.gpuBusy'),
+        translate(getLanguage(), 'common.worker.gpuBusyHint'),
+      );
     }
     if (!response.ok) {
       throw new WorkerError(
         'UPSTREAM_ERROR',
-        `worker 返回 HTTP ${response.status}`,
-        '看 worker 自己的日志定位',
+        translate(getLanguage(), 'common.worker.httpError', { status: response.status }),
+        translate(getLanguage(), 'common.worker.httpErrorHint'),
       );
     }
 
     try {
       return (await response.json()) as unknown;
     } catch {
-      throw new WorkerError('UPSTREAM_ERROR', 'worker 的响应不是合法 JSON', '版本不匹配？');
+      throw new WorkerError(
+        'UPSTREAM_ERROR',
+        translate(getLanguage(), 'common.worker.badJson'),
+        translate(getLanguage(), 'common.worker.badJsonHint'),
+      );
     }
   }
 
@@ -123,8 +144,10 @@ export function createWorkerClient(options: WorkerClientOptions = {}): WorkerCli
       if (!parsed.success) {
         throw new WorkerError(
           'PROVIDER_UNAVAILABLE',
-          `worker 的 /v1/health 不符合协议（期望 ${WORKER_PROTOCOL_VERSION}）`,
-          '升级 worker 或本系统到同一版本',
+          translate(getLanguage(), 'common.worker.protocolMismatch', {
+            version: WORKER_PROTOCOL_VERSION,
+          }),
+          translate(getLanguage(), 'common.worker.protocolMismatchHint'),
         );
       }
       return parsed.data;
@@ -139,7 +162,10 @@ export function createWorkerClient(options: WorkerClientOptions = {}): WorkerCli
         }),
       );
       if (!parsed.success) {
-        throw new WorkerError('UPSTREAM_ERROR', 'worker 接受了提交但响应形状不对（缺 jobId？）');
+        throw new WorkerError(
+          'UPSTREAM_ERROR',
+          translate(getLanguage(), 'common.worker.noJobId'),
+        );
       }
       return parsed.data;
     },
@@ -149,7 +175,10 @@ export function createWorkerClient(options: WorkerClientOptions = {}): WorkerCli
         await call(`/v1/jobs/${encodeURIComponent(jobId)}`),
       );
       if (!parsed.success) {
-        throw new WorkerError('UPSTREAM_ERROR', `worker 的任务状态不符合协议（jobId=${jobId}）`);
+        throw new WorkerError(
+          'UPSTREAM_ERROR',
+          translate(getLanguage(), 'common.worker.badJobStatus', { jobId }),
+        );
       }
       return parsed.data;
     },

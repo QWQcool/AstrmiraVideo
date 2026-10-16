@@ -84,6 +84,14 @@ export const CREATE_ZH = {
   'create.upload.audioNotRef': '音频素材不作为生成参考：请到剪辑台的音效轨添加（造梦盒只收图片 / 视频）',
   'create.upload.noAsset': '上传未返回任何资产',
   'create.upload.noVisual': '这个文件里没有画面（纯音频）：请到剪辑台的音效轨使用',
+
+  // ── `@` 提及素材的溢出提示（`lib/mentions.ts`；语言迁移第十五批）──
+  // 两条都**必须说清"多余的那几个被丢了"**，并给出下一步（删 chip 才能换）——
+  // 静默丢素材会让人以为服务端吃下了全部。
+  'create.mentions.videoOverflow':
+    '视频参考只使用第一个视频，已忽略另外 {count} 个素材（要换参考请先删除对应 chip）。',
+  'create.mentions.imageOverflow':
+    '首尾帧只使用前两张图片，已忽略另外 {count} 张（要换请先删除对应 chip）。',
 };
 
 export const CREATE_EN = {
@@ -149,4 +157,9 @@ export const CREATE_EN = {
     'Audio is not a generation reference: add it on the editor’s SFX track (the Create box only takes images / videos)',
   'create.upload.noAsset': 'The upload returned no asset',
   'create.upload.noVisual': 'This file has no picture (audio only): use it on the editor’s SFX track',
+
+  'create.mentions.videoOverflow':
+    'Only the first video is used as a reference; {count} more assets were ignored (delete the extra chips to change the reference).',
+  'create.mentions.imageOverflow':
+    'Only the first two images are used as frames; {count} more were ignored (delete the extra chips to change them).',
 };

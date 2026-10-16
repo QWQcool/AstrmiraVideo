@@ -91,6 +91,17 @@ export const SHELL_ZH = {
   'shell.verify.noVideoKey': '未填写视频轨 Key：无法校验',
   'shell.verify.noTextKey': '未填写文本轨 Key：无法校验',
   'shell.verify.failed': '校验失败：{reason}',
+
+  // ── 未知视图兜底（`views/UnknownView.tsx`；语言迁移第十五批）──
+  // 这一页的每一句都在解释"**为什么不悄悄重定向**"—— 那是它的存在理由，别简化。
+  'shell.unknown.title': '这个视图不存在',
+  'shell.unknown.before': '地址栏里的 ',
+  'shell.unknown.after': ' 不在视图注册表里。',
+  'shell.unknown.body': '它没有被静默重定向——因为"悄悄跳到别处"会让人以为自己点错了。',
+  'shell.unknown.home': '回到首页',
+
+  /** 项目下拉里那一行（`lib/projects.ts`）：名字 + 用量，一眼能比较 */
+  'shell.project.item': '{name}（{tasks} 片 · {assets} 素材）',
 };
 
 export const SHELL_EN = {
@@ -161,4 +172,13 @@ export const SHELL_EN = {
   'shell.verify.noVideoKey': 'No video-track key entered — nothing to check',
   'shell.verify.noTextKey': 'No text-track key entered — nothing to check',
   'shell.verify.failed': 'Check failed: {reason}',
+
+  'shell.unknown.title': 'This view does not exist',
+  'shell.unknown.before': 'The address bar value ',
+  'shell.unknown.after': ' is not in the view registry.',
+  'shell.unknown.body':
+    'It was not silently redirected — quietly jumping elsewhere would make you think you clicked wrong.',
+  'shell.unknown.home': 'Back home',
+
+  'shell.project.item': '{name} ({tasks} clips · {assets} assets)',
 };

@@ -1,6 +1,7 @@
 import { DEFAULT_PROJECT_ID } from '@astrmira/shared';
 import type { ProjectEntry } from '@astrmira/shared';
 import { projectIsDeletable } from '@astrmira/shared';
+import { getLanguage, translate } from './i18n';
 import { STORAGE_KEYS, readLocal, writeLocal, type StorageAccess } from './storage';
 
 /**
@@ -53,5 +54,9 @@ export function canDeleteProject(project: ProjectEntry): boolean {
 
 /** 切换器里的显示名：项目名 + 用量（用量让"这个项目占了多少"一眼可见） */
 export function describeProject(project: ProjectEntry): string {
-  return `${project.name}（${project.taskCount} 片 · ${project.assetCount} 素材）`;
+  return translate(getLanguage(), 'shell.project.item', {
+    name: project.name,
+    tasks: project.taskCount,
+    assets: project.assetCount,
+  });
 }

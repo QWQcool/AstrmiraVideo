@@ -29,6 +29,9 @@ export const SUPPORTED_LANGUAGES: readonly Language[] = ['zh', 'en'];
 
 /** 语言的自称（语言切换菜单里用它，而不是"英语 / English"混排） */
 export const LANGUAGE_LABELS: Record<Language, string> = {
+  // 语言的**自称**：`中文` 与 `English` 各自用本语言写，两种界面语言下都不变 ——
+  // 这正是语言切换菜单的惯例（把"中文"在英文界面里写成 "Chinese" 反而更难认）。
+  // i18n-exempt: 语言自称（切换菜单里两种语言下都保持原样，理由见上两行）
   zh: '中文',
   en: 'English',
 };

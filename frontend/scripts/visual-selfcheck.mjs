@@ -607,10 +607,10 @@ if (leftPanelText !== undefined) {
    * ⚠️ 将来 `lib/engineOptions.ts` 也迁进字典时，这条要跟着改成查**字典值**
    * （那时的正确形态：断言 `common.provider.h3` 的中文里带「（已撤）」）。
    */
-  const engineLabelsText = contents.get(path.join(SRC, 'lib', 'engineOptions.ts'));
+  const engineLabelsText = contents.get(path.join(SRC, 'lib', 'dict', 'common.ts'));
   if (engineLabelsText !== undefined && !engineLabelsText.includes('本地 MiniMax H3（已撤）')) {
     failures.push(
-      'lib/engineOptions.ts 没把 H3 标成「（已撤）」—— 历史任务 / 旧编排里出现这个值时会显示成一个还在的档位（V2.37）',
+      '字典的 common.engine.h3Revoked 没把 H3 标成「（已撤）」—— 历史任务 / 旧编排里出现这个值时会显示成一个还在的档位（V2.37）',
     );
   }
 
@@ -658,6 +658,20 @@ if (leftPanelText !== undefined) {
     'views/RecipesView.tsx',
     'views/LogsView.tsx',
     'views/OverviewView.tsx',
+    'lib/api.ts',
+    'lib/assets.ts',
+    'lib/deliverablePackage.ts',
+    'lib/engineOptions.ts',
+    'lib/i18n.ts',
+    'lib/lineage.ts',
+    'lib/mentions.ts',
+    'lib/overviewStats.ts',
+    'lib/presetTranscode.ts',
+    'lib/projects.ts',
+    'lib/shell.ts',
+    'lib/workerClient.ts',
+    'lib/zipStore.ts',
+    'views/UnknownView.tsx',
   ];
   const CJK_PATTERN = /[\u4e00-\u9fa5]/;
   for (const rel of I18N_MIGRATED) {
@@ -715,6 +729,8 @@ if (leftPanelText !== undefined) {
        *    （写成"说明在前、标记在后"，别让中间再隔注释 —— 实测踩到：隔一行就失效，
        *    而那正是"标记写了却没生效"的形态）；
        * 3. 只对**紧邻的下一行**生效，不扩散（空行会自然清掉它）。
+       *    → 由此推出：**多行数组 / 多行模板每条都要各标一次**（`lib/lineage.ts` 的 `notes` 就是），
+       *      别指望一个标记覆盖一个块 —— 那正是"以为标了、其实没标上"的来源。
        *
        * 它比 `console.` 那类**更严**：逐行申请、必须写清为什么，而理由会出现在 diff 里 ——
        * **想拿它盖住一句真实界面文案，在 code review 里是显眼的**（这正是它优于"悄悄漏一条"的地方）。

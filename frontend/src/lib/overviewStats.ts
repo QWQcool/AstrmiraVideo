@@ -1,4 +1,5 @@
 import type { EventLogEntry, StorageUsage, TaskProgress } from '@astrmira/shared';
+import { getLanguage, translate } from './i18n';
 
 /**
  * 总览页的**聚合纯函数**（V9 · B3）。
@@ -155,9 +156,14 @@ export function formatBytes(bytes: number): string {
 /** 相对时间（feed 用）：刚刚 / N 分钟前 / N 小时前 / MM-DD HH:mm */
 export function formatRelativeTime(ts: number, now: number): string {
   const diff = now - ts;
-  if (diff < 60_000) return '刚刚';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  const lang = getLanguage();
+  if (diff < 60_000) return translate(lang, 'common.time.justNow');
+  if (diff < 3_600_000) {
+    return translate(lang, 'common.time.minutesAgo', { count: Math.floor(diff / 60_000) });
+  }
+  if (diff < 86_400_000) {
+    return translate(lang, 'common.time.hoursAgo', { count: Math.floor(diff / 3_600_000) });
+  }
   const date = new Date(ts);
   const pad = (value: number): string => String(value).padStart(2, '0');
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;

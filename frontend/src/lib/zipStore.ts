@@ -14,6 +14,8 @@
  * - 单文件与总量都**不许超 4GB**（ZIP64 不做；超了如实报错，而不是写一个坏包）。
  */
 
+import { getLanguage, translate } from './i18n';
+
 export interface ZipEntry {
   /** 包内路径（可带 `/` 层级）。同名会被自动去重（见 `uniqueName`） */
   name: string;
@@ -93,7 +95,7 @@ export function buildZipStore(entries: ZipEntry[], modifiedAt: Date = new Date()
   });
 
   if (total > MAX_UINT32) {
-    throw new Error('交付包超过 4GB：本实现不支持 ZIP64，请减少条目后再打包');
+    throw new Error(translate(getLanguage(), 'library.zip.tooLarge'));
   }
 
   const localSize = prepared.reduce((sum, item) => sum + 30 + item.nameBytes.length + item.data.length, 0);
@@ -170,7 +172,9 @@ export function readZipEntryNames(buffer: Uint8Array): string[] {
     let cursor = view.getUint32(i + 16, true);
     const names: string[] = [];
     for (let index = 0; index < count; index += 1) {
-      if (view.getUint32(cursor, true) !== 0x0201_4b50) throw new Error('中央目录损坏');
+      if (view.getUint32(cursor, true) !== 0x0201_4b50) {
+    throw new Error(translate(getLanguage(), 'library.zip.badCentralDirectory'));
+  }
       const nameLength = view.getUint16(cursor + 28, true);
       names.push(
         new TextDecoder().decode(buffer.subarray(cursor + 46, cursor + 46 + nameLength)),
@@ -179,7 +183,7 @@ export function readZipEntryNames(buffer: Uint8Array): string[] {
     }
     return names;
   }
-  throw new Error('不是有效的 ZIP（找不到中央目录结束标记）');
+  throw new Error(translate(getLanguage(), 'library.zip.notZip'));
 }
 
 /** 触发浏览器下载（唯一碰 DOM 的函数，其余都是纯函数） */

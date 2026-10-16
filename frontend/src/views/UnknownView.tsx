@@ -1,4 +1,5 @@
 import { Eyebrow } from '../components/Eyebrow';
+import { useTranslate } from '../lib/i18n';
 import { navigate } from '../lib/router';
 import { DEFAULT_VIEW } from './registry';
 
@@ -11,17 +12,20 @@ import { DEFAULT_VIEW } from './registry';
  * 就是靠这个组件兜底。
  */
 export function UnknownView({ hash }: { hash: string }) {
+  const t = useTranslate();
   return (
     <section className="wb-page wb-unknown">
       <Eyebrow tone="gold">Unknown View</Eyebrow>
-      <h1 className="wb-page-title">这个视图不存在</h1>
+      <h1 className="wb-page-title">{t('shell.unknown.title')}</h1>
       <p className="wb-note">
-        地址栏里的 <code>{hash || '#/'}</code> 不在视图注册表里。
+        {t('shell.unknown.before')}
+        <code>{hash || '#/'}</code>
+        {t('shell.unknown.after')}
         <br />
-        它没有被静默重定向——因为"悄悄跳到别处"会让人以为自己点错了。
+        {t('shell.unknown.body')}
       </p>
       <button type="button" className="wb-btn wb-btn-gold" onClick={() => navigate(DEFAULT_VIEW)}>
-        回到首页
+        {t('shell.unknown.home')}
       </button>
     </section>
   );

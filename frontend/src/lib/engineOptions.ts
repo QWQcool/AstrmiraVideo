@@ -1,4 +1,5 @@
 import type { ProviderStatus } from '@astrmira/shared';
+import { getLanguage, translate } from './i18n';
 
 /**
  * 执行引擎的**选项生成**（V2.36 / CONTRACT §19-1；台账 A1 后续）。
@@ -34,13 +35,15 @@ export const DEFAULT_COMFY_ENGINE_ID = 'host-comfyui';
 export function comfyUiEngineOptions(status: ProviderStatus | null): EngineOption[] {
   const servers = status?.comfyui.servers ?? [];
 
+  const lang = getLanguage();
+
   if (servers.length === 0) {
     return [
       {
         id: DEFAULT_COMFY_ENGINE_ID,
-        label: '本地 ComfyUI',
+        label: translate(lang, 'common.engine.localComfyUi'),
         configured: status?.comfyui.available === true,
-        hint: status?.comfyui.reason ?? '本地 ComfyUI 状态未知',
+        hint: status?.comfyui.reason ?? translate(lang, 'common.engine.comfyUiUnknown'),
       },
     ];
   }
@@ -51,9 +54,15 @@ export function comfyUiEngineOptions(status: ProviderStatus | null): EngineOptio
     // 单台的默认实例 → 与 V2.35 的观感完全一致（'本地 ComfyUI'）；
     // 其余一律带上实例 label（**哪怕只有一台具名实例**，也不能把它的名字吞掉）
     label:
-      server.id === DEFAULT_COMFY_ENGINE_ID && !multi ? '本地 ComfyUI' : `ComfyUI · ${server.label}`,
+      server.id === DEFAULT_COMFY_ENGINE_ID && !multi
+        ? translate(lang, 'common.engine.localComfyUi')
+        : translate(lang, 'common.engine.comfyUiNamed', { name: server.label }),
     configured: server.available,
-    hint: server.reason ?? (server.available ? '本服务已配置这一台（地址合规）' : '这一台不可用'),
+    hint:
+      server.reason ??
+      (server.available
+        ? translate(lang, 'common.engine.configured')
+        : translate(lang, 'common.engine.unavailable')),
   }));
 }
 
@@ -63,12 +72,13 @@ export function comfyUiEngineOptions(status: ProviderStatus | null): EngineOptio
  * 未知 id **原样返回**（宁可显示一个 id，也不要显示空白 —— 空白最容易被当成"没这回事"）。
  */
 export function providerLabel(id: string, status: ProviderStatus | null): string {
-  if (id === 'cloud-volcano-seedance') return '云端 Seedance';
+  const lang = getLanguage();
+  if (id === 'cloud-volcano-seedance') return translate(lang, 'common.engine.cloud');
   // V2.37（D56）：这一档**已撤掉** —— 但它仍可能出现在**历史任务**与**旧编排文件**里，
   // 显示名必须如实（既不能显示成空白，也不能假装它还在）
-  if (id === 'local-minimax-h3') return '本地 MiniMax H3（已撤）';
-  if (id === 'fixture-local') return '开发期夹具';
-  if (id === 'stock-local') return '素材库（未实现）';
+  if (id === 'local-minimax-h3') return translate(lang, 'common.engine.h3Revoked');
+  if (id === 'fixture-local') return translate(lang, 'common.engine.fixture');
+  if (id === 'stock-local') return translate(lang, 'common.engine.stockLibrary');
 
   const option = comfyUiEngineOptions(status).find((item) => item.id === id);
   if (option !== undefined) return option.label;

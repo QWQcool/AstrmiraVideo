@@ -1,5 +1,41 @@
-# AstrmiraVideo · 产品与开发规划（PLAN V8.59）
+# AstrmiraVideo · 产品与开发规划（PLAN V8.60）
 
+> **修订说明（V8.60，2026-10-16）**
+> **L1 收官件 · 语言迁移第十五批（零散库：14 个文件）**（**无契约变更**）：
+> - 迁完 14 个"零散库"文件（共 **65 处**）：`lib/lineage.ts`（血缘图的幽灵节点标签）、
+>   `lib/api.ts`（网络层的失败原因）、`lib/workerClient.ts`（本地 worker 的失败原因，含
+>   **常量 → 函数**的 `workerUnavailableHint()`）、`lib/assets.ts`（素材槽"缺什么"）、
+>   `lib/mentions.ts`（`@` 提及的溢出提示）、`lib/projects.ts`、`lib/zipStore.ts`、
+>   `lib/overviewStats.ts`（`formatRelativeTime`）、`lib/engineOptions.ts`（引擎显示名）、
+>   `lib/presetTranscode.ts`、`lib/deliverablePackage.ts`、`views/UnknownView.tsx`。
+> - **按"这句话给谁看"分流（本批第一次按它执行，也只在此处生效）**：
+>   - 界面访客 → 进字典（新增 `common.api.*` / `common.worker.*` / `common.engine.*` /
+>     `common.time.*` / `common.kind.audio` / `canvas.lineage.*` / `library.deliver.progress.*` /
+>     `library.zip.*` / `library.transcode.*` / `workbench.assets.*` / `create.mentions.*` /
+>     `shell.unknown.*` / `shell.project.item`）；
+>   - **产物内容不跟语言**（三条，各自在行内有 `i18n-exempt` 标记 + 理由）：
+>     导出配方包的 `notes` 两条、交付包里的 `交付清单.json` 文件名；
+>   - **开发者诊断不跟语言**（一条）：`lib/shell.ts` 的 `useShell 必须在 <ShellProvider> 内使用`；
+>   - **语言自称不跟语言**（一条）：`lib/i18n.ts` 的 `LANGUAGE_LABELS.zh = '中文'`
+>     —— 语言切换菜单的惯例就是各自用本语言写（把"中文"在英文界面里写成 "Chinese" 反而更难认）。
+> - **`交付清单.json` 是一个"同一句话两个命运"的标本**：它同时是(a) zip 内的文件名（**产物**，
+>   不迁）与(b) 交付面板的复选框标签（**界面**，迁了 → `library.deliver.includeManifest`）。
+>   两者现在**刻意不同步**，注释写清了这个区别（免得后人"顺手统一"）。
+> - **自检的 `i18n-exempt` 判据补了一条推论**：标记只对**紧邻的下一行**生效 →
+>   **多行数组 / 多行模板里每条都要各标一次**（本批在 `lineage.ts` 的 `notes` 上真实踩到：
+>   一个标记盖不住两行，自检当场报红）。这条已写进判据注释。
+> - **顺带把 H3 断言移到字典**：视觉自检原先盯 `lib/engineOptions.ts` 的字面量
+>   （"本地 MiniMax H3（已撤）"），迁进字典后改盯 `dict/common.ts` 的**字典值** ——
+>   否则"那一档已撤"这条 V2.37 的提醒会随着迁移**悄悄失效**。
+> - 证据：视觉自检清单**新增 17 项**（现 **52 项**）；忠实性核对：`library` / `canvas` /
+>   `common` / `workbench` / `shell` 的本批新键**逐条过**（`create` 两条因工具正则把注释误当值，
+>   已**手工对 HEAD 原文**核对）。**剩余：135 行 / 11 个文件 —— 正是剪辑台那一批。**
+> - 门禁：lint 0 / type 0 / 前端 **416** / 视觉自检 / 契约 11 / 构建 / **UI 冒烟全绿**。
+> - **下一批（最后一个）**：剪辑台 11 个文件 + **跨包决策已拍板的执行**（共享包的表只留 id、
+>   文案归前端字典；`describeEditOrigin` 这类格式化搬回前端；配方分类名拆成"提示词用词"
+>   与"界面用词"两份并加对拍断言）。**用户要求这两批合并为一次提交**，但本批先单独落地
+>   （见其提交信息里的说明）。
+>
 > **修订说明（V8.59，2026-10-16）**
 > **L1 收官件 · 语言迁移第十四批（配方库 + 操作日志 + 总览）**（**无契约变更**）：
 > - 一次迁完三个小视图（共 **64 处**）：`views/RecipesView.tsx`（12）+ `views/LogsView.tsx`（30）+
@@ -1937,6 +1973,43 @@
         `edit/store.ts`、`canvas/PlanNodeCard.tsx`、`canvas/NoteCard.tsx`（各 4）等。
       - 门禁：lint 0 / type 0 / 前端 **406** / 视觉自检（**清单已 9 个文件**）/ 契约 11 / 构建 /
         **UI 冒烟全绿**。
+- [x] **L1 · 语言迁移第十五批（零散库：14 个文件）【已完成 2026-10-16】**（前端内建，**无契约变更**）：
+      - **迁完**（共 **65 处**）：`lib/lineage.ts`（**18**：幽灵节点的"任务 N / 资产 N / 不在最近记录里"
+        等标签 —— 它们是**界面文案**，画布上真会显示）、`lib/api.ts`（**7**：网络层的失败原因，
+        各视图"读取失败"的正文）、`lib/workerClient.ts`（**11**：本地 worker 的失败原因 + 可执行提示）、
+        `lib/assets.ts`（**4**：素材槽"缺什么"）、`lib/mentions.ts`（**2**：`@` 提及的溢出提示）、
+        `lib/projects.ts`（**1**）、`lib/zipStore.ts`（**3**）、`lib/overviewStats.ts`（**3**：
+        `formatRelativeTime`）、`lib/engineOptions.ts`（**8**：引擎显示名）、`lib/presetTranscode.ts`（**7**）、
+        `lib/deliverablePackage.ts`（**10**）、`views/UnknownView.tsx`（**4**）。
+      - **按"这句话给谁看"分流（首次执行；口径见 `dict/` 各域文件头）**：
+        - **界面访客** → 进字典（新增 `common.api.*` / `common.worker.*` / `common.engine.*` /
+          `common.time.*` / `common.kind.audio` / `canvas.lineage.*` / `library.deliver.progress.*` /
+          `library.zip.*` / `library.transcode.*` / `workbench.assets.*` / `create.mentions.*` /
+          `shell.unknown.*` / `shell.project.item`）；
+        - **产物内容不跟语言**（三条，行内有 `i18n-exempt` + 理由）：导出配方包的 `notes` 两条、
+          交付包里的 `交付清单.json` 文件名；
+        - **开发者诊断不跟语言**（一条）：`lib/shell.ts` 的 `useShell 必须在 <ShellProvider> 内使用`；
+        - **语言自称不跟语言**（一条）：`lib/i18n.ts` 的 `LANGUAGE_LABELS.zh = '中文'` ——
+          切换菜单的惯例就是各自用本语言写（英文界面里把"中文"写成 "Chinese" 反而更难认）。
+      - **`交付清单.json` = "同一句话两个命运"的标本**：它同时是 (a) zip 内的文件名（**产物**，不迁）
+        与 (b) 交付面板的复选框标签（**界面**，迁了 → `library.deliver.includeManifest`）。
+        两者现在**刻意不同步**，注释写清了这个区别（免得后人"顺手统一"）。
+      - **一段常量改成函数**：`workerClient.ts` 的 `WORKER_UNAVAILABLE_HINT` → `workerUnavailableHint()`
+        （常量在模块加载那一刻就把语言定死了；全仓只有本文件自己用它，所以改动零调用点）。
+      - **自检的 `i18n-exempt` 判据补了一条推论**：标记只对**紧邻的下一行**生效 →
+        **多行数组 / 多行模板里每条都要各标一次**。本批在 `lineage.ts` 的 `notes` 上**真实踩到**
+        （一个标记盖不住两行 → 自检当场报红），已写进判据注释。
+      - **顺带把 H3 断言移到字典**：视觉自检原先盯 `lib/engineOptions.ts` 的字面量，
+        迁进字典后改盯 `dict/common.ts` 的**字典值** —— 否则"那一档已撤"（V2.37）这条提醒
+        会随着迁移**悄悄失效**（迁移期最该防的就是这种"检查还在、守的东西没了"）。
+      - **证据**：视觉自检清单**新增 17 项**（现 **52 项**）；忠实性核对：`library` / `canvas` /
+        `common` / `workbench` / `shell` 的本批新键**逐条过**；`create` 两条因**工具正则把注释误当值**
+        （`'([^'\\]*)'` 在含引号注释上会跨行配对），已**手工对 HEAD 原文**核对 —— 结论：逐字一致。
+        工具的这个脆点记在这里（下次再遇到同样报错，先怀疑它而不是先改文案）。
+      - 门禁：lint 0 / type 0 / 前端 **416** / 视觉自检 / 契约 11 / 构建 / **UI 冒烟全绿**。
+      - **剩余：135 行 / 11 个文件 —— 正是剪辑台那一批**（EditView 27 / Timeline 23 / DraftHistory 20 /
+        ExportPanel 20 / clipProperties 19 / InspectorPanel 15 / TimelineClip 3 / store 3 /
+        mediaProbe 2 / PlayerStage 2 / draft 1）。
 - [x] **L1 · 语言迁移第十四批（配方库 + 操作日志 + 总览）【已完成 2026-10-16】**（前端内建，**无契约变更**）：
       - **一次迁完三个小视图（共 64 处）**：`views/RecipesView.tsx`（**12**：标题 / 说明 / 搜索 /
         分类 chips / 计数 / 空态 / 卡脚建议时长 / 两个动作）+ `views/LogsView.tsx`（**30**：

@@ -8,6 +8,7 @@ import {
   type TaskProgress,
 } from '@astrmira/shared';
 import { resolveMediaUrl } from './api';
+import { getLanguage, translate } from './i18n';
 import { transcodeToPreset } from './presetTranscode';
 import { buildZipStore, downloadBytes, type ZipEntry } from './zipStore';
 
@@ -145,6 +146,10 @@ export function planDeliverablePackage(
       count: total,
       date,
     }),
+    // 这是**产物内容**（zip 里的那个文件名），不是界面文案 —— 与包名前缀同一口径：
+    // 客户拿到的包**不该因为界面语言变了就换文件名**。界面上的复选框标签另有字典键
+    // （`library.deliver.includeManifest`）—— 同一句话，两个命运。
+    // i18n-exempt: 交付包内的清单文件名（产物内容，理由见上三行）
     manifestFileName: '交付清单.json',
     items,
     manifest,
@@ -187,7 +192,13 @@ export async function buildDeliverableZip(
   const fetchBytes = async (url: string, what: string): Promise<Uint8Array> => {
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`取 ${what} 失败（HTTP ${response.status}）：${url}`);
+      throw new Error(
+    translate(getLanguage(), 'library.deliver.fetchFailed', {
+      what,
+      status: response.status,
+      url,
+    }),
+  );
     }
     return new Uint8Array(await response.arrayBuffer());
   };
@@ -214,16 +225,31 @@ export async function buildDeliverableZip(
           data: new Uint8Array(await result.blob.arrayBuffer()),
         });
       } else {
-        onProgress?.({ done, total, label: `读取成片 ${item.videoFileName}` });
+        onProgress?.({
+    done,
+    total,
+    label: translate(getLanguage(), 'library.deliver.progress.readVideo', {
+      name: item.videoFileName,
+    }),
+  });
         entries.push({
           name: item.videoFileName,
-          data: await fetchBytes(mediaUrlOf(item.task), '成片'),
+          data: await fetchBytes(
+      mediaUrlOf(item.task),
+      translate(getLanguage(), 'library.deliver.whatVideo'),
+    ),
         });
       }
       done += 1;
     }
     if (options.includeProject && item.task.origin?.kind === 'edit') {
-      onProgress?.({ done, total, label: `写入工程 ${item.projectFileName}` });
+      onProgress?.({
+    done,
+    total,
+    label: translate(getLanguage(), 'library.deliver.progress.writeProject', {
+      name: item.projectFileName,
+    }),
+  });
       entries.push({
         name: item.projectFileName,
         data: new TextEncoder().encode(JSON.stringify(item.task.origin.project, null, 2)),
@@ -231,17 +257,30 @@ export async function buildDeliverableZip(
       done += 1;
     }
     if (options.includeCover && item.coverFileName !== '') {
-      onProgress?.({ done, total, label: `读取封面 ${item.coverFileName}` });
+      onProgress?.({
+    done,
+    total,
+    label: translate(getLanguage(), 'library.deliver.progress.readCover', {
+      name: item.coverFileName,
+    }),
+  });
       const coverUrl = resolveMediaUrl(item.task.thumbnailUrl);
       if (coverUrl !== null) {
-        entries.push({ name: item.coverFileName, data: await fetchBytes(coverUrl, '封面') });
+        entries.push({
+    name: item.coverFileName,
+    data: await fetchBytes(coverUrl, translate(getLanguage(), 'library.deliver.whatCover')),
+  });
         done += 1;
       }
     }
   }
 
   if (options.includeManifest) {
-    onProgress?.({ done, total, label: '写入交付清单' });
+    onProgress?.({
+    done,
+    total,
+    label: translate(getLanguage(), 'library.deliver.progress.writeManifest'),
+  });
     // 清单里的 `transcoded` 用**实际结果**覆盖计划里的意图：已对齐的片子不写"转过"（不谎报）
     const manifest = {
       ...plan.manifest,
@@ -261,14 +300,20 @@ export async function buildDeliverableZip(
   // 包内时间戳用"打包时刻"（命名里的日期来自 plan，两者刻意分开：命名是交付语义，时间戳是文件系统元信息）
   const bytes = buildZipStore(entries, new Date());
   const entryNames = entries.map((entry) => entry.name);
-  onProgress?.({ done, total: done, label: '完成' });
+  onProgress?.({ done, total: done, label: translate(getLanguage(), 'library.deliver.progress.done') });
   return { bytes, packageName: plan.packageName, entryNames };
 }
 
 /** 成片直链（`/media/<taskId>.mp4`）；没有产物时如实抛错，不猜路径 */
 function mediaUrlOf(task: TaskProgress): string {
   const url = resolveMediaUrl(task.outputVideoUrl);
-  if (url === null) throw new Error(`任务 ${task.taskId.slice(0, 8)} 没有可下载的成片`);
+  if (url === null) {
+    throw new Error(
+      translate(getLanguage(), 'library.deliver.noDownloadable', {
+        id: task.taskId.slice(0, 8),
+      }),
+    );
+  }
   return url;
 }
 

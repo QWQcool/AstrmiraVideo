@@ -114,6 +114,32 @@ export const LIBRARY_ZH = {
   'library.drawer.action.edit': '✂ 剪辑',
   'library.drawer.action.download': '下载',
   'library.drawer.action.delete': '删除',
+
+  // ── 交付包的进度 / ZIP 错误 / 转码原因（`lib/deliverablePackage.ts` / `zipStore.ts` /
+  //    `presetTranscode.ts`；语言迁移第十五批）──
+  // 这几条都是**前端生成、紧接着显示**的（面板下方的进度行与"打包失败"正文）→ 跟着界面语言走。
+  // ⚠️ 而 `manifestFileName`（`交付清单.json`）是**产物内容**（zip 里的文件名），**保持中文**
+  // （`lib/deliverablePackage.ts` 行内有标记）—— 客户拿到的包不该因为切了界面语言就换文件名。
+  'library.deliver.progress.readVideo': '读取成片 {name}',
+  'library.deliver.progress.writeProject': '写入工程 {name}',
+  'library.deliver.progress.readCover': '读取封面 {name}',
+  'library.deliver.progress.writeManifest': '写入交付清单',
+  'library.deliver.progress.done': '完成',
+  'library.deliver.fetchFailed': '取 {what} 失败（HTTP {status}）：{url}',
+  'library.deliver.whatVideo': '成片',
+  'library.deliver.whatCover': '封面',
+  'library.deliver.noDownloadable': '任务 {id} 没有可下载的成片',
+  'library.zip.tooLarge': '交付包超过 4GB：本实现不支持 ZIP64，请减少条目后再打包',
+  'library.zip.badCentralDirectory': '中央目录损坏',
+  'library.zip.notZip': '不是有效的 ZIP（找不到中央目录结束标记）',
+  'library.transcode.noSourceSize': '未探测到源片尺寸 → 按预设 {width}×{height} 渲染',
+  'library.transcode.alreadyMatches': '已经是 {width}×{height} @{fps}fps，跳过转码',
+  'library.transcode.fpsOnly': '画幅已一致，但帧率 {from}→{to} 需要重采样',
+  'library.transcode.resize': '{fromW}×{fromH} → {toW}×{toH}（画幅按 cover 裁切，不拉伸）',
+  'library.transcode.probing': '探测源片尺寸…',
+  'library.transcode.fetchSourceFailed': '取源片失败（HTTP {status}）',
+  'library.transcode.unsupported': '这台浏览器无法渲染转码（{detail}）',
+  'library.transcode.unknownReason': '未知原因',
 };
 
 export const LIBRARY_EN = {
@@ -204,4 +230,29 @@ export const LIBRARY_EN = {
   'library.drawer.action.edit': '✂ Edit',
   'library.drawer.action.download': 'Download',
   'library.drawer.action.delete': 'Delete',
+
+  'library.deliver.progress.readVideo': 'Reading clip {name}',
+  'library.deliver.progress.writeProject': 'Writing project {name}',
+  'library.deliver.progress.readCover': 'Reading cover {name}',
+  'library.deliver.progress.writeManifest': 'Writing the manifest',
+  'library.deliver.progress.done': 'Done',
+  'library.deliver.fetchFailed': 'Could not fetch {what} (HTTP {status}): {url}',
+  'library.deliver.whatVideo': 'the clip',
+  'library.deliver.whatCover': 'the cover',
+  'library.deliver.noDownloadable': 'Task {id} has no downloadable clip',
+  'library.zip.tooLarge':
+    'The delivery package exceeds 4GB: this implementation does not support ZIP64 — remove some entries and try again',
+  'library.zip.badCentralDirectory': 'The central directory is corrupt',
+  'library.zip.notZip': 'Not a valid ZIP (no end-of-central-directory record found)',
+  'library.transcode.noSourceSize':
+    'Could not probe the source size → rendering at the preset {width}×{height}',
+  'library.transcode.alreadyMatches': 'Already {width}×{height} @{fps}fps — skipping the transcode',
+  'library.transcode.fpsOnly':
+    'The aspect already matches, but the frame rate {from}→{to} needs resampling',
+  'library.transcode.resize':
+    '{fromW}×{fromH} → {toW}×{toH} (cropped to cover, never stretched)',
+  'library.transcode.probing': 'Probing the source size…',
+  'library.transcode.fetchSourceFailed': 'Could not fetch the source clip (HTTP {status})',
+  'library.transcode.unsupported': 'This browser cannot render the transcode ({detail})',
+  'library.transcode.unknownReason': 'unknown reason',
 };

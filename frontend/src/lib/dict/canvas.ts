@@ -292,6 +292,17 @@ export const CANVAS_ZH = {
   'canvas.mobile.part1': '画布在窄屏上不好用：请到桌面端查看，或先去',
   'canvas.mobile.library': '视频库',
   'canvas.mobile.part2': '看列表。',
+
+  // ── 血缘图（`lib/lineage.ts`；语言迁移第十五批）──
+  // 幽灵节点的标签是**界面文案**（画布上真会显示"任务 7f3a12b0 / 不在最近记录里"），走字典；
+  // 而导出包里那两条 `notes` 是**产物内容**（写进 JSON，且会被下游按格式读），**保持中文**
+  // （`lib/lineage.ts` 行内有 `i18n-exempt` 标记说明）。
+  'canvas.lineage.nodeMissing': '画布上没有这个节点：{id}',
+  'canvas.lineage.ghostTaskLabel': '任务 {id}',
+  'canvas.lineage.ghostTaskSub': '不在最近记录里（已删除或超出列表）',
+  'canvas.lineage.ghostAssetLabel': '资产 {id}',
+  'canvas.lineage.ghostAssetSub': '不在资产库里（已清理或超出列表）',
+  'canvas.lineage.editOutput': '剪辑产物',
 };
 
 export const CANVAS_EN = {
@@ -546,4 +557,11 @@ export const CANVAS_EN = {
   'canvas.mobile.part1': 'The canvas is hard to use on a narrow screen: open it on a desktop, or go to the ',
   'canvas.mobile.library': 'library',
   'canvas.mobile.part2': ' for a list.',
+
+  'canvas.lineage.nodeMissing': 'No such node on the canvas: {id}',
+  'canvas.lineage.ghostTaskLabel': 'Task {id}',
+  'canvas.lineage.ghostTaskSub': 'Not in the recent records (deleted or beyond the list)',
+  'canvas.lineage.ghostAssetLabel': 'Asset {id}',
+  'canvas.lineage.ghostAssetSub': 'Not in the asset library (cleaned up or beyond the list)',
+  'canvas.lineage.editOutput': 'Edit output',
 };

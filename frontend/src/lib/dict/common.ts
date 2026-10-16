@@ -86,6 +86,54 @@ export const COMMON_ZH = {
   'common.cost.localFree': '（本地轨：无 API 费用）',
   'common.cost.estimateOnly': '（预估）',
   'common.cost.customTier': '（自定义档按 2.0 标准口径估算）',
+
+  // ── 网络层与本地 worker 的失败原因（语言迁移第十五批：零散库）──
+  // 它们是**前端生成、紧接着就被显示**的（各视图"读取失败 / 打包失败"的正文），
+  // 所以跟着界面语言走 —— 与"服务端下发的文案原样显示"是两件不同的事。
+  'common.api.notJson': '响应不是合法 JSON（{path}，HTTP {status}）',
+  'common.api.networkFailed': '网络请求失败（{path}）：{reason}',
+  'common.api.contractViolation': '响应不符合契约（{path}）：{detail}',
+  'common.api.uploadFailed': '上传失败：{reason}',
+  'common.api.uploadContract': '上传响应不符合契约',
+  'common.api.ingestFailed': '入库失败：{reason}',
+  'common.api.ingestContract': '入库响应不符合契约',
+
+  // 本地 worker（浏览器端渲染 / 转码走它）—— `message` 与 `hint` 都是给人看的
+  'common.worker.unreachableHint': '先在本机启动 Astrmira worker（它默认监听 127.0.0.1:8765），再点重试',
+  'common.worker.timeout': 'worker 在 {ms}ms 内没有响应',
+  'common.worker.unreachable': '连不上本地 worker（{baseUrl}）',
+  'common.worker.taskNotFound': 'worker 不认识这个任务或端点：{path}',
+  'common.worker.gpuBusy': 'worker 正在跑另一条任务（本地单卡互斥）',
+  'common.worker.gpuBusyHint': '等它跑完或先取消',
+  'common.worker.httpError': 'worker 返回 HTTP {status}',
+  'common.worker.httpErrorHint': '看 worker 自己的日志定位',
+  'common.worker.badJson': 'worker 的响应不是合法 JSON',
+  'common.worker.badJsonHint': '版本不匹配？',
+  'common.worker.protocolMismatch': 'worker 的 /v1/health 不符合协议（期望 {version}）',
+  'common.worker.protocolMismatchHint': '升级 worker 或本系统到同一版本',
+  'common.worker.noJobId': 'worker 接受了提交但响应形状不对（缺 jobId？）',
+  'common.worker.badJobStatus': 'worker 的任务状态不符合协议（jobId={jobId}）',
+
+  // ── 引擎显示名（`lib/engineOptions.ts`；`common.engine.cloud` 见上面"算力归属"）──
+  // ⚠️ `common.engine.h3Revoked` 的那对括号是**如实标注**（V2.37 / D56：那一档已撤，
+  // 但历史任务与旧编排文件里仍会出现它）—— 视觉自检有一条断言专门盯它
+  // （原先盯 `lib/engineOptions.ts` 的字面量，迁进字典后改盯**字典值**）。
+  'common.engine.localComfyUi': '本地 ComfyUI',
+  'common.engine.comfyUiUnknown': '本地 ComfyUI 状态未知',
+  'common.engine.comfyUiNamed': 'ComfyUI · {name}',
+  'common.engine.configured': '本服务已配置这一台（地址合规）',
+  'common.engine.unavailable': '这一台不可用',
+  'common.engine.h3Revoked': '本地 MiniMax H3（已撤）',
+  'common.engine.fixture': '开发期夹具',
+  'common.engine.stockLibrary': '素材库（未实现）',
+
+  // ── 相对时间（`lib/overviewStats.ts` 的 `formatRelativeTime`：视频库 / 画布 / 总览共用）──
+  'common.time.justNow': '刚刚',
+  'common.time.minutesAgo': '{count} 分钟前',
+  'common.time.hoursAgo': '{count} 小时前',
+
+  /** 音频素材（画布资产的副标签；`common.kind.image` / `video` 见上面"素材种类"） */
+  'common.kind.audio': '音频',
 };
 
 export const COMMON_EN = {
@@ -136,4 +184,46 @@ export const COMMON_EN = {
   'common.cost.localFree': ' (local track: no API cost)',
   'common.cost.estimateOnly': ' (estimate)',
   'common.cost.customTier': ' (custom tier estimated at the 2.0 rate)',
+
+  'common.api.notJson': 'Response is not valid JSON ({path}, HTTP {status})',
+  'common.api.networkFailed': 'Network request failed ({path}): {reason}',
+  'common.api.contractViolation': 'Response does not match the contract ({path}): {detail}',
+  'common.api.uploadFailed': 'Upload failed: {reason}',
+  'common.api.uploadContract': 'Upload response does not match the contract',
+  'common.api.ingestFailed': 'Ingest failed: {reason}',
+  'common.api.ingestContract': 'Ingest response does not match the contract',
+
+  'common.worker.unreachableHint':
+    'Start the Astrmira worker on this machine first (it listens on 127.0.0.1:8765 by default), then retry',
+  'common.worker.timeout': 'The worker did not respond within {ms}ms',
+  'common.worker.unreachable': 'Cannot reach the local worker ({baseUrl})',
+  'common.worker.taskNotFound': 'The worker does not know this task or endpoint: {path}',
+  'common.worker.gpuBusy': 'The worker is running another task (a single local GPU is exclusive)',
+  'common.worker.gpuBusyHint': 'Wait for it to finish, or cancel first',
+  'common.worker.httpError': 'The worker returned HTTP {status}',
+  'common.worker.httpErrorHint': 'Check the worker’s own logs',
+  'common.worker.badJson': 'The worker’s response is not valid JSON',
+  'common.worker.badJsonHint': 'Version mismatch?',
+  'common.worker.protocolMismatch':
+    'The worker’s /v1/health does not match the protocol (expected {version})',
+  'common.worker.protocolMismatchHint': 'Upgrade the worker or this system so both match',
+  'common.worker.noJobId':
+    'The worker accepted the submission but the response shape is wrong (missing jobId?)',
+  'common.worker.badJobStatus':
+    'The worker’s job status does not match the protocol (jobId={jobId})',
+
+  'common.engine.localComfyUi': 'Local ComfyUI',
+  'common.engine.comfyUiUnknown': 'Local ComfyUI status unknown',
+  'common.engine.comfyUiNamed': 'ComfyUI · {name}',
+  'common.engine.configured': 'This deployment has it configured (the address is valid)',
+  'common.engine.unavailable': 'This instance is unavailable',
+  'common.engine.h3Revoked': 'Local MiniMax H3 (retired)',
+  'common.engine.fixture': 'Dev fixture',
+  'common.engine.stockLibrary': 'Asset library (not implemented)',
+
+  'common.time.justNow': 'Just now',
+  'common.time.minutesAgo': '{count} min ago',
+  'common.time.hoursAgo': '{count} h ago',
+
+  'common.kind.audio': 'audio',
 };

@@ -2,6 +2,7 @@ import { createProjectFromSource, type EditProject, type PlatformPreset } from '
 import { DEFAULT_PROJECT_FPS } from '@astrmira/shared';
 import { preflightEditExport, renderEditProject } from '../edit/exporter';
 import { probeVideoMeta } from '../edit/mediaProbe';
+import { getLanguage, translate } from './i18n';
 
 /**
  * 交付规格转码（V2.14 / 台账 B49 片 B，契约 §14）。
@@ -49,7 +50,10 @@ export function planTranscode(
   if (source === null) {
     return {
       needed: true,
-      reason: `未探测到源片尺寸 → 按预设 ${preset.width}×${preset.height} 渲染`,
+      reason: translate(getLanguage(), 'library.transcode.noSourceSize', {
+      width: preset.width,
+      height: preset.height,
+    }),
       width: preset.width,
       height: preset.height,
     };
@@ -57,7 +61,11 @@ export function planTranscode(
   if (source.width === preset.width && source.height === preset.height && source.fps === projectFps) {
     return {
       needed: false,
-      reason: `已经是 ${preset.width}×${preset.height} @${projectFps}fps，跳过转码`,
+      reason: translate(getLanguage(), 'library.transcode.alreadyMatches', {
+      width: preset.width,
+      height: preset.height,
+      fps: projectFps,
+    }),
       width: preset.width,
       height: preset.height,
     };
@@ -66,8 +74,13 @@ export function planTranscode(
     needed: true,
     reason:
       source.width === preset.width && source.height === preset.height
-        ? `画幅已一致，但帧率 ${source.fps}→${projectFps} 需要重采样`
-        : `${source.width}×${source.height} → ${preset.width}×${preset.height}（画幅按 cover 裁切，不拉伸）`,
+        ? translate(getLanguage(), 'library.transcode.fpsOnly', { from: source.fps, to: projectFps })
+        : translate(getLanguage(), 'library.transcode.resize', {
+            fromW: source.width,
+            fromH: source.height,
+            toW: preset.width,
+            toH: preset.height,
+          }),
     width: preset.width,
     height: preset.height,
   };
@@ -96,7 +109,7 @@ export async function transcodeToPreset(
   } = {},
 ): Promise<TranscodeResult> {
   const projectFps = options.projectFps ?? DEFAULT_PROJECT_FPS;
-  options.onProgress?.('探测源片尺寸…', 0);
+  options.onProgress?.(translate(getLanguage(), 'library.transcode.probing'), 0);
 
   // 1) 探测**真实**时长与尺寸：不能用请求参数里的 durationSec（实测成片 5.09s vs 请求 5s），
   //    否则转码会把尾巴切掉 —— 交付物里这是"看起来对、其实少帧"的那种错。
@@ -109,7 +122,13 @@ export async function transcodeToPreset(
 
   if (!plan.needed) {
     const response = await fetch(source.url);
-    if (!response.ok) throw new Error(`取源片失败（HTTP ${response.status}）`);
+    if (!response.ok) {
+    throw new Error(
+      translate(getLanguage(), 'library.transcode.fetchSourceFailed', {
+        status: response.status,
+      }),
+    );
+  }
     return {
       blob: await response.blob(),
       elapsedMs: 0,
@@ -132,7 +151,11 @@ export async function transcodeToPreset(
   const preflight = await preflightEditExport(project);
   if (!preflight.canRender) {
     const detail = preflight.issues.map((issue) => issue.message).join('；');
-    throw new Error(`这台浏览器无法渲染转码（${detail || '未知原因'}）`);
+    throw new Error(
+    translate(getLanguage(), 'library.transcode.unsupported', {
+      detail: detail || translate(getLanguage(), 'library.transcode.unknownReason'),
+    }),
+  );
   }
 
   options.onProgress?.(plan.reason, 0.05);

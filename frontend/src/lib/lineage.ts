@@ -1,5 +1,7 @@
 import type { AssetListEntry, TaskProgress } from '@astrmira/shared';
 import { parseTaskRef } from '@astrmira/shared';
+import { TASK_STATUS_KEYS } from './format';
+import { getLanguage, translate, type MessageKey } from './i18n';
 
 /**
  * 血缘图纯函数层（Step 8 · P4 / 台账 B42，L2 只读画布；决策 = PLAN §6-D40）。
@@ -69,11 +71,20 @@ export interface LineageNode {
 
 export type LineageEdgeKind = 'edit' | 'extract' | 'reference' | 'task-ref';
 
-/** 资产类别的中文标签（V2.10 起含音频；画布副标签用） */
-const ASSET_KIND_LABEL: Record<'image' | 'video' | 'audio', string> = {
-  image: '图片',
-  video: '视频',
-  audio: '音频',
+/**
+ * 取文案的本地助手（语言迁移第十五批）。
+ *
+ * 本层是**纯函数**（没有 React 订阅），所以按当前语言现取 —— 与 `lib/canvasPlan.ts` /
+ * `lib/costView.ts` 同一手法；调用它的画布视图订阅了语言，切语言会重渲染。
+ */
+const t = (key: MessageKey, vars?: Record<string, string | number>): string =>
+  translate(getLanguage(), key, vars);
+
+/** 资产类别的标签（V2.10 起含音频；画布副标签用）—— 键表，文案在 `common.kind.*` */
+const ASSET_KIND_KEYS: Record<'image' | 'video' | 'audio', MessageKey> = {
+  image: 'common.kind.image',
+  video: 'common.kind.video',
+  audio: 'common.kind.audio',
 };
 
 export interface LineageEdge {
@@ -93,14 +104,6 @@ export interface LineageInput {
   /** 资产库（`GET /api/assets`）；缺省也能构图——引用的资产会以 ghost 节点出现 */
   assets?: AssetListEntry[];
 }
-
-const STATUS_LABEL: Record<TaskProgress['status'], string> = {
-  queued: '排队中',
-  running: '生成中',
-  succeeded: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
-};
 
 /**
  * 节点的**执行态分类**（V2.19 / 台账 B63）—— 画布上那个状态点用什么颜色，由它决定。
@@ -196,7 +199,7 @@ export function buildRecipePack(
 ): RecipePack {
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
   const root = byId.get(rootNodeId);
-  if (root === undefined) throw new Error(`画布上没有这个节点：${rootNodeId}`);
+  if (root === undefined) throw new Error(t('canvas.lineage.nodeMissing', { id: rootNodeId }));
 
   // 反向 BFS：从根沿"上游"走（邻接表由边反推）
   const incoming = new Map<string, string[]>();
@@ -278,8 +281,13 @@ export function buildRecipePack(
       .filter((edge) => keep.has(edge.from) && keep.has(edge.to))
       .map((edge) => ({ from: edge.from, to: edge.to, kind: edge.kind })),
     omitted,
+    // 这两条是**产物内容**（写进导出的 JSON 文件，且接收方会当格式读它），不是界面文案 ——
+    // 与 `manifestFileName` / 包名前缀同一条口径：**不跟界面语言走**（产物要稳定可复现）。
+    // ⚠️ 标记是**逐行**的（"紧邻"规则），所以数组里每一条都要各自标一次。
     notes: [
+      // i18n-exempt: 导出配方包的 notes 第 1 条（产物内容，不跟界面语言走）
       '本文件只含生成配方与血缘关系：不含凭据，也不含 provider 私有参数（options.baseUrl 可能是内网地址）。',
+      // i18n-exempt: 导出配方包的 notes 第 2 条（产物内容，不跟界面语言走）
       '资产与成片只记 id 与相对路径；换一台部署要复现，需要把对应的媒体文件一起带上。',
     ],
   };
@@ -312,8 +320,8 @@ export function buildLineage(input: LineageInput): LineageGraph {
         ? {
             id,
             kind: 'task',
-            label: `任务 ${taskId.slice(0, 8)}`,
-            sublabel: '不在最近记录里（已删除或超出列表）',
+            label: t('canvas.lineage.ghostTaskLabel', { id: taskId.slice(0, 8) }),
+            sublabel: t('canvas.lineage.ghostTaskSub'),
             depth: 0,
             createdAt: 0,
             ghost: true,
@@ -322,8 +330,12 @@ export function buildLineage(input: LineageInput): LineageGraph {
         : {
             id,
             kind: 'task',
-            label: task.requestSnapshot.prompt.slice(0, 18) || `任务 ${taskId.slice(0, 8)}`,
-            sublabel: `${task.origin?.kind === 'edit' ? '剪辑产物 · ' : ''}${STATUS_LABEL[task.status]}`,
+            label:
+              task.requestSnapshot.prompt.slice(0, 18) ||
+              t('canvas.lineage.ghostTaskLabel', { id: taskId.slice(0, 8) }),
+            sublabel: `${
+              task.origin?.kind === 'edit' ? `${t('canvas.lineage.editOutput')} · ` : ''
+            }${t(TASK_STATUS_KEYS[task.status])}`,
             depth: 0,
             createdAt: task.createdAt,
             taskId,
@@ -349,8 +361,8 @@ export function buildLineage(input: LineageInput): LineageGraph {
         ? {
             id,
             kind: 'asset',
-            label: `资产 ${assetId.slice(0, 8)}`,
-            sublabel: '不在资产库里（已清理或超出列表）',
+            label: t('canvas.lineage.ghostAssetLabel', { id: assetId.slice(0, 8) }),
+            sublabel: t('canvas.lineage.ghostAssetSub'),
             depth: 0,
             createdAt: 0,
             ghost: true,
@@ -359,8 +371,8 @@ export function buildLineage(input: LineageInput): LineageGraph {
         : {
             id,
             kind: 'asset',
-            label: `资产 ${assetId.slice(0, 8)}`,
-            sublabel: ASSET_KIND_LABEL[asset.kind],
+            label: t('canvas.lineage.ghostAssetLabel', { id: assetId.slice(0, 8) }),
+            sublabel: t(ASSET_KIND_KEYS[asset.kind]),
             depth: 0,
             createdAt: asset.createdAt,
             assetId,

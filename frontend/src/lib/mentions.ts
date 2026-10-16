@@ -4,6 +4,7 @@ import type {
   TaskProgress,
   VideoGenerateRequest,
 } from '@astrmira/shared';
+import { getLanguage, translate } from './i18n';
 
 /**
  * `@` 提及素材 → 生成请求 的纯函数层（V2.7 / 台账 B41 · one-for-all 创作入口）。
@@ -165,7 +166,7 @@ export function ignoredMentionHint(selection: MentionSelection): string | null {
   if (count === 0) return null;
 
   if (selection.mode === 'v2v') {
-    return `视频参考只使用第一个视频，已忽略另外 ${count} 个素材（要换参考请先删除对应 chip）。`;
+    return translate(getLanguage(), 'create.mentions.videoOverflow', { count });
   }
-  return `首尾帧只使用前两张图片，已忽略另外 ${count} 张（要换请先删除对应 chip）。`;
+  return translate(getLanguage(), 'create.mentions.imageOverflow', { count });
 }

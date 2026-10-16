@@ -202,6 +202,14 @@ export const WORKBENCH_ZH = {
   'workbench.drop.pickVideo': '点击选择或拖拽视频到这里（mp4 / mov，≤100MB）',
   'workbench.drop.pickImage': '点击选择或拖拽图片到这里（≤100MB）',
   'workbench.drop.sniffNote': '服务端按魔数嗅探真实类型，不信任文件名与 Content-Type',
+
+  // ── 素材槽的"缺什么"提示（`lib/assets.ts`；语言迁移第十五批）──
+  // 它们说的是"这个模式需要什么素材"，所以**模式名跟着一起出现在句子里** ——
+  // 翻译时别把模式名换成别的说法（`common.mode.*` 是那四个名字的唯一来源）。
+  'workbench.assets.needFirstFrame': '「图生视频」需要参考首帧：请在上方上传首帧',
+  'workbench.assets.needBothFramesNoFirst': '「首尾帧」需要参考首帧与参考尾帧：当前缺首帧',
+  'workbench.assets.needBothFramesNoLast': '「首尾帧」需要参考首帧与参考尾帧：当前缺尾帧',
+  'workbench.assets.needReferenceVideo': '「视频参考」需要参考视频：请在上方上传',
 };
 
 export const WORKBENCH_EN = {
@@ -391,4 +399,13 @@ export const WORKBENCH_EN = {
   'workbench.drop.pickVideo': 'Click to pick, or drag a video here (mp4 / mov, ≤100MB)',
   'workbench.drop.pickImage': 'Click to pick, or drag an image here (≤100MB)',
   'workbench.drop.sniffNote': 'The server sniffs the real type from magic bytes, trusting neither filename nor Content-Type',
+
+  'workbench.assets.needFirstFrame':
+    '「Image to video」 needs a first frame: upload one above',
+  'workbench.assets.needBothFramesNoFirst':
+    '「First & last frame」 needs both frames: the first frame is missing',
+  'workbench.assets.needBothFramesNoLast':
+    '「First & last frame」 needs both frames: the last frame is missing',
+  'workbench.assets.needReferenceVideo':
+    '「Video reference」 needs a reference video: upload one above',
 };

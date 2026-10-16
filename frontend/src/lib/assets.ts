@@ -1,4 +1,5 @@
 import type { GenerationAssets, GenerationMode, UploadedAsset } from '@astrmira/shared';
+import { getLanguage, translate } from './i18n';
 
 /**
  * 参考资产的前端状态。
@@ -107,18 +108,18 @@ function readyAssetId(state: AssetState | null): string | undefined {
 /** 缺素材时的说明（非 null = 提交会被挡住）；必须说清**缺哪一格**，只置灰等于让用户猜 */
 export function missingAssetHint(mode: GenerationMode, slots: AssetSlots): string | null {
   if (mode === 'i2v' && readyAssetId(slots.firstFrame) === undefined) {
-    return '「图生视频」需要参考首帧：请在上方上传首帧';
+    return translate(getLanguage(), 'workbench.assets.needFirstFrame');
   }
   if (mode === 'fl2v') {
     if (readyAssetId(slots.firstFrame) === undefined) {
-      return '「首尾帧」需要参考首帧与参考尾帧：当前缺首帧';
+      return translate(getLanguage(), 'workbench.assets.needBothFramesNoFirst');
     }
     if (readyAssetId(slots.lastFrame) === undefined) {
-      return '「首尾帧」需要参考首帧与参考尾帧：当前缺尾帧';
+      return translate(getLanguage(), 'workbench.assets.needBothFramesNoLast');
     }
   }
   if (mode === 'v2v' && readyAssetId(slots.referenceVideo) === undefined) {
-    return '「视频参考」需要参考视频：请在上方上传';
+    return translate(getLanguage(), 'workbench.assets.needReferenceVideo');
   }
   return null;
 }

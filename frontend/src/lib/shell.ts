@@ -42,7 +42,10 @@ export const ShellProvider = ShellContext.Provider;
 export function useShell(): ShellServices {
   const services = useContext(ShellContext);
   if (services === null) {
-    throw new Error('useShell 必须在 <ShellProvider> 内使用（V9 壳的视图都挂在它下面）');
+    // 这是**开发者不变式**（hook 用错地方），不是界面文案 —— 与 `console.*` 同一类：
+  // 它只会出现在开发期的报错里；翻成界面语言不会帮到任何人，反而让 grep 变难。
+  // i18n-exempt: 开发者不变式（hook 使用错误，理由见上两行）
+  throw new Error('useShell 必须在 <ShellProvider> 内使用（V9 壳的视图都挂在它下面）');
   }
   return services;
 }
