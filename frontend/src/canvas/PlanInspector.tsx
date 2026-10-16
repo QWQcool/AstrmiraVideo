@@ -5,6 +5,7 @@ import {
   type CanvasPlanNode,
   type GenerationMode,
 } from '@astrmira/shared';
+import { useTranslate } from '../lib/i18n';
 import { PLAN_SUPPORTED_MODES, planNodeBlockReason } from '../lib/canvasPlan';
 import type { PlanNodeRunResult } from '../lib/canvasPlanRunner';
 import { CANVAS_MODE_LABELS } from './labels';
@@ -17,8 +18,14 @@ import { CANVAS_MODE_LABELS } from './labels';
  *    "写了一半去接杯水，回来发现编排没保存"是比多写几次 localStorage 糟得多的体验；
  * 2. **阻断原因置顶**：现在不能跑的原因写在最上面（而不是等点了「运行」才报）；
  * 3. **不提供 i2v / fl2v**：它们需要素材槽，而编排里没有素材选择（片 A 的边界，如实说清）。
+ *
+ * 语言迁移第九批（片 A）：文案走 `canvas.inspector.*`。
+ *
+ * ⚠️ 两处**句内加粗**按本仓惯例拆成 `partN`（字典值只能是纯文本，加粗由这里的 JSX 保留）：
+ * 拆段的边界空格**写进了字典值**（如 `'只对 '` 的尾随空格），所以渲染结果与迁移前一致。
+ * ⚠️ 阻断原因（`blocked`）与模式名（`CANVAS_MODE_LABELS`）分别来自 `lib/canvasPlan.ts` 与
+ * `canvas/labels.ts`，两者都在**片 B** 迁 —— 此刻它们仍是中文，属分片的中间态。
  */
-
 export interface PlanInspectorProps {
   plan: CanvasPlan;
   node: CanvasPlanNode;
@@ -52,33 +59,32 @@ export function PlanInspector({
   onRetryChange,
   running,
 }: PlanInspectorProps) {
+  const t = useTranslate();
   const blocked = planNodeBlockReason(plan, node.id);
 
   return (
-    <aside className="cv-drawer" aria-label="编排节点">
+    <aside className="cv-drawer" aria-label={t('canvas.inspector.title')}>
       <div className="cv-drawer-head">
-        <span className="cv-drawer-title">编排节点</span>
+        <span className="cv-drawer-title">{t('canvas.inspector.title')}</span>
         <button type="button" className="wb-btn" onClick={onClose}>
-          收起
+          {t('canvas.inspector.collapse')}
         </button>
       </div>
-      <p className="wb-note cv-drawer-sub">
-        这张卡是"打算做什么"；点「▶ 运行编排」才会变成真实任务。
-      </p>
+      <p className="wb-note cv-drawer-sub">{t('canvas.inspector.subtitle')}</p>
 
       <section className="cv-insp-section">
         {blocked === null ? (
-          <p className="wb-note cv-plan-ok">✓ 可以跑（写好了就点运行）</p>
+          <p className="wb-note cv-plan-ok">{t('canvas.inspector.ready')}</p>
         ) : (
           <p className="wb-note cv-plan-bad" data-testid="cv-plan-block">
-            现在不能跑：{blocked}
+            {t('canvas.inspector.blocked', { reason: blocked })}
           </p>
         )}
       </section>
 
       {/* V2.29（B68 / B69）：只重跑这一段及其下游 —— 上游沿用上次产物（省钱的关键入口） */}
       <section className="cv-insp-section">
-        <h3 className="cv-insp-title">执行</h3>
+        <h3 className="cv-insp-title">{t('canvas.inspector.run.title')}</h3>
         <button
           type="button"
           className="wb-btn"
@@ -86,28 +92,29 @@ export function PlanInspector({
           disabled={running || blocked !== null}
           title={
             blocked !== null
-              ? '先修好这条节点（原因见上）'
-              : '从这条节点开始重跑：它和它的下游都会新建任务（真的计费）；上游沿用上次产物'
+              ? t('canvas.inspector.rerun.blockedHint')
+              : t('canvas.inspector.rerun.hint')
           }
           onClick={onRerun}
         >
-          🔁 重跑此节点及下游
+          {t('canvas.inspector.rerun.action')}
         </button>
         <p className="wb-note">
-          换一代幂等键 → <strong>这条与它的下游会新建任务（真的计费）</strong>；
-          上游不在范围内、沿用上次产物。若某个上游本机没有产物记录，下游会如实跳过并说明原因。
+          {t('canvas.inspector.rerun.note.part1')}
+          <strong>{t('canvas.inspector.rerun.note.part2')}</strong>
+          {t('canvas.inspector.rerun.note.part3')}
         </p>
       </section>
 
       {/* V2.29（B68 第二批）：**固定** —— 钉住"很贵 / 已经满意"的那一段，之后只重跑下游 */}
       <section className="cv-insp-section">
-        <h3 className="cv-insp-title">产物</h3>
+        <h3 className="cv-insp-title">{t('canvas.inspector.artifact.title')}</h3>
         {node.pinnedTaskId === undefined ? (
           <>
             <p className="wb-note" data-testid="cv-pin-state">
               {node.lastTaskId === undefined
-                ? '还没有产物可固定 —— 先运行一次，出片之后就能把这一段钉住'
-                : `上次产物 ${node.lastTaskId.slice(0, 8)}（固定 = 之后任何运行都不再重提交它）`}
+                ? t('canvas.inspector.pin.none')
+                : t('canvas.inspector.pin.lastTask', { id: node.lastTaskId.slice(0, 8) })}
             </p>
             <button
               type="button"
@@ -118,17 +125,16 @@ export function PlanInspector({
                 if (node.lastTaskId !== undefined) onPin(node.lastTaskId);
               }}
             >
-              📌 固定这条的产物
+              {t('canvas.inspector.pin.action')}
             </button>
           </>
         ) : (
           <>
             <p className="wb-note cv-plan-pinned" data-testid="cv-pin-state">
-              📌 已固定 {node.pinnedTaskId.slice(0, 8)} ——
-              之后任何运行（含「重跑全部」）都不会再动这一段，下游一律引用它
+              {t('canvas.inspector.pin.pinned', { id: node.pinnedTaskId.slice(0, 8) })}
             </p>
             <button type="button" className="wb-btn" data-testid="cv-unpin-node" onClick={onUnpin}>
-              🔓 取消固定
+              {t('canvas.inspector.unpin.action')}
             </button>
           </>
         )}
@@ -136,9 +142,9 @@ export function PlanInspector({
 
       {/* V2.29（B74 第二批）：节点级重试 —— 只对"可能靠重试变好"的失败生效 */}
       <section className="cv-insp-section">
-        <h3 className="cv-insp-title">失败重试</h3>
+        <h3 className="cv-insp-title">{t('canvas.inspector.retry.title')}</h3>
         <label className="cv-plan-field">
-          提交失败最多试
+          {t('canvas.inspector.retry.attempts')}
           <select
             data-testid="cv-retry-attempts"
             value={node.retry?.maxAttempts ?? 1}
@@ -154,31 +160,36 @@ export function PlanInspector({
               );
             }}
           >
-            <option value={1}>1 次（不重试）</option>
-            <option value={2}>2 次</option>
-            <option value={3}>3 次</option>
+            <option value={1}>{t('canvas.inspector.retry.option1')}</option>
+            <option value={2}>{t('canvas.inspector.retry.optionN', { n: 2 })}</option>
+            <option value={3}>{t('canvas.inspector.retry.optionN', { n: 3 })}</option>
           </select>
         </label>
         <p className="wb-note">
-          只对 <strong>5xx / 网络错误</strong>重试；参数错误（4xx）与<strong>冷却（429）不重试</strong>
-          （后者的意思是"等一下再点"）。重试<strong>沿用同一个幂等键</strong> —— 不会因此多花一次钱。
+          {t('canvas.inspector.retry.note.part1')}
+          <strong>{t('canvas.inspector.retry.note.part2')}</strong>
+          {t('canvas.inspector.retry.note.part3')}
+          <strong>{t('canvas.inspector.retry.note.part4')}</strong>
+          {t('canvas.inspector.retry.note.part5')}
+          <strong>{t('canvas.inspector.retry.note.part6')}</strong>
+          {t('canvas.inspector.retry.note.part7')}
         </p>
       </section>
 
       <section className="cv-insp-section">
-        <h3 className="cv-insp-title">提示词</h3>
+        <h3 className="cv-insp-title">{t('canvas.inspector.prompt.title')}</h3>
         <textarea
           className="cv-plan-textarea"
           data-testid="cv-plan-prompt"
           value={node.prompt}
           rows={6}
-          placeholder="写清这一镜要什么（参考图/参考视频由连线给）"
+          placeholder={t('canvas.inspector.prompt.placeholder')}
           onChange={(event) => onChange({ prompt: event.target.value })}
         />
       </section>
 
       <section className="cv-insp-section">
-        <h3 className="cv-insp-title">模式</h3>
+        <h3 className="cv-insp-title">{t('canvas.inspector.mode.title')}</h3>
         <div className="cv-plan-seg">
           {PLAN_SUPPORTED_MODES.map((mode: GenerationMode) => (
             <button
@@ -193,13 +204,11 @@ export function PlanInspector({
             </button>
           ))}
         </div>
-        <p className="wb-note">
-          片 A 的编排只支持这两种：i2v / fl2v 需要素材槽（选图上传），属后续片。
-        </p>
+        <p className="wb-note">{t('canvas.inspector.mode.note')}</p>
       </section>
 
       <section className="cv-insp-section">
-        <h3 className="cv-insp-title">画幅与时长</h3>
+        <h3 className="cv-insp-title">{t('canvas.inspector.size.title')}</h3>
         <div className="cv-plan-seg">
           {ASPECT_RATIOS.map((ratio) => (
             <button
@@ -214,7 +223,7 @@ export function PlanInspector({
           ))}
         </div>
         <label className="cv-plan-field">
-          时长（秒，1~10）
+          {t('canvas.inspector.duration.label')}
           <input
             type="number"
             min={1}
@@ -229,7 +238,7 @@ export function PlanInspector({
           />
         </label>
         <label className="cv-plan-field">
-          seed（留空 = 随机）
+          {t('canvas.inspector.seed.label')}
           <input
             type="number"
             value={node.seed ?? ''}
@@ -247,9 +256,11 @@ export function PlanInspector({
 
       {run === undefined ? null : (
         <section className="cv-insp-section">
-          <h3 className="cv-insp-title">上次运行</h3>
+          <h3 className="cv-insp-title">{t('canvas.inspector.lastRun.title')}</h3>
           {run.state === 'submitted' ? (
-            <p className="wb-note cv-plan-ok">✓ 已提交：{run.taskId}</p>
+            <p className="wb-note cv-plan-ok">
+              {t('canvas.inspector.lastRun.submitted', { id: run.taskId ?? '' })}
+            </p>
           ) : run.state === 'kept' ? (
             // 三种"没提交"的原因完全不同，配色也不该混：跳过/失败是红的，保留是中性的
             <p className="wb-note cv-plan-kept">⏸ {run.message}</p>
@@ -261,7 +272,7 @@ export function PlanInspector({
 
       <div className="cv-drawer-actions">
         <button type="button" className="wb-btn" data-testid="cv-plan-remove" onClick={onRemove}>
-          删除节点
+          {t('canvas.inspector.remove')}
         </button>
       </div>
     </aside>

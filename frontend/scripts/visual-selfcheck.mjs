@@ -632,6 +632,9 @@ if (leftPanelText !== undefined) {
     'lib/theme.ts',
     'lib/errorReport.ts',
     'lib/runtimeErrorNotice.ts',
+    'canvas/NoteCard.tsx',
+    'canvas/PlanNodeCard.tsx',
+    'canvas/PlanInspector.tsx',
   ];
   const CJK_PATTERN = /[\u4e00-\u9fa5]/;
   for (const rel of I18N_MIGRATED) {

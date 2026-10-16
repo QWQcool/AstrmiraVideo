@@ -1,4 +1,5 @@
 import { BYOK_EN, BYOK_ZH } from './byok';
+import { CANVAS_EN, CANVAS_ZH } from './canvas';
 import { COMMON_EN, COMMON_ZH } from './common';
 import { CREATE_EN, CREATE_ZH } from './create';
 import { ERROR_EN, ERROR_ZH } from './error';
@@ -22,8 +23,10 @@ import { WORKBENCH_EN, WORKBENCH_ZH } from './workbench';
  * `shell`（侧栏 / 顶栏 / 区域名 / 项目切换 / 凭据提示）、`create`（创作入口）、
  * `workbench`（工作台**整屏**：左栏 / 中栏 / 右栏 / 容器 / 核对卡 / 画廊卡 / 素材槽）、
  * `byok`（凭据抽屉）、`error`（**整条兜底线**：`ErrorBoundary` 的按钮 +
- * `lib/errorReport.ts` 拼的崩溃面板与运行期通知正文 + `lib/runtimeErrorNotice.ts` 的壳）。
- * 未迁：画布 / 视频库 / 成本台账 / 配方库 / 操作日志 / 剪辑台 / 总览。
+ * `lib/errorReport.ts` 拼的崩溃面板与运行期通知正文 + `lib/runtimeErrorNotice.ts` 的壳）、
+ * `canvas`（画布 —— **片 A**：四种节点卡里的便签 + 编排节点卡 + 编排检查器抽屉）。
+ * 未迁：画布**片 B**（`views/CanvasView.tsx` + `canvas/labels.ts` + `lib/canvasPlan*.ts`）/
+ * 视频库 / 成本台账 / 配方库 / 操作日志 / 剪辑台 / 总览。
  *
  * ## 已定的一个口径（语言迁移第八批）：`console.*` 不是界面文案，保持中文
  * 用户 2026-10-16 授权按此执行。理由：`console.*` 是写给**开 DevTools 的人**看的，
@@ -60,6 +63,7 @@ export const ZH = {
   ...WORKBENCH_ZH,
   ...BYOK_ZH,
   ...ERROR_ZH,
+  ...CANVAS_ZH,
 };
 
 /** 字典的键集合（全站文案键的唯一权威） */
@@ -78,6 +82,7 @@ export const EN: Record<MessageKey, string> = {
   ...WORKBENCH_EN,
   ...BYOK_EN,
   ...ERROR_EN,
+  ...CANVAS_EN,
 };
 
 export const DICTIONARIES = { zh: ZH, en: EN };
