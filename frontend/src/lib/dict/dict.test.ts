@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { RECIPE_CATEGORY_PROMPT_WORDS } from '@astrmira/shared';
+import { RECIPE_CATEGORY_KEYS } from '../recipes';
+import { translate } from '../i18n';
 import { EN, ZH } from './index';
 
 /**
@@ -66,6 +69,29 @@ describe('字典完整性（不靠人眼）', () => {
     for (const key of KEYS) {
       const value = EN[key as keyof typeof EN];
       expect(CJK.test(value), `en.${key} = ${value}`).toBe(false);
+    }
+  });
+});
+
+/**
+ * **配方分类：两份中文必须逐字一致**（跨包决策 · 决定 2 的落点）。
+ *
+ * 分类名**刻意有两份**（理由见 `lib/recipes.ts` 与 `packages/shared/src/recipes.ts`）：
+ * - `RECIPE_CATEGORY_PROMPT_WORDS`（共享包）= **给模型看的提示词用词**（后端拼提示词用）；
+ * - `RECIPE_CATEGORY_KEYS` + `recipes.category.*`（本字典）= **给人看的界面用词**。
+ *
+ * 两份**不能合并**（提示词语言是独立轴），但**中文必须一致** —— 否则同一个分类
+ * 会在一处叫"运镜"、另一处叫"镜头语言"，用户与模型看到的是两个词。
+ * 这条断言就是那份"刻意的重复"的**看门人**：改一边忘了另一边，这里立刻红。
+ */
+describe('配方分类：界面用词与提示词用词在中文下逐字一致（防两份漂移）', () => {
+  it('每个分类的中文都相同', () => {
+    const entries = Object.entries(RECIPE_CATEGORY_PROMPT_WORDS);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const [category, word] of entries) {
+      const key = RECIPE_CATEGORY_KEYS[category as keyof typeof RECIPE_CATEGORY_KEYS];
+      expect(key, category).toBeDefined();
+      expect(translate('zh', key), category).toBe(word);
     }
   });
 });

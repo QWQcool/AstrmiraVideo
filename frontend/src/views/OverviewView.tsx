@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { logActionLabel } from '@astrmira/shared';
+import { logActionLabel } from '../lib/format';
 import type { EventLogEntry, HistoryResponse, StorageUsage } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
 import { ApiError, fetchHistory, fetchLogs } from '../lib/api';

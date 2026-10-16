@@ -671,6 +671,8 @@ if (leftPanelText !== undefined) {
     'lib/shell.ts',
     'lib/workerClient.ts',
     'lib/zipStore.ts',
+    'lib/recipes.ts',
+    'edit/model.ts',
     'views/UnknownView.tsx',
   ];
   const CJK_PATTERN = /[\u4e00-\u9fa5]/;

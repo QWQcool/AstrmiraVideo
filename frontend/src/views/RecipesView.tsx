@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { RECIPE_CARDS, RECIPE_CATEGORY_LABELS, type RecipeCategory } from '@astrmira/shared';
+import { RECIPE_CARDS, type RecipeCategory } from '@astrmira/shared';
+import { RECIPE_CATEGORY_KEYS } from '../lib/recipes';
 import { Eyebrow } from '../components/Eyebrow';
 import { useTranslate } from '../lib/i18n';
 import { staggerStyle } from '../lib/motion';
@@ -70,7 +71,7 @@ export function RecipesView() {
           >
             {t('recipes.categoryFilter.all')}
           </button>
-          {(Object.keys(RECIPE_CATEGORY_LABELS) as RecipeCategory[]).map((key) => (
+          {(Object.keys(RECIPE_CATEGORY_KEYS) as RecipeCategory[]).map((key) => (
             <button
               key={key}
               type="button"
@@ -78,7 +79,7 @@ export function RecipesView() {
               aria-pressed={category === key}
               onClick={() => setCategory(key)}
             >
-              {RECIPE_CATEGORY_LABELS[key]}
+              {t(RECIPE_CATEGORY_KEYS[key])}
             </button>
           ))}
         </div>
@@ -97,7 +98,7 @@ export function RecipesView() {
               <div className="recipe-card-top">
                 <span className="recipe-card-title">{card.title}</span>
                 <span className="recipe-tag recipe-tag--gold">
-                  {RECIPE_CATEGORY_LABELS[card.category]}
+                  {t(RECIPE_CATEGORY_KEYS[card.category])}
                 </span>
                 <span className="recipe-tag">{card.modes.join(' · ')}</span>
               </div>

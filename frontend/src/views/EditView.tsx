@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
-import { describeEditOrigin } from '@astrmira/shared';
+import { describeEditOrigin } from '../edit/model';
 import type { AssetListEntry, TaskProgress } from '@astrmira/shared';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Eyebrow } from '../components/Eyebrow';

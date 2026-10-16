@@ -27,7 +27,23 @@ export const RecipeCategorySchema = z.enum([
 ]);
 export type RecipeCategory = z.infer<typeof RecipeCategorySchema>;
 
-export const RECIPE_CATEGORY_LABELS: Record<RecipeCategory, string> = {
+/**
+ * 分类名 —— **这是"提示词用词"，不是界面文案**（语言迁移第十六批 · 跨包决策的核心样本）。
+ *
+ * 原先它叫 `RECIPE_CATEGORY_LABELS`，同时被两处用：① 界面的分类 chips 与卡上标签；
+ * ② **后端把它拼进中文提示词**（`backend/src/providers/llm.ts`：`用户选用了配方「…」（运镜）…`）。
+ * 改名是为了让**名字说出用途** —— "labels" 听着像界面文案，于是有人会顺手把它翻译了，
+ * 而提示词语言是**另一条轴**（后端提示词整段都是中文；改它要重测模型效果，不是 i18n 的事）。
+ *
+ * 所以现在**刻意有两份**：
+ * - 这一份 = **给模型看的用词**（后端拼提示词用）；
+ * - 前端字典的 `recipes.category.*` = **给人看的界面用词**。
+ *
+ * 两份在**中文下必须逐字一致**（否则同一个分类在两处叫不同名字），由前端
+ * `lib/recipes.test.ts` 里一条**对拍断言**钉住；但允许将来各自演化
+ * （比如英文界面下界面词变英文、提示词仍中文）。
+ */
+export const RECIPE_CATEGORY_PROMPT_WORDS: Record<RecipeCategory, string> = {
   camera: '运镜',
   lighting: '光线',
   mood: '氛围',

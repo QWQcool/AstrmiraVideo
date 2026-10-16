@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   DEFAULT_PLATFORM_PRESET_ID,
-  EDIT_OPERATION_LABELS,
   PLATFORM_PRESETS,
-  describeEditOrigin,
   findPlatformPreset,
 } from '@astrmira/shared';
 import type { HistoryResponse, TaskProgress } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
+import { EDIT_OPERATION_KEYS, describeEditOrigin } from '../edit/model';
 import { ApiError, deleteHistory, fetchHistory, resolveMediaUrl } from '../lib/api';
 import {
   buildDeliverableZip,
@@ -681,7 +680,7 @@ export function LibraryView() {
                         {selected.origin.script.operations.map((operation, index) => (
                           <li key={`${operation.type}-${index}`}>
                             <span className="edit-order">{String(index + 1).padStart(2, '0')}</span>
-                            <span className="wb-note">{EDIT_OPERATION_LABELS[operation.type]}</span>
+                            <span className="wb-note">{t(EDIT_OPERATION_KEYS[operation.type])}</span>
                           </li>
                         ))}
                       </ol>

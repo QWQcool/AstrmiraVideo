@@ -1,13 +1,13 @@
 import React from 'react';
 import {
-  EDIT_TRANSITION_LABELS,
-  applySnap,
+  EDIT_TRANSITION_KEYS,  applySnap,
   clipEndFrame,
   clipGeometry,
   collectSnapTargets,
   editSourceLabel,
   type EditClip,
 } from './model';
+import { getLanguage, translate } from '../lib/i18n';
 import type { EditStore } from './store';
 import { useEditStore } from './store';
 
@@ -97,7 +97,7 @@ export const TimelineClip: React.FC<{
       label = editSourceLabel(clip.source);
       break;
     case 'transition':
-      label = EDIT_TRANSITION_LABELS[clip.transition];
+      label = translate(getLanguage(), EDIT_TRANSITION_KEYS[clip.transition]);
       break;
   }
 

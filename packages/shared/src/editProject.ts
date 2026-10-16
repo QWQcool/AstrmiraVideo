@@ -22,13 +22,10 @@ export const EDIT_TRACK_KINDS = ['video', 'caption', 'transition', 'audio'] as c
 export const EditTrackKindSchema = z.enum(EDIT_TRACK_KINDS);
 export type EditTrackKind = z.infer<typeof EditTrackKindSchema>;
 
-/** 轨道默认名（UI 显示用） */
-export const TRACK_KIND_LABELS: Record<EditTrackKind, string> = {
-  video: '镜头',
-  caption: '字幕',
-  transition: '转场',
-  audio: '音效',
-};
+/**
+ * 轨道默认名的中文表**已搬去前端字典**（`dict/edit.ts` 的 `edit.track.*`；键表见 `edit/model.ts`）。
+ * 判据：这些名字**只有前端在用**（后端只存 `kind` 的 id），而中文表没法双语。
+ */
 
 /**
  * 素材引用：**成片**（`task:`）或**上传资产**（`asset:`，V2.10 / 台账 B57 的音频素材）。
@@ -107,18 +104,7 @@ export const CAPTION_POSITIONS = ['bottom', 'center', 'top'] as const;
 export const CaptionPositionSchema = z.enum(CAPTION_POSITIONS);
 export type CaptionPosition = z.infer<typeof CaptionPositionSchema>;
 
-export const CAPTION_PRESET_LABELS: Record<CaptionPreset, string> = {
-  plain: '静态',
-  fade: '淡入淡出',
-  wordSlide: '逐词入场（位移+模糊）',
-  typewriter: '打字机',
-};
-
-export const CAPTION_POSITION_LABELS: Record<CaptionPosition, string> = {
-  bottom: '底部',
-  center: '居中',
-  top: '顶部',
-};
+/** 字幕预设 / 位置的显示名**已搬去前端字典**（`edit.captionPreset.*` / `edit.captionPosition.*`）—— 同上，只有前端在用。 */
 
 export const CaptionClipSchema = z.object({
   ...ClipBaseShape,
@@ -134,11 +120,7 @@ export const EDIT_TRANSITIONS = ['fade', 'wipeleft', 'slideright'] as const;
 export const ClipTransitionSchema = z.enum(EDIT_TRANSITIONS);
 export type EditTransitionKind = z.infer<typeof ClipTransitionSchema>;
 
-export const EDIT_TRANSITION_LABELS: Record<EditTransitionKind, string> = {
-  fade: '淡入淡出',
-  wipeleft: '左揭幕',
-  slideright: '右滑入',
-};
+/** 转场名的显示名**已搬去前端字典**（`edit.transition.*`）—— 同上，只有前端在用。 */
 
 /**
  * 转场片段（P3 开放）：坐在 **from → to 两个相邻视频片段的接缝**上。
@@ -351,14 +333,14 @@ export type EditOriginLike = {
   project?: EditProject;
 };
 
-export function describeEditOrigin(origin: EditOriginLike): string {
-  if (origin.project !== undefined) {
-    const clips = origin.project.tracks.reduce((sum, track) => sum + track.clips.length, 0);
-    return `${origin.project.tracks.length} 轨 · ${clips} 个片段`;
-  }
-  if (origin.script !== undefined) return `${origin.script.operations.length} 步 EDL`;
-  return '剪辑产物';
-}
+/**
+ * 剪辑来源的**一句话摘要**：已搬去前端（语言迁移第十六批 · 跨包决策）。
+ *
+ * 它原先在这里，但它其实**不是"领域词汇"而是"格式化"**（`3 轨 · 12 个片段` / `7 步 EDL`）——
+ * 中文是"轨 / 个片段"，英文得是"tracks / clips"，这是**排版事实**，属于界面层。
+ * 现在在 `frontend/src/edit/model.ts`（`describeEditOrigin`，按当前语言取）。
+ * 共享包只留**数据形状**（`EditOriginLike`）—— 那是真正的领域契约。
+ */
 
 // ── 常量与 id ─────────────────────────────────────────────────────────────
 

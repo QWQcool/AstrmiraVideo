@@ -34,30 +34,17 @@ export const LOG_ACTIONS = [
 
 export type LogAction = (typeof LOG_ACTIONS)[number];
 
-/** 中文标签（界面展示；后端只存 id，避免中文进库后改文案要迁数据） */
-export const LOG_ACTION_LABELS: Record<string, string> = {
-  'generate.submit': '提交生成',
-  'edit.submit': '提交剪辑',
-  'edit.render': '渲染入库',
-  'task.cancel': '取消任务',
-  'task.complete': '任务完成',
-  'task.fail': '任务失败',
-  'task.uncertain': '结果待核对',
-  'history.delete': '删除历史',
-  upload: '上传素材',
-  enhance: '提示词扩写',
-  'keys.verify': '测试连接',
-  'logs.delete': '删除日志',
-  'logs.clear': '清空日志',
-  'storage.evict': '容量淘汰',
-  'auth.failed': '鉴权失败',
-  'request.error': '请求失败',
-};
-
-export function logActionLabel(action: string | undefined): string {
-  if (action === undefined) return '—';
-  return LOG_ACTION_LABELS[action] ?? action;
-}
+/**
+ * 动作 id → 显示名：**已搬去前端字典**（语言迁移第十六批 · 跨包决策）。
+ *
+ * 关键事实（这也是当初这些表能安心搬走的理由）：**后端只存 id、从不存中文**
+ * （"避免中文进库后改文案要迁数据"）—— 所以搬走不碰任何历史数据。
+ * 现在：文案在前端 `dict/edit.ts`（`edit.logAction.*`）；取用函数在前端 `lib/format.ts`
+ * （`logActionLabel`，按当前语言取）。
+ *
+ * ⚠️ 它保留了**原来那个好设计的语义**：**未知动作原样返回 id**（宁可显示 id，
+ * 也不要显示空白或"未知"—— 空白最容易被当成"没这回事"，而 id 至少能搜）。
+ */
 
 export const EventLogEntrySchema = z.object({
   id: z.number().int(),

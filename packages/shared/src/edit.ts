@@ -53,12 +53,15 @@ export const EditScriptSchema = z.object({
 
 export type EditScript = z.infer<typeof EditScriptSchema>;
 
-/** 操作类型 → 中文名（前端序列编辑器与后端日志共用一份，避免两处漂移） */
-export const EDIT_OPERATION_LABELS: Record<EditOperation['type'], string> = {
-  trim: '裁剪',
-  concat: '拼接',
-  xfade: '转场',
-  volume: '音量',
-  speed: '变速',
-  extractFrame: '抽帧',
-};
+/**
+ * 操作类型 → **显示名**：已搬去前端字典（语言迁移第十六批 · 跨包决策）。
+ *
+ * 原先这里有一张中文表（`EDIT_OPERATION_LABELS`）。搬走的判据是**"这句话给谁看"**：
+ * 这些名字**只有前端在用**（后端只存 `operation.type` 的 id，中文从没进过库），
+ * 而中文表**没法双语** —— 英文界面下它们只能显示中文。
+ *
+ * 现在：文案在前端 `dict/edit.ts`（`edit.op.*`）；**键表**在前端 `edit/model.ts`
+ * （`Record<EditOperation['type'], MessageKey>`）—— 那个 `Record` 的类型带来一条
+ * 编译期保证：**将来这里新增一个操作类型、前端忘了加键，会直接编译不过**。
+ * 共享包这边只留 id（`EditOperation['type']` 本身）。
+ */

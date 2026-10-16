@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   RECIPE_CARDS,
-  RECIPE_CATEGORY_LABELS,
+  RECIPE_CATEGORY_PROMPT_WORDS,
   RecipeCardSchema,
   findRecipe,
 } from '@astrmira/shared';
@@ -19,9 +19,8 @@ describe('配方库数据完整性（AC5）', () => {
   it('首批 ≥20 张，且四个分类各 ≥5', () => {
     expect(RECIPE_CARDS.length).toBeGreaterThanOrEqual(20);
 
-    for (const category of Object.keys(RECIPE_CATEGORY_LABELS) as Array<
-      keyof typeof RECIPE_CATEGORY_LABELS
-    >) {
+    for (const category of Object.keys(RECIPE_CATEGORY_PROMPT_WORDS) as Array<
+      keyof typeof RECIPE_CATEGORY_PROMPT_WORDS    >) {
       const count = RECIPE_CARDS.filter((card) => card.category === category).length;
       expect(count, `${category} 至少 5 张`).toBeGreaterThanOrEqual(5);
     }

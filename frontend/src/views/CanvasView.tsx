@@ -22,11 +22,11 @@ import type {
   EventLogEntry,
   TaskProgress,
 } from '@astrmira/shared';
+import { logActionLabel } from '../lib/format';
 import {
   buildCanvasPlanFile,
   canvasPlanFileText,
   formatYuan,
-  logActionLabel,
   parseTaskRef,
   readCanvasPlanFile,
 } from '@astrmira/shared';

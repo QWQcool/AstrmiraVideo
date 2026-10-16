@@ -1,10 +1,10 @@
 import React, { useRef, useState } from 'react';
 import type { AssetListEntry, TaskProgress } from '@astrmira/shared';
 import { resolveMediaUrl } from '../lib/api';
+import { getLanguage, translate } from '../lib/i18n';
 import {
   DEFAULT_TRANSITION_FRAMES,
-  TRACK_KIND_LABELS,
-  clipEndFrame,
+  TRACK_KIND_KEYS,  clipEndFrame,
   findClip,
   previewDurationFrames,
   type EditClipSource,
@@ -314,7 +314,7 @@ export const Timeline: React.FC<{
           {project.tracks.map((track) => (
             <div className="ed-track-row" key={track.id} data-track-kind={track.kind}>
               <div className="ed-track-head" style={{ width: HEADER_W }}>
-                <span className="ed-track-name">{TRACK_KIND_LABELS[track.kind]}</span>
+                <span className="ed-track-name">{translate(getLanguage(), TRACK_KIND_KEYS[track.kind])}</span>
                 <span className="ed-track-count">{track.clips.length}</span>
               </div>
               <div

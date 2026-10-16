@@ -1,7 +1,7 @@
 import {
-  CAPTION_POSITION_LABELS,
-  CAPTION_PRESET_LABELS,
-  EDIT_TRANSITION_LABELS,
+  CAPTION_POSITION_KEYS,
+  CAPTION_PRESET_KEYS,
+  EDIT_TRANSITION_KEYS,
   MAX_TRANSITION_FRAMES,
   MIN_TRANSITION_FRAMES,
   type ClipPatch,
@@ -10,6 +10,7 @@ import {
   type CaptionPosition,
   type CaptionPreset,
 } from './model';
+import { getLanguage, translate } from '../lib/i18n';
 
 /**
  * 属性面板的 **schema 驱动**描述表（B34 · P3）。
@@ -56,18 +57,18 @@ export const CLIP_FIELD_SCHEMA: Record<EditClip['kind'], FieldDescriptor[]> = {
       key: 'position',
       label: '位置',
       type: 'select',
-      options: (Object.keys(CAPTION_POSITION_LABELS) as CaptionPosition[]).map((value) => ({
+      options: (Object.keys(CAPTION_POSITION_KEYS) as CaptionPosition[]).map((value) => ({
         value,
-        label: CAPTION_POSITION_LABELS[value],
+        label: translate(getLanguage(), CAPTION_POSITION_KEYS[value]),
       })),
     },
     {
       key: 'preset',
       label: '动效',
       type: 'select',
-      options: (Object.keys(CAPTION_PRESET_LABELS) as CaptionPreset[]).map((value) => ({
+      options: (Object.keys(CAPTION_PRESET_KEYS) as CaptionPreset[]).map((value) => ({
         value,
-        label: CAPTION_PRESET_LABELS[value],
+        label: translate(getLanguage(), CAPTION_PRESET_KEYS[value]),
       })),
       hint: '逐词入场 / 打字机的动效技法借鉴 video-shotcraft（Apache-2.0）',
     },
@@ -98,9 +99,9 @@ export const CLIP_FIELD_SCHEMA: Record<EditClip['kind'], FieldDescriptor[]> = {
       key: 'transition',
       label: '类型',
       type: 'select',
-      options: (Object.keys(EDIT_TRANSITION_LABELS) as EditTransitionKind[]).map((value) => ({
+      options: (Object.keys(EDIT_TRANSITION_KEYS) as EditTransitionKind[]).map((value) => ({
         value,
-        label: EDIT_TRANSITION_LABELS[value],
+        label: translate(getLanguage(), EDIT_TRANSITION_KEYS[value]),
       })),
     },
     {

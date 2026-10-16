@@ -1,7 +1,7 @@
 import {
   LLM_CUSTOM_PRESET_ID,
   LLM_PRESETS,
-  RECIPE_CATEGORY_LABELS,
+  RECIPE_CATEGORY_PROMPT_WORDS,
   findLlmPreset,
 } from '@astrmira/shared';
 import type {
@@ -205,7 +205,9 @@ function buildSystemPrompt(
   if (recipe !== undefined) {
     lines.push(
       '',
-      `用户选用了配方「${recipe.title}」（${RECIPE_CATEGORY_LABELS[recipe.category]}）。改写结果请遵循这个骨架的写法：`,
+      // 注意：这里的分类名用的是**提示词用词**（`RECIPE_CATEGORY_PROMPT_WORDS`），
+      // 不是界面那份（`dict/recipes.ts` 的 `recipes.category.*`）—— 提示词语言是独立轴。
+      `用户选用了配方「${recipe.title}」（${RECIPE_CATEGORY_PROMPT_WORDS[recipe.category]}）。改写结果请遵循这个骨架的写法：`,
       recipe.skeleton,
     );
     if (recipe.pitfalls !== undefined && recipe.pitfalls.length > 0) {

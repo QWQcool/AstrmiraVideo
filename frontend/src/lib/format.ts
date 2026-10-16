@@ -110,6 +110,46 @@ export function formatClock(ms: number): string {
 }
 
 /**
+ * 操作日志的**动作名**（原 `@astrmira/shared` 的 `LOG_ACTION_LABELS` / `logActionLabel`；
+ * 语言迁移第十六批搬来这里）。
+ *
+ * 三处共用：日志页的行内与下拉、画布节点检查器的"这条任务发生了什么"、总览的活动流。
+ * 搬家的判据见 `dict/edit.ts` 文件头：**后端只存 id、从不存中文** → 中文表只有前端在用，
+ * 而中文表没法双语。
+ */
+export const LOG_ACTION_KEYS: Record<string, MessageKey> = {
+  'generate.submit': 'edit.logAction.generateSubmit',
+  'edit.submit': 'edit.logAction.editSubmit',
+  'edit.render': 'edit.logAction.editRender',
+  'task.cancel': 'edit.logAction.taskCancel',
+  'task.complete': 'edit.logAction.taskComplete',
+  'task.fail': 'edit.logAction.taskFail',
+  'task.uncertain': 'edit.logAction.taskUncertain',
+  'history.delete': 'edit.logAction.historyDelete',
+  upload: 'edit.logAction.upload',
+  enhance: 'edit.logAction.enhance',
+  'keys.verify': 'edit.logAction.keysVerify',
+  'logs.delete': 'edit.logAction.logsDelete',
+  'logs.clear': 'edit.logAction.logsClear',
+  'storage.evict': 'edit.logAction.storageEvict',
+  'auth.failed': 'edit.logAction.authFailed',
+  'request.error': 'edit.logAction.requestError',
+};
+
+/**
+ * 动作 id → 显示名（**未知动作原样返回 id**）。
+ *
+ * 这条"宁可显示 id 也不显示空白"的口径是**原来就有的好设计**，搬过来时一字未改：
+ * 空白最容易被当成"没这回事"，而 id 至少能搜、能对日志。
+ * 它同时是 `buildActivityFeed`（总览）与两处视图的入参，所以保持函数形态、按当前语言取。
+ */
+export function logActionLabel(action: string | undefined): string {
+  if (action === undefined) return '—';
+  const key = LOG_ACTION_KEYS[action];
+  return key === undefined ? action : translate(getLanguage(), key);
+}
+
+/**
  * 任务状态 → 文案键（**"徽章口径"**：失败就说"失败"）。
  *
  * ⚠️ 与下面 `STATUS_LABEL_KEYS`（"中央视窗口径"：失败说"**未完成**"）**不是同一套**，

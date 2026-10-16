@@ -1,7 +1,8 @@
 import React from 'react';
 import { Eyebrow } from '../components/Eyebrow';
 import { CLIP_FIELD_SCHEMA, applyProperty, readProperty, type FieldDescriptor } from './clipProperties';
-import { EDIT_TRANSITION_LABELS, editSourceLabel, findClip, type EditClip } from './model';
+import { EDIT_TRANSITION_KEYS, editSourceLabel, findClip, type EditClip } from './model';
+import { getLanguage, translate } from '../lib/i18n';
 import type { EditStore } from './store';
 import { useEditStore } from './store';
 import { formatTimecode } from './time';
@@ -37,7 +38,7 @@ function factsFor(clip: EditClip, fps: number): { label: string; value: string }
     });
   }
   if (clip.kind === 'transition') {
-    facts.push({ label: '类型', value: EDIT_TRANSITION_LABELS[clip.transition] });
+    facts.push({ label: '类型', value: translate(getLanguage(), EDIT_TRANSITION_KEYS[clip.transition]) });
   }
   return facts;
 }

@@ -1,5 +1,41 @@
-# AstrmiraVideo · 产品与开发规划（PLAN V8.60）
+# AstrmiraVideo · 产品与开发规划（PLAN V8.61）
 
+> **修订说明（V8.61，2026-10-16）**
+> **L1 收官件 · 跨包决策落地（语言迁移第十六批 · 上半）**（**共享包 API 变更**：删掉 6 张中文表）：
+> - **决定 1（界面词汇的归属）已执行**：`@astrmira/shared` 里那 6 张**中文常量表**搬去前端字典，
+>   共享包只留 id；前端建**键表**（`Record<具体联合类型, MessageKey>`）。
+>   搬走的判据是**"这句话给谁看"**，而事实是：**后端只存 id、从不存中文**
+>   （`packages/shared/src/logs.ts` 的原注释就是"避免中文进库后改文案要迁数据"）——
+>   所以搬走**不碰任何历史数据**。
+>   - 删：`EDIT_OPERATION_LABELS`（edit.ts）、`TRACK_KIND_LABELS` / `CAPTION_PRESET_LABELS` /
+>     `CAPTION_POSITION_LABELS` / `EDIT_TRANSITION_LABELS` / `describeEditOrigin`（editProject.ts）、
+>     `LOG_ACTION_LABELS` + `logActionLabel`（logs.ts）；
+>   - 建：`dict/edit.ts`（**新域**：操作名 / 轨道名 / 字幕预设与位置 / 转场名 / 日志动作名 16 条 /
+>     来源摘要）+ `edit/model.ts` 的 5 张键表 + `lib/format.ts` 的 `LOG_ACTION_KEYS` /
+>     `logActionLabel()`（**签名不变，调用点零改动**）+ `lib/recipes.ts` 的分类键表。
+> - **编译期穷尽性替代了对拍断言**：`Record<EditOperation['type'], MessageKey>` 这类类型意味着
+>   **共享包将来新增一个 id、前端漏加键会直接编译不过** —— 这比"两份中文对拍"更强
+>   （对拍只覆盖已知 id）。这正是"表在前端"优于"表在共享包 + 测试盯着"的地方。
+> - **决定 2（配方分类名双用途）已执行**：`RECIPE_CATEGORY_LABELS` **改名**
+>   `RECIPE_CATEGORY_PROMPT_WORDS`（**名字说出用途**：这是**给模型看的提示词用词**，
+>   不是界面文案），后端提示词那处使用点加了同款注释；前端字典新增 `recipes.category.*`；
+>   并加**1 条防漂移断言**（`dict.test.ts`）：两份中文**逐字一致**，改一边忘另一边立刻红。
+>   两份**刻意不合并**：提示词语言是独立轴（改它要重测模型效果），界面语言跟本机偏好走。
+> - **决定 3（`describeEditOrigin` 是格式化不是词汇）**：搬回前端 `edit/model.ts`
+>   （中文 `3 轨 · 12 个片段` / 英文 `3 tracks · 12 clips` —— 那是排版事实）；共享包只留数据形状
+>   `EditOriginLike`（那才是领域契约）。
+> - **`EXECUTED_BY_LABELS/TITLES` 刻意不动**（保留"共享留中文 + 对拍断言"那套）：`executedBy` 是
+>   **服务端字段**，后端将来可能要用；而本批搬走的 6 张表是**纯前端编辑模型**的词汇（后端只存 id）。
+>   两种处理方式的差别写在 `dict/edit.ts` 文件头。
+> - **踩到两个坑（都已记进做法）**：① 共享包是**先构建产物再被前端消费**，
+>   只改 `packages/shared/src` 时前端 tsc 仍绿 —— 必须 `pnpm --filter @astrmira/shared build`
+>   才能看到真实的待改清单；② 本仓检出是 **CRLF**，脚本里带 `\n` 的模式匹配不上
+>   （上一批的 CRLF 教训在"自检"上踩过一次，这是第二次）。
+> - 门禁：lint 0（含 `packages/shared`）/ type 0 / 前端 **417**（+1 防漂移断言）/ 契约 11 /
+>   构建 / **UI 冒烟全绿**。
+> - **本批只做了"上半"**：剪辑台 11 个文件的 **UI 文案（135 处）** 是下半，紧接其后
+>   （那批做完 = 全站文案迁完，之后才是语言切换入口与 `I18N_MIGRATION_COMPLETE`）。
+>
 > **修订说明（V8.60，2026-10-16）**
 > **L1 收官件 · 语言迁移第十五批（零散库：14 个文件）**（**无契约变更**）：
 > - 迁完 14 个"零散库"文件（共 **65 处**）：`lib/lineage.ts`（血缘图的幽灵节点标签）、
@@ -1973,6 +2009,36 @@
         `edit/store.ts`、`canvas/PlanNodeCard.tsx`、`canvas/NoteCard.tsx`（各 4）等。
       - 门禁：lint 0 / type 0 / 前端 **406** / 视觉自检（**清单已 9 个文件**）/ 契约 11 / 构建 /
         **UI 冒烟全绿**。
+- [x] **L1 · 跨包决策落地【已完成 2026-10-16 · 语言迁移第十六批·上半】**（**共享包 API 变更**）：
+      - **用户 2026-10-16 拍板"按推荐方案执行"**（方案 A：共享包的表只留 id、文案归前端字典；
+        `describeEditOrigin` 这类格式化搬回前端；配方分类拆成"提示词用词"与"界面用词"两份 + 对拍断言）。
+      - **搬走的判据（一句话）：这句话给谁看？** 事实依据是**后端只存 id、从不存中文** ——
+        `packages/shared/src/logs.ts` 原来那句注释就是"避免中文进库后改文案要迁数据"，
+        所以搬走**不碰任何历史数据**，风险面只有前端。
+      - **删掉的共享导出（6 张表 + 1 个函数）**：`EDIT_OPERATION_LABELS`；
+        `TRACK_KIND_LABELS` / `CAPTION_PRESET_LABELS` / `CAPTION_POSITION_LABELS` /
+        `EDIT_TRANSITION_LABELS` / `describeEditOrigin`；`LOG_ACTION_LABELS` + `logActionLabel`。
+        每处都留了**说明性注释**（为什么搬、搬到哪、将来新 id 会怎样），而不是删完就走。
+      - **新建/改建**：`dict/edit.ts`（**新域**：操作名 6 / 轨道名 4 / 字幕预设 4 / 字幕位置 3 /
+        转场名 3 / 日志动作名 16 / 来源摘要 3）；`edit/model.ts` 加 5 张键表 +
+        **`describeEditOrigin` 的新家**；`lib/format.ts` 加 `LOG_ACTION_KEYS` + `logActionLabel()`
+        （**签名完全不变**，所以 LogsView / CanvasView / OverviewView 三处调用点**零改动**）；
+        `lib/recipes.ts`（新建）放分类键表。
+      - **编译期穷尽性替代对拍**：键表类型写成 `Record<具体联合类型, MessageKey>` ——
+        **共享包新增 id、前端漏加键会直接编译不过**。这比对拍断言更强（对拍只覆盖已知 id），
+        也是"把表放前端"比"共享包 + 测试盯着"更好的地方。
+      - **决定 2 的落点**：`RECIPE_CATEGORY_LABELS` → **改名** `RECIPE_CATEGORY_PROMPT_WORDS`
+        （**名字说出用途**，免得后人顺手把它当界面文案翻译掉）；后端提示词那处加了同款注释；
+        前端字典加 `recipes.category.*`；`dict.test.ts` 加**1 条防漂移断言**
+        （两份中文逐字一致）。**两份刻意不合并**：提示词语言是独立轴。
+      - **`EXECUTED_BY_LABELS/TITLES` 刻意不动**（沿用"共享留中文 + 对拍断言"）：`executedBy` 是
+        **服务端字段**，后端将来可能用；而本批搬走的 6 张表是**纯前端编辑模型**的词汇。
+      - **踩到两个坑（都记进做法）**：
+        ① **共享包先构建产物再被前端消费** —— 只改 `packages/shared/src` 时前端 tsc 仍绿，
+        必须 `pnpm --filter @astrmira/shared build` 才能看到真实的待改清单（否则会以为"改完了"）；
+        ② 本仓检出是 **CRLF** —— 脚本里带 `\n` 的模式匹配不上（自检那次踩过，这是第二次）。
+      - 门禁：lint 0（含 `packages/shared`）/ type 0 / 前端 **417**（+1 防漂移断言）/ 契约 11 /
+        构建 / **UI 冒烟全绿**。
 - [x] **L1 · 语言迁移第十五批（零散库：14 个文件）【已完成 2026-10-16】**（前端内建，**无契约变更**）：
       - **迁完**（共 **65 处**）：`lib/lineage.ts`（**18**：幽灵节点的"任务 N / 资产 N / 不在最近记录里"
         等标签 —— 它们是**界面文案**，画布上真会显示）、`lib/api.ts`（**7**：网络层的失败原因，
