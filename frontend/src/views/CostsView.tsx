@@ -10,6 +10,7 @@ import {
   describeCostHeadline,
   type CostRangeKey,
 } from '../lib/costView';
+import { useTranslate } from '../lib/i18n';
 import { useShell } from '../lib/shell';
 
 /**
@@ -31,6 +32,7 @@ import { useShell } from '../lib/shell';
  */
 export function CostsView() {
   const { projectId, projects } = useShell();
+  const t = useTranslate();
   const [scope, setScope] = useState<'project' | 'all'>('project');
   const [range, setRange] = useState<CostRangeKey>('30d');
   const [summary, setSummary] = useState<CostSummaryResponse | null>(null);
@@ -66,24 +68,26 @@ export function CostsView() {
     <section className="wb-page">
       <div className="wb-page-head wb-page-head-row">
         <div>
-          <h1 className="wb-page-title">成本台账</h1>
+          <h1 className="wb-page-title">{t('costs.title')}</h1>
           <Eyebrow tone="gold">Cost Ledger</Eyebrow>
         </div>
         <button type="button" className="wb-btn" onClick={() => void reload()} disabled={loading}>
-          {loading ? '读取中…' : '刷新'}
+          {t(loading ? 'costs.refresh.loading' : 'costs.refresh.label')}
         </button>
       </div>
 
       {/* 范围与区间（两个分段控件；"全部项目"是本页独有的能力） */}
       <div className="cost-controls">
-        <div className="wb-segmented wb-segmented-compact" role="group" aria-label="统计范围">
+        <div className="wb-segmented wb-segmented-compact" role="group" aria-label={t('costs.scope.aria')}>
           <button
             type="button"
             className="wb-segment"
             aria-pressed={scope === 'project'}
             onClick={() => setScope('project')}
           >
-            {activeProject === null ? '当前项目' : `当前项目 · ${activeProject.name}`}
+            {activeProject === null
+              ? t('costs.scope.project')
+              : t('costs.scope.projectNamed', { name: activeProject.name })}
           </button>
           <button
             type="button"
@@ -91,11 +95,11 @@ export function CostsView() {
             aria-pressed={scope === 'all'}
             onClick={() => setScope('all')}
           >
-            全部项目
+            {t('costs.scope.allProjects')}
           </button>
         </div>
 
-        <div className="wb-segmented wb-segmented-compact" role="group" aria-label="时间区间">
+        <div className="wb-segmented wb-segmented-compact" role="group" aria-label={t('costs.range.aria')}>
           {COST_RANGE_OPTIONS.map((option) => (
             <button
               key={option.key}
@@ -104,7 +108,7 @@ export function CostsView() {
               aria-pressed={range === option.key}
               onClick={() => setRange(option.key)}
             >
-              {option.label}
+              {t(option.labelKey)}
             </button>
           ))}
         </div>
@@ -112,7 +116,7 @@ export function CostsView() {
 
       {error === null ? null : (
         <div className="wb-uncertain" style={{ marginBottom: 14 }}>
-          <span className="wb-uncertain-title">读取失败</span>
+          <span className="wb-uncertain-title">{t('costs.load.error')}</span>
           <span className="wb-uncertain-body">{error}</span>
         </div>
       )}
@@ -124,35 +128,39 @@ export function CostsView() {
         ) : summary === null || headline === null ? null : (
           <>
             <article className="ov-kpi">
-              <span className="ov-kpi-label">预估花费</span>
+              <span className="ov-kpi-label">{t('costs.kpi.estimate')}</span>
               <span className="ov-kpi-value">{headline.total}</span>
               <span className="ov-kpi-foot">{headline.detail}</span>
             </article>
             <article className="ov-kpi">
-              <span className="ov-kpi-label">区间内任务</span>
+              <span className="ov-kpi-label">{t('costs.kpi.tasks')}</span>
               <span className="ov-kpi-value">
                 {summary.taskCount}
-                <small>条</small>
+                <small>{t('costs.kpi.unit')}</small>
               </span>
-              <span className="ov-kpi-foot">成功任务（含未结算）</span>
+              <span className="ov-kpi-foot">{t('costs.kpi.tasksFoot')}</span>
             </article>
             <article className="ov-kpi">
-              <span className="ov-kpi-label">未结算</span>
+              <span className="ov-kpi-label">{t('costs.kpi.unsettled')}</span>
               <span className="ov-kpi-value">
                 {summary.unsettledCount}
-                <small>条</small>
+                <small>{t('costs.kpi.unit')}</small>
               </span>
               <span className="ov-kpi-foot">
-                {summary.unsettledCount === 0 ? '全部任务都有成本记录' : 'V2.12 之前的老任务'}
+                {t(
+                  summary.unsettledCount === 0
+                    ? 'costs.kpi.unsettledFootNone'
+                    : 'costs.kpi.unsettledFootSome',
+                )}
               </span>
             </article>
             <article className="ov-kpi">
-              <span className="ov-kpi-label">结果不明</span>
+              <span className="ov-kpi-label">{t('costs.kpi.uncertain')}</span>
               <span className="ov-kpi-value">
                 {summary.uncertainCount}
-                <small>条</small>
+                <small>{t('costs.kpi.unit')}</small>
               </span>
-              <span className="ov-kpi-foot">可能已产生费用（不在金额里）</span>
+              <span className="ov-kpi-foot">{t('costs.kpi.uncertainFoot')}</span>
             </article>
           </>
         )}
@@ -172,7 +180,7 @@ export function CostsView() {
             <section className="wb-panel cost-panel">
               <div className="wb-field-head">
                 <Eyebrow index={1} tone="gold" as="h2">
-                  月度预算
+                  {t('costs.budget.title')}
                 </Eyebrow>
                 <span className="wb-note">{budget.text}</span>
               </div>
@@ -183,9 +191,7 @@ export function CostsView() {
                 />
               </div>
               {budget.over ? (
-                <p className="wb-note cost-note-warn">
-                  本月预估已超出预算（按公开价目估算，实际以方舟账单为准）。
-                </p>
+                <p className="wb-note cost-note-warn">{t('costs.budget.over')}</p>
               ) : null}
             </section>
           )}
@@ -193,31 +199,34 @@ export function CostsView() {
           <section className="wb-panel cost-panel">
             <div className="wb-field-head">
               <Eyebrow index={2} tone="gold" as="h2">
-                按项目
+                {t('costs.byProject.title')}
               </Eyebrow>
-              <span className="wb-note">金额为预估（公开价目 × 上游计费式）</span>
+              <span className="wb-note">{t('costs.byProject.note')}</span>
             </div>
-            <CostBucketList buckets={summary.byProject} emptyText="区间内没有成功任务。" />
+            <CostBucketList
+              buckets={summary.byProject}
+              emptyText={t('costs.bucket.empty')}
+            />
           </section>
 
           <section className="wb-panel cost-panel">
             <div className="wb-field-head">
               <Eyebrow index={3} tone="gold" as="h2">
-                按天
+                {t('costs.byDay.title')}
               </Eyebrow>
-              <span className="wb-note">服务端本地时区</span>
+              <span className="wb-note">{t('costs.byDay.note')}</span>
             </div>
-            <CostBucketList buckets={summary.byDay} emptyText="区间内没有成功任务。" />
+            <CostBucketList buckets={summary.byDay} emptyText={t('costs.bucket.empty')} />
           </section>
 
           <section className="wb-panel cost-panel">
             <div className="wb-field-head">
               <Eyebrow index={4} tone="gold" as="h2">
-                按模型档位
+                {t('costs.byModel.title')}
               </Eyebrow>
-              <span className="wb-note">自定义接入点按 2.0 标准口径估算</span>
+              <span className="wb-note">{t('costs.byModel.note')}</span>
             </div>
-            <CostBucketList buckets={summary.byModel} emptyText="区间内没有成功任务。" />
+            <CostBucketList buckets={summary.byModel} emptyText={t('costs.bucket.empty')} />
           </section>
 
           {/* 口径说明：**原样显示服务端下发的文案**（界面不许自己写一版） */}

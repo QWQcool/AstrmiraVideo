@@ -653,6 +653,8 @@ if (leftPanelText !== undefined) {
     'lib/format.ts',
     'lib/libraryFilter.ts',
     'views/LibraryView.tsx',
+    'lib/costView.ts',
+    'views/CostsView.tsx',
   ];
   const CJK_PATTERN = /[\u4e00-\u9fa5]/;
   for (const rel of I18N_MIGRATED) {

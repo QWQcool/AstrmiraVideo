@@ -3,6 +3,7 @@ import { CANVAS_EN, CANVAS_ZH } from './canvas';
 import { COMMON_EN, COMMON_ZH } from './common';
 import { CREATE_EN, CREATE_ZH } from './create';
 import { ERROR_EN, ERROR_ZH } from './error';
+import { COSTS_EN, COSTS_ZH } from './costs';
 import { LIBRARY_EN, LIBRARY_ZH } from './library';
 import { SHELL_EN, SHELL_ZH } from './shell';
 import { WORKBENCH_EN, WORKBENCH_ZH } from './workbench';
@@ -68,6 +69,7 @@ export const ZH = {
   ...ERROR_ZH,
   ...CANVAS_ZH,
   ...LIBRARY_ZH,
+  ...COSTS_ZH,
 };
 
 /** 字典的键集合（全站文案键的唯一权威） */
@@ -88,6 +90,7 @@ export const EN: Record<MessageKey, string> = {
   ...ERROR_EN,
   ...CANVAS_EN,
   ...LIBRARY_EN,
+  ...COSTS_EN,
 };
 
 export const DICTIONARIES = { zh: ZH, en: EN };
