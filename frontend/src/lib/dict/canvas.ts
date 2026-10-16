@@ -21,6 +21,12 @@
  * 原样写的是"**片 A 的编排**只支持这两种…"—— "片 A"是**本项目的开发术语**，用户看不懂。
  * 这是**迁移中发现的问题，不是迁移造成的**，按本仓纪律**照抄原文、另开条目修**
  * （与 `dict/byok.ts` 里那两个 `**` 同一条处理）。
+ *
+ * ## 英文侧的空格与括号**按英文排版来**（不照搬中文）
+ * 中文原文里 `（…）` 前后通常没有空格（全角括号自带视觉间距），英文写成 ` (…)` 才正常。
+ * 所以**同一条键的中英值允许空格不同** —— 这是翻译的事实，不是"抄漏了"。
+ * 反过来，**中文侧的边界空格一律照抄原文**（如 `'； 上游…'` / `'条可跑 （空提示词'`）：
+ * 那些是 JSX 把跨行文本合成一个空格的结果，改了就与迁移前不一致。
  */
 
 export const CANVAS_ZH = {
@@ -111,6 +117,181 @@ export const CANVAS_ZH = {
     '上游没有提交成功 —— 本节点不带着错误输入去跑（上游那条的原因见它自己）',
   'canvas.run.upstreamNoRecord':
     '上游本次不在重跑范围、本机也没有它上次的产物记录 —— 先单独跑一次它，或把它固定住',
+
+  // ── 边的图例（`views/CanvasView.tsx` 的 `EDGE_STYLE`）──
+  'canvas.edge.edit': '剪辑自',
+  'canvas.edge.extract': '抽帧',
+  'canvas.edge.reference': '素材参考',
+  'canvas.edge.taskRef': '成片参考',
+
+  // ── 画布工具条（`views/CanvasView.tsx`）──
+  // 带计数的那几条**刻意分成两个键**（`label` / `labelWithCount`）：括号是**全角还是半角**
+  // 属于各语言的排版事实，不能由代码统一拼（英文用 ` (N)`、中文用 `（N）`）。
+  'canvas.tool.togglePlan.off': '回到只读的事实图（编排本身会保留在本机）',
+  'canvas.tool.togglePlan.on': '进入编排模式：自己摆节点、连线，然后一次提交',
+  'canvas.tool.togglePlan.labelFact': '👁 事实图',
+  'canvas.tool.togglePlan.labelPlan': '✎ 编排',
+  'canvas.tool.addNode.title': '在视口中心加一个生成节点（加完在右侧写提示词）',
+  'canvas.tool.addNode.label': '＋ 节点',
+  'canvas.tool.run.noneRunnable': '没有能跑的节点（空提示词 / 被阻断的都不能跑 —— 点节点看原因）',
+  'canvas.tool.run.title': '按依赖顺序提交 {count} 条任务（同一编排重复点不会重复计费）',
+  'canvas.tool.run.running': '⏳ 运行中…',
+  'canvas.tool.run.label': '▶ 运行编排',
+  'canvas.tool.run.labelWithCount': '▶ 运行编排（{count}）',
+  // 刻意**拆成两段字面量**（与原文那句 `+` 拼接同形）：这样每一段在源码里都是连续的，
+  // 忠实性核对能真正把它当"整句"验一遍（不拆的话它会落进"跨边界核对不到"那一类）。
+  'canvas.tool.rerun.title':
+    '整张图再来一遍：换一代幂等键 → 会新建 {count} 条任务（真的计费）。' +
+    '当前是第 {seq} 轮；跑完变成第 {next} 轮',
+  'canvas.tool.rerun.label': '🔁 重跑全部',
+  'canvas.tool.export.title':
+    '把这份编排导出为 JSON 文件（含产物 ID 注记：它们只在本机部署有意义；不含凭据）',
+  'canvas.tool.export.label': '⤓ 导出编排',
+  'canvas.tool.import.title':
+    '从 JSON 文件导入一份编排（会替换当前编排；当前非空时先确认，不会静默覆盖）',
+  'canvas.tool.import.label': '⤒ 导入编排',
+  'canvas.tool.earlier.loading': '正在取更早的任务…',
+  'canvas.tool.earlier.more': '把更早的任务也画进来（每次 {size} 条）',
+  'canvas.tool.earlier.none': '已经没有更早的任务了',
+  'canvas.tool.earlier.labelLoading': '⏳ 加载中…',
+  'canvas.tool.earlier.labelMore': '⏮ 加载更早',
+  'canvas.tool.earlier.labelDone': '⏮ 已全部加载',
+  'canvas.tool.zoomSelection.hint': '先在画布上框选节点，或按住 Shift 点选多个节点',
+  'canvas.tool.zoomSelection.title': '把选中的 {count} 个节点填满视口',
+  'canvas.tool.zoomSelection.label': '◎ 缩放到选区',
+  'canvas.tool.zoomSelection.labelWithCount': '◎ 缩放到选区（{count}）',
+  'canvas.tool.addNote.title': '在视口中心贴一张便签（写清「这是哪条链、为什么这么做」）',
+  'canvas.tool.addNote.label': '＋ 便签',
+  'canvas.tool.fitAll.title': '缩放到全部节点（等同左下角控件里的适配按钮）',
+  'canvas.tool.fitAll.label': '⤢ 全部',
+
+  // ── 视图壳（`views/CanvasView.tsx`）──
+  'canvas.title.plan': '画布编排',
+  'canvas.title.lineage': '血缘画布',
+  'canvas.legend.aria': '边的图例',
+  // 编排顶栏那段说明：句子里夹了两个 `<strong>` 与一个 `<b>` → 按本仓惯例拆段
+  // （拼起来：连线 = 数据流…一次提交 —— **重复点不会重复计费**（…）。「🔁 重跑」则相反…—— **会新建任务（真的计费）**；
+  //   在节点面板里可以只重跑 **一段**（它和它的下游，上游沿用上次产物））
+  'canvas.plan.hint.part1': '连线 = 数据流（只有 v2v 能接上游）；「▶ 运行编排」按依赖顺序一次提交 ——',
+  'canvas.plan.hint.part2': '重复点不会重复计费',
+  'canvas.plan.hint.part3': '（同一编排同一节点用的幂等键是固定的）。',
+  'canvas.plan.hint.part4': '「🔁 重跑」则相反：它换一代幂等键 ——',
+  'canvas.plan.hint.part5': '会新建任务（真的计费）',
+  // ⚠️ `part6` 开头的"； "里那个空格是**原文的样子**（JSX 把跨行文本合成一个空格），别顺手删
+  'canvas.plan.hint.part6': '； 在节点面板里可以只重跑',
+  'canvas.plan.hint.part7': '一段',
+  'canvas.plan.hint.part8': '（它和它的下游，上游沿用上次产物）',
+  'canvas.plan.runSeq': '（当前第 {seq} 轮）',
+
+  // ── 检查器抽屉：留痕（`NodeLogList`）──
+  'canvas.trail.error': '留痕读取失败：{reason}',
+  'canvas.trail.loading': '正在读取留痕…',
+  'canvas.trail.empty': '没有留痕（这条任务早于操作日志功能，或已被日志保留策略清掉）。',
+
+  // ── 检查器抽屉（`CanvasInspector`）──
+  'canvas.insp.aria': '节点详情',
+  'canvas.insp.close': '关闭详情',
+  'canvas.insp.ghost': '这个对象已不在当前列表里（删除过或超出最近 50 条）——仅作为血缘占位显示。',
+  'canvas.insp.section.prompt': '提示词',
+  'canvas.insp.noSnapshot': '（无快照）',
+  'canvas.insp.kv.mode': '模式',
+  'canvas.insp.kv.aspect': '画幅',
+  'canvas.insp.kv.duration': '时长',
+  'canvas.insp.kv.engine': '引擎',
+  'canvas.insp.kv.seed': '种子',
+  'canvas.insp.seedRandom': '随机',
+  'canvas.insp.kv.output': '产物',
+  'canvas.insp.outputDone': '已出片',
+  'canvas.insp.outputNone': '无',
+  'canvas.insp.section.inputs': '输入素材',
+  'canvas.insp.input.firstFrame': '首帧图',
+  'canvas.insp.input.lastFrame': '尾帧图',
+  'canvas.insp.input.referenceVideo': '视频参考',
+  'canvas.insp.jump.missing': '这个引用不在当前画布上',
+  'canvas.insp.jump.go': '跳到这个节点',
+  'canvas.insp.jump.offCanvas': '（画布外）',
+  'canvas.insp.section.cost': '成本',
+  // ⚠️ 原文里那两个 `**` 是作者写粗体时**留在了界面上**的 —— 迁移照抄（要修另开条目，见 dict/byok.ts 同一处理）
+  'canvas.insp.cost.unrecorded': '未记录成本（老任务或尚未结算）。金额口径见 CONTRACT §13，**以方舟账单为准**。',
+  'canvas.insp.cost.note': '（{source}）',
+  'canvas.insp.cost.noteFallback': '（{source} · 未命中单价表，按兜底价）',
+  'canvas.insp.cost.model': '模型 {model} · {seconds}s · {width}×{height}',
+  'canvas.insp.section.warnings': '警告（{count}）',
+  'canvas.insp.section.error': '错误',
+  'canvas.insp.error.disposition': '处置：{text}',
+  'canvas.insp.section.trail': '这条任务发生了什么',
+  'canvas.insp.trail.all': '去操作日志页看全部 →',
+  'canvas.insp.section.asset': '资产',
+  'canvas.insp.kv.assetKind': '类型',
+  'canvas.insp.kv.assetSize': '体积',
+  'canvas.insp.kv.assetCreated': '上传于',
+  'canvas.insp.section.lineage': '血缘',
+  'canvas.insp.lineage.upstream': '↑ 上游',
+  'canvas.insp.lineage.downstream': '↓ 下游',
+  'canvas.insp.action.reuse': '⟲ 复用参数',
+  'canvas.insp.action.toEdit': '✂ 送剪辑台',
+  'canvas.insp.action.asReference': '🎬 设为视频参考',
+  'canvas.insp.action.asFirstFrame': '🖼 当作首帧（I2V）',
+  'canvas.insp.action.openOriginal': '⧉ 打开原文件',
+  'canvas.insp.export.done': '已导出：{tasks} 条任务 · {assets} 个资产',
+  'canvas.insp.export.doneWithOmitted':
+    '已导出：{tasks} 条任务 · {assets} 个资产 · {omitted} 个对象已不在画布上（记在 omitted）',
+  'canvas.insp.export.failed': '导出失败：{reason}',
+  'canvas.insp.exportPack.title': '把这条片子的上游配方链导出为 JSON（不含凭据与 provider 私有参数）',
+  'canvas.insp.exportPack.label': '⤓ 导出配方包',
+
+  // ── 成本来源（`COST_SOURCE_KEYS`）──
+  'canvas.costSource.estimate': '预估（公开价目）',
+  'canvas.costSource.localFree': '本地轨 · 免费',
+  'canvas.costSource.upstream': '上游真实值',
+
+  // ── 编排的提示与通知（`CanvasView` 的运行 / 文件两条线）──
+  'canvas.plan.brokenNotice': '本机有一份读不出来的编排（可能是更新版本写的）—— 原文已保留，你一旦改动就会被覆盖',
+  'canvas.plan.broken.title': '本机的编排读不出来',
+  'canvas.plan.broken.body': '它可能是更新版本写的 —— 原文已保留；你一旦改动（加节点 / 连线）就会覆盖它。',
+  'canvas.plan.notice.cycle': '图里有环（{count} 个节点参与）—— 一个都没提交，先解开环再跑',
+  'canvas.plan.notice.submitted': '已提交 {count} 条任务',
+  'canvas.plan.notice.kept': '{count} 条沿用上次产物',
+  'canvas.plan.notice.bad': '{count} 条跳过或失败（原因在节点卡上）',
+  'canvas.plan.notice.rerunHead': '第 {seq} 轮（显式重跑：这些是新建的任务）—— ',
+  'canvas.plan.notice.runFailed': '运行失败：{reason}',
+  /** 列表分隔符也是**排版事实**（中文全角逗号 / 英文半角逗号 + 空格）→ 进字典，不写死在代码里 */
+  'canvas.plan.notice.separator': '，',
+  'canvas.plan.file.exported':
+    '已导出「{name}」：{nodes} 个节点 · {edges} 条连线（文件里 {notes} 条注记，含"这份文件不含什么"）',
+  'canvas.plan.file.imported':
+    '已导入「{name}」：{nodes} 个节点 · {edges} 条连线（新的编排身份 —— 首次「▶ 运行编排」会新建任务）',
+  'canvas.plan.file.importRejected': '导入失败：{reason}（当前编排未变动）',
+  'canvas.plan.file.importUnreadable': '导入失败：读不到文件内容（{reason}）',
+  'canvas.plan.importConfirm.part1': '导入会',
+  'canvas.plan.importConfirm.part2': '替换当前编排',
+  'canvas.plan.importConfirm.part3':
+    '（现在有 {nodes} 个节点 · {edges} 条连线；文件里是「{name}」{fileNodes} 个节点）—— 想留一份的话，先「⤓ 导出编排」。',
+  'canvas.plan.importConfirm.yes': '确认导入',
+  'canvas.plan.importConfirm.cancel': '取消',
+  // ⚠️ "条可跑" 与 "（空提示词" 之间那个空格同样是**原文的样子**（跨行文本合成）——别删
+  'canvas.plan.count':
+    '编排：{nodes} 个节点 · {edges} 条连线 · {runnable} 条可跑 （空提示词 / 被阻断的都不会提交 —— 点节点看原因）。位置与参数存在本机浏览器、按项目隔离。',
+
+  // ── 事实图的加载 / 空态 / 状态栏 / 窄屏提示 ──
+  'canvas.load.error': '画布数据读取失败',
+  'canvas.load.loading': '正在读取血缘数据…',
+  'canvas.empty.title': '这里还是一张白纸',
+  'canvas.empty.body': '还没有任何生成记录 —— 去创作入口写下第一句话，成片与它的派生关系会自动出现在这里。',
+  'canvas.empty.action': '去创作',
+  'canvas.graph.summary':
+    '{nodes} 个节点 · {edges} 条派生边（列 = 派生顺序，行 = 时间倒序）。 只读视图：点节点看详情与动作；拖动只是挪位置，不保存。',
+  'canvas.status.allOk': '✓ 没有失败/待核对的任务',
+  'canvas.status.problems': '⚠ {count} 个节点异常',
+  'canvas.status.onlyProblems.title': '把非异常节点调暗（不删图），方便一眼看出哪里不对',
+  'canvas.status.showAll': '显示全部',
+  'canvas.status.onlyProblems': '只看异常',
+  'canvas.status.queue': '队列中 {count} 条',
+  'canvas.status.queueOldest': '（最久已等 {seconds}s）',
+  'canvas.status.queueSingle': '· 本机一次只跑 1 条',
+  'canvas.mobile.part1': '画布在窄屏上不好用：请到桌面端查看，或先去',
+  'canvas.mobile.library': '视频库',
+  'canvas.mobile.part2': '看列表。',
 };
 
 export const CANVAS_EN = {
@@ -197,4 +378,172 @@ export const CANVAS_EN = {
     'The upstream did not submit successfully — this node will not run on top of bad input (see that node for its own reason)',
   'canvas.run.upstreamNoRecord':
     'The upstream is out of this rerun scope and this machine has no record of its previous output — run it on its own first, or pin it',
+
+  'canvas.edge.edit': 'Edited from',
+  'canvas.edge.extract': 'Frame grab',
+  'canvas.edge.reference': 'Asset reference',
+  'canvas.edge.taskRef': 'Render reference',
+
+  'canvas.tool.togglePlan.off': 'Back to the read-only fact graph (the plan itself stays on this machine)',
+  'canvas.tool.togglePlan.on': 'Enter plan mode: place nodes, connect them, then submit in one go',
+  'canvas.tool.togglePlan.labelFact': '👁 Fact graph',
+  'canvas.tool.togglePlan.labelPlan': '✎ Plan',
+  'canvas.tool.addNode.title': 'Add a generate node at the viewport center (write its prompt on the right)',
+  'canvas.tool.addNode.label': '＋ Node',
+  'canvas.tool.run.noneRunnable':
+    'No runnable nodes (empty prompts / blocked ones cannot run — click a node to see why)',
+  'canvas.tool.run.title':
+    'Submit {count} tasks in dependency order (clicking again on the same plan will not double-charge)',
+  'canvas.tool.run.running': '⏳ Running…',
+  'canvas.tool.run.label': '▶ Run plan',
+  'canvas.tool.run.labelWithCount': '▶ Run plan ({count})',
+  'canvas.tool.rerun.title':
+    'Run the whole graph again: a new idempotency-key generation → {count} new tasks (billed for real). Currently round {seq}; it becomes round {next} when done',
+  'canvas.tool.rerun.label': '🔁 Rerun all',
+  'canvas.tool.export.title':
+    'Export this plan as a JSON file (includes output-ID notes: they only mean something on this deployment; no credentials)',
+  'canvas.tool.export.label': '⤓ Export plan',
+  'canvas.tool.import.title':
+    'Import a plan from a JSON file (replaces the current plan; asks first when the current one is not empty — never overwrites silently)',
+  'canvas.tool.import.label': '⤒ Import plan',
+  'canvas.tool.earlier.loading': 'Fetching earlier tasks…',
+  'canvas.tool.earlier.more': 'Also draw earlier tasks ({size} per click)',
+  'canvas.tool.earlier.none': 'No earlier tasks left',
+  'canvas.tool.earlier.labelLoading': '⏳ Loading…',
+  'canvas.tool.earlier.labelMore': '⏮ Load earlier',
+  'canvas.tool.earlier.labelDone': '⏮ All loaded',
+  'canvas.tool.zoomSelection.hint': 'Box-select nodes on the canvas first, or Shift-click several nodes',
+  'canvas.tool.zoomSelection.title': 'Fill the viewport with the selected {count} nodes',
+  'canvas.tool.zoomSelection.label': '◎ Zoom to selection',
+  'canvas.tool.zoomSelection.labelWithCount': '◎ Zoom to selection ({count})',
+  'canvas.tool.addNote.title':
+    'Pin a note at the viewport center (write down: which chain is this, why this way)',
+  'canvas.tool.addNote.label': '＋ Note',
+  'canvas.tool.fitAll.title': 'Zoom to all nodes (same as the fit button in the bottom-left controls)',
+  'canvas.tool.fitAll.label': '⤢ All',
+
+  'canvas.title.plan': 'Canvas plan',
+  'canvas.title.lineage': 'Lineage canvas',
+  'canvas.legend.aria': 'Edge legend',
+  'canvas.plan.hint.part1':
+    'Connections = data flow (only v2v can take an upstream); 「▶ Run plan」 submits everything in dependency order —',
+  'canvas.plan.hint.part2': 'clicking it again does not double-charge',
+  'canvas.plan.hint.part3': ' (the idempotency key for a plan node is fixed).',
+  'canvas.plan.hint.part4': '「🔁 Rerun」 is the opposite: it uses a new idempotency-key generation —',
+  'canvas.plan.hint.part5': 'it creates new tasks (billed for real)',
+  'canvas.plan.hint.part6': '; in the node panel you can rerun just ',
+  'canvas.plan.hint.part7': 'one segment',
+  'canvas.plan.hint.part8': ' (it and its downstream, upstream keeps its previous output)',
+
+  'canvas.plan.runSeq': '(round {seq} right now)',
+
+  'canvas.trail.error': 'Could not read the trail: {reason}',
+  'canvas.trail.loading': 'Reading the trail…',
+  'canvas.trail.empty': 'No trail (this task predates the activity log, or its records were cleaned up).',
+
+  'canvas.insp.aria': 'Node details',
+  'canvas.insp.close': 'Close details',
+  'canvas.insp.ghost':
+    'This object is no longer in the current list (deleted, or beyond the latest 50) — shown as a lineage placeholder only.',
+  'canvas.insp.section.prompt': 'Prompt',
+  'canvas.insp.noSnapshot': '(no snapshot)',
+  'canvas.insp.kv.mode': 'Mode',
+  'canvas.insp.kv.aspect': 'Aspect',
+  'canvas.insp.kv.duration': 'Duration',
+  'canvas.insp.kv.engine': 'Engine',
+  'canvas.insp.kv.seed': 'Seed',
+  'canvas.insp.seedRandom': 'Random',
+  'canvas.insp.kv.output': 'Output',
+  'canvas.insp.outputDone': 'Produced',
+  'canvas.insp.outputNone': 'None',
+  'canvas.insp.section.inputs': 'Input assets',
+  'canvas.insp.input.firstFrame': 'First frame',
+  'canvas.insp.input.lastFrame': 'Last frame',
+  'canvas.insp.input.referenceVideo': 'Reference video',
+  'canvas.insp.jump.missing': 'This reference is not on the current canvas',
+  'canvas.insp.jump.go': 'Jump to this node',
+  'canvas.insp.jump.offCanvas': ' (off canvas)',
+  'canvas.insp.section.cost': 'Cost',
+  'canvas.insp.cost.unrecorded':
+    'No cost recorded (old task or not settled yet). For the pricing basis see CONTRACT §13; **the Ark bill is authoritative**.',
+  'canvas.insp.cost.note': ' ({source})',
+  'canvas.insp.cost.noteFallback': ' ({source} · price-table miss, using the fallback rate)',
+  'canvas.insp.cost.model': 'Model {model} · {seconds}s · {width}×{height}',
+  'canvas.insp.section.warnings': 'Warnings ({count})',
+  'canvas.insp.section.error': 'Error',
+  'canvas.insp.error.disposition': 'Handling: {text}',
+  'canvas.insp.section.trail': 'What happened to this task',
+  'canvas.insp.trail.all': 'See everything in the activity log →',
+  'canvas.insp.section.asset': 'Asset',
+  'canvas.insp.kv.assetKind': 'Kind',
+  'canvas.insp.kv.assetSize': 'Size',
+  'canvas.insp.kv.assetCreated': 'Uploaded',
+  'canvas.insp.section.lineage': 'Lineage',
+  'canvas.insp.lineage.upstream': '↑ Upstream',
+  'canvas.insp.lineage.downstream': '↓ Downstream',
+  'canvas.insp.action.reuse': '⟲ Reuse parameters',
+  'canvas.insp.action.toEdit': '✂ Send to edit desk',
+  'canvas.insp.action.asReference': '🎬 Use as reference video',
+  'canvas.insp.action.asFirstFrame': '🖼 Use as first frame (I2V)',
+  'canvas.insp.action.openOriginal': '⧉ Open the original file',
+  'canvas.insp.export.done': 'Exported: {tasks} tasks · {assets} assets',
+  'canvas.insp.export.doneWithOmitted':
+    'Exported: {tasks} tasks · {assets} assets · {omitted} objects are no longer on the canvas (listed under omitted)',
+  'canvas.insp.export.failed': 'Export failed: {reason}',
+  'canvas.insp.exportPack.title':
+    'Export the upstream recipe chain of this clip as JSON (no credentials, no provider-private parameters)',
+  'canvas.insp.exportPack.label': '⤓ Export recipe pack',
+
+  'canvas.costSource.estimate': 'Estimated (public pricing)',
+  'canvas.costSource.localFree': 'Local track · free',
+  'canvas.costSource.upstream': 'Upstream actual',
+
+  'canvas.plan.brokenNotice':
+    'There is a plan on this machine that cannot be read (maybe written by a newer version) — the original text is kept; any change you make will overwrite it',
+  'canvas.plan.broken.title': 'The plan on this machine cannot be read',
+  'canvas.plan.broken.body':
+    'It may have been written by a newer version — the original text is kept; any change you make (adding nodes / connections) will overwrite it.',
+  'canvas.plan.notice.cycle':
+    'The graph has a cycle ({count} nodes involved) — nothing was submitted; break the cycle and run again',
+  'canvas.plan.notice.submitted': 'Submitted {count} tasks',
+  'canvas.plan.notice.kept': '{count} reuse their previous output',
+  'canvas.plan.notice.bad': '{count} were skipped or failed (reason on the node card)',
+  'canvas.plan.notice.rerunHead': 'Round {seq} (explicit rerun: these are newly created tasks) — ',
+  'canvas.plan.notice.runFailed': 'Run failed: {reason}',
+  'canvas.plan.notice.separator': ', ',
+  'canvas.plan.file.exported':
+    'Exported 「{name}」: {nodes} nodes · {edges} connections (with {notes} notes in the file, including "what this file does not contain")',
+  'canvas.plan.file.imported':
+    'Imported 「{name}」: {nodes} nodes · {edges} connections (a new plan identity — the first 「▶ Run plan」 creates new tasks)',
+  'canvas.plan.file.importRejected': 'Import failed: {reason} (the current plan was left untouched)',
+  'canvas.plan.file.importUnreadable': 'Import failed: could not read the file ({reason})',
+  'canvas.plan.importConfirm.part1': 'Importing will ',
+  'canvas.plan.importConfirm.part2': 'replace the current plan',
+  'canvas.plan.importConfirm.part3':
+    ' (you have {nodes} nodes · {edges} connections right now; the file holds 「{name}」 with {fileNodes} nodes) — export first with 「⤓ Export plan」 if you want to keep a copy.',
+  'canvas.plan.importConfirm.yes': 'Confirm import',
+  'canvas.plan.importConfirm.cancel': 'Cancel',
+  'canvas.plan.count':
+    'Plan: {nodes} nodes · {edges} connections · {runnable} runnable (empty prompts / blocked nodes are never submitted — click a node to see why). Position and parameters live in this browser, isolated per project.',
+
+  'canvas.load.error': 'Could not load canvas data',
+  'canvas.load.loading': 'Loading lineage data…',
+  'canvas.empty.title': 'This is still a blank page',
+  'canvas.empty.body':
+    'No generation records yet — write your first line in Create, and the clips plus their lineage will show up here automatically.',
+  'canvas.empty.action': 'Go to Create',
+  'canvas.graph.summary':
+    '{nodes} nodes · {edges} derived edges (columns = derivation order, rows = newest first). Read-only: click a node for details and actions; dragging only moves it and is not saved.',
+  'canvas.status.allOk': '✓ No failed / to-verify tasks',
+  'canvas.status.problems': '⚠ {count} nodes look wrong',
+  'canvas.status.onlyProblems.title':
+    'Dim the healthy nodes (without deleting them) so problems stand out',
+  'canvas.status.showAll': 'Show all',
+  'canvas.status.onlyProblems': 'Problems only',
+  'canvas.status.queue': '{count} in queue',
+  'canvas.status.queueOldest': ' (oldest waiting {seconds}s)',
+  'canvas.status.queueSingle': '· this machine runs 1 at a time',
+  'canvas.mobile.part1': 'The canvas is hard to use on a narrow screen: open it on a desktop, or go to the ',
+  'canvas.mobile.library': 'library',
+  'canvas.mobile.part2': ' for a list.',
 };

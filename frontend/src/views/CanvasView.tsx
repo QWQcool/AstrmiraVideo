@@ -82,6 +82,7 @@ import { NoteCard, type CanvasNoteNode } from '../canvas/NoteCard';
 import { PlanNodeCard, type PlanFlowNode } from '../canvas/PlanNodeCard';
 import { PlanInspector } from '../canvas/PlanInspector';
 import { canvasModeLabel } from '../canvas/labels';
+import { getLanguage, translate, useTranslate, type MessageKey } from '../lib/i18n';
 import {
   createNote,
   loadCanvasNotes,
@@ -127,13 +128,29 @@ function noteFlowNodes(
  * 3. **不静默**：引用了但已不在列表里的对象以 ghost 节点出现；空库时有明确引导。
  *
  * 布局：自写分层（列 = 派生深度、行 = 同列时间倒序），不引 dagre（UPSTREAM #5 只登记组件本体）。
+ *
+ * ## 语言迁移第十一批：这一屏（127 处）全部走字典
+ * 文案在 `dict/canvas.ts`（`canvas.*`）。三处**不是"把字符串换成 t()"** 的地方，写在这里免得被改回去：
+ * 1. `EDGE_STYLE` / `COST_SOURCE_KEYS` 是**模块级常量** —— 它们在模块加载那一刻就把语言定死，
+ *    所以改成**键表 + 取值函数**（与 `lib/format.ts` 的 `statusLabel` 同手法）；
+ * 2. 血缘按钮的 `dir`（`up` / `down`）**不能直接存翻译后的箭头文字**：它同时被用作 React key，
+ *    换成随语言变化的值会让这些按钮在切语言时被整体重挂（白掉一帧）；
+ * 3. 句子里夹 `<strong>` / `<b>` 的那几段（编排顶栏说明、导入确认）按本仓惯例**拆段**，
+ *    边界空格（如 `'； 上游…'`）写进字典值 —— 那是 JSX 把跨行文本合成一个空格的结果。
  */
 
-const EDGE_STYLE: Record<LineageEdgeKind, { stroke: string; dash?: string; text: string }> = {
-  edit: { stroke: 'var(--gold)', text: '剪辑自' },
-  extract: { stroke: 'var(--blue)', text: '抽帧' },
-  reference: { stroke: 'var(--muted)', text: '素材参考' },
-  'task-ref': { stroke: 'var(--gold-line)', dash: '6 4', text: '成片参考' },
+/**
+ * 边的样式表（V2.26）。
+ *
+ * 语言迁移第十一批：`text` 改成 **`textKey`**（字典键）—— 这里是个**模块级常量**，
+ * 在模块加载那一刻就定死了一种语言；而图例要在**渲染那一刻**取文案。
+ * 与 `WorkbenchView` 那次（`ENHANCE_NOTICE` 改字典键）是同一类"迁移不是替换字符串"。
+ */
+const EDGE_STYLE: Record<LineageEdgeKind, { stroke: string; dash?: string; textKey: MessageKey }> = {
+  edit: { stroke: 'var(--gold)', textKey: 'canvas.edge.edit' },
+  extract: { stroke: 'var(--blue)', textKey: 'canvas.edge.extract' },
+  reference: { stroke: 'var(--muted)', textKey: 'canvas.edge.reference' },
+  'task-ref': { stroke: 'var(--gold-line)', dash: '6 4', textKey: 'canvas.edge.taskRef' },
 };
 
 const EDGE_KINDS: LineageEdgeKind[] = ['edit', 'extract', 'reference', 'task-ref'];
@@ -204,6 +221,7 @@ const CanvasToolbar: FC<{
   onImportPlanFile,
 }) => {
   const { fitView, screenToFlowPosition } = useReactFlow();
+  const t = useTranslate();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const count = selectedIds.length;
   const viewportCenter = (): { x: number; y: number } =>
@@ -216,14 +234,10 @@ const CanvasToolbar: FC<{
         type="button"
         className="cv-tool"
         data-testid="cv-toggle-plan"
-        title={
-          planMode
-            ? '回到只读的事实图（编排本身会保留在本机）'
-            : '进入编排模式：自己摆节点、连线，然后一次提交'
-        }
+        title={t(planMode ? 'canvas.tool.togglePlan.off' : 'canvas.tool.togglePlan.on')}
         onClick={onTogglePlan}
       >
-        {planMode ? '👁 事实图' : '✎ 编排'}
+        {t(planMode ? 'canvas.tool.togglePlan.labelFact' : 'canvas.tool.togglePlan.labelPlan')}
       </button>
       {planMode ? (
         <>
@@ -231,13 +245,13 @@ const CanvasToolbar: FC<{
             type="button"
             className="cv-tool"
             data-testid="cv-add-plan-node"
-            title="在视口中心加一个生成节点（加完在右侧写提示词）"
+            title={t('canvas.tool.addNode.title')}
             onClick={() => {
               const center = viewportCenter();
               onAddPlanNode(center.x, center.y);
             }}
           >
-            ＋ 节点
+            {t('canvas.tool.addNode.label')}
           </button>
           <button
             type="button"
@@ -246,12 +260,16 @@ const CanvasToolbar: FC<{
             disabled={running || runnableCount === 0}
             title={
               runnableCount === 0
-                ? '没有能跑的节点（空提示词 / 被阻断的都不能跑 —— 点节点看原因）'
-                : `按依赖顺序提交 ${runnableCount} 条任务（同一编排重复点不会重复计费）`
+                ? t('canvas.tool.run.noneRunnable')
+                : t('canvas.tool.run.title', { count: runnableCount })
             }
             onClick={onRunPlan}
           >
-            {running ? '⏳ 运行中…' : `▶ 运行编排${runnableCount === 0 ? '' : `（${runnableCount}）`}`}
+            {running
+              ? t('canvas.tool.run.running')
+              : runnableCount === 0
+                ? t('canvas.tool.run.label')
+                : t('canvas.tool.run.labelWithCount', { count: runnableCount })}
           </button>
           {/* V2.29（台账 B69）：**显式重跑** —— 换一代幂等键 = 真的新建任务。
               它必须与「▶ 运行编排」在视觉与文案上明确区分：前者是"补跑没跑成的"，
@@ -263,13 +281,16 @@ const CanvasToolbar: FC<{
             disabled={running || runnableCount === 0}
             title={
               runnableCount === 0
-                ? '没有能跑的节点（空提示词 / 被阻断的都不能跑 —— 点节点看原因）'
-                : `整张图再来一遍：换一代幂等键 → 会新建 ${runnableCount} 条任务（真的计费）。` +
-                  `当前是第 ${runSeq} 轮；跑完变成第 ${runSeq + 1} 轮`
+                ? t('canvas.tool.run.noneRunnable')
+                : t('canvas.tool.rerun.title', {
+                    count: runnableCount,
+                    seq: runSeq,
+                    next: runSeq + 1,
+                  })
             }
             onClick={onRerunPlan}
           >
-            🔁 重跑全部
+            {t('canvas.tool.rerun.label')}
           </button>
           {/* V2.35（A5 片 B 收口）：编排的导出 / 导入文件 —— 纯前端（浏览器下载 / 本地文件读取），
               零服务端交互。导出的是一份新的"编排身份"（见契约 §11-6 附 第 3 条）。 */}
@@ -277,19 +298,19 @@ const CanvasToolbar: FC<{
             type="button"
             className="cv-tool"
             data-testid="cv-export-plan"
-            title="把这份编排导出为 JSON 文件（含产物 ID 注记：它们只在本机部署有意义；不含凭据）"
+            title={t('canvas.tool.export.title')}
             onClick={onExportPlan}
           >
-            ⤓ 导出编排
+            {t('canvas.tool.export.label')}
           </button>
           <button
             type="button"
             className="cv-tool"
             data-testid="cv-import-plan"
-            title="从 JSON 文件导入一份编排（会替换当前编排；当前非空时先确认，不会静默覆盖）"
+            title={t('canvas.tool.import.title')}
             onClick={() => importInputRef.current?.click()}
           >
-            ⤒ 导入编排
+            {t('canvas.tool.import.label')}
           </button>
           <input
             ref={importInputRef}
@@ -316,14 +337,18 @@ const CanvasToolbar: FC<{
           disabled={!hasMore || loadingEarlier}
           title={
             loadingEarlier
-              ? '正在取更早的任务…'
+              ? t('canvas.tool.earlier.loading')
               : hasMore
-                ? `把更早的任务也画进来（每次 ${CANVAS_PAGE_SIZE} 条）`
-                : '已经没有更早的任务了'
+                ? t('canvas.tool.earlier.more', { size: CANVAS_PAGE_SIZE })
+                : t('canvas.tool.earlier.none')
           }
           onClick={onLoadEarlier}
         >
-          {loadingEarlier ? '⏳ 加载中…' : hasMore ? '⏮ 加载更早' : '⏮ 已全部加载'}
+          {loadingEarlier
+            ? t('canvas.tool.earlier.labelLoading')
+            : hasMore
+              ? t('canvas.tool.earlier.labelMore')
+              : t('canvas.tool.earlier.labelDone')}
         </button>
       )}
       <button
@@ -333,8 +358,8 @@ const CanvasToolbar: FC<{
         disabled={count === 0}
         title={
           count === 0
-            ? '先在画布上框选节点，或按住 Shift 点选多个节点'
-            : `把选中的 ${count} 个节点填满视口`
+            ? t('canvas.tool.zoomSelection.hint')
+            : t('canvas.tool.zoomSelection.title', { count })
         }
         onClick={() => {
           void fitView({
@@ -345,14 +370,16 @@ const CanvasToolbar: FC<{
           });
         }}
       >
-        ◎ 缩放到选区{count === 0 ? '' : `（${count}）`}
+        {count === 0
+          ? t('canvas.tool.zoomSelection.label')
+          : t('canvas.tool.zoomSelection.labelWithCount', { count })}
       </button>
       {/* V2.22（台账 B67）：便签落在**当前视口中心**（落在看不见的地方等于没建） */}
       <button
         type="button"
         className="cv-tool"
         data-testid="cv-add-note"
-        title="在视口中心贴一张便签（写清「这是哪条链、为什么这么做」）"
+        title={t('canvas.tool.addNote.title')}
         onClick={() => {
           const center = screenToFlowPosition({
             x: window.innerWidth / 2,
@@ -361,18 +388,18 @@ const CanvasToolbar: FC<{
           onAddNote(center.x, center.y);
         }}
       >
-        ＋ 便签
+        {t('canvas.tool.addNote.label')}
       </button>
       <button
         type="button"
         className="cv-tool"
         data-testid="cv-zoom-all"
-        title="缩放到全部节点（等同左下角控件里的适配按钮）"
+        title={t('canvas.tool.fitAll.title')}
         onClick={() => {
           void fitView({ duration: 400, padding: 0.2, maxZoom: 1.6 });
         }}
       >
-        ⤢ 全部
+        {t('canvas.tool.fitAll.label')}
       </button>
     </div>
   );
@@ -383,11 +410,21 @@ const CanvasToolbar: FC<{
 // 语言迁移第十批：`label 表` 变成 `canvasModeLabel()`（按当前语言取，底层是 `common.mode.*`）——
 // 视图这一屏的其余文案仍在**片 B** 的后续批次里迁，这一处先跟上（否则词表删了它会编译不过）。
 
-const COST_SOURCE_LABEL: Record<CostRecord['source'], string> = {
-  estimate: '预估（公开价目）',
-  'local-free': '本地轨 · 免费',
-  upstream: '上游真实值',
+/**
+ * 成本来源的显示名（V2.19）。
+ *
+ * 语言迁移第十一批：常量表改成**键表 + 取值函数**（与 `lib/format.ts` 的 `statusLabel` 同手法）——
+ * 模块级常量在模块加载那一刻就把语言定死了，而这个值要跟着界面语言走。
+ */
+const COST_SOURCE_KEYS: Record<CostRecord['source'], MessageKey> = {
+  estimate: 'canvas.costSource.estimate',
+  'local-free': 'canvas.costSource.localFree',
+  upstream: 'canvas.costSource.upstream',
 };
+
+function costSourceLabel(source: CostRecord['source']): string {
+  return translate(getLanguage(), COST_SOURCE_KEYS[source]);
+}
 
 function formatBytes(bytes: number | undefined): string | null {
   if (bytes === undefined) return null;
@@ -439,12 +476,14 @@ const NodeLogList: FC<{ taskId: string }> = ({ taskId }) => {
     };
   }, [taskId]);
 
-  if (error !== null) return <p className="wb-note cv-insp-warn">留痕读取失败：{error}</p>;
-  if (items === null) return <p className="wb-note">正在读取留痕…</p>;
+  const t = useTranslate();
+
+  if (error !== null) {
+    return <p className="wb-note cv-insp-warn">{t('canvas.trail.error', { reason: error })}</p>;
+  }
+  if (items === null) return <p className="wb-note">{t('canvas.trail.loading')}</p>;
   if (items.length === 0) {
-    return (
-      <p className="wb-note">没有留痕（这条任务早于操作日志功能，或已被日志保留策略清掉）。</p>
-    );
+    return <p className="wb-note">{t('canvas.trail.empty')}</p>;
   }
 
   return (
@@ -497,6 +536,7 @@ function CanvasInspector({
   onSelect: (node: LineageNode) => void;
   onClose: () => void;
 }) {
+  const t = useTranslate();
   const taskId = node.kind === 'task' ? node.taskId : undefined;
   const assetId = node.kind === 'asset' ? node.assetId : undefined;
   const outputUrl = resolveMediaUrl(node.outputVideoUrl ?? undefined);
@@ -515,11 +555,16 @@ function CanvasInspector({
         `recipe-pack-${(node.taskId ?? node.id).slice(0, 8)}.json`,
       );
       setExportResult(
-        `已导出：${pack.tasks.length} 条任务 · ${pack.assets.length} 个资产` +
-          (pack.omitted.length === 0 ? '' : ` · ${pack.omitted.length} 个对象已不在画布上（记在 omitted）`),
+        pack.omitted.length === 0
+          ? t('canvas.insp.export.done', { tasks: pack.tasks.length, assets: pack.assets.length })
+          : t('canvas.insp.export.doneWithOmitted', {
+              tasks: pack.tasks.length,
+              assets: pack.assets.length,
+              omitted: pack.omitted.length,
+            }),
       );
     } catch (caught) {
-      setExportResult(`导出失败：${describeError(caught)}`);
+      setExportResult(t('canvas.insp.export.failed', { reason: describeError(caught) }));
     }
   };
 
@@ -528,24 +573,24 @@ function CanvasInspector({
   if (request !== undefined) {
     const assets = request.assets;
     if (assets?.firstFrameImage !== undefined) {
-      inputs.push({ label: '首帧图', value: assets.firstFrameImage, nodeId: refToNodeId(assets.firstFrameImage) });
+      inputs.push({ label: t('canvas.insp.input.firstFrame'), value: assets.firstFrameImage, nodeId: refToNodeId(assets.firstFrameImage) });
     }
     if (assets?.lastFrameImage !== undefined) {
-      inputs.push({ label: '尾帧图', value: assets.lastFrameImage, nodeId: refToNodeId(assets.lastFrameImage) });
+      inputs.push({ label: t('canvas.insp.input.lastFrame'), value: assets.lastFrameImage, nodeId: refToNodeId(assets.lastFrameImage) });
     }
     if (assets?.referenceVideo !== undefined) {
-      inputs.push({ label: '视频参考', value: assets.referenceVideo, nodeId: refToNodeId(assets.referenceVideo) });
+      inputs.push({ label: t('canvas.insp.input.referenceVideo'), value: assets.referenceVideo, nodeId: refToNodeId(assets.referenceVideo) });
     }
   }
 
   return (
-    <aside className="cv-drawer" aria-label="节点详情">
+    <aside className="cv-drawer" aria-label={t('canvas.insp.aria')}>
       <div className="cv-drawer-head">
         <span className="cv-drawer-title">
           {node.isEdit === true ? '✂ ' : ''}
           {node.label}
         </span>
-        <button type="button" className="cr-link" aria-label="关闭详情" onClick={onClose}>
+        <button type="button" className="cr-link" aria-label={t('canvas.insp.close')} onClick={onClose}>
           ✕
         </button>
       </div>
@@ -554,9 +599,7 @@ function CanvasInspector({
       </p>
 
       {node.ghost === true ? (
-        <p className="wb-note cv-drawer-ghost">
-          这个对象已不在当前列表里（删除过或超出最近 50 条）——仅作为血缘占位显示。
-        </p>
+        <p className="wb-note cv-drawer-ghost">{t('canvas.insp.ghost')}</p>
       ) : null}
 
       {outputUrl === null ? null : <video className="cv-player" src={outputUrl} controls playsInline />}
@@ -564,43 +607,43 @@ function CanvasInspector({
       {task === undefined ? null : (
         <>
           <section className="cv-insp-section">
-            <h3 className="cv-insp-title">提示词</h3>
-            <p className="cv-insp-prompt">{request?.prompt ?? '（无快照）'}</p>
+            <h3 className="cv-insp-title">{t('canvas.insp.section.prompt')}</h3>
+            <p className="cv-insp-prompt">{request?.prompt ?? t('canvas.insp.noSnapshot')}</p>
             <dl className="cv-insp-kv">
               <div>
-                <dt>模式</dt>
+                <dt>{t('canvas.insp.kv.mode')}</dt>
                 <dd>{request === undefined ? '—' : canvasModeLabel(request.mode)}</dd>
               </div>
               <div>
-                <dt>画幅</dt>
+                <dt>{t('canvas.insp.kv.aspect')}</dt>
                 <dd>{request?.aspectRatio ?? '—'}</dd>
               </div>
               <div>
-                <dt>时长</dt>
+                <dt>{t('canvas.insp.kv.duration')}</dt>
                 <dd>{request?.params?.durationSec === undefined ? '—' : `${request.params.durationSec}s`}</dd>
               </div>
               <div>
-                <dt>引擎</dt>
+                <dt>{t('canvas.insp.kv.engine')}</dt>
                 <dd>{request?.provider ?? '—'}</dd>
               </div>
               <div>
-                <dt>种子</dt>
+                <dt>{t('canvas.insp.kv.seed')}</dt>
                 <dd>
                   {request?.params?.seed === undefined
-                    ? '随机'
+                    ? t('canvas.insp.seedRandom')
                     : String(request.params.seed)}
                 </dd>
               </div>
               <div>
-                <dt>产物</dt>
-                <dd>{sizeText ?? (node.hasOutput === true ? '已出片' : '无')}</dd>
+                <dt>{t('canvas.insp.kv.output')}</dt>
+                <dd>{sizeText ?? (node.hasOutput === true ? t('canvas.insp.outputDone') : t('canvas.insp.outputNone'))}</dd>
               </div>
             </dl>
           </section>
 
           {inputs.length === 0 ? null : (
             <section className="cv-insp-section">
-              <h3 className="cv-insp-title">输入素材</h3>
+              <h3 className="cv-insp-title">{t('canvas.insp.section.inputs')}</h3>
               <div className="cv-insp-links">
                 {inputs.map((item) => {
                   const target = catalog.get(item.nodeId);
@@ -610,13 +653,17 @@ function CanvasInspector({
                       type="button"
                       className="cv-jump"
                       disabled={target === undefined}
-                      title={target === undefined ? '这个引用不在当前画布上' : '跳到这个节点'}
+                      title={
+                        target === undefined
+                          ? t('canvas.insp.jump.missing')
+                          : t('canvas.insp.jump.go')
+                      }
                       onClick={() => {
                         if (target !== undefined) onSelect(target);
                       }}
                     >
                       {item.label}：{item.value.slice(0, 22)}
-                      {target === undefined ? '（画布外）' : ''}
+                      {target === undefined ? t('canvas.insp.jump.offCanvas') : ''}
                     </button>
                   );
                 })}
@@ -625,26 +672,28 @@ function CanvasInspector({
           )}
 
           <section className="cv-insp-section">
-            <h3 className="cv-insp-title">成本</h3>
+            <h3 className="cv-insp-title">{t('canvas.insp.section.cost')}</h3>
             {task.cost === undefined ? (
-              <p className="wb-note">
-                未记录成本（老任务或尚未结算）。金额口径见 CONTRACT §13，**以方舟账单为准**。
-              </p>
+              <p className="wb-note">{t('canvas.insp.cost.unrecorded')}</p>
             ) : (
               <>
                 <p className="cv-insp-cost">
                   {formatYuan(task.cost.yuan)}
                   <span className="cv-insp-cost-note">
-                    （{COST_SOURCE_LABEL[task.cost.source]}
                     {task.cost.source !== 'local-free' && !task.cost.fromPriceTable
-                      ? ' · 未命中单价表，按兜底价'
-                      : ''}
-                    ）
+                      ? t('canvas.insp.cost.noteFallback', {
+                          source: costSourceLabel(task.cost.source),
+                        })
+                      : t('canvas.insp.cost.note', { source: costSourceLabel(task.cost.source) })}
                   </span>
                 </p>
                 <p className="wb-note" title={task.cost.formula}>
-                  模型 {task.cost.modelId} · {task.cost.outputSeconds}s · {task.cost.width}×
-                  {task.cost.height}
+                  {t('canvas.insp.cost.model', {
+                    model: task.cost.modelId,
+                    seconds: task.cost.outputSeconds,
+                    width: task.cost.width,
+                    height: task.cost.height,
+                  })}
                 </p>
                 {task.cost.notes.map((note) => (
                   <p key={note} className="wb-note cv-insp-warn">
@@ -657,7 +706,9 @@ function CanvasInspector({
 
           {task.warnings === undefined || task.warnings.length === 0 ? null : (
             <section className="cv-insp-section">
-              <h3 className="cv-insp-title">警告（{task.warnings.length}）</h3>
+              <h3 className="cv-insp-title">
+                {t('canvas.insp.section.warnings', { count: task.warnings.length })}
+              </h3>
               {task.warnings.map((warning) => (
                 <p key={warning} className="wb-note cv-insp-warn">
                   ⚠ {warning}
@@ -668,19 +719,21 @@ function CanvasInspector({
 
           {task.error === undefined ? null : (
             <section className="cv-insp-section">
-              <h3 className="cv-insp-title">错误</h3>
+              <h3 className="cv-insp-title">{t('canvas.insp.section.error')}</h3>
               <p className="wb-note cv-insp-bad">
                 【{task.error.code}】{task.error.message}
               </p>
-              <p className="wb-note">处置：{task.error.disposition}</p>
+              <p className="wb-note">
+                {t('canvas.insp.error.disposition', { text: task.error.disposition })}
+              </p>
             </section>
           )}
 
           <section className="cv-insp-section">
-            <h3 className="cv-insp-title">这条任务发生了什么</h3>
+            <h3 className="cv-insp-title">{t('canvas.insp.section.trail')}</h3>
             <NodeLogList taskId={task.taskId} />
             <button type="button" className="cr-link" onClick={() => navigate('#/logs')}>
-              去操作日志页看全部 →
+              {t('canvas.insp.trail.all')}
             </button>
           </section>
         </>
@@ -688,10 +741,10 @@ function CanvasInspector({
 
       {asset === undefined ? null : (
         <section className="cv-insp-section">
-          <h3 className="cv-insp-title">资产</h3>
+          <h3 className="cv-insp-title">{t('canvas.insp.section.asset')}</h3>
           <dl className="cv-insp-kv">
             <div>
-              <dt>类型</dt>
+              <dt>{t('canvas.insp.kv.assetKind')}</dt>
               <dd>{asset.kind}</dd>
             </div>
             <div>
@@ -699,11 +752,11 @@ function CanvasInspector({
               <dd>{asset.mime}</dd>
             </div>
             <div>
-              <dt>体积</dt>
+              <dt>{t('canvas.insp.kv.assetSize')}</dt>
               <dd>{formatBytes(asset.size) ?? '—'}</dd>
             </div>
             <div>
-              <dt>上传于</dt>
+              <dt>{t('canvas.insp.kv.assetCreated')}</dt>
               <dd>{formatMoment(asset.createdAt)}</dd>
             </div>
           </dl>
@@ -712,21 +765,28 @@ function CanvasInspector({
 
       {upstream.length === 0 && downstream.length === 0 ? null : (
         <section className="cv-insp-section">
-          <h3 className="cv-insp-title">血缘</h3>
+          <h3 className="cv-insp-title">{t('canvas.insp.section.lineage')}</h3>
           <div className="cv-insp-links">
-            {[...upstream.map((item) => ({ item, dir: '↑ 上游' })), ...downstream.map((item) => ({ item, dir: '↓ 下游' }))].map(
-              ({ item, dir }) => (
-                <button
-                  key={`${dir}-${item.id}`}
-                  type="button"
-                  className="cv-jump"
-                  title="跳到这个节点"
-                  onClick={() => onSelect(item)}
-                >
-                  {dir} · {item.label}
-                </button>
-              ),
-            )}
+            {/**
+             * ⚠️ `dir` 是**稳定标记**（`up` / `down`），不是显示文案 —— 它同时被用作 React key：
+             * 把翻译后的箭头文字当 key，切语言时这些按钮会被整体**重挂**（白掉一帧）。
+             * 显示名在下面按语言取（`canvas.insp.lineage.upstream` / `.downstream`）。
+             */}
+            {[
+              ...upstream.map((item) => ({ item, dir: 'up' as const })),
+              ...downstream.map((item) => ({ item, dir: 'down' as const })),
+            ].map(({ item, dir }) => (
+              <button
+                key={`${dir}-${item.id}`}
+                type="button"
+                className="cv-jump"
+                title={t('canvas.insp.jump.go')}
+                onClick={() => onSelect(item)}
+              >
+                {t(dir === 'up' ? 'canvas.insp.lineage.upstream' : 'canvas.insp.lineage.downstream')} ·{' '}
+                {item.label}
+              </button>
+            ))}
           </div>
         </section>
       )}
@@ -738,7 +798,7 @@ function CanvasInspector({
             className="wb-btn"
             onClick={() => navigate(`#/workbench?reuse=${encodeURIComponent(taskId)}`)}
           >
-            ⟲ 复用参数
+            {t('canvas.insp.action.reuse')}
           </button>
           <button
             type="button"
@@ -746,7 +806,7 @@ function CanvasInspector({
             disabled={node.hasOutput !== true}
             onClick={() => navigate(`#/edit?task=${encodeURIComponent(taskId)}`)}
           >
-            ✂ 送剪辑台
+            {t('canvas.insp.action.toEdit')}
           </button>
           <button
             type="button"
@@ -754,17 +814,17 @@ function CanvasInspector({
             disabled={node.hasOutput !== true}
             onClick={() => navigate(`#/workbench?refTask=${encodeURIComponent(taskId)}`)}
           >
-            🎬 设为视频参考
+            {t('canvas.insp.action.asReference')}
           </button>
           {/* V2.20（台账 B65）：把"这条片子的完整配方链"导出成可复用 / 可归档的 JSON */}
           <button
             type="button"
             className="wb-btn"
             data-testid="cv-export-pack"
-            title="把这条片子的上游配方链导出为 JSON（不含凭据与 provider 私有参数）"
+            title={t('canvas.insp.exportPack.title')}
             onClick={exportPack}
           >
-            ⤓ 导出配方包
+            {t('canvas.insp.exportPack.label')}
           </button>
           {exportResult === null ? null : (
             <p className="wb-note cv-insp-warn" data-testid="cv-export-result">
@@ -784,12 +844,12 @@ function CanvasInspector({
                 navigate(`#/workbench?frameAsset=${encodeURIComponent(assetId)}&frameExt=jpg`)
               }
             >
-              🖼 当作首帧（I2V）
+              {t('canvas.insp.action.asFirstFrame')}
             </button>
           ) : null}
           {node.url === null || node.url === undefined ? null : (
             <a className="wb-btn" href={node.url} target="_blank" rel="noreferrer">
-              ⧉ 打开原文件
+              {t('canvas.insp.action.openOriginal')}
             </a>
           )}
         </div>
@@ -801,6 +861,7 @@ function CanvasInspector({
 export function CanvasView() {
   // V2.11（B47）：血缘画布按当前项目取材
   const { projectId, byok } = useShell();
+  const t = useTranslate();
   const route = useHashRoute();
   /**
    * V2.26（台账 A5 片 A）：**编排模式**（`#/canvas?mode=plan`）。
@@ -946,11 +1007,7 @@ export function CanvasView() {
     setPlanDirty(false);
     setSelectedPlanNodeId(null);
     setRunOutcome(null);
-    setPlanNotice(
-      loaded.broken
-        ? '本机有一份读不出来的编排（可能是更新版本写的）—— 原文已保留，你一旦改动就会被覆盖'
-        : null,
-    );
+    setPlanNotice(loaded.broken ? t('canvas.plan.brokenNotice') : null);
     // 文件提示与待确认的导入都属于"上一份编排"的上下文：切项目/重载时清掉，避免串项目
     setPlanFileNotice(null);
     setPendingImport(null);
@@ -1043,23 +1100,24 @@ export function CanvasView() {
         }
 
         if (outcome.cycle.length > 0) {
-          setPlanNotice(`图里有环（${outcome.cycle.length} 个节点参与）—— 一个都没提交，先解开环再跑`);
+          setPlanNotice(t('canvas.plan.notice.cycle', { count: outcome.cycle.length }));
         } else {
           const ok = submitted.size;
           const kept = outcome.results.filter((item) => item.state === 'kept').length;
           const bad = outcome.results.filter(
             (item) => item.state === 'failed' || item.state === 'skipped',
           ).length;
-          const parts = [`已提交 ${ok} 条任务`];
-          if (kept > 0) parts.push(`${kept} 条沿用上次产物`);
-          if (bad > 0) parts.push(`${bad} 条跳过或失败（原因在节点卡上）`);
-          const head = rerun ? `第 ${outcome.runSeq} 轮（显式重跑：这些是新建的任务）—— ` : '';
-          setPlanNotice(head + parts.join('，'));
+          const parts = [t('canvas.plan.notice.submitted', { count: ok })];
+          if (kept > 0) parts.push(t('canvas.plan.notice.kept', { count: kept }));
+          if (bad > 0) parts.push(t('canvas.plan.notice.bad', { count: bad }));
+          const head = rerun ? t('canvas.plan.notice.rerunHead', { seq: outcome.runSeq }) : '';
+          // 分隔符也是排版事实（中文全角逗号 / 英文半角逗号 + 空格）→ 走字典，不写死在代码里
+          setPlanNotice(head + parts.join(t('canvas.plan.notice.separator')));
         }
         // 提交出来的任务要立刻能在事实图里看到（切回去时不再等一次手动刷新）
         void reload();
       } catch (caught) {
-        setPlanNotice(`运行失败：${describeError(caught)}`);
+        setPlanNotice(t('canvas.plan.notice.runFailed', { reason: describeError(caught) }));
       } finally {
         setRunning(false);
       }
@@ -1095,12 +1153,15 @@ export function CanvasView() {
     const file = buildCanvasPlanFile(plan);
     downloadText(canvasPlanFileText(file), `canvas-plan-${plan.id.slice(0, 8)}.json`);
     setPlanFileNotice({
-      text:
-        `已导出「${plan.name}」：${plan.nodes.length} 个节点 · ${plan.edges.length} 条连线` +
-        `（文件里 ${file.notes.length} 条注记，含"这份文件不含什么"）`,
+      text: t('canvas.plan.file.exported', {
+        name: plan.name,
+        nodes: plan.nodes.length,
+        edges: plan.edges.length,
+        notes: file.notes.length,
+      }),
       notes: [],
     });
-  }, [plan]);
+  }, [plan, t]);
 
   /** 导入成功后的**唯一落点**（两条路径共用：空编排直接装入 / 非空经两步确认） */
   const applyImportedPlan = useCallback(
@@ -1108,13 +1169,15 @@ export function CanvasView() {
       mutatePlan(() => imported);
       setPendingImport(null);
       setPlanFileNotice({
-        text:
-          `已导入「${imported.name}」：${imported.nodes.length} 个节点 · ${imported.edges.length} 条连线` +
-          '（新的编排身份 —— 首次「▶ 运行编排」会新建任务）',
+        text: t('canvas.plan.file.imported', {
+          name: imported.name,
+          nodes: imported.nodes.length,
+          edges: imported.edges.length,
+        }),
         notes,
       });
     },
-    [mutatePlan],
+    [mutatePlan, t],
   );
 
   /**
@@ -1133,7 +1196,10 @@ export function CanvasView() {
           const result = readCanvasPlanFile(text);
           if (!result.ok) {
             setPendingImport(null);
-            setPlanFileNotice({ text: `导入失败：${result.reason}（当前编排未变动）`, notes: [] });
+            setPlanFileNotice({
+              text: t('canvas.plan.file.importRejected', { reason: result.reason }),
+              notes: [],
+            });
             return;
           }
           const adopted = withNewPlanIdentity(result.plan);
@@ -1146,7 +1212,10 @@ export function CanvasView() {
         })
         .catch((caught: unknown) => {
           setPendingImport(null);
-          setPlanFileNotice({ text: `导入失败：读不到文件内容（${describeError(caught)}）`, notes: [] });
+          setPlanFileNotice({
+            text: t('canvas.plan.file.importUnreadable', { reason: describeError(caught) }),
+            notes: [],
+          });
         });
     },
     [plan.nodes.length, applyImportedPlan],
@@ -1418,22 +1487,30 @@ export function CanvasView() {
         <header className="cv-head">
           <div>
             <p className="cr-eyebrow">{planMode ? 'Canvas Plan' : 'Lineage Canvas'}</p>
-            <h2 className="cv-title">{planMode ? '画布编排' : '血缘画布'}</h2>
+            <h2 className="cv-title">
+              {planMode ? t('canvas.title.plan') : t('canvas.title.lineage')}
+            </h2>
           </div>
           {planMode ? (
             <p className="wb-note cv-plan-hint" data-testid="cv-plan-hint">
-              连线 = 数据流（只有 v2v 能接上游）；「▶ 运行编排」按依赖顺序一次提交 ——
-              <strong>重复点不会重复计费</strong>（同一编排同一节点用的幂等键是固定的）。
-              「🔁 重跑」则相反：它换一代幂等键 ——<strong>会新建任务（真的计费）</strong>；
-              在节点面板里可以只重跑<b>一段</b>（它和它的下游，上游沿用上次产物）
-              <span data-testid="cv-plan-run-seq">（当前第 {planRunSeq(plan)} 轮）</span>
+              {t('canvas.plan.hint.part1')}
+              <strong>{t('canvas.plan.hint.part2')}</strong>
+              {t('canvas.plan.hint.part3')}
+              {t('canvas.plan.hint.part4')}
+              <strong>{t('canvas.plan.hint.part5')}</strong>
+              {t('canvas.plan.hint.part6')}
+              <b>{t('canvas.plan.hint.part7')}</b>
+              {t('canvas.plan.hint.part8')}
+              <span data-testid="cv-plan-run-seq">
+                {t('canvas.plan.runSeq', { seq: planRunSeq(plan) })}
+              </span>
             </p>
           ) : (
-            <div className="cv-legend" aria-label="边的图例">
+            <div className="cv-legend" aria-label={t('canvas.legend.aria')}>
               {EDGE_KINDS.map((kind) => (
                 <span key={kind} className="cv-legend-item">
                   <span className="cv-legend-line" style={{ backgroundColor: EDGE_STYLE[kind].stroke }} />
-                  {EDGE_STYLE[kind].text}
+                  {t(EDGE_STYLE[kind].textKey)}
                 </span>
               ))}
             </div>
@@ -1442,10 +1519,8 @@ export function CanvasView() {
 
         {planMode && planBroken ? (
           <div className="wb-uncertain cv-alert" data-testid="cv-plan-broken">
-            <span className="wb-uncertain-title">本机的编排读不出来</span>
-            <span className="wb-uncertain-body">
-              它可能是更新版本写的 —— 原文已保留；你一旦改动（加节点 / 连线）就会覆盖它。
-            </span>
+            <span className="wb-uncertain-title">{t('canvas.plan.broken.title')}</span>
+            <span className="wb-uncertain-body">{t('canvas.plan.broken.body')}</span>
           </div>
         ) : null}
 
@@ -1474,9 +1549,14 @@ export function CanvasView() {
         {planMode && pendingImport !== null ? (
           <div className="cv-plan-notice cv-plan-import-confirm" data-testid="cv-import-confirm">
             <span>
-              导入会<strong>替换当前编排</strong>（现在有 {plan.nodes.length} 个节点 ·{' '}
-              {plan.edges.length} 条连线；文件里是「{pendingImport.plan.name}」
-              {pendingImport.plan.nodes.length} 个节点）—— 想留一份的话，先「⤓ 导出编排」。
+              {t('canvas.plan.importConfirm.part1')}
+              <strong>{t('canvas.plan.importConfirm.part2')}</strong>
+              {t('canvas.plan.importConfirm.part3', {
+                nodes: plan.nodes.length,
+                edges: plan.edges.length,
+                name: pendingImport.plan.name,
+                fileNodes: pendingImport.plan.nodes.length,
+              })}
             </span>
             <button
               type="button"
@@ -1484,7 +1564,7 @@ export function CanvasView() {
               data-testid="cv-import-confirm-yes"
               onClick={() => applyImportedPlan(pendingImport.plan, pendingImport.notes)}
             >
-              确认导入
+              {t('canvas.plan.importConfirm.yes')}
             </button>
             <button
               type="button"
@@ -1492,36 +1572,37 @@ export function CanvasView() {
               data-testid="cv-import-confirm-cancel"
               onClick={() => setPendingImport(null)}
             >
-              取消
+              {t('canvas.plan.importConfirm.cancel')}
             </button>
           </div>
         ) : null}
 
         {error === null ? null : (
           <div className="wb-uncertain cv-alert">
-            <span className="wb-uncertain-title">画布数据读取失败</span>
+            <span className="wb-uncertain-title">{t('canvas.load.error')}</span>
             <span className="wb-uncertain-body">{error}</span>
           </div>
         )}
 
-        {loading ? <p className="wb-note cv-note">正在读取血缘数据…</p> : null}
+        {loading ? <p className="wb-note cv-note">{t('canvas.load.loading')}</p> : null}
 
         {empty ? (
           <div className="cv-empty">
-            <p className="cv-empty-title">这里还是一张白纸</p>
-            <p className="wb-note">
-              还没有任何生成记录 —— 去创作入口写下第一句话，成片与它的派生关系会自动出现在这里。
-            </p>
+            <p className="cv-empty-title">{t('canvas.empty.title')}</p>
+            <p className="wb-note">{t('canvas.empty.body')}</p>
             <button type="button" className="wb-btn wb-btn-gold" onClick={() => navigate('#/create')}>
-              去创作
+              {t('canvas.empty.action')}
             </button>
           </div>
         ) : null}
 
         {planMode ? (
           <p className="wb-note cv-note" data-testid="cv-plan-count">
-            编排：{plan.nodes.length} 个节点 · {plan.edges.length} 条连线 · {runnableCount} 条可跑
-            （空提示词 / 被阻断的都不会提交 —— 点节点看原因）。位置与参数存在本机浏览器、按项目隔离。
+            {t('canvas.plan.count', {
+              nodes: plan.nodes.length,
+              edges: plan.edges.length,
+              runnable: runnableCount,
+            })}
           </p>
         ) : null}
 
@@ -1529,8 +1610,10 @@ export function CanvasView() {
           <>
             {planMode ? null : (
               <p className="wb-note cv-note">
-                {graph.nodes.length} 个节点 · {graph.edges.length} 条派生边（列 = 派生顺序，行 = 时间倒序）。
-                只读视图：点节点看详情与动作；拖动只是挪位置，不保存。
+                {t('canvas.graph.summary', {
+                  nodes: graph.nodes.length,
+                  edges: graph.edges.length,
+                })}
               </p>
             )}
 
@@ -1538,7 +1621,9 @@ export function CanvasView() {
             {planMode ? null : (
             <div className="cv-status" data-testid="cv-status">
               <span className={problemIds.size === 0 ? 'cv-status-ok' : 'cv-status-bad'}>
-                {problemIds.size === 0 ? '✓ 没有失败/待核对的任务' : `⚠ ${problemIds.size} 个节点异常`}
+                {problemIds.size === 0
+                  ? t('canvas.status.allOk')
+                  : t('canvas.status.problems', { count: problemIds.size })}
               </span>
               {problemIds.size === 0 ? null : (
                 <button
@@ -1546,19 +1631,21 @@ export function CanvasView() {
                   className="cv-tool"
                   data-testid="cv-focus-problems"
                   aria-pressed={onlyProblems}
-                  title="把非异常节点调暗（不删图），方便一眼看出哪里不对"
+                  title={t('canvas.status.onlyProblems.title')}
                   onClick={() => setOnlyProblems((value) => !value)}
                 >
-                  {onlyProblems ? '显示全部' : '只看异常'}
+                  {t(onlyProblems ? 'canvas.status.showAll' : 'canvas.status.onlyProblems')}
                 </button>
               )}
               {queue === null || queue.queued === 0 ? null : (
                 <span className="cv-status-queue">
-                  队列中 {queue.queued} 条
+                  {t('canvas.status.queue', { count: queue.queued })}
                   {queue.oldestAgeSec === null
                     ? ''
-                    : `（最久已等 ${Math.round(queue.oldestAgeSec)}s）`}
-                  · 本机一次只跑 1 条
+                    : t('canvas.status.queueOldest', {
+                        seconds: Math.round(queue.oldestAgeSec),
+                      })}
+                  {t('canvas.status.queueSingle')}
                 </span>
               )}
             </div>
@@ -1658,11 +1745,11 @@ export function CanvasView() {
               </ReactFlow>
             </div>
             <p className="cv-mobile-note wb-note">
-              画布在窄屏上不好用：请到桌面端查看，或先去
+              {t('canvas.mobile.part1')}
               <button type="button" className="cr-link" onClick={() => navigate('#/library')}>
-                视频库
+                {t('canvas.mobile.library')}
               </button>
-              看列表。
+              {t('canvas.mobile.part2')}
             </p>
           </>
         )}
