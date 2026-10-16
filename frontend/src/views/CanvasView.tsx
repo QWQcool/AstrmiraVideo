@@ -81,7 +81,7 @@ import { LineageNodeCard, type LineageFlowNode } from '../canvas/NodeCard';
 import { NoteCard, type CanvasNoteNode } from '../canvas/NoteCard';
 import { PlanNodeCard, type PlanFlowNode } from '../canvas/PlanNodeCard';
 import { PlanInspector } from '../canvas/PlanInspector';
-import { CANVAS_MODE_LABELS } from '../canvas/labels';
+import { canvasModeLabel } from '../canvas/labels';
 import {
   createNote,
   loadCanvasNotes,
@@ -379,8 +379,9 @@ const CanvasToolbar: FC<{
 };
 
 // V2.26（A5 片 A）：模式文案收口到 `canvas/labels.ts`（编排节点卡片与事实图检查器共用一份，
-// 两处各写一遍必然漂移 —— 同一个模式在两处叫不同名字会让用户以为是两个东西）
-const MODE_LABELS = CANVAS_MODE_LABELS;
+// 两处各写一遍必然漂移 —— 同一个模式在两处叫不同名字会让用户以为是两个东西）。
+// 语言迁移第十批：`label 表` 变成 `canvasModeLabel()`（按当前语言取，底层是 `common.mode.*`）——
+// 视图这一屏的其余文案仍在**片 B** 的后续批次里迁，这一处先跟上（否则词表删了它会编译不过）。
 
 const COST_SOURCE_LABEL: Record<CostRecord['source'], string> = {
   estimate: '预估（公开价目）',
@@ -568,7 +569,7 @@ function CanvasInspector({
             <dl className="cv-insp-kv">
               <div>
                 <dt>模式</dt>
-                <dd>{request === undefined ? '—' : MODE_LABELS[request.mode]}</dd>
+                <dd>{request === undefined ? '—' : canvasModeLabel(request.mode)}</dd>
               </div>
               <div>
                 <dt>画幅</dt>

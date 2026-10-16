@@ -597,10 +597,20 @@ if (leftPanelText !== undefined) {
       }
     }
   }
-  const engineLabelsText = contents.get(path.join(SRC, 'canvas', 'labels.ts'));
+  /**
+   * **断言点从死代码移到活路径**（语言迁移第十批）：这条原先查 `canvas/labels.ts` 的
+   * `CANVAS_PROVIDER_LABELS`，但那张表**零引用**（真正在用的是 `lib/engineOptions.ts` 的
+   * `providerLabel`，左栏自检结果走的是它），而且它的文案已经与活路径**漂移**
+   * （`素材库（开发期）` vs `（未实现）`、`夹具（开发期）` vs `开发期夹具`）。
+   * 迁移期间把死表删掉了，所以断言改查**活路径** —— 否则它守的是一张不渲染的表。
+   *
+   * ⚠️ 将来 `lib/engineOptions.ts` 也迁进字典时，这条要跟着改成查**字典值**
+   * （那时的正确形态：断言 `common.provider.h3` 的中文里带「（已撤）」）。
+   */
+  const engineLabelsText = contents.get(path.join(SRC, 'lib', 'engineOptions.ts'));
   if (engineLabelsText !== undefined && !engineLabelsText.includes('本地 MiniMax H3（已撤）')) {
     failures.push(
-      'labels.ts 没把 H3 标成「（已撤）」—— 历史任务 / 旧编排里出现这个值时会显示成一个还在的档位（V2.37）',
+      'lib/engineOptions.ts 没把 H3 标成「（已撤）」—— 历史任务 / 旧编排里出现这个值时会显示成一个还在的档位（V2.37）',
     );
   }
 
@@ -635,6 +645,9 @@ if (leftPanelText !== undefined) {
     'canvas/NoteCard.tsx',
     'canvas/PlanNodeCard.tsx',
     'canvas/PlanInspector.tsx',
+    'canvas/labels.ts',
+    'lib/canvasPlan.ts',
+    'lib/canvasPlanRunner.ts',
   ];
   const CJK_PATTERN = /[\u4e00-\u9fa5]/;
   for (const rel of I18N_MIGRATED) {
@@ -646,7 +659,14 @@ if (leftPanelText !== undefined) {
     // 状态机要覆盖**两种**块注释：JSX 注释 `{/* … */}` 与普通块注释 `/* … */`
     // （后者出现在 `return (` 之后 —— 那不是 JSX 注释，漏掉它会把注释续行误判成文案）
     let inComment = false;
+    /** 上一行写了 `// i18n-exempt: <理由>` → 这一行被申请豁免（逐行、不扩散） */
+    let exemptNext = false;
     text.split('\n').forEach((line, index) => {
+      const carved = line.replace(/\r$/, '');
+      const marked = /\/\/\s*i18n-exempt:\s*\S/.test(carved);
+      const exempted = exemptNext;
+      exemptNext = marked; // 只对**紧邻的下一行**生效；空行会自然把它清掉
+      if (exempted) return;
       if (inComment) {
         if (line.includes('*/')) inComment = false;
         return;
@@ -668,6 +688,28 @@ if (leftPanelText !== undefined) {
        * 报障时的比对与检索就没法做了。
        */
       if (/^\s*console\./.test(line)) return;
+      /**
+       * **逐行申请的第二类例外**（语言迁移第十批新增）：`// i18n-exempt: <理由>`。
+       *
+       * 与上面 `console.` 那种分工：`console.` 是"**整类**自动豁免"（那一类里不可能有界面文案）；
+       * 这里处理的是**零散但合理**的中文 —— 目前只有两种，都不该进字典：
+       * ① **判据字面量**：`canvasPlanRunner.ts` 的重试判据要认出上游回的"超时"，
+       *    而该口径写在契约 §11-6 第 10 条（`Failed to fetch` / 超时 / ECONN 系列）——
+       *    它不是文案，是**匹配模式**；
+       * ② **数据默认值**：`createEmptyPlan` 的 `'未命名编排'` 会**落本机存储并被导出成文件**，
+       *    属"内容 / 数据"，与配方名 / 模板名同一条口径（内容不进字典，见 `dict/index.ts`）。
+       *
+       * 判据（三条都是刻意的）：
+       * 1. **行内必须有非空理由**（`\S`）—— 空的 `// i18n-exempt:` 不算数；
+       * 2. **紧邻**才算：写在要豁免的那一行上（尾注释），或紧接它的**上一行**
+       *    （写成"说明在前、标记在后"，别让中间再隔注释 —— 实测踩到：隔一行就失效，
+       *    而那正是"标记写了却没生效"的形态）；
+       * 3. 只对**紧邻的下一行**生效，不扩散（空行会自然清掉它）。
+       *
+       * 它比 `console.` 那类**更严**：逐行申请、必须写清为什么，而理由会出现在 diff 里 ——
+       * **想拿它盖住一句真实界面文案，在 code review 里是显眼的**（这正是它优于"悄悄漏一条"的地方）。
+       */
+      if (/\/\/\s*i18n-exempt:\s*\S/.test(line)) return;
       /**
        * 去掉行尾 `// 注释` 再判（对 `https://` 这类字符串无害：我们只问"还含中文吗"）。
        *

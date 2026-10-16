@@ -8,6 +8,7 @@ import {
   type CanvasPlanNode,
   type VideoGenerateRequest,
 } from '@astrmira/shared';
+import { getLanguage, translate } from './i18n';
 import { STORAGE_KEYS, browserStorage, readLocal, writeLocal, type StorageAccess } from './storage';
 
 /**
@@ -22,6 +23,17 @@ import { STORAGE_KEYS, browserStorage, readLocal, writeLocal, type StorageAccess
  * 2. **幂等键确定性**：`plan:<planId>:<nodeId>` —— 连点「运行」不重复计费（见 `planIdempotencyKey`）；
  * 3. **不猜上游**：`planNodeBlockReason` 把"这条节点为什么不能跑"逐条说清（空提示词 / 非 v2v 带入边 /
  *    v2v 多入边 / 片 A 不支持 i2v·fl2v），**执行器只跑能说清为什么能跑的节点**。
+ *
+ * ## 语言迁移第十批：这一层的**原因字符串**进字典，但**函数签名没变**
+ * `planNodeBlockReason` 的返回值是**给用户看的**（检查器顶部那句"现在不能跑：…"、
+ * 以及每个 skipped 节点的卡片），所以它必须跟着语言走。做法与 `lib/format.ts` 的
+ * `statusLabel` 一致：**按当前语言取**（`getLanguage()`），而不是把 `t` 传进来 ——
+ * 调用方是视图与执行器，改造它们的签名只会把语言这件事扩散到十几处。
+ * **代价如实**：这是"非 React 上下文取文案"的第**四**处，前提同样是**调用方订阅了语言**
+ * （画布视图用 `useTranslate()`；单测在 Node 里默认中文，所以那 42 例断言一字未改）。
+ *
+ * ⚠️ `createEmptyPlan` 的 `name: '未命名编排'` **刻意没迁**（行内有 `i18n-exempt` 标记）：
+ * 它是**数据**（落本机存储、并会被导出成编排文件里的 name），与配方名 / 模板名同一条口径。
  */
 
 /** 新建节点的参数默认值（与工作台一致的默认档：5s / 16:9 / 云端 seedance） */
@@ -40,6 +52,9 @@ export function canvasPlanKey(projectId: string): string {
 }
 
 export function createEmptyPlan(now = Date.now(), id = `plan-${now}-${Math.random().toString(36).slice(2, 8)}`): CanvasPlan {
+  // 这是**数据默认值**（落本机存储、并被导出成编排文件里的 name），不是界面文案 ——
+  // 与配方名 / 模板名同一条口径（内容不进字典，见 lib/dict/index.ts）。它只在"新建后还没改名"时可见。
+  // i18n-exempt: 新建编排的默认名 —— 数据字段，不跟界面语言走（理由见上两行）
   return { version: CANVAS_PLAN_VERSION, id, name: '未命名编排', nodes: [], edges: [], updatedAt: now };
 }
 
@@ -163,17 +178,17 @@ export function planIncomingEdges(plan: CanvasPlan, nodeId: string): CanvasPlanE
  */
 export function planNodeBlockReason(plan: CanvasPlan, nodeId: string): string | null {
   const node = plan.nodes.find((item) => item.id === nodeId);
-  if (node === undefined) return '节点不存在（图刚被改过？）';
-  if (node.prompt.trim() === '') return '提示词为空';
+  if (node === undefined) return translate(getLanguage(), 'canvas.plan.block.notFound');
+  if (node.prompt.trim() === '') return translate(getLanguage(), 'canvas.plan.block.emptyPrompt');
   if (!PLAN_SUPPORTED_MODES.includes(node.mode)) {
-    return `模式 ${node.mode} 不受编排支持（i2v / fl2v 需要素材槽，片 A 只支持 t2v / v2v）`;
+    return translate(getLanguage(), 'canvas.plan.block.unsupportedMode', { mode: node.mode });
   }
   const incoming = planIncomingEdges(plan, nodeId);
   if (incoming.length > 1) {
-    return `有 ${incoming.length} 条入边：v2v 只能接一个上游（不猜哪一个 —— 猜错就是拿错误输入烧钱）`;
+    return translate(getLanguage(), 'canvas.plan.block.tooManyUpstream', { count: incoming.length });
   }
   if (incoming.length === 1 && node.mode !== 'v2v') {
-    return `模式是 t2v 但接了一个上游：只有 v2v（视频参考）能引用上游产物`;
+    return translate(getLanguage(), 'canvas.plan.block.t2vWithUpstream');
   }
   return null;
 }

@@ -4,6 +4,7 @@ import {
   type CanvasPlanNode,
   type VideoGenerateRequest,
 } from '@astrmira/shared';
+import { getLanguage, translate, type Language } from './i18n';
 import {
   planExecutionOrder,
   planIdempotencyKey,
@@ -31,6 +32,14 @@ import {
  * - **不猜上游**：不能跑的节点进 `skipped` 并带原因（不带着错误输入去跑）；
  * - 环 → `cycle` 非空且**一个都不提交**；
  * - 结果只是界面状态，不落库（真相在 `tasks` 表）。
+ *
+ * ## 语言迁移第十批：结果里的原因走字典
+ * 那些 `message`（"上游没有提交成功" / "等待出片超时"…）是**给用户看的**（节点卡片 + 运行报告），
+ * 所以它们进了 `canvas.run.*`；语言从 `deps.language` 取（缺省 `getLanguage()`，
+ * 见 `PlanRunnerDeps.language` 的说明）。
+ *
+ * ⚠️ 重试判据（`isRetryableSubmitError`）里的 `超时` **没有迁、也不该迁** ——
+ * 它是**匹配模式**（契约 §11-6 第 10 条），行内有 `i18n-exempt` 标记说明原因。
  */
 
 export type PlanNodeRunState = 'submitted' | 'failed' | 'skipped' | 'kept';
@@ -95,6 +104,16 @@ export interface PlanRunnerDeps {
   waitTimeoutMs?: number;
   /** 睡眠（测试注入立即 resolve） */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * 结果文案的语言（语言迁移第十批）。
+   *
+   * 为什么**在这层就可以注入**：结果里的那些原因（"上游没有提交成功" / "等待出片超时"…）
+   * 会显示在节点卡片与运行报告上，所以它们跟着界面语言走；而这一层本就是
+   * "注入驱动"的形态（`submit` / `queryTask` / `now` 全可注入），语言只是多一个注入位。
+   * 缺省 `getLanguage()`（与 `canvasPlan.planNodeBlockReason` 同一手法，
+   * 于是那份 **42 例**断言中文的单测一字未改 —— Node 里默认就是中文）。
+   */
+  language?: Language;
 }
 
 function describeThrown(caught: unknown): string {
@@ -136,6 +155,9 @@ export function isRetryableSubmitError(caught: unknown): boolean {
   const message = describeThrown(caught);
   if (/\bHTTP 4\d\d\b/.test(message)) return false;
   if (/\bHTTP 5\d\d\b/.test(message)) return true;
+  // 要认出上游/网络层回的"超时"，该口径写在契约 §11-6 第 10 条
+  // （`Failed to fetch` / 超时 / ECONN 系列）—— 改它要一起改契约。
+  // i18n-exempt: 判据字面量（匹配模式），不是界面文案 —— 理由见上两行
   return /failed to fetch|network|timeout|timed out|超时|ECONNRESET|ECONNREFUSED/i.test(message);
 }
 
@@ -192,6 +214,7 @@ async function waitForTaskReady(
   const interval = deps.pollIntervalMs ?? PLAN_POLL_INTERVAL_MS;
   const deadline = now() + (deps.waitTimeoutMs ?? PLAN_WAIT_TIMEOUT_MS);
   const short = taskId.slice(0, 8);
+  const lang = deps.language ?? getLanguage();
 
   for (;;) {
     let task: { status: string; outputVideoUrl?: string | null };
@@ -210,23 +233,25 @@ async function waitForTaskReady(
         ok: false,
         message:
           status === 404
-            ? `引用的产物 ${short} 在本服务上不存在（来自导入的编排，或任务记录已被清理）—— ` +
-              '先重跑这一段（被固定的先取消固定），或直接重跑引用它的那个节点'
-            : `查询引用的产物 ${short} 失败（${describeThrown(caught)}）—— 稍后重试这次运行`,
+            ? translate(lang, 'canvas.run.upstreamMissing', { short })
+            : translate(lang, 'canvas.run.upstreamQueryFailed', {
+                short,
+                reason: describeThrown(caught),
+              }),
       };
     }
     if (task.status === 'succeeded') {
       if (typeof task.outputVideoUrl === 'string' && task.outputVideoUrl !== '') return { ok: true };
-      return { ok: false, message: `上游 ${short} 成功了但没有成片文件（可能已被容量淘汰清理）` };
+      return { ok: false, message: translate(lang, 'canvas.run.upstreamNoOutput', { short }) };
     }
     if (SETTLED_FAILURE.has(task.status)) {
-      return { ok: false, message: `上游 ${short} 以 ${task.status} 结束（没有可用成片）` };
-    }
-    if (now() >= deadline) {
       return {
         ok: false,
-        message: `等待上游 ${short} 出片超时（本地轨可能要很久：可在视频库看进度，出片后再点一次运行）`,
+        message: translate(lang, 'canvas.run.upstreamFailed', { short, status: task.status }),
       };
+    }
+    if (now() >= deadline) {
+      return { ok: false, message: translate(lang, 'canvas.run.upstreamTimeout', { short }) };
     }
     await sleep(interval);
   }
@@ -242,6 +267,7 @@ export async function runCanvasPlan(plan: CanvasPlan, deps: PlanRunnerDeps): Pro
   // 它**不带代数**：代数只影响幂等键；而"一次点击"本来就有自己的 `now`，
   // 两轮运行的 runId 天然不同（早先写过带代数的版本，改了格式却没有任何收益 —— 已回退）。
   const planRunId = `${plan.id}-${(deps.now ?? Date.now)()}`;
+  const lang = deps.language ?? getLanguage();
   const results: PlanNodeRunResult[] = [];
   const taskIdByNode = new Map<string, string>();
 
@@ -254,9 +280,10 @@ export async function runCanvasPlan(plan: CanvasPlan, deps: PlanRunnerDeps): Pro
       results.push({
         nodeId,
         state: 'kept',
-        message: scope.pinnedOverride.has(nodeId)
-          ? '已固定：本次不重跑，下游引用固定的那份产物'
-          : '不在本次重跑范围内：沿用上次产物',
+        message: translate(
+          lang,
+          scope.pinnedOverride.has(nodeId) ? 'canvas.run.keptPinned' : 'canvas.run.keptOutOfScope',
+        ),
       });
       continue;
     }
@@ -286,9 +313,10 @@ export async function runCanvasPlan(plan: CanvasPlan, deps: PlanRunnerDeps): Pro
         results.push({
           nodeId,
           state: 'skipped',
-          message: triedThisRun
-            ? '上游没有提交成功 —— 本节点不带着错误输入去跑（上游那条的原因见它自己）'
-            : '上游本次不在重跑范围、本机也没有它上次的产物记录 —— 先单独跑一次它，或把它固定住',
+          message: translate(
+            lang,
+            triedThisRun ? 'canvas.run.upstreamNotSubmitted' : 'canvas.run.upstreamNoRecord',
+          ),
         });
         continue;
       }

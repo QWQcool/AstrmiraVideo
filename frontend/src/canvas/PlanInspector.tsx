@@ -8,7 +8,7 @@ import {
 import { useTranslate } from '../lib/i18n';
 import { PLAN_SUPPORTED_MODES, planNodeBlockReason } from '../lib/canvasPlan';
 import type { PlanNodeRunResult } from '../lib/canvasPlanRunner';
-import { CANVAS_MODE_LABELS } from './labels';
+import { canvasModeLabel } from './labels';
 
 /**
  * 编排节点面板（V2.26 / 台账 A5 片 A）：右边这块是"编辑这条节点"的地方。
@@ -23,8 +23,8 @@ import { CANVAS_MODE_LABELS } from './labels';
  *
  * ⚠️ 两处**句内加粗**按本仓惯例拆成 `partN`（字典值只能是纯文本，加粗由这里的 JSX 保留）：
  * 拆段的边界空格**写进了字典值**（如 `'只对 '` 的尾随空格），所以渲染结果与迁移前一致。
- * ⚠️ 阻断原因（`blocked`）与模式名（`CANVAS_MODE_LABELS`）分别来自 `lib/canvasPlan.ts` 与
- * `canvas/labels.ts`，两者都在**片 B** 迁 —— 此刻它们仍是中文，属分片的中间态。
+ * 第十批（片 B）起，阻断原因（来自 `lib/canvasPlan.ts`）与模式名（`canvasModeLabel`
+ * → `common.mode.*`）也走字典了。
  */
 export interface PlanInspectorProps {
   plan: CanvasPlan;
@@ -200,7 +200,7 @@ export function PlanInspector({
               data-testid={`cv-plan-mode-${mode}`}
               onClick={() => onChange({ mode })}
             >
-              {CANVAS_MODE_LABELS[mode]}
+              {canvasModeLabel(mode)}
             </button>
           ))}
         </div>

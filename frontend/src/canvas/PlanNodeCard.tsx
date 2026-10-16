@@ -2,7 +2,7 @@ import { Handle, Position, type Node, NodeProps } from '@xyflow/react';
 import type { CanvasPlanNode } from '@astrmira/shared';
 import { useTranslate } from '../lib/i18n';
 import type { PlanNodeRunResult } from '../lib/canvasPlanRunner';
-import { CANVAS_MODE_LABELS } from './labels';
+import { canvasModeLabel } from './labels';
 
 /**
  * 编排节点卡片（V2.26 / 台账 A5 片 A）。
@@ -15,8 +15,7 @@ import { CANVAS_MODE_LABELS } from './labels';
  * 否则从只读切到编排模式时锚点会凭空出现/消失。
  *
  * 语言迁移第九批（片 A）：本卡文案走 `canvas.*`。
- * ⚠️ 模式名仍来自 `canvas/labels.ts`（**片 B** 才迁）—— 它此刻还是中文映射表，
- * 所以英文界面下这一行会是"中文模式名 + 其余英文"；那是**分片的中间态**，不是漏做。
+ * 第十批（片 B）起，模式名也走字典了（`canvasModeLabel` → `common.mode.*`）。
  */
 export type PlanFlowNode = Node<
   { node: CanvasPlanNode; run?: PlanNodeRunResult },
@@ -42,7 +41,7 @@ export function PlanNodeCard({ data, selected }: NodeProps<PlanFlowNode>) {
           <span className="cv-node-label">{prompt}</span>
         </span>
         <span className="cv-node-sub">
-          {CANVAS_MODE_LABELS[node.mode]} · {node.aspectRatio} · {node.durationSec ?? 5}s
+          {canvasModeLabel(node.mode)} · {node.aspectRatio} · {node.durationSec ?? 5}s
         </span>
         {run?.state === 'submitted' ? (
           <span className="cv-node-sub cv-plan-ok">

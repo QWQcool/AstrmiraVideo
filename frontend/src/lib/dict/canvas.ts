@@ -84,6 +84,33 @@ export const CANVAS_ZH = {
   'canvas.inspector.lastRun.title': '上次运行',
   'canvas.inspector.lastRun.submitted': '✓ 已提交：{id}',
   'canvas.inspector.remove': '删除节点',
+
+  // ── 编排纯函数给出的原因（`lib/canvasPlan.ts`）──
+  // 这些字符串**不是装饰**：它们是"不能跑"的全部解释 —— 每一个都必须能照着做下一步。
+  'canvas.plan.block.notFound': '节点不存在（图刚被改过？）',
+  'canvas.plan.block.emptyPrompt': '提示词为空',
+  'canvas.plan.block.unsupportedMode':
+    '模式 {mode} 不受编排支持（i2v / fl2v 需要素材槽，片 A 只支持 t2v / v2v）',
+  'canvas.plan.block.tooManyUpstream':
+    '有 {count} 条入边：v2v 只能接一个上游（不猜哪一个 —— 猜错就是拿错误输入烧钱）',
+  'canvas.plan.block.t2vWithUpstream': '模式是 t2v 但接了一个上游：只有 v2v（视频参考）能引用上游产物',
+
+  // ── 编排运行结果里的原因（`lib/canvasPlanRunner.ts`）──
+  // `{short}` 是任务 id 的前 8 位（卡片上一行放不下完整 id）。
+  'canvas.run.upstreamMissing':
+    '引用的产物 {short} 在本服务上不存在（来自导入的编排，或任务记录已被清理）—— ' +
+    '先重跑这一段（被固定的先取消固定），或直接重跑引用它的那个节点',
+  'canvas.run.upstreamQueryFailed': '查询引用的产物 {short} 失败（{reason}）—— 稍后重试这次运行',
+  'canvas.run.upstreamNoOutput': '上游 {short} 成功了但没有成片文件（可能已被容量淘汰清理）',
+  'canvas.run.upstreamFailed': '上游 {short} 以 {status} 结束（没有可用成片）',
+  'canvas.run.upstreamTimeout':
+    '等待上游 {short} 出片超时（本地轨可能要很久：可在视频库看进度，出片后再点一次运行）',
+  'canvas.run.keptPinned': '已固定：本次不重跑，下游引用固定的那份产物',
+  'canvas.run.keptOutOfScope': '不在本次重跑范围内：沿用上次产物',
+  'canvas.run.upstreamNotSubmitted':
+    '上游没有提交成功 —— 本节点不带着错误输入去跑（上游那条的原因见它自己）',
+  'canvas.run.upstreamNoRecord':
+    '上游本次不在重跑范围、本机也没有它上次的产物记录 —— 先单独跑一次它，或把它固定住',
 };
 
 export const CANVAS_EN = {
@@ -145,4 +172,29 @@ export const CANVAS_EN = {
   'canvas.inspector.lastRun.title': 'Last run',
   'canvas.inspector.lastRun.submitted': '✓ Submitted: {id}',
   'canvas.inspector.remove': 'Delete node',
+
+  'canvas.plan.block.notFound': 'Node not found (was the graph just edited?)',
+  'canvas.plan.block.emptyPrompt': 'Prompt is empty',
+  'canvas.plan.block.unsupportedMode':
+    'Mode {mode} is not supported by the plan (i2v / fl2v need an asset slot; slice A supports only t2v / v2v)',
+  'canvas.plan.block.tooManyUpstream':
+    '{count} incoming edges: v2v accepts only one upstream (we do not guess which — guessing means burning money on wrong input)',
+  'canvas.plan.block.t2vWithUpstream':
+    'Mode is t2v but an upstream is connected: only v2v (video reference) can reference an upstream output',
+
+  'canvas.run.upstreamMissing':
+    'Referenced output {short} does not exist on this deployment (came from an imported plan, or the task record was cleaned up) — ' +
+    'rerun this node first (unpin it if it is pinned), or rerun the node that references it',
+  'canvas.run.upstreamQueryFailed': 'Querying referenced output {short} failed ({reason}) — retry this run later',
+  'canvas.run.upstreamNoOutput':
+    'Upstream {short} succeeded but has no video file (it may have been evicted by the capacity limit)',
+  'canvas.run.upstreamFailed': 'Upstream {short} ended as {status} (no usable video)',
+  'canvas.run.upstreamTimeout':
+    'Timed out waiting for upstream {short} to produce a video (the local track can take a long while: watch it in the library, then click Run again)',
+  'canvas.run.keptPinned': 'Pinned: not rerun in this run; downstream references the pinned output',
+  'canvas.run.keptOutOfScope': 'Out of this rerun scope: reuses its previous output',
+  'canvas.run.upstreamNotSubmitted':
+    'The upstream did not submit successfully — this node will not run on top of bad input (see that node for its own reason)',
+  'canvas.run.upstreamNoRecord':
+    'The upstream is out of this rerun scope and this machine has no record of its previous output — run it on its own first, or pin it',
 };
