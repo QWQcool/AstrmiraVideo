@@ -251,6 +251,32 @@ try {
     // 顺带把"跟随系统"这条路径也验了——系统是暗色时不应打 data-theme（暗色是 :root 默认值）。
     colorScheme: 'dark',
   });
+  /**
+   * **每个 context 都要先注入一次"默认中文"**（V2.38 上线后必须有这一手）。
+   *
+   * 此前 `I18N_MIGRATION_COMPLETE=false`，界面一律中文，所以脚本里成百条中文断言是稳的；
+   * 开关翻 `true` 之后**没选过语言的访客会跟随浏览器语言** —— 而 Playwright 默认 `en-US`，
+   * 于是脚本会跑到英文界面上读中文断言（全红，而且原因看着像"文案没了"）。
+   *
+   * 做法：**只在本机没选过时**写入 `zh`（`=== null` 才写）—— 它等价于"访客第一次打开"；
+   * 后续显式选择（第 [12] 段切成 en）仍会持久化，不会被每次导航重新盖回中文。
+   *
+   * 做成函数是因为本脚本开了 **4 个 context**：漏掉任何一个，那一段都会"因为语言"而红。
+   * 唯一的例外是 `[7g]` 的 `enContext` —— 它**就是要**验"英文浏览器首访"。
+   */
+  const seedDefaultLanguage = async (target) => {
+    await target.addInitScript(() => {
+      try {
+        if (window.localStorage.getItem('astrmira.language') === null) {
+          window.localStorage.setItem('astrmira.language', 'zh');
+        }
+      } catch {
+        /* about:blank 之类没有存储的环境：忽略 */
+      }
+    });
+  };
+
+  await seedDefaultLanguage(context);
   const page = await context.newPage();
 
   /**
@@ -2054,6 +2080,7 @@ try {
     colorScheme: 'dark',
     // 刻意**不设** reducedMotion：对照组要看的就是"动效真实存在"
   });
+  await seedDefaultLanguage(motionContext);
   const motionPage = await motionContext.newPage();
   await motionPage.goto(`${baseUrl}/#/library`, { waitUntil: 'load' });
   await motionPage.waitForSelector('.lib-card', { timeout: 10_000 });
@@ -2101,6 +2128,7 @@ try {
     isMobile: true,
     hasTouch: true,
   });
+  await seedDefaultLanguage(mobileContext);
   const mobile = await mobileContext.newPage();
   await mobile.goto(`${baseUrl}/#/workbench`, { waitUntil: 'load' });
   await mobile.waitForSelector('.wb-main', { timeout: 10_000 });
@@ -3209,46 +3237,51 @@ try {
     `拦截撤销后回到真实配置（未配多台 → 只有一项「本地 ComfyUI」，实际 ${JSON.stringify(realEngineLabels)}）`,
   );
 
-  // ── V2.38（L1 · 语言迁移第一批）：**语言防线** ────────────────────────────────
+  // ── V2.38 / 上线（L1 · 语言切换）：**浏览器语言与显式选择** ────────────────────
   //
-  // 这一段验的是"防半中半英"那条线 —— 视图文案还没迁完，所以：
-  // ① **英文浏览器**（`locale: 'en-US'`）首次进入必须仍是**中文界面**：
-  //    否则他看到的是一半英文一半中文，而他**没点过任何东西**；
-  // ② 外壳文案走了字典之后，**默认中文观感逐字不变**（迁移不该让中文用户看到任何差异）；
-  // ③ 界面上不许漏出**字典键名**（那是漏键的可见形态）。
+  // 这一段验的是那条"语言防线"的**现在时**。它的前身断言的是"迁移未完成时不许跟随浏览器语言"
+  // （那时视图文案没迁完，跟随浏览器会给访客"半中半英"）；**各域迁完之后那条防线被撤掉**，
+  // 于是这里要验的是**新行为**（撤掉之后有没有撤干净、撤对方向）：
+  // ① **英文浏览器首访**必须直接是**英文界面**（这正是上线换来的能力）；
+  // ② **显式选择优先**：在这个英文 context 里选一次中文 → 界面变中文，且**刷新后仍是中文**
+  //    （"我明明选过中文，下次打开又变回去"是最容易被投诉的那类问题）；
+  // ③ 界面上不许漏出**字典键名**（那是漏键的可见形态）；
+  // ④ **默认中文观感逐字不变**（迁移不该让中文用户看到任何差异）—— 这条与语言无关，留着当回归线。
   //
   // 用**新开一个 context** 来做：locale 是 context 级设置（既有 page 上改不了），
   // 而主会话的语言也不该被这一段改掉。
-  console.log('\n[7g] 语言防线（V2.38：迁移未完成时不许跟随浏览器语言）');
+  console.log('\n[7g] 语言防线（V2.38 上线：首访跟随浏览器 · 显式选择优先）');
   const enContext = await browser.newContext({
     viewport: { width: 1440, height: 900 },
     colorScheme: 'dark',
     locale: 'en-US',
     extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
   });
+  // ⚠️ 这个 context **刻意不注入默认语言**（与其它三个不同）：它要验的就是
+  // "没选过语言的英文浏览器访客看到什么"。
   const enPage = await enContext.newPage();
   await enPage.goto(`${baseUrl}/#/create`, { waitUntil: 'load' });
   await enPage.waitForSelector('.sidebar', { timeout: 10_000 });
 
   const navLabels = await enPage.locator('.sidebar .nav-label').allInnerTexts();
   assert(
-    navLabels.includes('创作') && !navLabels.includes('Create'),
-    `英文浏览器首访仍是**中文界面**（侧栏：${navLabels.slice(0, 3).join(' / ')}…）—— 迁移完成前不被浏览器语言带跑`,
+    navLabels.includes('Create') && !navLabels.includes('创作'),
+    `英文浏览器首访直接是**英文界面**（侧栏：${navLabels.slice(0, 3).join(' / ')}…）—— 迁移已完成，跟随浏览器语言`,
   );
   assert(
     !navLabels.some((label) => label.includes('shell.')),
     '界面上没有任何**字典键名**漏出来（漏键会显示成键名，那是可见的坏）',
   );
-  assert(
-    (await enPage.locator('.side-row--theme .seg button').allInnerTexts()).join('') === '跟随系统星尘日间',
-    '外壳文案走字典之后，**默认中文逐字不变**（迁移不该让中文用户看到任何差异）',
-  );
-  // V2.39：创作入口（第一屏）也走字典了 —— 同理逐字不变。
-  // 这条盯的是"迁移有没有顺手改坏中文"（改文案是迁移里最容易发生的意外）。
-  assert(
-    (await enPage.locator('.cr-hero .cr-title').innerText()) === '描述你想要的画面',
-    '创作入口走字典之后**默认中文逐字不变**（第一屏标题）',
-  );
+
+  /**
+   * ⚠️ **这个 context 里点不到切换入口**（第一次跑就踩到，报的是"点击超时 / 元素不可见"）：
+   * 全新 context 的侧栏是**折叠态**（rail），而语言那一行与主题一样在折叠态下**整行隐藏**
+   * （56px 放不下两个文字按钮）。所以"显式选择优先"与"中文逐字不变"这两组断言
+   * **挪到主会话 `[12]` 去验**（那里的侧栏是展开的、`lang-*` 可见，而且它本来就是
+   * "切来切去"那一段）。
+   *
+   * 这一段只回答一个问题：**没选过语言的英文浏览器访客，看到的是不是英文**。
+   */
   await enContext.close();
 
   console.log('\n[7f] window 层运行期兜底（V2.29 / B61 片 B / D52：只本地提示、不上报）');
@@ -3372,6 +3405,96 @@ try {
   if (consoleWarnings.length > 0) {
     note(`（提示）console.warning ${consoleWarnings.length} 条，不参与判定：${consoleWarnings[0]?.slice(0, 160)}`);
   }
+  /**
+   * ── [12] 语言切换（V2.38 上线）：**同一批界面在英文下也必须成立** ────────────────
+   *
+   * 为什么必须有这一段：这个脚本前面所有断言读的都是**中文** —— 那正是"迁移期"的验证方式
+   * （那时界面上只有中文）。上线之后，"切到英文还能用"是**新产品能力**，
+   * 而它最容易被悄悄破坏的地方是：某个视图忘了接线（显示键名或中文）。
+   *
+   * 放在**最后**并且**切回中文**收尾：后面若有人追加段落，会立刻发现这一点。
+   */
+  console.log('\n[12] 语言切换（上线：入口 + 显式选择优先 + 切语言不丢状态）');
+  await page.goto(`${baseUrl}/#/library`, { waitUntil: 'load' });
+  // 先在中文界面留一个"状态"（搜索框里的一串字）：切语言**不许**把它弄丢
+  await page.fill('.lib-search input', 'notion');
+  const langEn = page.locator('[data-testid="lang-en"]');
+  await langEn.scrollIntoViewIfNeeded(); // 侧栏底部会溢出到折叠区外（见 [7g] 的同一处踩坑）
+  await langEn.click();
+  await page.waitForSelector('h1.wb-page-title:has-text("Library")', { timeout: 5_000 });
+  assert(true, '切到英文：视频库标题变成「Library」（切换入口真的接线了）');
+  assert(
+    (await page.inputValue('.lib-search input')) === 'notion',
+    '切语言**只重渲染、不丢状态**（搜索框里那串字还在）',
+  );
+
+  /**
+   * 英文下逐屏读标题：覆盖外壳之外的四个视图 + 未知视图兜底。
+   *
+   * ⚠️ 每条要写**自己的选择器**：画布的标题是 `h2.cv-title`（它自带一枚画布内的排版），
+   * 而其余视图共用 `h1.wb-page-title`。第一版我统一用了后者，画布那一步直接超时
+   * —— 那正是"英文段"想抓的那类问题（**断言本身写错了**，而不是界面错了）。
+   * 画布还允许两个值：`#/canvas` 可能是事实图、也可能停在编排模式（同一次运行里切过）。
+   */
+  for (const [hash, selector, title] of [
+    ['#/costs', 'h1.wb-page-title', ['Cost ledger']],
+    ['#/recipes', 'h1.wb-page-title', ['Prompt recipe library']],
+    ['#/logs', 'h1.wb-page-title', ['Activity log']],
+    ['#/overview', 'h1.wb-page-title', ['Overview']],
+    ['#/canvas', '.cv-title', ['Lineage canvas', 'Canvas plan']],
+  ]) {
+    await page.goto(`${baseUrl}/${hash}`, { waitUntil: 'load' });
+    const heading = await page.locator(selector).first().innerText();
+    assert(
+      title.some((item) => heading.includes(item)),
+      `英文界面：${hash} 读作「${title.join(' / ')}」（实际「${heading}」）`,
+    );
+  }
+  await page.goto(`${baseUrl}/#/nope`, { waitUntil: 'load' });
+  assert(
+    (await page.locator('h1.wb-page-title').innerText()).includes('This view does not exist'),
+    '英文界面：未知视图兜底也走字典（不是硬编码中文）',
+  );
+
+  // 显式选择要**记在本机**："我明明选过英文，下次打开又变回去"是最容易被投诉的那类问题
+  assert(
+    (await page.evaluate(() => window.localStorage.getItem('astrmira.language'))) === 'en',
+    '语言选择已持久化到 localStorage（显式选择优先于浏览器偏好）',
+  );
+  // 刷新一次仍是英文：把"持久化"从"存储里有值"验到"**下一次打开真的按它走**"
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('h1.wb-page-title', { timeout: 5_000 });
+  assert(
+    (await page.locator('h1.wb-page-title').innerText()).includes('This view does not exist'),
+    '刷新后仍是英文（存储里的显式选择被真的用上了，不只是一条记录）',
+  );
+
+  // 切回中文收尾：这个脚本的其余断言、以及后续可能追加的段落都读中文
+  const langBack = page.locator('[data-testid="lang-zh"]');
+  await langBack.scrollIntoViewIfNeeded();
+  await langBack.click();
+  await page.waitForSelector('h1.wb-page-title:has-text("这个视图不存在")', { timeout: 5_000 });
+  assert(true, '切回中文：兜底页标题回到中文（双向都走字典）');
+
+  /**
+   * **中文观感逐字不变**（迁移不该让中文用户看到任何差异）。
+   *
+   * 这两条原先在 `[7g]` —— 那时那个 context 是中文（迁移未完成、不跟随浏览器语言）。
+   * 上线之后它是英文，所以搬到这里（主会话、刚切回中文）。
+   * 盯的是迁移里最容易发生的意外：**顺手改坏了中文**（改文案是"迁移"最常见的副作用）。
+   */
+  assert(
+    (await page.locator('.side-row--theme .seg button').allInnerTexts()).join('') ===
+      '跟随系统星尘日间',
+    '外壳文案走字典之后，**默认中文逐字不变**（主题那三档）',
+  );
+  await page.goto(`${baseUrl}/#/create`, { waitUntil: 'load' });
+  await page.waitForSelector('.cr-hero .cr-title', { timeout: 5_000 });
+  assert(
+    (await page.locator('.cr-hero .cr-title').innerText()) === '描述你想要的画面',
+    '创作入口走字典之后**默认中文逐字不变**（第一屏标题）',
+  );
+
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   // 缺浏览器时的中文指引（P0-3 的同一口径：缺外部依赖要讲清楚怎么装，而不是抛一段英文栈）
@@ -3408,5 +3531,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-  '\n✓ UI 冒烟通过：三栏渲染 + 首屏连通 + 抽屉可交互 + 参数/主题联动 + 素材槽与画廊封面 + 操作日志留痕 + 控制台零 error\n',
+  '\n✓ UI 冒烟通过：三栏渲染 + 首屏连通 + 抽屉可交互 + 参数/主题联动 + 素材槽与画廊封面 + 操作日志留痕 + **中英双语可切** + 控制台零 error\n',
 );

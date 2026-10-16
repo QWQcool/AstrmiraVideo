@@ -43,7 +43,15 @@ import { WORKBENCH_EN, WORKBENCH_ZH } from './workbench';
  * **只豁免行首 `console.` 的行**（判据写成通用的，不是给某个文件开后门；
  * 别放宽成"这一行含 console 就行"，那会给"把文案塞进带 console 的调用里"开口子）。
  *
- * **切换入口在全部迁移完成前不上线**（半中半英比只有中文更糟）。
+ * ## 上线（V8.64）：`I18N_MIGRATION_COMPLETE = true` + 侧栏底部的切换入口
+ * 各域全部迁完，所以那道"半中半英"的防线**不再需要**：
+ * 1. **切换入口**在侧栏底部（与主题并排 —— 两者都是"本机偏好"）；
+ * 2. `I18N_MIGRATION_COMPLETE = true` 之后，**没选过语言的访客会跟随浏览器语言**
+ *    （此前一律中文：英文浏览器会看到"外壳英文 + 正文中文"）；
+ * 3. **显式选择永远优先**（`astrmira.language`）—— "我明明选过英文，下次打开又变回去"
+ *    是最容易被投诉的那类问题；
+ * 4. 冒烟加了 **英文段**（切到英文逐屏断言标题 + 状态不丢 + 持久化，末尾切回中文），
+ *    理由与做法见 `scripts/smoke-ui.mjs` 的 `[12]`。
  *
  * ⚠️ **`common` 域的意义**：模式名与状态名在多个视图里出现，各写一份中文必然漂移
  * （"这边叫图生视频、那边叫图片生视频"）。未迁的那几个视图现在还有自己的那一份
@@ -61,7 +69,7 @@ import { WORKBENCH_EN, WORKBENCH_ZH } from './workbench';
  *
  * 迁移完成 = 各域全部迁完 → 把下面这行改成 `true`，同时挂上切换入口。
  */
-export const I18N_MIGRATION_COMPLETE = false;
+export const I18N_MIGRATION_COMPLETE = true;
 
 /** 中文（基准）。各域字典在这里展开 */
 export const ZH = {

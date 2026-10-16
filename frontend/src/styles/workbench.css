@@ -1470,7 +1470,9 @@
 
 .sidebar[data-rail='1'] .nav-label,
 .sidebar[data-rail='1'] .side-foot-label,
-.sidebar[data-rail='1'] .side-row--theme {
+.sidebar[data-rail='1'] .side-row--theme,
+/* 语言那一行与主题同款：收起态只放图标，两个文字按钮放不下（V2.38 上线） */
+.sidebar[data-rail='1'] .side-row--lang {
   display: none;
 }
 
@@ -2354,7 +2356,9 @@
     display: inline;
   }
 
-  .sidebar[data-rail='1'] .side-row--theme {
+  .sidebar[data-rail='1'] .side-row--theme,
+/* 语言那一行与主题同款：收起态只放图标，两个文字按钮放不下（V2.38 上线） */
+.sidebar[data-rail='1'] .side-row--lang {
     display: flex;
   }
 

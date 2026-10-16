@@ -102,6 +102,11 @@ export const SHELL_ZH = {
 
   /** 项目下拉里那一行（`lib/projects.ts`）：名字 + 用量，一眼能比较 */
   'shell.project.item': '{name}（{tasks} 片 · {assets} 素材）',
+
+  // ── 语言切换入口（V2.38 上线；侧栏底部，与主题并排）──
+  // 标签说的是"**界面**语言"：本产品还有**提示词语言**（后端那份，是独立轴，见 `dict/edit.ts`），
+  // 不写清就容易让人以为"切成英文 → 生成的提示词也变英文"（那件事不归这个开关管）。
+  'shell.foot.language': '界面语言',
 };
 
 export const SHELL_EN = {
@@ -181,4 +186,6 @@ export const SHELL_EN = {
   'shell.unknown.home': 'Back home',
 
   'shell.project.item': '{name} ({tasks} clips · {assets} assets)',
+
+  'shell.foot.language': 'Interface language',
 };

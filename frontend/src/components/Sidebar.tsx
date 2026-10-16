@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useTranslate } from '../lib/i18n';
 import { useShell } from '../lib/shell';
 import { THEME_LABEL_KEYS, THEME_PREFS, type ThemePref } from '../lib/theme';
+import { LANGUAGE_LABELS, SUPPORTED_LANGUAGES, setLanguage, useLanguage } from '../lib/i18n';
 import { NAV_VIEWS, type ViewIconKey } from '../views/registry';
 
 /**
@@ -125,6 +126,8 @@ export function Sidebar({
 }: SidebarProps) {
   const { openByok } = useShell();
   const t = useTranslate();
+  /** 当前界面语言（切换入口要高亮当前项）；`setLanguage` 是全局动作，不必层层传 props */
+  const language = useLanguage();
 
   return (
     <aside
@@ -170,6 +173,34 @@ export function Sidebar({
           <SideIcon>{KEY_ICON}</SideIcon>
           <span className="side-foot-label">{t('shell.foot.byok')}</span>
         </button>
+
+        {/**
+         * 语言切换（V2.38 上线）。
+         *
+         * 为什么放在**这里**（主题那一行旁边）：语言与主题是同一类东西 ——
+         * **本机偏好**，与项目无关、与哪个视图无关；而且都是"选一次就一直生效"。
+         *
+         * 为什么是分段控件而不是下拉：只有两种语言，两个按钮一眼看全，不用多点一次。
+         * 标签用**语言的自称**（`中文` / `English`）—— 把"中文"在英文界面里写成 "Chinese"
+         * 反而更难认（这是切换菜单的惯例）。
+         */}
+        <div className="side-row side-row--lang">
+          <SideIcon>🌐</SideIcon>
+          <span className="side-foot-label">{t('shell.foot.language')}</span>
+          <span className="seg" role="group" aria-label={t('shell.foot.language')}>
+            {SUPPORTED_LANGUAGES.map((item) => (
+              <button
+                key={item}
+                type="button"
+                data-testid={`lang-${item}`}
+                aria-pressed={language === item}
+                onClick={() => setLanguage(item)}
+              >
+                {LANGUAGE_LABELS[item]}
+              </button>
+            ))}
+          </span>
+        </div>
 
         {/* 主题分段控件：收起态下 56px 放不下三个文字按钮，整行隐藏（展开后再切） */}
         <div className="side-row side-row--theme">

@@ -773,6 +773,21 @@ if (leftPanelText !== undefined) {
   // `navigator.language`，他会看到一个只翻译了一半的界面 —— 比只有中文更糟。
   // 这条静态断言盯住"开关真的接在判定链上"（去掉它不会有任何别的信号）。
   const i18nText = contents.get(path.join(SRC, 'lib', 'i18n.ts'));
+  /**
+   * 同一条线的第三头（V2.38 上线）：**切换入口必须存在且真的会切换**。
+   *
+   * 为什么要机器盯：`I18N_MIGRATION_COMPLETE` 一翻 true，"跟随浏览器语言"就生效了 ——
+   * 若此时**没有任何入口**让用户改回来，英文浏览器用户会被永久锁在英文界面
+   * （他能做的只有去 DevTools 清 localStorage）。所以这两件事必须同时成立：
+   * 开关 true + 入口在（且调用 `setLanguage`）。
+   */
+  const sidebarText = contents.get(path.join(SRC, 'components', 'Sidebar.tsx'));
+  if (sidebarText !== undefined && !sidebarText.includes('setLanguage(')) {
+    failures.push(
+      'Sidebar 没有语言切换入口（`setLanguage(`）—— 迁移已完成、会跟随浏览器语言，但用户改不回来（V2.38 上线）',
+    );
+  }
+
   if (i18nText !== undefined && !i18nText.includes('I18N_MIGRATION_COMPLETE')) {
     failures.push(
       'i18n.ts 没有用 `I18N_MIGRATION_COMPLETE` —— 「迁移未完成时忽略浏览器偏好」这条防线没了（V2.38）',
