@@ -136,12 +136,25 @@ describe('ComfyUI 协议 · 模板声明（V2.39）', () => {
     expect(caps.unavailableReasons.join('')).toContain('需要确认');
   });
 
-  it('有声明 → 按声明给模式（H3 那种文件名也能判对）', () => {
+  it('有声明 → 按声明给模式（H3 那种文件名也能判对）；**判定依据单独给**、不混进"不支持"', () => {
     const caps = comfyCapabilities(objectInfo(), H3_MODELS, WAN22_TI2V_5B_TEMPLATE, {
       modes: ['t2v', 'i2v'],
     });
     expect(caps.modes).toEqual(['t2v', 'i2v']);
-    expect(caps.unavailableReasons.join('')).toContain('能力位按**模板声明**判定');
+    expect(caps.declarationNote).toContain('判定依据：模板声明');
+    // ⚠️ 回归线（实测踩到过）：判定依据**不能**出现在 unavailableReasons 里 ——
+    // 那会让自检结论读成"支持 t2v / i2v；不支持 判定依据：模板声明……"（语义变形）
+    expect(caps.unavailableReasons.join('')).not.toContain('判定依据');
+    expect(caps.unavailableReasons.join('')).not.toContain('模板声明');
+  });
+
+  it('声明路径下"**不支持什么**"仍然说清（本仓未接线的模式 + 本模板未声明的模式）', () => {
+    const caps = comfyCapabilities(objectInfo(), H3_MODELS, WAN22_TI2V_5B_TEMPLATE, {
+      modes: ['t2v'],
+    });
+    const reasons = caps.unavailableReasons.join('；');
+    expect(reasons).toContain('fl2v / v2v'); // 本仓未接线（与模板无关）
+    expect(reasons).toContain('没有声明 i2v'); // 这份模板没声明
   });
 
   it('声明里的 **fl2v / v2v 被如实剔除**（本仓还没接首尾帧 / 参考视频的输入通道）', () => {

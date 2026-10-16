@@ -228,10 +228,12 @@ export class ComfyUiProvider implements VideoProvider {
         };
       }
       return {
-        // 可用，但把"能跑什么 / 不能跑什么"一并说清（界面照实展示，不藏）
+        // 可用，但把"能跑什么 / 不能跑什么"一并说清（界面照实展示，不藏）；
+        // 走声明判定时再说一句"依据"—— 让"这个判断是从哪来的"可回答（V2.39）
         available: true,
         reason:
-          `模型：${models.unet} · 模板：${templateSource} · 支持 ${capabilities.modes.join(' / ')}；` +
+          `模型：${models.unet} · 模板：${templateSource} · 支持 ${capabilities.modes.join(' / ')}` +
+          `${capabilities.declarationNote === undefined ? '' : `（${capabilities.declarationNote}）`}；` +
           `不支持 ${capabilities.unavailableReasons.join('；')}`,
       };
     } catch (error) {

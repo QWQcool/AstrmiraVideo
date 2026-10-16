@@ -192,6 +192,14 @@ export const WAN22_TI2V_5B_DECLARATION: ComfyTemplateDeclaration = {
 export interface ComfyCapabilities {
   /** 该实例**实际能跑**的模式（声明优先；缺声明按模型文件名判定 —— 都不是"节点存在就算支持"） */
   modes: GenerationMode[];
+  /**
+   * 判定依据（V2.39；只在**走声明**时有值）。
+   *
+   * 为什么单独一个字段而不是塞进 `unavailableReasons`：后者是"**不支持**什么"，
+   * 而"这个判断是从哪来的"既不是支持也不是不支持 —— 混进去会让自检结论变成
+   * "支持 A；不支持 能力位按模板声明判定"（语义变形，实测踩到过）。
+   */
+  declarationNote?: string;
   hasTiledDecode: boolean;
   hasLatentNode: boolean;
   unetCandidates: string[];
@@ -302,10 +310,13 @@ export function comfyCapabilities(
     unavailableReasons.push('models/diffusion_models 里没有模型文件');
   }
 
+  let declarationNote: string | undefined;
   if (missingNodes.length === 0 && models.unet !== '') {
     if (declaration !== undefined) {
       // V2.39：**声明优先**（换模型/换工作流不必改代码，也不靠文件命名）
-      modes.push(...resolveDeclaredModes(declaration, template, unavailableReasons));
+      const resolved = resolveDeclaredModes(declaration, template, unavailableReasons);
+      modes.push(...resolved.modes);
+      declarationNote = resolved.note;
     } else if (unetName.includes('ti2v')) {
       modes.push('t2v', 'i2v');
     } else if (unetName.includes('i2v')) {
@@ -321,7 +332,16 @@ export function comfyCapabilities(
     // 只有"缺声明"这条路径才说这句 —— 有声明时"不支持什么"由声明的差集回答（见 resolveDeclaredModes）
     unavailableReasons.push('fl2v / v2v 需要另外的模型（FLF2V / VACE 系列），本机未安装');
   }
-  return { modes, hasTiledDecode, hasLatentNode, unetCandidates, clipCandidates, vaeCandidates, unavailableReasons };
+  return {
+    modes,
+    ...(declarationNote === undefined ? {} : { declarationNote }),
+    hasTiledDecode,
+    hasLatentNode,
+    unetCandidates,
+    clipCandidates,
+    vaeCandidates,
+    unavailableReasons,
+  };
 }
 
 /**
@@ -330,23 +350,22 @@ export function comfyCapabilities(
  *    声明是"工作流做得了"，接线是"我们塞得进输入"，两者缺一不可；
  * 2. 声明 `i2v` / `fl2v` / `v2v` 时，模板里必须有首帧占位（`{{START_IMAGE}}` 或 `{{START_IMAGE_NAME}}`）——
  *    没有占位就说明**我们没地方塞那张图**，那种情况下报"支持 i2v"是假的；
- * 3. 被剔除的每一条都写进 `unavailableReasons`（**不静默剔除**），
- *    并附一句"能力位按模板声明判定"，让自检结论能回答"这个判断是从哪来的"。
+ * 3. 被剔除的每一条都写进 `unavailableReasons`（**不静默剔除**）；
+ *    而"这个判断是从哪来的"走**单独的 `note`**（它不是"不支持什么"，混进 reasons 会让
+ *    自检结论读成"支持 A；不支持 能力位按模板声明判定"—— 实测踩过）。
  */
 function resolveDeclaredModes(
   declaration: ComfyTemplateDeclaration,
   template: WorkflowTemplate,
   unavailableReasons: string[],
-): GenerationMode[] {
+): { modes: GenerationMode[]; note: string } {
   const placeholders = templatePlaceholders(template);
   const usable: GenerationMode[] = [];
   const rejected: string[] = [];
 
   for (const mode of declaration.modes) {
-    if (!COMFY_WIRED_MODES.includes(mode)) {
-      rejected.push(`${mode}（本仓还没把它的输入接进工作流，见 CONTRACT §19-8）`);
-      continue;
-    }
+    // 未接线的模式不在这里单独说 —— 由下面的 `unwired` 统一回答（避免同一件事说两遍）
+    if (!COMFY_WIRED_MODES.includes(mode)) continue;
     const needsFirstFrame = mode === 'i2v' || mode === 'fl2v' || mode === 'v2v';
     if (needsFirstFrame && !placeholders.has('START_IMAGE') && !placeholders.has('START_IMAGE_NAME')) {
       rejected.push(`${mode}（模板里没有 START_IMAGE / START_IMAGE_NAME 占位，我们没有地方塞首帧）`);
@@ -355,15 +374,30 @@ function resolveDeclaredModes(
     usable.push(mode);
   }
 
-  const label = declaration.label === undefined ? '' : ` · ${declaration.label}`;
-  unavailableReasons.push(
-    `能力位按**模板声明**判定（声明：${declaration.modes.join(' / ')}${label}）` +
-      (declaration.notes === undefined ? '' : ` —— ${declaration.notes}`),
+  // 契约 §19-2 要求"同时说出支持什么与不支持什么"——下面是两种"不支持"：
+  // ① **本仓未接线**的模式（与模板无关，永远不可用）；② 已接线但**这份模板没声明**的模式。
+  const unwired = (GenerationModeSchema.options as readonly string[]).filter(
+    (mode) => !(COMFY_WIRED_MODES as readonly string[]).includes(mode),
   );
+  if (unwired.length > 0) {
+    unavailableReasons.push(
+      `${unwired.join(' / ')}：本仓还没把它们的输入接进工作流（见 CONTRACT §19-8）`,
+    );
+  }
+  const declared = new Set<GenerationMode>(declaration.modes);
+  const notDeclared = COMFY_WIRED_MODES.filter((mode) => !declared.has(mode));
+  if (notDeclared.length > 0) {
+    unavailableReasons.push(`这套模板没有声明 ${notDeclared.join(' / ')}`);
+  }
   if (rejected.length > 0) {
     unavailableReasons.push(`模板声明里有 ${rejected.join('、')} —— 已如实不提供`);
   }
-  return usable;
+
+  const label = declaration.label === undefined ? '' : ` · ${declaration.label}`;
+  const note =
+    `判定依据：模板声明「${declaration.modes.join(' / ')}${label}」` +
+    (declaration.notes === undefined ? '' : ` —— ${declaration.notes}`);
+  return { modes: usable, note };
 }
 
 /** 对齐到 32 的倍数（且不小于 32） */
