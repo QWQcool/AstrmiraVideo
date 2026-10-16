@@ -22,7 +22,7 @@ import { TimelineClip } from './TimelineClip';
  * - 轨道行按模型顺序渲染（镜头 / 转场 / 字幕 / 音效），**空轨也显示**（否则不知道往哪加）；
  * - 轨道头固定 120px，右侧内容区宽度 = 时长 × 缩放（pxPerFrame），横向滚动；
  * - 播放头竖线是**唯一订阅 playheadFrame 的时间轴组件**；
- * - 工具栏：素材下拉（加镜头/音效）、＋字幕、＋转场（需选中视频片段）、删除、适配、缩放。
+ * - 工具栏：素材下拉（加镜头/音效）、{translate(getLanguage(), 'edit.tl.add.caption.label')}、{translate(getLanguage(), 'edit.tl.add.transition.label')}（需选中视频片段）、删除、适配、缩放。
  *
  * V2.10（台账 B57）：素材下拉分两组 —— **成片**（value = 裸 taskId，与既有行为/断言一致）
  * 与**音频素材**（value = `asset:<assetId>`，来自 `GET /api/assets` 的 kind=audio）。
@@ -75,7 +75,7 @@ const Ruler: React.FC<{ store: EditStore; durationFrames: number }> = ({ store, 
       ref={rulerRef}
       className="ed-ruler"
       onPointerDown={onPointerDown}
-      title="点击 / 拖动移动播放头"
+      title={translate(getLanguage(), 'edit.tl.playhead.title')}
     >
       {ticks.map((frame) => (
         <span key={frame} className="ed-ruler-tick" style={{ left: frame * ppf }}>
@@ -175,7 +175,7 @@ export const Timeline: React.FC<{
     if (resolved === null) return;
     if (mode === 'video' && resolved.kind === 'asset') {
       // 音频素材只能进音效轨 —— 说清楚而不是静默忽略（不静默降级）
-      setAddError('音频素材只能加到音效轨（用「＋音效」）');
+      setAddError(translate(getLanguage(), 'edit.tl.error.audioOnly'));
       return;
     }
     setAdding(true);
@@ -205,12 +205,12 @@ export const Timeline: React.FC<{
         <select
           className="wb-input ed-tl-pick"
           value={pendingValue}
-          aria-label="选择要添加的素材"
+          aria-label={translate(getLanguage(), 'edit.tl.pick.aria')}
           onChange={(event) => setPendingValue(event.target.value)}
         >
-          <option value="">选择素材…</option>
+          <option value="">{translate(getLanguage(), 'edit.tl.pick.placeholder')}</option>
           {/* V2.10：成片与音频素材分组；成片的 value 仍是裸 taskId（既有断言与草稿不受影响） */}
-          <optgroup label="成片">
+          <optgroup label={translate(getLanguage(), 'edit.tl.pick.groupClips')}>
             {candidates.map((item) => (
               <option key={item.taskId} value={item.taskId}>
                 {item.origin?.kind === 'edit' ? '✂ ' : ''}
@@ -219,7 +219,7 @@ export const Timeline: React.FC<{
             ))}
           </optgroup>
           {audioAssets.length === 0 ? null : (
-            <optgroup label="音频素材">
+            <optgroup label={translate(getLanguage(), 'edit.tl.pick.groupAudio')}>
               {audioAssets.map((asset) => (
                 <option key={asset.assetId} value={`${ASSET_VALUE_PREFIX}${asset.assetId}`}>
                   🎵 {asset.name ?? asset.assetId.slice(0, 8)}
@@ -234,30 +234,30 @@ export const Timeline: React.FC<{
           disabled={pendingValue === '' || adding || selectedIsAudioAsset}
           title={
             selectedIsAudioAsset
-              ? '音频素材不能进镜头轨（用「＋音效」）'
-              : '在时间轴末尾追加一段镜头（源片/剪辑产物）'
+              ? translate(getLanguage(), 'edit.tl.error.audioNotVideo')
+              : translate(getLanguage(), 'edit.tl.add.clip.title')
           }
           onClick={() => void addFromSelection('video')}
         >
-          {adding ? '读取素材…' : '＋镜头'}
+          {adding ? translate(getLanguage(), 'edit.tl.add.clip.loading') : translate(getLanguage(), 'edit.tl.add.clip.label')}
         </button>
         <button
           type="button"
           className="wb-btn"
           disabled={pendingValue === '' || adding}
-          title="把素材的音轨作为音效轨片段（不显示画面）：成片取音轨，音频素材直接进场"
+          title={translate(getLanguage(), 'edit.tl.add.audio.title')}
           onClick={() => void addFromSelection('audio')}
         >
-          ＋音效
+          {translate(getLanguage(), 'edit.tl.add.audio.label')}
         </button>
         <span className="ed-tl-sep" />
         <button
           type="button"
           className="wb-btn"
-          title="在播放头处添加一条字幕（默认 2s）"
+          title={translate(getLanguage(), 'edit.tl.add.caption.title')}
           onClick={() => store.addCaption()}
         >
-          ＋字幕
+          {translate(getLanguage(), 'edit.tl.add.caption.label')}
         </button>
         <button
           type="button"
@@ -265,31 +265,31 @@ export const Timeline: React.FC<{
           disabled={transitionTarget === null}
           title={
             transitionTarget === null
-              ? '先选中一个视频片段（它后面要有首尾相接的下一段）'
-              : '在选中片段与下一段之间加转场（默认 0.5s，可在属性面板改类型与时长）'
+              ? translate(getLanguage(), 'edit.tl.add.transition.needClip')
+              : translate(getLanguage(), 'edit.tl.add.transition.title')
           }
           onClick={() => store.addTransitionAfterSelected('fade', DEFAULT_TRANSITION_FRAMES)}
         >
-          ＋转场
+          {translate(getLanguage(), 'edit.tl.add.transition.label')}
         </button>
         <button
           type="button"
           className="wb-btn"
           disabled={selectedClipId === null}
-          title="删除选中片段（Delete）"
+          title={translate(getLanguage(), 'edit.tl.remove.title')}
           onClick={() => selectedClipId !== null && store.removeClip(selectedClipId)}
         >
-          🗑 删除片段
+          {translate(getLanguage(), 'edit.tl.remove.label')}
         </button>
         <span className="ed-tl-sep" />
         <span className="ed-tl-note">
-          {clipCount} 个片段 · 总长 {formatTimecode(duration, project.fps)}
+          {translate(getLanguage(), 'edit.tl.summary', { count: clipCount, time: formatTimecode(duration, project.fps) })}
         </span>
         <span style={{ marginLeft: 'auto' }} />
-        <button type="button" className="wb-btn" onClick={fit} title="缩放到适配全部内容">
-          ⤢ 适配
+        <button type="button" className="wb-btn" onClick={fit} title={translate(getLanguage(), 'edit.tl.fit.title')}>
+          {translate(getLanguage(), 'edit.tl.fit.label')}
         </button>
-        <span className="ed-tl-note">缩放</span>
+        <span className="ed-tl-note">{translate(getLanguage(), 'edit.tl.zoom')}</span>
         <input
           type="range"
           className="ed-tl-zoom"
@@ -297,7 +297,7 @@ export const Timeline: React.FC<{
           max={MAX_PX_PER_FRAME}
           step={0.1}
           value={ppf}
-          aria-label="时间轴缩放"
+          aria-label={translate(getLanguage(), 'edit.tl.zoom.aria')}
           onChange={(event) => store.setZoom(Number(event.target.value))}
         />
       </div>

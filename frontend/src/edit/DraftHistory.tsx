@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { getLanguage, translate } from '../lib/i18n';
 import {
   DRAFT_HISTORY_LIMIT,
   clearEditDraftHistory,
@@ -25,10 +26,10 @@ import { useEditStore } from './store';
  */
 function formatRelative(savedAt: number, now: number): string {
   const seconds = Math.max(0, Math.round((now - savedAt) / 1000));
-  if (seconds < 60) return `${seconds} 秒前`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)} 分钟前`;
-  if (seconds < 86400) return `${Math.round(seconds / 3600)} 小时前`;
-  return `${Math.round(seconds / 86400)} 天前`;
+  if (seconds < 60) return translate(getLanguage(), 'edit.draft.agoSeconds', { count: seconds });
+  if (seconds < 3600) return translate(getLanguage(), 'edit.draft.agoMinutes', { count: Math.round(seconds / 60) });
+  if (seconds < 86400) return translate(getLanguage(), 'edit.draft.agoHours', { count: Math.round(seconds / 3600) });
+  return translate(getLanguage(), 'edit.draft.agoDays', { count: Math.round(seconds / 86400) });
 }
 
 function clipCount(snapshot: DraftSnapshot): number {
@@ -63,17 +64,17 @@ export function DraftHistory({
 
   const snapshotNow = (): void => {
     const saved = pushEditDraftHistory(sourceTaskId, project, { force: true });
-    setFeedback(saved ? '已存一个版本' : '与最新一份相同，未重复保存');
+    setFeedback(saved ? translate(getLanguage(), 'edit.draft.saved') : translate(getLanguage(), 'edit.draft.duplicate'));
     refresh();
   };
 
   const restore = (snapshot: DraftSnapshot): void => {
     // 防呆：先把**当前**状态存一份（force）——否则"恢复错了"就再也回不来
     pushEditDraftHistory(sourceTaskId, project, { force: true });
-    store.replaceProject(snapshot.project, '已从历史版本恢复');
+    store.replaceProject(snapshot.project, translate(getLanguage(), 'edit.draft.restored'));
     // 恢复结果也要落草稿（否则刷新后又回到旧的那份）
     saveEditDraft(sourceTaskId, snapshot.project);
-    setFeedback('已恢复该版本（当前状态也存了一份）');
+    setFeedback(translate(getLanguage(), 'edit.draft.restoredKeep'));
     refresh();
   };
 
@@ -86,25 +87,24 @@ export function DraftHistory({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        ⏱ 草稿历史
+        {translate(getLanguage(), 'edit.draft.heading')}
       </button>
 
       {open ? (
-        <div className="ed-hist-pop" data-testid="ed-hist-pop" role="dialog" aria-label="草稿历史">
+        <div className="ed-hist-pop" data-testid="ed-hist-pop" role="dialog" aria-label={translate(getLanguage(), 'edit.draft.aria')}>
           <div className="ed-hist-head">
-            <span className="ed-hist-title">草稿历史</span>
-            <button type="button" className="cr-link" aria-label="关闭" onClick={() => setOpen(false)}>
+            <span className="ed-hist-title">{translate(getLanguage(), 'edit.draft.aria')}</span>
+            <button type="button" className="cr-link" aria-label={translate(getLanguage(), 'edit.draft.close')} onClick={() => setOpen(false)}>
               ✕
             </button>
           </div>
           <p className="wb-note">
-            自动快照最多 {DRAFT_HISTORY_LIMIT} 份（编辑时节流保存）。历史只存在**这台浏览器**里，
-            不上传服务端。
+            {translate(getLanguage(), 'edit.draft.note', { limit: DRAFT_HISTORY_LIMIT })}
           </p>
 
           <div className="ed-hist-actions">
             <button type="button" className="wb-btn" data-testid="ed-hist-save" onClick={snapshotNow}>
-              ＋ 存一个版本
+              {translate(getLanguage(), 'edit.draft.saveLabel')}
             </button>
             <button
               type="button"
@@ -112,11 +112,11 @@ export function DraftHistory({
               disabled={snapshots.length === 0}
               onClick={() => {
                 clearEditDraftHistory(sourceTaskId);
-                setFeedback('历史已清空（当前草稿保留）');
+                setFeedback(translate(getLanguage(), 'edit.draft.cleared'));
                 refresh();
               }}
             >
-              清空历史
+              {translate(getLanguage(), 'edit.draft.clear')}
             </button>
           </div>
 
@@ -128,25 +128,25 @@ export function DraftHistory({
 
           {broken === 0 ? null : (
             <p className="wb-note cv-insp-warn">
-              ⚠ 有 {broken} 份早期快照读不出来（版本过旧或已损坏），已跳过 —— 其余照常可用。
+              {translate(getLanguage(), 'edit.draft.broken', { count: broken })}
             </p>
           )}
 
           {snapshots.length === 0 ? (
-            <p className="wb-note">还没有历史快照：点「＋ 存一个版本」或继续编辑（会自动存）。</p>
+            <p className="wb-note">{translate(getLanguage(), 'edit.draft.empty')}</p>
           ) : (
             <ul className="ed-hist-list">
               {snapshots.map((snapshot) => (
                 <li key={snapshot.savedAt} className="ed-hist-item">
                   <span className="ed-hist-time">{formatRelative(snapshot.savedAt, now)}</span>
-                  <span className="wb-note">{clipCount(snapshot)} 个片段</span>
+                  <span className="wb-note">{translate(getLanguage(), 'edit.draft.clipCount', { count: clipCount(snapshot) })}</span>
                   <button
                     type="button"
                     className="wb-btn"
                     data-testid="ed-hist-restore"
                     onClick={() => restore(snapshot)}
                   >
-                    恢复
+                    {translate(getLanguage(), 'edit.draft.restore')}
                   </button>
                 </li>
               ))}

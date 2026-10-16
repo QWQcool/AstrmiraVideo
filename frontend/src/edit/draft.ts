@@ -6,6 +6,7 @@ import {
   writeLocal,
   type StorageAccess,
 } from '../lib/storage';
+import { getLanguage, translate } from '../lib/i18n';
 import { migrateEditProject, pruneBrokenTransitions, type EditProject } from './model';
 
 /**
@@ -56,7 +57,7 @@ export function loadEditDraft(
   } catch {
     return {
       project: null,
-      problem: '草稿不是有效的 JSON（可能是手改过或写入中断）',
+      problem: translate(getLanguage(), 'edit.draftProblem'),
       notes: [],
     };
   }

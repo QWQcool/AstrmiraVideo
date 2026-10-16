@@ -6,6 +6,8 @@
  * 探测失败如实报错（文件被清理 / 格式不支持），不做静默兜底。
  */
 
+import { getLanguage, translate } from '../lib/i18n';
+
 export interface ProbedVideoMeta {
   /** 真实时长换算成工程帧（四舍五入，至少 1 帧） */
   durationFrames: number;
@@ -30,7 +32,7 @@ export function probeVideoMeta(url: string, fps: number, timeoutMs = 15_000): Pr
 
     const timer = window.setTimeout(() => {
       cleanup();
-      reject(new Error('读取素材元数据超时（素材可能已被清理或网络异常）'));
+      reject(new Error(translate(getLanguage(), 'edit.probe.timeout')));
     }, timeoutMs);
 
     video.onloadedmetadata = () => {
@@ -45,7 +47,7 @@ export function probeVideoMeta(url: string, fps: number, timeoutMs = 15_000): Pr
 
     video.onerror = () => {
       cleanup();
-      reject(new Error('无法读取素材（文件可能已被清理，或浏览器不支持该编码）'));
+      reject(new Error(translate(getLanguage(), 'edit.probe.unreadable')));
     };
 
     video.src = url;

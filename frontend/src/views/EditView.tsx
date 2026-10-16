@@ -6,6 +6,7 @@ import { Eyebrow } from '../components/Eyebrow';
 import { ApiError, fetchAssets, fetchHistory, resolveMediaUrl } from '../lib/api';
 // B61：懒加载失败的兜底要能说清"到底抛了什么"
 import { describeThrown } from '../lib/errorReport';
+import { useTranslate } from '../lib/i18n';
 import { navigate, useHashRoute } from '../lib/router';
 import { formatBytes, formatRelativeTime } from '../lib/overviewStats';
 import { DEFAULT_PROJECT_FPS, createProjectFromSource } from '../edit/model';
@@ -27,7 +28,7 @@ import { Timeline } from '../edit/Timeline';
  * - **预览即所得**：预览组件 `EditComposition` 与 P2 的浏览器端导出（web-renderer）共用；
  * - 导出、字幕/转场/音效轨、属性面板分别在 P2 / P3 开放（P1 界面不出假按钮）；
  * - 本地 ffmpeg 基础剪辑链路（`POST /api/edits`）按决策保留为**纯 API 能力**，
- *   UI 入口随本次改版撤掉；「本片剪辑历史」保留（P4 契约迁移继续用）。
+ *   UI 入口随本次改版撤掉；「{t('edit.history.title')}」保留（P4 契约迁移继续用）。
  *
  * Remotion 的加载边界：`PlayerStage` 用 React.lazy 懒加载（主 bundle 不含 Remotion）。
  */
@@ -47,11 +48,11 @@ const EditNotice: React.FC<{ store: EditStore }> = ({ store }) => {
 };
 
 const STATUS_TEXT: Record<TaskProgress['status'], string> = {
-  queued: '排队中',
-  running: '剪辑中',
-  succeeded: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
+  queued: 'common.status.queued',
+  running: 'edit.status.running',
+  succeeded: 'common.status.succeeded',
+  failed: 'common.status.failed',
+  cancelled: 'common.status.cancelled',
 };
 
 function describeError(caught: unknown): string {
@@ -63,6 +64,7 @@ function describeError(caught: unknown): string {
 }
 
 export function EditView() {
+  const t = useTranslate();
   const route = useHashRoute();
   const sourceId = route.query.get('task');
   // V2.11（B47）：剪辑台的候选素材 / 剪辑历史 / 音频素材都按当前项目过滤
@@ -85,7 +87,7 @@ export function EditView() {
   const reload = useCallback(async (): Promise<void> => {
     try {
       // 四路并发：生成产物（源片 + 候选素材）、全部剪辑产物（B37：素材候选合并）、
-      // 本片剪辑历史（V2.4 口径，剪辑产物不进主历史）、资产库（B57：音频素材）
+      // {t('edit.history.title')}（V2.4 口径，剪辑产物不进主历史）、资产库（B57：音频素材）
       const [main, edits, sourceEdits, assetList] = await Promise.all([
         fetchHistory({ project: projectId }),
         fetchHistory({ kind: 'edit', project: projectId }),
@@ -159,7 +161,10 @@ export function EditView() {
           draft.project ??
           createProjectFromSource(
             { taskId: sourceId, url: sourceUrl, durationFrames: meta.durationFrames },
-            { fps: DEFAULT_PROJECT_FPS, width: meta.width, height: meta.height, label: '源片' },
+            // 这是**数据默认值**：它会成为工程里首个视频片段的 `label`（落进草稿、随工程导出），
+      // 与 `createEmptyPlan` 的 '未命名编排' 同一条口径 —— **数据不跟界面语言走**。
+      // i18n-exempt: 源片片段的默认 label（数据字段，理由见上两行）
+      { fps: DEFAULT_PROJECT_FPS, width: meta.width, height: meta.height, label: '源片' },
           );
         setStore(new EditStore(project));
       })
@@ -229,13 +234,15 @@ export function EditView() {
     return (
       <section className="wb-page">
         <div className="wb-page-head">
-          <h1 className="wb-page-title">剪辑台</h1>
+          <h1 className="wb-page-title">{t('edit.title')}</h1>
           <Eyebrow tone="gold">Editing Desk</Eyebrow>
         </div>
         <div className="wb-placeholder">
           <Eyebrow>Empty State</Eyebrow>
           <p className="wb-note">
-            剪辑台需要一个源片：到 <a href="#/library">视频库</a> 里挑一条成片，点卡片上的 ✂ 进来。
+            {t('edit.source.missing.before')}
+            <a href="#/library">{t('edit.source.missing.link')}</a>
+            {t('edit.source.missing.after')}
           </p>
         </div>
       </section>
@@ -246,42 +253,41 @@ export function EditView() {
     <section className="wb-page ed-page">
       <div className="wb-page-head wb-page-head-row">
         <div>
-          <h1 className="wb-page-title">剪辑 · {sourceId.slice(0, 8)}</h1>
+          <h1 className="wb-page-title">{t('edit.title.withSource', { id: sourceId.slice(0, 8) })}</h1>
           <Eyebrow tone="gold">Editing Desk</Eyebrow>
         </div>
         <div className="ed-head-actions">
           {/* V2.21（B66）：草稿版本历史（只存在本机浏览器，零契约） */}
           {store === null ? null : <DraftHistory sourceTaskId={sourceId} store={store} />}
           <a className="wb-btn" href="#/library">
-            ← 返回视频库
+            {t('edit.back')}
           </a>
         </div>
       </div>
 
       {draftProblem === null ? null : (
         <div className="wb-uncertain" style={{ marginBottom: 14 }} data-testid="ed-draft-problem">
-          <span className="wb-uncertain-title">草稿读不出来，已保留原文</span>
+          <span className="wb-uncertain-title">{t('edit.draft.unreadable.title')}</span>
           <span className="wb-uncertain-body">
-            {draftProblem} —— 这份草稿**没有被删掉**（可在浏览器存储里找到），
-            本次按新工程打开；想放弃它就到「草稿历史」里清空后刷新。
+            {t('edit.draft.unreadable.body', { problem: draftProblem })}
           </span>
         </div>
       )}
       {draftNotes.length === 0 ? null : (
         <p className="wb-note" data-testid="ed-draft-notes">
-          草稿迁移说明：{draftNotes.join('；')}
+          {t('edit.draft.migrationNotes', { notes: draftNotes.join(t('edit.draft.migrationNotes.separator')) })}
         </p>
       )}
 
       {loadError === null ? null : (
         <div className="wb-uncertain" style={{ marginBottom: 14 }}>
-          <span className="wb-uncertain-title">历史加载失败</span>
+          <span className="wb-uncertain-title">{t('edit.history.error')}</span>
           <span className="wb-uncertain-body">{loadError}</span>
         </div>
       )}
       {probeError === null ? null : (
         <div className="wb-uncertain" style={{ marginBottom: 14 }}>
-          <span className="wb-uncertain-title">源片不可剪辑</span>
+          <span className="wb-uncertain-title">{t('edit.source.bad.title')}</span>
           <span className="wb-uncertain-body">{probeError}</span>
         </div>
       )}
@@ -295,15 +301,15 @@ export function EditView() {
             // B61：懒加载失败（分包 404 / 网络断）也会抛错 → 必须有 error 分支。
             // 只包 `Suspense` 的话，`PlayerStage` 的 chunk 拉不下来就是**整页白屏**（B61 的原缺口）。
             <ErrorBoundary
-              label="剪辑台预览"
+              label={t('edit.player.aria')}
               fallback={(error, reset) => (
                 <div className="wb-uncertain" style={{ margin: 'auto' }}>
-                  <span className="wb-uncertain-title">预览播放器没能加载</span>
+                  <span className="wb-uncertain-title">{t('edit.player.error.title')}</span>
                   <span className="wb-uncertain-body">
-                    时间轴与导出仍然可用（它们不依赖这个播放器）。{describeThrown(error)}
+                    {t('edit.player.error.body', { reason: describeThrown(error) })}
                   </span>
                   <button type="button" className="wb-btn" onClick={reset}>
-                    重试加载
+                    {t('edit.player.retry')}
                   </button>
                 </div>
               )}
@@ -322,11 +328,11 @@ export function EditView() {
           <section className="wb-panel ed-side-panel">
             <div className="wb-field-head">
               <Eyebrow index={3} tone="gold" as="h2">
-                源片
+                {t('edit.source.ok')}
               </Eyebrow>
               <span className="wb-note">
                 {source === null
-                  ? '读取中…'
+                  ? t('edit.loading')
                   : `${STATUS_TEXT[source.status]} · ${formatBytes(source.outputSizeBytes ?? 0)}`}
               </span>
             </div>
@@ -338,11 +344,11 @@ export function EditView() {
           <section className="wb-panel ed-side-panel">
             <div className="wb-field-head">
               <Eyebrow index={4} tone="gold" as="h2">
-                本片剪辑历史
+                {t('edit.history.title')}
               </Eyebrow>
             </div>
             {edlHistory.length === 0 ? (
-              <p className="wb-note">这条还没有剪辑记录。</p>
+              <p className="wb-note">{t('edit.history.empty')}</p>
             ) : (
               <ul className="edit-history">
                 {edlHistory.map((item) => (
@@ -355,7 +361,7 @@ export function EditView() {
                       <button
                         type="button"
                         className="wb-btn lib-icon"
-                        title="载入这条剪辑结果继续编辑"
+                        title={t('edit.history.loadTitle')}
                         onClick={() => navigate(`#/edit?task=${encodeURIComponent(item.taskId)}`)}
                       >
                         ✂
@@ -374,8 +380,8 @@ export function EditView() {
       )}
 
       <p className="wb-note ed-footnote">
-        多轨时间轴（Remotion 预览，所见即所得）：拖动移动片段、左右缘拖拽裁剪、Delete 删除、空格播放/暂停。
-        导出在下一批接入（浏览器端渲染，不占服务器算力）；字幕 / 转场 / 音效轨随后开放。
+        {t('edit.timeline.hint')}
+        {t('edit.timeline.hint2')}
       </p>
     </section>
   );

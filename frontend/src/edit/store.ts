@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { getLanguage, translate } from '../lib/i18n';
 import {
   addAudioClip,
   addCaptionClip,
@@ -175,7 +176,7 @@ export class EditStore {
   addTransitionAfterSelected = (kind: EditTransitionKind, durationFrames: number): void => {
     const selected = this.state.selectedClipId;
     if (selected === null) {
-      this.setNotice('先在时间轴上选中一个视频片段');
+      this.setNotice(translate(getLanguage(), 'edit.store.pickVideoFirst'));
       return;
     }
     const result = addTransition(this.state.project, selected, kind, durationFrames);
@@ -193,7 +194,10 @@ export class EditStore {
     const project = removeTransition(this.state.project, selected);
     this.set({
       project,
-      notice: project === this.state.project ? '选中的不是转场片段' : null,
+      notice:
+        project === this.state.project
+          ? translate(getLanguage(), 'edit.store.notTransition')
+          : null,
       selectedClipId: null,
     });
   };
@@ -223,7 +227,9 @@ function countTransitions(project: EditProject): number {
 /** 转场数量变少 = 这次编辑顺带移除了受影响转场 → 必须给用户一句实话（不静默） */
 function transitionNotice(before: number, project: EditProject): string | null {
   const after = countTransitions(project);
-  return after < before ? '这次编辑已移除受影响的转场（转场要求两段首尾相接）' : null;
+  return after < before
+    ? translate(getLanguage(), 'edit.store.transitionRemoved')
+    : null;
 }
 
 export function useEditStore<T>(store: EditStore, selector: (state: EditUiState) => T): T {

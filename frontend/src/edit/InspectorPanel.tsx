@@ -1,8 +1,17 @@
 import React from 'react';
 import { Eyebrow } from '../components/Eyebrow';
-import { CLIP_FIELD_SCHEMA, applyProperty, readProperty, type FieldDescriptor } from './clipProperties';
+import {
+  CLIP_FIELD_SCHEMA,
+  applyProperty,
+  fieldHint,
+  fieldLabel,
+  fieldOptions,
+  fieldUnit,
+  readProperty,
+  type FieldDescriptor,
+} from './clipProperties';
 import { EDIT_TRANSITION_KEYS, editSourceLabel, findClip, type EditClip } from './model';
-import { getLanguage, translate } from '../lib/i18n';
+import { getLanguage, translate, type MessageKey } from '../lib/i18n';
 import type { EditStore } from './store';
 import { useEditStore } from './store';
 import { formatTimecode } from './time';
@@ -17,28 +26,28 @@ import { formatTimecode } from './time';
  * 新增一个可调参数 = `clipProperties.ts` 加一行 + model 分支收口，本文件零改动。
  */
 
-const CLIP_KIND_LABELS: Record<EditClip['kind'], string> = {
-  video: '视频片段',
-  caption: '字幕',
-  audio: '音效',
-  transition: '转场',
+const CLIP_KIND_KEYS: Record<EditClip['kind'], MessageKey> = {
+  video: 'edit.insp.kind.video',
+  caption: 'edit.insp.kind.caption',
+  audio: 'edit.insp.kind.audio',
+  transition: 'edit.insp.kind.transition',
 };
 
 /** 只读的"事实"行（时长/时间码/来源）；这些不由面板改写 */
 function factsFor(clip: EditClip, fps: number): { label: string; value: string }[] {
   const facts = [
-    { label: '起点', value: formatTimecode(clip.startFrame, fps) },
-    { label: '时长', value: formatTimecode(clip.durationFrames, fps) },
+    { label: translate(getLanguage(), 'edit.insp.fact.start'), value: formatTimecode(clip.startFrame, fps) },
+    { label: translate(getLanguage(), 'edit.insp.fact.duration'), value: formatTimecode(clip.durationFrames, fps) },
   ];
   if (clip.kind === 'video' || clip.kind === 'audio') {
-    facts.push({ label: '来源', value: editSourceLabel(clip.source) });
+    facts.push({ label: translate(getLanguage(), 'edit.insp.fact.source'), value: editSourceLabel(clip.source) });
     facts.push({
-      label: '源片',
-      value: `${formatTimecode(clip.source.durationFrames, fps)} · 裁入 ${formatTimecode(clip.trimStartFrames, fps)}`,
+      label: translate(getLanguage(), 'edit.insp.fact.trim'),
+      value: translate(getLanguage(), 'edit.insp.fact.trimValue', { total: formatTimecode(clip.source.durationFrames, fps), trim: formatTimecode(clip.trimStartFrames, fps) }),
     });
   }
   if (clip.kind === 'transition') {
-    facts.push({ label: '类型', value: translate(getLanguage(), EDIT_TRANSITION_KEYS[clip.transition]) });
+    facts.push({ label: translate(getLanguage(), 'edit.insp.fact.transition'), value: translate(getLanguage(), EDIT_TRANSITION_KEYS[clip.transition]) });
   }
   return facts;
 }
@@ -50,12 +59,20 @@ const Field: React.FC<{
 }> = ({ descriptor, clip, onCommit }) => {
   const value = readProperty(clip, descriptor.key);
   const id = `ed-prop-${clip.id}-${descriptor.key}`;
+  // 字段表的 label / unit / hint / options **在渲染这一刻取**（表里存的是字典键）——
+  // 见 `clipProperties.ts` 的 `FieldDescriptor` 注释：常量里求值会把语言冻死。
+  const label = fieldLabel(descriptor);
+  const unit = fieldUnit(descriptor);
+  const hint = fieldHint(descriptor);
+  const options = fieldOptions(descriptor);
 
   return (
     <div className="ed-field">
       <label className="ed-field-label" htmlFor={id}>
-        {descriptor.label}
-        {descriptor.unit === undefined ? null : <span className="ed-field-unit">（{descriptor.unit}）</span>}
+        {label}
+        {unit === '' ? null : (
+          <span className="ed-field-unit">{translate(getLanguage(), 'edit.field.unitWrap', { unit })}</span>
+        )}
       </label>
       {descriptor.type === 'textarea' ? (
         <textarea
@@ -72,7 +89,7 @@ const Field: React.FC<{
           value={String(value)}
           onChange={(event) => onCommit(descriptor.key, event.target.value)}
         >
-          {(descriptor.options ?? []).map((option) => (
+          {options.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
@@ -98,7 +115,7 @@ const Field: React.FC<{
           onChange={(event) => onCommit(descriptor.key, event.target.value)}
         />
       )}
-      {descriptor.hint === undefined ? null : <span className="ed-field-hint">{descriptor.hint}</span>}
+      {hint === null ? null : <span className="ed-field-hint">{hint}</span>}
     </div>
   );
 };
@@ -120,15 +137,15 @@ export const InspectorPanel: React.FC<{ store: EditStore }> = ({ store }) => {
     <section className="wb-panel ed-side-panel" data-testid="ed-inspector">
       <div className="wb-field-head">
         <Eyebrow index={1} tone="gold" as="h2">
-          属性
+          {translate(getLanguage(), 'edit.insp.title')}
         </Eyebrow>
         <span className="wb-note">
-          {clip === null ? '未选中' : `${CLIP_KIND_LABELS[clip.kind]} · ${clip.id.slice(-6)}`}
+          {clip === null ? translate(getLanguage(), 'edit.insp.unselected') : `${translate(getLanguage(), CLIP_KIND_KEYS[clip.kind])} · ${clip.id.slice(-6)}`}
         </span>
       </div>
 
       {clip === null ? (
-        <p className="wb-note">在时间轴上点选一个片段（镜头 / 转场 / 字幕 / 音效）来编辑它的属性。</p>
+        <p className="wb-note">{translate(getLanguage(), 'edit.insp.empty')}</p>
       ) : (
         <>
           <div className="ed-facts">
@@ -148,9 +165,9 @@ export const InspectorPanel: React.FC<{ store: EditStore }> = ({ store }) => {
                 type="button"
                 className="wb-btn"
                 onClick={() => store.removeSelectedTransition()}
-                title="移除转场并把后继片段右移还原"
+                title={translate(getLanguage(), 'edit.insp.removeTransition.title')}
               >
-                移除转场
+                {translate(getLanguage(), 'edit.insp.removeTransition.label')}
               </button>
             </div>
           ) : null}

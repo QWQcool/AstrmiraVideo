@@ -121,12 +121,16 @@ export const TimelineClip: React.FC<{
             <em className="ed-badge">✂{(clip.trimStartFrames / fps).toFixed(1)}s</em>
           ) : null}
           {clip.kind === 'video' && clip.volume !== 1 ? (
-            <em className="ed-badge">{clip.volume === 0 ? '静音' : `音量×${clip.volume}`}</em>
+            <em className="ed-badge">{clip.volume === 0
+                ? translate(getLanguage(), 'edit.clip.muted')
+                : translate(getLanguage(), 'edit.clip.volume', { value: clip.volume })}</em>
           ) : null}
           {clip.kind === 'audio' && clip.volume !== 1 ? (
-            <em className="ed-badge">{clip.volume === 0 ? '静音' : `音量×${clip.volume}`}</em>
+            <em className="ed-badge">{clip.volume === 0
+                ? translate(getLanguage(), 'edit.clip.muted')
+                : translate(getLanguage(), 'edit.clip.volume', { value: clip.volume })}</em>
           ) : null}
-          {clip.kind === 'caption' && clip.preset !== 'plain' ? <em className="ed-badge">动效</em> : null}
+          {clip.kind === 'caption' && clip.preset !== 'plain' ? <em className="ed-badge">{translate(getLanguage(), 'edit.clip.effect')}</em> : null}
         </span>
       </div>
       {movable ? (

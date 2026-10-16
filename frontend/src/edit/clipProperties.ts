@@ -10,7 +10,7 @@ import {
   type CaptionPosition,
   type CaptionPreset,
 } from './model';
-import { getLanguage, translate } from '../lib/i18n';
+import { getLanguage, translate, type MessageKey } from '../lib/i18n';
 
 /**
  * 属性面板的 **schema 驱动**描述表（B34 · P3）。
@@ -22,100 +22,164 @@ import { getLanguage, translate } from '../lib/i18n';
 
 export type FieldType = 'number' | 'text' | 'textarea' | 'select';
 
+/**
+ * 字段描述符。
+ *
+ * ## 语言迁移第十七批：`label` / `hint` / `options[].label` 从**字符串**改成**字典键**
+ * 原因不是审美，是**模块加载时机**：这张表是模块级常量，如果值里写着文案，
+ * `translate(getLanguage(), …)` 会在**模块被 import 的那一刻**求值一次 —— 语言就此冻死
+ * （这正是 `dict/index.ts` 文件头警告的那类漂移，只不过发生在语言维度上）。
+ * 改成键之后，面板在**渲染那一刻**取（`fieldLabel()` / `fieldHint()` / `fieldOptions()`），
+ * 切语言立刻生效。
+ *
+ * ⚠️ 顺带说明为什么"单位"也要进字典：`帧` 是中文，英文要写 `frames`；
+ * 而 `×` 是**语言无关**的符号，所以它仍是普通字符串（不为了对称而把符号塞进字典）。
+ */
 export interface FieldDescriptor {
   /** 面板字段 id；也是 `applyProperty` 的 key */
   key: string;
-  label: string;
+  labelKey: MessageKey;
   type: FieldType;
   min?: number;
   max?: number;
   step?: number;
+  /** 语言无关的符号单位（如 `×`） */
   unit?: string;
-  options?: { value: string; label: string }[];
+  /** 需要翻译的单位（如 `帧`）—— 与 `unit` 二选一 */
+  unitKey?: MessageKey;
+  options?: { value: string; labelKey: MessageKey }[];
   /** 面板上的补充说明（例如值域为什么这么窄） */
-  hint?: string;
+  hintKey?: MessageKey;
 }
 
 export const CLIP_FIELD_SCHEMA: Record<EditClip['kind'], FieldDescriptor[]> = {
   video: [
-    { key: 'label', label: '标签', type: 'text', hint: '留空则显示来源任务号' },
+    {
+      key: 'label',
+      labelKey: 'edit.field.label',
+      type: 'text',
+      hintKey: 'edit.field.label.hint',
+    },
     {
       key: 'speed',
-      label: '变速',
+      labelKey: 'edit.field.speed',
       type: 'number',
       min: 0.25,
       max: 4,
       step: 0.05,
       unit: '×',
-      hint: '上限受源片余量约束（裁掉一些才能加速）',
+      hintKey: 'edit.field.speed.hint',
     },
-    { key: 'volume', label: '音量', type: 'number', min: 0, max: 2, step: 0.05, unit: '×', hint: '0 = 静音' },
+    {
+      key: 'volume',
+      labelKey: 'edit.field.volume',
+      type: 'number',
+      min: 0,
+      max: 2,
+      step: 0.05,
+      unit: '×',
+      hintKey: 'edit.field.volume.hint',
+    },
   ],
   caption: [
-    { key: 'text', label: '字幕文本', type: 'textarea' },
+    { key: 'text', labelKey: 'edit.field.text', type: 'textarea' },
     {
       key: 'position',
-      label: '位置',
+      labelKey: 'edit.field.position',
       type: 'select',
       options: (Object.keys(CAPTION_POSITION_KEYS) as CaptionPosition[]).map((value) => ({
         value,
-        label: translate(getLanguage(), CAPTION_POSITION_KEYS[value]),
+        labelKey: CAPTION_POSITION_KEYS[value],
       })),
     },
     {
       key: 'preset',
-      label: '动效',
+      labelKey: 'edit.field.preset',
       type: 'select',
       options: (Object.keys(CAPTION_PRESET_KEYS) as CaptionPreset[]).map((value) => ({
         value,
-        label: translate(getLanguage(), CAPTION_PRESET_KEYS[value]),
+        labelKey: CAPTION_PRESET_KEYS[value],
       })),
-      hint: '逐词入场 / 打字机的动效技法借鉴 video-shotcraft（Apache-2.0）',
+      hintKey: 'edit.field.preset.hint',
     },
   ],
   audio: [
-    { key: 'volume', label: '音量', type: 'number', min: 0, max: 2, step: 0.05, unit: '×' },
+    {
+      key: 'volume',
+      labelKey: 'edit.field.volume',
+      type: 'number',
+      min: 0,
+      max: 2,
+      step: 0.05,
+      unit: '×',
+    },
     {
       key: 'fadeInFrames',
-      label: '淡入',
+      labelKey: 'edit.field.fadeIn',
       type: 'number',
       min: 0,
       step: 1,
-      unit: '帧',
-      hint: 'BGM 起手不突兀；0 = 不淡。上限由片段时长收口（model 钳制）',
+      unitKey: 'edit.field.unit.frames',
+      hintKey: 'edit.field.fadeIn.hint',
     },
     {
       key: 'fadeOutFrames',
-      label: '淡出',
+      labelKey: 'edit.field.fadeOut',
       type: 'number',
       min: 0,
       step: 1,
-      unit: '帧',
-      hint: '广告片收尾必需；与淡入重叠时取较小值（不会叠加放大）',
+      unitKey: 'edit.field.unit.frames',
+      hintKey: 'edit.field.fadeOut.hint',
     },
   ],
   transition: [
     {
       key: 'transition',
-      label: '类型',
+      labelKey: 'edit.field.transition',
       type: 'select',
       options: (Object.keys(EDIT_TRANSITION_KEYS) as EditTransitionKind[]).map((value) => ({
         value,
-        label: translate(getLanguage(), EDIT_TRANSITION_KEYS[value]),
+        labelKey: EDIT_TRANSITION_KEYS[value],
       })),
     },
     {
       key: 'durationFrames',
-      label: '时长',
+      labelKey: 'edit.field.duration',
       type: 'number',
       min: MIN_TRANSITION_FRAMES,
       max: MAX_TRANSITION_FRAMES,
       step: 1,
-      unit: '帧',
-      hint: '改时长会同步调整后继片段的左移量（重叠区 = 转场窗口）',
+      unitKey: 'edit.field.unit.frames',
+      hintKey: 'edit.field.duration.hint',
     },
   ],
 };
+
+/**
+ * 面板取值的三件套（渲染那一刻取，跟着界面语言走）。
+ *
+ * 为什么放在这一层而不是面板里：面板只认描述符（那正是这张表存在的意义），
+ * 让面板自己拼键名会把"字段表"与"面板"重新耦合起来。
+ */
+export function fieldLabel(field: FieldDescriptor): string {
+  return translate(getLanguage(), field.labelKey);
+}
+
+export function fieldHint(field: FieldDescriptor): string | null {
+  return field.hintKey === undefined ? null : translate(getLanguage(), field.hintKey);
+}
+
+export function fieldUnit(field: FieldDescriptor): string {
+  if (field.unitKey !== undefined) return translate(getLanguage(), field.unitKey);
+  return field.unit ?? '';
+}
+
+export function fieldOptions(field: FieldDescriptor): { value: string; label: string }[] {
+  return (field.options ?? []).map((option) => ({
+    value: option.value,
+    label: translate(getLanguage(), option.labelKey),
+  }));
+}
 
 /** 面板显示值（缺失字段回落为空串 / 当前值） */
 export function readProperty(clip: EditClip, key: string): string | number {

@@ -9,6 +9,7 @@ import type { EditExportProgress } from './exporter';
 import type { EditStore } from './store';
 import { useEditStore } from './store';
 import { formatTimecode } from './time';
+import { getLanguage, translate } from '../lib/i18n';
 
 /**
  * 导出面板（B34 · P2）：浏览器端渲染成片。
@@ -19,7 +20,7 @@ import { formatTimecode } from './time';
  * - 导出 = 与预览**同一个 composition**，且时长取内容精确结束帧（不含预览的 1s 编辑余量）；
  * - 产物是**本机文件**（下载）；产物入库 / 与生成的闭环在 P4 接（这里如实标注，不假装已入库）。
  *
- * 状态机：idle → preflight（能力预检）→ rendering（可取消）→ done / error / cancelled。
+ * 状态机：idle → preflight（能力预检）→ rendering（可{translate(getLanguage(), 'edit.export.cancel')}）→ done / error / cancelled。
  */
 
 type ExportState =
@@ -87,7 +88,7 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
         const reasons = preflight.issues.map((issue) => issue.message).join('；');
         setState({
           kind: 'error',
-          message: `这台浏览器当前无法渲染：${reasons === '' ? '未知原因' : reasons}（需要支持 WebCodecs 的现代浏览器）`,
+          message: translate(getLanguage(), 'edit.export.unsupported', { reasons: reasons === '' ? translate(getLanguage(), 'edit.export.unknownReason') : reasons }),
         });
         return;
       }
@@ -125,7 +126,7 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
         durationFrames: result.durationFrames,
       });
     } catch (caught) {
-      // AbortError = 用户主动取消，与故障区分（不吓唬人）
+      // AbortError = 用户主动{translate(getLanguage(), 'edit.export.cancel')}，与故障区分（不吓唬人）
       if (caught instanceof DOMException && caught.name === 'AbortError') {
         setState({ kind: 'cancelled' });
         return;
@@ -176,7 +177,7 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
       const uploaded = await uploadAssets([file], projectId);
       const asset = uploaded.assets[0];
       if (asset === undefined) {
-        setActionError('抽帧上传未返回任何资产');
+        setActionError(translate(getLanguage(), 'edit.export.frameNoAsset'));
         return;
       }
       // 扩展名用**上传响应的清洗产物事实**（透明保 PNG、其余转 JPEG），不猜
@@ -195,7 +196,7 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
     <section className="wb-panel ed-side-panel">
       <div className="wb-field-head">
         <Eyebrow index={2} tone="gold" as="h2">
-          导出
+          {translate(getLanguage(), 'edit.export.section')}
         </Eyebrow>
         <span className="wb-note">
           {formatTimecode(exportFrames, project.fps)} · {project.width}×{project.height}
@@ -203,7 +204,7 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
       </div>
 
       {state.kind === 'idle' || state.kind === 'preflight' ? (
-        <p className="wb-note">浏览器端渲染（WebCodecs 硬件编码）：不占服务器算力，产物直接下载到本机。</p>
+        <p className="wb-note">{translate(getLanguage(), 'edit.export.note')}</p>
       ) : null}
 
       {state.kind === 'rendering' ? (
@@ -212,8 +213,7 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
             <div className="ed-export-bar-fill" style={{ width: `${Math.round(state.progress * 100)}%` }} />
           </div>
           <span className="wb-note">
-            渲染中 {Math.round(state.progress * 100)}% · 已渲染 {state.renderedFrames}/{state.totalFrames} 帧 · 已编码{' '}
-            {state.encodedFrames} 帧
+            {translate(getLanguage(), 'edit.export.progress', { percent: Math.round(state.progress * 100), rendered: state.renderedFrames, total: state.totalFrames, encoded: state.encodedFrames })}
           </span>
         </div>
       ) : null}
@@ -222,26 +222,25 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
         <div className="ed-export-result">
           <video className="ed-export-video" src={state.url} controls preload="metadata" />
           <p className="wb-note">
-            {formatBytes(state.sizeBytes)} · {formatTimecode(state.durationFrames, project.fps)} · 渲染耗时{' '}
-            {(state.elapsedMs / 1000).toFixed(1)}s
+            {translate(getLanguage(), 'edit.export.result', { size: formatBytes(state.sizeBytes), time: formatTimecode(state.durationFrames, project.fps), seconds: (state.elapsedMs / 1000).toFixed(1) })}
           </p>
           <div className="ed-export-actions">
             <a className="wb-btn wb-btn-gold" href={state.url} download={state.name}>
-              ⤓ 下载 MP4
+              {translate(getLanguage(), 'edit.export.download')}
             </a>
             {archivedTaskId === null ? (
               <button
                 type="button"
                 className="wb-btn"
                 disabled={archiving || sourceTaskId === null}
-                title="把成片与多轨工程一起归档到服务端（出现在「本片剪辑历史」，可继续编辑 / 抽帧）"
+                title={translate(getLanguage(), 'edit.export.archive.title')}
                 onClick={() => void handleArchive()}
               >
-                {archiving ? '入库中…' : '📥 入库'}
+                {archiving ? translate(getLanguage(), 'edit.export.archive.busy') : translate(getLanguage(), 'edit.export.archive.label')}
               </button>
             ) : (
               <span className="wb-note">
-                已入库 {archivedTaskId.slice(0, 8)}（下方「本片剪辑历史」可继续编辑）
+                {translate(getLanguage(), 'edit.export.archive.done', { id: archivedTaskId.slice(0, 8) })}
               </span>
             )}
           </div>
@@ -250,16 +249,16 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
 
       {state.kind === 'error' ? (
         <div className="wb-uncertain" style={{ marginBottom: 10 }}>
-          <span className="wb-uncertain-title">导出失败</span>
+          <span className="wb-uncertain-title">{translate(getLanguage(), 'edit.export.failed')}</span>
           <span className="wb-uncertain-body">{state.message}</span>
         </div>
       ) : null}
 
-      {state.kind === 'cancelled' ? <p className="wb-note">已取消导出（未产生文件）。</p> : null}
+      {state.kind === 'cancelled' ? <p className="wb-note">{translate(getLanguage(), 'edit.export.cancelled')}</p> : null}
 
       {actionError === null ? null : (
         <div className="wb-uncertain" style={{ marginBottom: 10 }}>
-          <span className="wb-uncertain-title">操作失败</span>
+          <span className="wb-uncertain-title">{translate(getLanguage(), 'edit.export.actionFailed')}</span>
           <span className="wb-uncertain-body">{actionError}</span>
         </div>
       )}
@@ -267,30 +266,30 @@ export const ExportPanel: React.FC<{ store: EditStore; sourceTaskId: string | nu
       <div className="ed-export-actions">
         {state.kind === 'rendering' || state.kind === 'preflight' ? (
           <button type="button" className="wb-btn" onClick={handleCancel}>
-            取消
+            {translate(getLanguage(), 'edit.export.cancel')}
           </button>
         ) : (
           <button
             type="button"
             className="wb-btn wb-btn-gold"
             onClick={() => void handleExport()}
-            title="用浏览器硬件编码渲染 MP4（与预览同一套合成）"
+            title={translate(getLanguage(), 'edit.export.render.title')}
           >
-            🎬 导出成片（浏览器渲染）
+            {translate(getLanguage(), 'edit.export.render.label')}
           </button>
         )}
         <button
           type="button"
           className="wb-btn"
           disabled={frameBusy}
-          title="渲染播放头那一帧（与预览同构图，含字幕/转场）→ 落为参考资产并切到 I2V 首帧"
+          title={translate(getLanguage(), 'edit.export.frame.title')}
           onClick={() => void handleExtractFrame()}
         >
-          {frameBusy ? '抽帧中…' : '📸 抽帧为参考资产'}
+          {frameBusy ? translate(getLanguage(), 'edit.export.frame.busy') : translate(getLanguage(), 'edit.export.frame.label')}
         </button>
       </div>
       <p className="wb-note ed-export-note">
-        渲染在你的浏览器里完成（不占服务器算力）；「入库」才会上传到服务端归档 · 渲染期间请保持本页在前台
+        {translate(getLanguage(), 'edit.export.foot')}
       </p>
     </section>
   );

@@ -6,6 +6,7 @@ import { seekToFrame, setPlayerRef } from './playerRef';
 import type { EditStore } from './store';
 import { useEditStore } from './store';
 import { formatTimecode } from './time';
+import { useTranslate } from '../lib/i18n';
 
 /**
  * 预览舞台（B34 · P1）：@remotion/player 实时预览。
@@ -20,6 +21,7 @@ import { formatTimecode } from './time';
 
 /** 走带控制：唯一订阅 playheadFrame / playing 的预览端组件 */
 const Transport: React.FC<{ store: EditStore }> = ({ store }) => {
+  const t = useTranslate();
   const playhead = useEditStore(store, (s) => s.playheadFrame);
   const playing = useEditStore(store, (s) => s.playing);
   const fps = useEditStore(store, (s) => s.project.fps);
@@ -32,7 +34,7 @@ const Transport: React.FC<{ store: EditStore }> = ({ store }) => {
       <button
         type="button"
         className="wb-btn lib-icon"
-        title="回到开头"
+        title={t('edit.player.toStart')}
         onClick={() => {
           seekToFrame(0);
           store.setPlayhead(0);
@@ -44,7 +46,9 @@ const Transport: React.FC<{ store: EditStore }> = ({ store }) => {
         {formatTimecode(playhead, fps)} <span className="ed-timecode-dim">/ {formatTimecode(duration, fps)}</span>
       </span>
       <span className="ed-transport-hint">
-        {playing ? '播放中' : '已暂停'} · 空格播放/暂停 · 点预览画面也可以
+        {t('edit.player.hint', {
+          state: t(playing ? 'edit.player.playing' : 'edit.player.paused'),
+        })}
       </span>
       <span className="ed-transport-size">
         {width}×{height} · {fps}fps

@@ -673,6 +673,17 @@ if (leftPanelText !== undefined) {
     'lib/zipStore.ts',
     'lib/recipes.ts',
     'edit/model.ts',
+    'edit/clipProperties.ts',
+    'edit/draft.ts',
+    'edit/DraftHistory.tsx',
+    'edit/ExportPanel.tsx',
+    'edit/InspectorPanel.tsx',
+    'edit/mediaProbe.ts',
+    'edit/PlayerStage.tsx',
+    'edit/store.ts',
+    'edit/Timeline.tsx',
+    'edit/TimelineClip.tsx',
+    'views/EditView.tsx',
     'views/UnknownView.tsx',
   ];
   const CJK_PATTERN = /[\u4e00-\u9fa5]/;
