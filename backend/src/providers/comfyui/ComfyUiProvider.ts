@@ -17,11 +17,13 @@ import {
   describeComfySubmissionError,
   parseComfyOutputs,
   pickComfyModels,
+  pickComfyVideoArtifact,
   planComfyDimensions,
   planComfyFrames,
   resolveComfyTuning,
   type ComfyCapabilities,
   type ComfyModels,
+  type ComfyTemplateDeclaration,
   type ComfyTuning,
   type WorkflowTemplate,
 } from './comfyuiProtocol.js';
@@ -77,6 +79,13 @@ export interface ComfyUiProviderOptions {
    * 那才是"换模型不改代码"的入口。
    */
   template?: WorkflowTemplate;
+  /**
+   * 模板**声明的能力**（V2.39；与 `template` 配对使用，测试用）。
+   *
+   * 生产路径不传 —— sidecar `<name>.meta.json` 由 `loadWorkflowTemplate` 读（见 `comfyuiTemplates.ts`）。
+   * 这里能传是为了让注入路径与生产路径**能力对等**：否则"声明生效"这条链在单测里覆盖不到。
+   */
+  declaration?: ComfyTemplateDeclaration;
   /** 产物前缀（`SaveVideo.filename_prefix`）；默认带 `astrmira/` 子目录 */
   outputPrefix?: string;
   /** 资产 id → 可下载地址（i2v 的首帧要先下载再上传给 ComfyUI） */
@@ -126,6 +135,8 @@ export class ComfyUiProvider implements VideoProvider {
   private inventory: { models: ComfyModels; capabilities: ComfyCapabilities; at: number } | null = null;
   private readonly jobs = new Map<string, JobRecord>();
   private readonly injectedTemplate?: WorkflowTemplate;
+  /** 注入路径的模板声明（V2.39；与 `injectedTemplate` 配对） */
+  private readonly injectedDeclaration?: ComfyTemplateDeclaration;
   /** 懒加载的工作流模板（配错路径时**每次调用都会抛**，所以不缓存错误态 —— 用户改好即可用） */
   private loadedTemplate: LoadedTemplate | null = null;
 
@@ -143,6 +154,7 @@ export class ComfyUiProvider implements VideoProvider {
     this.inventoryTtlMs = options.inventoryTtlMs ?? DEFAULT_INVENTORY_TTL_MS;
     if (options.resolveAssetUrl !== undefined) this.resolveAssetUrl = options.resolveAssetUrl;
     if (options.template !== undefined) this.injectedTemplate = options.template;
+    if (options.declaration !== undefined) this.injectedDeclaration = options.declaration;
   }
 
   /**
@@ -156,7 +168,13 @@ export class ComfyUiProvider implements VideoProvider {
     this.loadedTemplate =
       this.injectedTemplate === undefined
         ? loadWorkflowTemplate(process.env, this.templateName)
-        : { template: this.injectedTemplate, source: '注入（测试 / 调用方指定）' };
+        : {
+            template: this.injectedTemplate,
+            source: '注入（测试 / 调用方指定）',
+            ...(this.injectedDeclaration === undefined
+              ? {}
+              : { declaration: this.injectedDeclaration }),
+          };
     return this.loadedTemplate;
   }
 
@@ -180,9 +198,12 @@ export class ComfyUiProvider implements VideoProvider {
     });
     if (!response.ok) throw new Error(`ComfyUI /object_info → HTTP ${response.status}`);
     const objectInfo: unknown = await response.json();
-    const models = pickComfyModels(objectInfo);
+    // V2.39：模板声明（sidecar / 内置）**优先**决定"挑哪个模型文件"与"能做哪些模式" ——
+    // 缺声明时才回落文件名启发式（老模板行为一字不变）
+    const loaded = this.template();
+    const models = pickComfyModels(objectInfo, undefined, loaded.declaration);
     // V2.33：能力位**按当前模板引用的节点**判定（换了模板，缺什么就报什么）
-    const capabilities = comfyCapabilities(objectInfo, models, this.template().template);
+    const capabilities = comfyCapabilities(objectInfo, models, loaded.template, loaded.declaration);
     this.inventory = { models, capabilities, at: now };
     return { models, capabilities };
   }
@@ -385,7 +406,18 @@ export class ComfyUiProvider implements VideoProvider {
         );
       }
 
-      const artifact = outputs[0];
+      // V2.39：**挑视频**而不是"取第一个" —— H3 这类模板可能同时输出视频 + 音频两个文件，
+      // 而产物顺序取决于节点 id；取到音频会把音频字节写成 <taskId>.mp4（静默出错）。
+      const artifact = pickComfyVideoArtifact(outputs);
+      if (artifact === undefined) {
+        return this.fail(
+          taskId,
+          requestSnapshot,
+          createdAt,
+          `ComfyUI 执行结束但产物里没有视频（产物：${outputs.map((item) => item.filename).join('、')}）——` +
+            ' 本仓只接视频产物（音频随视频封装可以，独立音频文件不接，见 CONTRACT §19-5）',
+        );
+      }
       const mediaResponse = await this.fetchImpl(`${this.baseUrl}${comfyViewPath(artifact)}`);
       if (!mediaResponse.ok) {
         return this.fail(taskId, requestSnapshot, createdAt, `取产物失败：HTTP ${mediaResponse.status}`);

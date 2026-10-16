@@ -165,6 +165,66 @@ describe('loadWorkflowTemplate · 从哪拿模板', () => {
     ).toThrow(/另存为 API 格式/);
   });
 
+  it('内置模板带**内置声明**（V2.39：默认配置下"声明优先"这条路径也真的走一遍）', () => {
+    const loaded = loadWorkflowTemplate({} as NodeJS.ProcessEnv);
+    expect(loaded.declaration?.modes).toEqual(['t2v', 'i2v']);
+  });
+
+  it('sidecar 声明被读出来（`<name>.meta.json`：modes + modelMatch + label + notes）', () => {
+    const dir = tempDir();
+    writeFileSync(path.join(dir, 'h3.api.json'), JSON.stringify({ '1': { class_type: 'X', inputs: {} } }), 'utf8');
+    writeFileSync(
+      path.join(dir, 'h3.meta.json'),
+      JSON.stringify({
+        modes: ['t2v', 'i2v', 'fl2v'],
+        modelMatch: { unet: 'minimax_h3', clip: 'qwen3vl' },
+        label: 'MiniMax H3',
+        notes: '一个模型支持多种用法',
+      }),
+      'utf8',
+    );
+
+    const loaded = loadWorkflowTemplate({
+      COMFYUI_TEMPLATE_DIR: dir,
+      COMFYUI_TEMPLATE: 'h3',
+    } as NodeJS.ProcessEnv);
+
+    expect(loaded.declaration).toEqual({
+      modes: ['t2v', 'i2v', 'fl2v'],
+      modelMatch: { unet: 'minimax_h3', clip: 'qwen3vl' },
+      label: 'MiniMax H3',
+      notes: '一个模型支持多种用法',
+    });
+  });
+
+  it('**没有 sidecar = 合法**（老模板照旧走文件名启发式，不报错）', () => {
+    const dir = tempDir();
+    writeFileSync(path.join(dir, 'plain.api.json'), JSON.stringify({ '1': { class_type: 'X', inputs: {} } }), 'utf8');
+    const loaded = loadWorkflowTemplate({
+      COMFYUI_TEMPLATE_DIR: dir,
+      COMFYUI_TEMPLATE: 'plain',
+    } as NodeJS.ProcessEnv);
+    expect(loaded.declaration).toBeUndefined();
+  });
+
+  it('sidecar **坏了就抛错**（不静默回落 —— 那会让用户以为自己的声明生效了）', () => {
+    const dir = tempDir();
+    writeFileSync(path.join(dir, 'badmeta.api.json'), JSON.stringify({ '1': { class_type: 'X', inputs: {} } }), 'utf8');
+    writeFileSync(path.join(dir, 'badmeta.meta.json'), '{ oops', 'utf8');
+    expect(() =>
+      loadWorkflowTemplate({ COMFYUI_TEMPLATE_DIR: dir, COMFYUI_TEMPLATE: 'badmeta' } as NodeJS.ProcessEnv),
+    ).toThrow(/sidecar 不是合法 JSON/);
+  });
+
+  it('sidecar 里 `modes` 写了不认识的值 → 抛错（并列出合法值）', () => {
+    const dir = tempDir();
+    writeFileSync(path.join(dir, 'badmode.api.json'), JSON.stringify({ '1': { class_type: 'X', inputs: {} } }), 'utf8');
+    writeFileSync(path.join(dir, 'badmode.meta.json'), JSON.stringify({ modes: ['t2v', 'txt2vid'] }), 'utf8');
+    expect(() =>
+      loadWorkflowTemplate({ COMFYUI_TEMPLATE_DIR: dir, COMFYUI_TEMPLATE: 'badmode' } as NodeJS.ProcessEnv),
+    ).toThrow(/不认识的值/);
+  });
+
   it('isWorkflowTemplate：空对象 / 数组 / 缺 class_type 都判否', () => {
     expect(isWorkflowTemplate({})).toBe(false);
     expect(isWorkflowTemplate([])).toBe(false);

@@ -10,13 +10,18 @@ import {
   COMFY_MAX_PIXELS,
   describeComfySubmissionError,
   parseComfyOutputs,
+  parseTemplateDeclaration,
   pickComfyModels,
+  pickComfyVideoArtifact,
   planComfyDimensions,
   planComfyFrames,
   resolveComfyTuning,
   templateNodeTypes,
+  templatePlaceholders,
+  WAN22_TI2V_5B_DECLARATION,
   WAN22_TI2V_5B_TEMPLATE,
   type ComfyModels,
+  type WorkflowTemplate,
 } from './comfyuiProtocol.js';
 
 /**
@@ -107,6 +112,112 @@ describe('ComfyUI 协议 · 模型挑选与能力位', () => {
     expect(caps.modes).not.toContain('v2v');
     expect(caps.modes).not.toContain('fl2v');
     expect(caps.unavailableReasons.join('')).toContain('FLF2V');
+  });
+});
+
+/**
+ * 模板声明（V2.39 / CONTRACT §19-2、§19-3）—— 这组回答"**换模型不改代码**"能不能真的成立。
+ *
+ * 缘由（真机事实）：MiniMax H3 一个模型同时支持 t2v / i2v / 首尾帧 / 多参考 / 音频，
+ * 而它的文件名里**既没有 `ti2v` 也不含 `i2v`** —— 原先"按文件名猜"必然判错（还不容易被发现）。
+ */
+describe('ComfyUI 协议 · 模板声明（V2.39）', () => {
+  /** H3 风格的文件名（刻意不含 ti2v / i2v：这就是"猜文件名"会翻车的样本） */
+  const H3_MODELS: ComfyModels = {
+    unet: 'minimax_h3_fl2va_pruned_int8_convrot.safetensors',
+    clip: 'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors',
+    clipType: 'minimax',
+    vae: 'minimax_h3_video_vae_fp16.safetensors',
+  };
+
+  it('**先钉住旧行为**：没有声明时，H3 的文件名会被判成"按文生视频用，需要确认"', () => {
+    const caps = comfyCapabilities(objectInfo(), H3_MODELS);
+    expect(caps.modes).toEqual(['t2v']);
+    expect(caps.unavailableReasons.join('')).toContain('需要确认');
+  });
+
+  it('有声明 → 按声明给模式（H3 那种文件名也能判对）', () => {
+    const caps = comfyCapabilities(objectInfo(), H3_MODELS, WAN22_TI2V_5B_TEMPLATE, {
+      modes: ['t2v', 'i2v'],
+    });
+    expect(caps.modes).toEqual(['t2v', 'i2v']);
+    expect(caps.unavailableReasons.join('')).toContain('能力位按**模板声明**判定');
+  });
+
+  it('声明里的 **fl2v / v2v 被如实剔除**（本仓还没接首尾帧 / 参考视频的输入通道）', () => {
+    const caps = comfyCapabilities(objectInfo(), H3_MODELS, WAN22_TI2V_5B_TEMPLATE, {
+      modes: ['t2v', 'i2v', 'fl2v', 'v2v'],
+    });
+    expect(caps.modes).toEqual(['t2v', 'i2v']);
+    const reasons = caps.unavailableReasons.join('');
+    expect(reasons).toContain('fl2v');
+    expect(reasons).toContain('§19-8');
+  });
+
+  it('声明 `i2v` 但模板里**没有首帧占位** → 该模式被剔除（不报假可用）', () => {
+    const noStart: WorkflowTemplate = {
+      '1': { class_type: 'KSampler', inputs: { seed: '{{SEED}}' } },
+    };
+    const info = { KSampler: { input: { required: {} } } };
+    const caps = comfyCapabilities(info, MODELS, noStart, { modes: ['i2v'] });
+    expect(caps.modes).toEqual([]);
+    expect(caps.unavailableReasons.join('')).toContain('START_IMAGE');
+  });
+
+  it('**没有**声明时的判定与 V2.38 一字不差（老模板行为不变）', () => {
+    expect(comfyCapabilities(objectInfo(), MODELS).modes).toEqual(['t2v', 'i2v']);
+    expect(comfyCapabilities(objectInfo(), MODELS).unavailableReasons.join('')).toContain('FLF2V');
+
+    const onlyI2v = comfyCapabilities(objectInfo({ unet: ['wan2.2_i2v_14B_fp8.safetensors'] }), {
+      ...MODELS,
+      unet: 'wan2.2_i2v_14B_fp8.safetensors',
+    });
+    expect(onlyI2v.modes).toEqual(['i2v']);
+    expect(onlyI2v.unavailableReasons.join('')).toContain('只做图生视频');
+  });
+
+  it('声明解析：形状不对就抛错（不认识的值 / 缺 modes / 空的 modelMatch 值）', () => {
+    expect(() => parseTemplateDeclaration(null)).toThrow(/JSON 对象/);
+    expect(() => parseTemplateDeclaration({})).toThrow(/modes/);
+    expect(() => parseTemplateDeclaration({ modes: ['t2v', 'txt2vid'] })).toThrow(/不认识的值/);
+    expect(() => parseTemplateDeclaration({ modes: ['t2v'], modelMatch: { unet: '   ' } })).toThrow(
+      /modelMatch/,
+    );
+  });
+
+  it('声明解析：重复声明**去重保序**、可选字段缺省时不占键', () => {
+    expect(parseTemplateDeclaration({ modes: ['i2v', 't2v', 'i2v'] })).toEqual({ modes: ['i2v', 't2v'] });
+    expect(parseTemplateDeclaration({ modes: ['t2v'], notes: '   ' })).toEqual({ modes: ['t2v'] });
+  });
+
+  it('模型挑选：声明关键词**优先于**内置关键词（H3 的文件名靠它挑对文件）', () => {
+    const info = objectInfo({
+      unet: ['wan2.2_ti2v_5B_fp16.safetensors', 'minimax_h3_fl2va_pruned_int8_convrot.safetensors'],
+    });
+    expect(pickComfyModels(info).unet).toBe('wan2.2_ti2v_5B_fp16.safetensors');
+    expect(
+      pickComfyModels(info, undefined, { modes: ['t2v'], modelMatch: { unet: 'minimax_h3' } }).unet,
+    ).toBe('minimax_h3_fl2va_pruned_int8_convrot.safetensors');
+  });
+
+  it('占位符提取：**内嵌在数组 / 对象里的也算**，连线里的裸值不算（`["37", 0]`）', () => {
+    const tpl: WorkflowTemplate = {
+      '1': {
+        class_type: 'X',
+        inputs: { ref: ['37', 0], text: '{{PROMPT}}', nested: { deep: ['{{SEED}}'] } },
+      },
+    };
+    expect([...templatePlaceholders(tpl)].sort()).toEqual(['PROMPT', 'SEED']);
+
+    // 内置模板：首帧的两个占位符都在（能力位判 i2v 时正靠它们）
+    const builtin = templatePlaceholders(WAN22_TI2V_5B_TEMPLATE);
+    expect(builtin.has('START_IMAGE')).toBe(true);
+    expect(builtin.has('START_IMAGE_NAME')).toBe(true);
+  });
+
+  it('内置模板的声明把**现状**写实（t2v + i2v，且模型关键词与启发式一致）', () => {
+    expect(WAN22_TI2V_5B_DECLARATION.modes).toEqual(['t2v', 'i2v']);
+    expect(WAN22_TI2V_5B_DECLARATION.modelMatch).toEqual({ unet: 'ti2v', clip: 'umt5', vae: 'wan' });
   });
 });
 
@@ -322,5 +433,24 @@ describe('ComfyUI 协议 · 产物与错误解析', () => {
   it('没有节点级错误时退回 error.message，再退回到兜底文案', () => {
     expect(describeComfySubmissionError({ error: { message: '模型加载失败' } })).toContain('模型加载失败');
     expect(describeComfySubmissionError({})).toContain('未给出细节');
+  });
+
+  it('产物挑选：**视频优先**（H3 类模板可能同时输出视频 + 音频，先遇到哪个看节点 id）', () => {
+    const wav = { filename: 'clip_00001_.wav', subfolder: 'astrmira', type: 'output' };
+    const mp4 = { filename: 'clip_00001_.mp4', subfolder: 'astrmira', type: 'output' };
+    expect(pickComfyVideoArtifact([wav, mp4])).toEqual(mp4);
+    expect(pickComfyVideoArtifact([mp4, wav])).toEqual(mp4);
+  });
+
+  it('产物挑选：**只有音频 → undefined**（把音频写进 .mp4 是静默出错，宁可如实失败）', () => {
+    expect(pickComfyVideoArtifact([{ filename: 'a.wav', subfolder: '', type: 'output' }])).toBeUndefined();
+    expect(pickComfyVideoArtifact([])).toBeUndefined();
+  });
+
+  it('产物挑选：无扩展名 / 非音频非视频时保持"取第一个"的老行为（不改既有场景）', () => {
+    const plain = { filename: 'noext', subfolder: '', type: 'output' };
+    expect(pickComfyVideoArtifact([plain])).toEqual(plain);
+    const bin = { filename: 'a.bin', subfolder: '', type: 'output' };
+    expect(pickComfyVideoArtifact([bin, plain])).toEqual(bin);
   });
 });

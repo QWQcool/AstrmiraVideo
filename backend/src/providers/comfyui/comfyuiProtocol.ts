@@ -1,4 +1,9 @@
-import type { AspectRatio, GenerationMode, VideoGenerateRequest } from '@astrmira/shared';
+import {
+  GenerationModeSchema,
+  type AspectRatio,
+  type GenerationMode,
+  type VideoGenerateRequest,
+} from '@astrmira/shared';
 
 /**
  * ComfyUI 对接协议（CONTRACT §19；台账 A1 片 B；形态 = 决策 **D53**）。
@@ -82,8 +87,110 @@ export interface ComfyModels {
   vae: string;
 }
 
+/**
+ * 本仓**已经接好输入通道**的生成模式（V2.39）。
+ *
+ * 为什么需要它：模板的 sidecar 可以声明任意模式（"这套工作流理论上做得了这件事"），
+ * 但**我们这一侧**还得有把输入塞进去的通道 —— t2v 不需要输入图、i2v 需要 `{{START_IMAGE}}`，
+ * 而 fl2v / v2v 的**首尾帧 / 参考视频我们还没接**（契约 §19-8 明写不做）。
+ * 两者取交集才是"真的能用"：声明了却没接线的模式会被**剔除并说明**，不报成可用。
+ */
+export const COMFY_WIRED_MODES: readonly GenerationMode[] = ['t2v', 'i2v'];
+
+/** sidecar 里"挑哪个模型文件"的关键词（大小写不敏感的子串匹配） */
+export interface ComfyModelMatch {
+  unet?: string;
+  clip?: string;
+  vae?: string;
+  /** `CLIPLoader.type` 的期望值（如 Wan 系是 `wan`）；缺省按 /object_info 的候选回落 */
+  clipType?: string;
+}
+
+/**
+ * 模板 sidecar 声明（`<name>.meta.json`；CONTRACT §19-3 的 V2.39 增补）。
+ *
+ * ## 为什么要有它（真机事实）
+ * `comfyCapabilities()` 原先**按模型文件名猜**模式（含 `ti2v` → t2v+i2v、含 `i2v` → 只 i2v、
+ * 都没有 → "按 t2v 用，需要确认"）。这对 MiniMax H3 会**判错**：H3 一个模型同时支持
+ * t2v / i2v / 首尾帧 / 多参考 / 音频，而文件名里既没有 `ti2v` 也不含 `i2v`。
+ * 让**模板自己声明**能力，判定就不再依赖"作者怎么给文件命名"。
+ *
+ * ## 判定优先级（V2.39）
+ * `sidecar 声明` > 文件名启发式（缺声明时才用）—— 缺声明**不是错误**（老模板照旧可用）。
+ */
+export interface ComfyTemplateDeclaration {
+  /** 这套模板能做哪些模式（会与 `COMFY_WIRED_MODES` 取交集，交集外**如实剔除**） */
+  modes: GenerationMode[];
+  /** 挑模型文件的关键词（缺省 = 内置关键词 `ti2v` / `umt5` / `wan`） */
+  modelMatch?: ComfyModelMatch;
+  /** 给人看的名字（进自检结论） */
+  label?: string;
+  /** 给操作者的说明（进自检结论） */
+  notes?: string;
+}
+
+/**
+ * 解析 sidecar 声明。**形状不对就抛错**（与"模板读不出来就抛错"同一条铁律）：
+ * 静默忽略会让用户以为自己的声明生效了，而实际跑的还是文件名启发式 —— 那正是最糟的形态。
+ */
+export function parseTemplateDeclaration(
+  value: unknown,
+  source = '模板 sidecar（<name>.meta.json）',
+): ComfyTemplateDeclaration {
+  const record = asRecord(value);
+  if (record === null) throw new Error(`${source} 必须是一个 JSON 对象`);
+
+  const modesRaw = record['modes'];
+  if (!Array.isArray(modesRaw)) {
+    throw new Error(`${source} 缺少 modes 数组（例：{"modes":["t2v","i2v"]}）`);
+  }
+  const known = GenerationModeSchema.options as readonly string[];
+  const modes: GenerationMode[] = [];
+  for (const item of modesRaw) {
+    if (typeof item !== 'string' || !known.includes(item)) {
+      throw new Error(
+        `${source} 的 modes 里有不认识的值 ${JSON.stringify(item)}（只支持 ${known.join(' / ')}）`,
+      );
+    }
+    // 去重但保序（重复声明不报错 —— 它不是"配错"，只是冗余）
+    if (!modes.includes(item as GenerationMode)) modes.push(item as GenerationMode);
+  }
+
+  const matchRaw = asRecord(record['modelMatch']);
+  const modelMatch: ComfyModelMatch = {};
+  if (matchRaw !== null) {
+    for (const key of ['unet', 'clip', 'vae'] as const) {
+      const raw = matchRaw[key];
+      if (raw === undefined) continue;
+      if (typeof raw !== 'string' || raw.trim() === '') {
+        throw new Error(`${source} 的 modelMatch.${key} 必须是非空字符串`);
+      }
+      modelMatch[key] = raw.trim();
+    }
+  }
+
+  const declaration: ComfyTemplateDeclaration = { modes };
+  if (Object.keys(modelMatch).length > 0) declaration.modelMatch = modelMatch;
+  const label = record['label'];
+  if (typeof label === 'string' && label.trim() !== '') declaration.label = label.trim();
+  const notes = record['notes'];
+  if (typeof notes === 'string' && notes.trim() !== '') declaration.notes = notes.trim();
+  return declaration;
+}
+
+/**
+ * 内置模板（Wan2.2 TI2V-5B）的声明 —— 它把**现状**写实：
+ * 那张节点图确实只有 t2v / i2v 两种用法（区别只在有没有 `{{START_IMAGE}}`）。
+ * 有了它，"声明优先"的代码路径在**零配置**下也走一遍（不只是靠启发式兜着）。
+ */
+export const WAN22_TI2V_5B_DECLARATION: ComfyTemplateDeclaration = {
+  modes: ['t2v', 'i2v'],
+  modelMatch: { unet: 'ti2v', clip: 'umt5', vae: 'wan' },
+  label: 'Wan2.2 TI2V-5B（内置模板）',
+};
+
 export interface ComfyCapabilities {
-  /** 该实例**实际能跑**的模式（按模型文件名判定，不是"节点存在就算支持"） */
+  /** 该实例**实际能跑**的模式（声明优先；缺声明按模型文件名判定 —— 都不是"节点存在就算支持"） */
   modes: GenerationMode[];
   hasTiledDecode: boolean;
   hasLatentNode: boolean;
@@ -116,38 +223,58 @@ function enumCandidate(objectInfo: unknown, node: string, field: string): string
  * 为什么不是"让用户在界面上选"：D53 的形态是"用户把模型放进 ComfyUI 的 models/ 就完事" ——
  * 他只装一套时不该被迫做多余的选择；装了多套时（将来）再加选择入口也不影响这里的契约。
  */
-export function pickComfyModels(objectInfo: unknown, preferred?: Partial<ComfyModels>): ComfyModels {
+export function pickComfyModels(
+  objectInfo: unknown,
+  preferred?: Partial<ComfyModels>,
+  declaration?: ComfyTemplateDeclaration,
+): ComfyModels {
   const unets = enumCandidate(objectInfo, 'UNETLoader', 'unet_name');
   const clips = enumCandidate(objectInfo, 'CLIPLoader', 'clip_name');
   const vaes = enumCandidate(objectInfo, 'VAELoader', 'vae_name');
   const clipTypes = enumCandidate(objectInfo, 'CLIPLoader', 'type');
 
-  const pick = (candidates: string[], keyword: string): string => {
-    const hit = candidates.find((name) => name.toLowerCase().includes(keyword));
+  /** 关键词优先级：**声明 > 内置**（H3 那类文件名不含 ti2v 的模型靠它挑对文件） */
+  const keyword = (site: keyof ComfyModelMatch, fallback: string): string =>
+    declaration?.modelMatch?.[site] ?? fallback;
+  const pick = (candidates: string[], kw: string): string => {
+    const lowered = kw.toLowerCase();
+    const hit = candidates.find((name) => name.toLowerCase().includes(lowered));
     return hit ?? candidates[0] ?? '';
   };
 
   return {
-    unet: preferred?.unet ?? pick(unets, 'ti2v'),
-    clip: preferred?.clip ?? pick(clips, 'umt5'),
-    clipType: preferred?.clipType ?? (clipTypes.includes('wan') ? 'wan' : (clipTypes[0] ?? 'wan')),
-    vae: preferred?.vae ?? pick(vaes, 'wan'),
+    unet: preferred?.unet ?? pick(unets, keyword('unet', 'ti2v')),
+    clip: preferred?.clip ?? pick(clips, keyword('clip', 'umt5')),
+    clipType:
+      preferred?.clipType ??
+      keyword('clipType', clipTypes.includes('wan') ? 'wan' : (clipTypes[0] ?? 'wan')),
+    vae: preferred?.vae ?? pick(vaes, keyword('vae', 'wan')),
   };
 }
 
 /**
  * 能力位：**按"模型 + 关键节点"判定**，而不是"节点存在就算支持"。
  *
- * 判定依据（都是实测事实）：
- * - `VAEDecodeTiled` 与 `Wan22ImageToVideoLatent` 缺一个就不能跑（前者是 10GB 卡的硬要求）；
- * - TI2V 模型（文件名含 `ti2v`）= 文生视频 + 图生视频**同一个模型两种用法** → 支持 t2v / i2v；
- * - 纯 I2V 模型（含 `i2v` 但不含 `ti2v`）→ 只支持 i2v；
- * - **fl2v / v2v 一律不支持**（需要 FLF2V / VACE 系列模型，本机未装；有模型才亮，没有就如实说）。
+ * ## 判定来源（V2.39 起两级）
+ * 1. **模板声明**（`declaration`）—— sidecar `<name>.meta.json` 或内置模板自带的声明。
+ *    这是首选：换模型（H3 那类文件名不含 `ti2v` 的）不必等我们发版，也不靠"作者怎么命名文件"；
+ * 2. **文件名启发式**（缺声明时才用，行为与 V2.38 一字不改）：
+ *    - `ti2v` → t2v + i2v（同一个模型两种用法）；
+ *    - `i2v`（不含 ti2v）→ 只 i2v；
+ *    - 都不含 → 按 t2v 用并标注"需要确认"；
+ *    - **fl2v / v2v 一律不支持**（需要 FLF2V / VACE 系列模型，本机未装）。
+ *
+ * 硬前置（两级都适用）：模板引用的节点必须都在 /object_info 里（缺 `VAEDecodeTiled` 就是致命 ——
+ * 10GB 卡上整段解码会退化成 CPU，实测 >14 分钟未完成）；`diffusion_models` 不能为空。
+ *
+ * ⚠️ **声明不等于可用**：声明只表示"这套工作流理论上做得了这件事"，
+ * 还要与本仓**已接线的输入通道**（`COMFY_WIRED_MODES`）取交集 —— 见 `resolveDeclaredModes`。
  */
 export function comfyCapabilities(
   objectInfo: unknown,
   models: ComfyModels,
   template: WorkflowTemplate = WAN22_TI2V_5B_TEMPLATE,
+  declaration?: ComfyTemplateDeclaration,
 ): ComfyCapabilities {
   const info = asRecord(objectInfo);
   const hasTiledDecode = info?.VAEDecodeTiled !== undefined;
@@ -176,7 +303,10 @@ export function comfyCapabilities(
   }
 
   if (missingNodes.length === 0 && models.unet !== '') {
-    if (unetName.includes('ti2v')) {
+    if (declaration !== undefined) {
+      // V2.39：**声明优先**（换模型/换工作流不必改代码，也不靠文件命名）
+      modes.push(...resolveDeclaredModes(declaration, template, unavailableReasons));
+    } else if (unetName.includes('ti2v')) {
       modes.push('t2v', 'i2v');
     } else if (unetName.includes('i2v')) {
       modes.push('i2v');
@@ -187,8 +317,53 @@ export function comfyCapabilities(
     }
   }
 
-  unavailableReasons.push('fl2v / v2v 需要另外的模型（FLF2V / VACE 系列），本机未安装');
+  if (declaration === undefined) {
+    // 只有"缺声明"这条路径才说这句 —— 有声明时"不支持什么"由声明的差集回答（见 resolveDeclaredModes）
+    unavailableReasons.push('fl2v / v2v 需要另外的模型（FLF2V / VACE 系列），本机未安装');
+  }
   return { modes, hasTiledDecode, hasLatentNode, unetCandidates, clipCandidates, vaeCandidates, unavailableReasons };
+}
+
+/**
+ * 把**模板声明**落成能力位（V2.39）。三条规则：
+ * 1. 只有**本仓已接线**的模式才可能拿下（`COMFY_WIRED_MODES`）——
+ *    声明是"工作流做得了"，接线是"我们塞得进输入"，两者缺一不可；
+ * 2. 声明 `i2v` / `fl2v` / `v2v` 时，模板里必须有首帧占位（`{{START_IMAGE}}` 或 `{{START_IMAGE_NAME}}`）——
+ *    没有占位就说明**我们没地方塞那张图**，那种情况下报"支持 i2v"是假的；
+ * 3. 被剔除的每一条都写进 `unavailableReasons`（**不静默剔除**），
+ *    并附一句"能力位按模板声明判定"，让自检结论能回答"这个判断是从哪来的"。
+ */
+function resolveDeclaredModes(
+  declaration: ComfyTemplateDeclaration,
+  template: WorkflowTemplate,
+  unavailableReasons: string[],
+): GenerationMode[] {
+  const placeholders = templatePlaceholders(template);
+  const usable: GenerationMode[] = [];
+  const rejected: string[] = [];
+
+  for (const mode of declaration.modes) {
+    if (!COMFY_WIRED_MODES.includes(mode)) {
+      rejected.push(`${mode}（本仓还没把它的输入接进工作流，见 CONTRACT §19-8）`);
+      continue;
+    }
+    const needsFirstFrame = mode === 'i2v' || mode === 'fl2v' || mode === 'v2v';
+    if (needsFirstFrame && !placeholders.has('START_IMAGE') && !placeholders.has('START_IMAGE_NAME')) {
+      rejected.push(`${mode}（模板里没有 START_IMAGE / START_IMAGE_NAME 占位，我们没有地方塞首帧）`);
+      continue;
+    }
+    usable.push(mode);
+  }
+
+  const label = declaration.label === undefined ? '' : ` · ${declaration.label}`;
+  unavailableReasons.push(
+    `能力位按**模板声明**判定（声明：${declaration.modes.join(' / ')}${label}）` +
+      (declaration.notes === undefined ? '' : ` —— ${declaration.notes}`),
+  );
+  if (rejected.length > 0) {
+    unavailableReasons.push(`模板声明里有 ${rejected.join('、')} —— 已如实不提供`);
+  }
+  return usable;
 }
 
 /** 对齐到 32 的倍数（且不小于 32） */
@@ -388,6 +563,32 @@ export function renderWorkflow(template: WorkflowTemplate, values: WorkflowValue
   return workflow;
 }
 
+/**
+ * 模板里用到的**全部占位符名**（含嵌在数组 / 对象里的那些）。
+ *
+ * 用途：能力位判定时回答"这套模板**有没有**放首帧的位置"——
+ * 声明了 `i2v` 却没有任何 `{{START_IMAGE}}` / `{{START_IMAGE_NAME}}` 占位时，
+ * 我们**没地方塞那张图**，那种"支持 i2v"是假的（V2.39）。
+ */
+export function templatePlaceholders(template: WorkflowTemplate): Set<string> {
+  const found = new Set<string>();
+  const walk = (value: unknown): void => {
+    if (typeof value === 'string') {
+      const match = PLACEHOLDER_ONLY.exec(value);
+      if (match !== null) found.add(match[1]);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+      return;
+    }
+    const record = asRecord(value);
+    if (record !== null) for (const item of Object.values(record)) walk(item);
+  };
+  walk(template);
+  return found;
+}
+
 /** 模板引用了哪些节点类型（能力位按它判定"这台机器能不能跑这套模板"） */
 export function templateNodeTypes(template: WorkflowTemplate): string[] {
   const types = new Set<string>();
@@ -566,6 +767,44 @@ export function parseComfyOutputs(outputs: unknown): ComfyArtifact[] {
     }
   }
   return artifacts;
+}
+
+/** 视频容器后缀（`SaveVideo` 的 `format: 'auto'` 实测落 mp4；webm 等一并认下） */
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mkv', '.mov', '.avi'] as const;
+
+/**
+ * 音频后缀。**它们绝不能被当成视频产物** —— 把音频字节写成 `<taskId>.mp4`
+ * 是一次静默出错：任务报成功、用户拿到一个打不开的"视频"。
+ */
+const AUDIO_EXTENSIONS = ['.wav', '.mp3', '.flac', '.m4a', '.aac', '.opus', '.ogg'] as const;
+
+/**
+ * 从产物清单里挑**视频**（V2.39；替代原先的 `outputs[0]`）。
+ *
+ * ## 为什么不能直接取第一个
+ * 实测形状里产物是"节点 id → 数组"的对象，`Object.values()` 的顺序**取决于节点 id**。
+ * Wan 的那套模板只有一个 `SaveVideo`，取第一个没问题；但 H3 这类模型可能**同时输出
+ * 视频 + 音频两个文件**（SaveVideo + SaveAudio），先遇到哪个纯看 id —— 取到音频就会
+ * 把音频写进 `.mp4`（见上）。
+ *
+ * 规则：视频容器优先 → 其次是"非音频"的第一个（保持旧行为）→ **只有音频则返回 `undefined`**
+ * （调用方据此如实报错，而不是硬塞一个音频文件当视频）。
+ */
+export function pickComfyVideoArtifact(artifacts: ComfyArtifact[]): ComfyArtifact | undefined {
+  const extension = (filename: string): string => {
+    const dot = filename.lastIndexOf('.');
+    return dot < 0 ? '' : filename.slice(dot).toLowerCase();
+  };
+
+  const video = artifacts.find((item) =>
+    (VIDEO_EXTENSIONS as readonly string[]).includes(extension(item.filename)),
+  );
+  if (video !== undefined) return video;
+
+  const nonAudio = artifacts.filter(
+    (item) => !(AUDIO_EXTENSIONS as readonly string[]).includes(extension(item.filename)),
+  );
+  return nonAudio[0];
 }
 
 /** `/view` 的下载地址（按实测的形状拼：filename + subfolder + type 三个都要带） */

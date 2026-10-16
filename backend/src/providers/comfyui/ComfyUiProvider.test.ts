@@ -4,7 +4,12 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { VideoGenerateRequest } from '@astrmira/shared';
 import { ComfyUiProvider } from './ComfyUiProvider.js';
-import { templateNodeTypes, WAN22_TI2V_5B_TEMPLATE } from './comfyuiProtocol.js';
+import {
+  templateNodeTypes,
+  WAN22_TI2V_5B_TEMPLATE,
+  type ComfyTemplateDeclaration,
+  type WorkflowTemplate,
+} from './comfyuiProtocol.js';
 
 /**
  * `host-comfyui` provider 的单测（假 ComfyUI）。
@@ -104,7 +109,14 @@ function createFakeComfy(state: FakeState) {
   return { fetch: fakeFetch, calls, bodies };
 }
 
-function makeProvider(state: FakeState, extra: Partial<{ resolveAssetUrl: (id: string) => Promise<string | null> }> = {}) {
+/** 可注入的额外选项（V2.39 起含模板与声明 —— 让"声明生效"这条链也能在单测里覆盖） */
+type ExtraOptions = Partial<{
+  resolveAssetUrl: (id: string) => Promise<string | null>;
+  template: WorkflowTemplate;
+  declaration: ComfyTemplateDeclaration;
+}>;
+
+function makeProvider(state: FakeState, extra: ExtraOptions = {}) {
   const outputDir = mkdtempSync(path.join(tmpdir(), 'comfy-provider-test-'));
   const fake = createFakeComfy(state);
   const provider = new ComfyUiProvider({
@@ -125,10 +137,7 @@ function request(overrides: Partial<VideoGenerateRequest> = {}): VideoGenerateRe
   return { prompt: '雨夜街角', mode: 't2v', aspectRatio: '16:9', provider: 'host-comfyui', ...overrides };
 }
 
-function setup(
-  state: FakeState,
-  extra: Partial<{ resolveAssetUrl: (id: string) => Promise<string | null> }> = {},
-) {
+function setup(state: FakeState, extra: ExtraOptions = {}) {
   const made = makeProvider(state, extra);
   dirs.push(made.outputDir);
   return made;
@@ -140,7 +149,30 @@ describe('ComfyUiProvider · 健康检查', () => {
     const health = await provider.checkHealth();
     expect(health.available).toBe(true);
     expect(health.reason).toContain('t2v / i2v');
-    expect(health.reason).toContain('FLF2V');
+    // V2.39：**判定的来源也要说清**（内置模板自带声明 —— "这个判断是从哪来的"要能回答）
+    expect(health.reason).toContain('模板声明');
+  });
+
+  it('V2.39：注入声明 → 能力位与模型挑选都按声明走（H3 那种"文件名不含 ti2v"的模型也判得对）', async () => {
+    // 覆盖 /object_info 的 unet 候选：换成一个**不含 ti2v** 的 H3 风格文件名
+    const info = JSON.parse(JSON.stringify(OBJECT_INFO)) as Record<
+      string,
+      { input?: { required?: Record<string, unknown> } }
+    >;
+    const required = info['UNETLoader']?.input?.required;
+    if (required !== undefined) {
+      required['unet_name'] = [['minimax_h3_fl2va_pruned_int8_convrot.safetensors']];
+    }
+
+    const { provider } = setup(
+      { queued: false, objectInfo: info },
+      { declaration: { modes: ['t2v', 'i2v'], modelMatch: { unet: 'minimax_h3' } } },
+    );
+    const health = await provider.checkHealth();
+
+    expect(health.available).toBe(true);
+    expect(health.reason).toContain('t2v / i2v'); // 声明生效（启发式只会给 t2v）
+    expect(health.reason).toContain('minimax_h3'); // 声明关键词挑中了那个模型文件
   });
 
   it('连不上 → 不可用，原因里带地址（部署者一眼知道该改哪个 env）', async () => {
@@ -276,6 +308,42 @@ describe('ComfyUiProvider · 查状态', () => {
     expect(progress.status).toBe('succeeded');
     expect(progress.outputVideoUrl).toBe(`/media/${taskId}.mp4`);
     expect(readFileSync(path.join(dirs.at(-1) as string, `${taskId}.mp4`))).toEqual(bytes);
+  });
+
+  it('多产物（V2.39）：**挑视频**而不是"取第一个"（音频节点的 id 更小也抢不走）', async () => {
+    const { provider } = setup({
+      queued: false,
+      videoBytes: Buffer.from('real-mp4-bytes'),
+      historyEntry: {
+        status: { status_str: 'success' },
+        outputs: {
+          // 音频节点 id 更小 → `Object.values()` 会先遇到它；老实现（outputs[0]）会取到音频
+          '20': { audio: [{ filename: 'clip_00001_.wav', subfolder: 'astrmira', type: 'output' }] },
+          '58': { images: [{ filename: 'clip_00001_.mp4', subfolder: 'astrmira', type: 'output' }] },
+        },
+      },
+    });
+    const { taskId } = await provider.submit(request());
+    const progress = await provider.queryStatus(taskId);
+    expect(progress.status).toBe('succeeded');
+    expect(progress.outputVideoUrl).toBe(`/media/${taskId}.mp4`);
+  });
+
+  it('只有音频产物 → **如实失败**（把音频字节写成 .mp4 是静默出错）', async () => {
+    const { provider } = setup({
+      queued: false,
+      historyEntry: {
+        status: { status_str: 'success' },
+        outputs: {
+          '20': { audio: [{ filename: 'clip_00001_.wav', subfolder: 'astrmira', type: 'output' }] },
+        },
+      },
+    });
+    const { taskId } = await provider.submit(request());
+    const progress = await provider.queryStatus(taskId);
+    expect(progress.status).toBe('failed');
+    // 失败原因在 `error.message`（`fail()` 的既有形状：terminal 的错误码 + 人话）
+    expect(progress.error?.message).toContain('没有视频');
   });
 
   it('重复查询 → 直接返回同一个结果，**不重复下载**（调度器会反复查）', async () => {
