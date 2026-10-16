@@ -293,6 +293,32 @@ export const CANVAS_ZH = {
   'canvas.mobile.library': '视频库',
   'canvas.mobile.part2': '看列表。',
 
+  // ── 编排文件（`lib/canvasPlanFile.ts`；语言迁移第十八批——它从共享包搬来前端）──
+  // 这一层的每一句都是**导入失败时直接显示给用户的原因**（含"该怎么做"）。
+  // ⚠️ 文件里那四条 `notes` **没进字典**：它们是**产物内容**（写进导出的 JSON，接收方按格式读）
+  // —— 与交付包里的 `交付清单.json` 同一条口径（产物不跟界面语言走）。
+  /** 列举 id / 边时用的**列表分隔符**（中文顿号 vs 英文逗号 + 空格：排版事实） */
+  'canvas.file.listSeparator': '、',
+  /** 多条结构问题之间的分隔符（同样进字典，不写死在代码里） */
+  'canvas.file.issueSeparator': '；',
+  'canvas.file.issue.duplicateNodes': '有重复的节点 id：{ids}',
+  'canvas.file.issue.danglingEdges': '有连到不存在节点的边：{ids}',
+  'canvas.file.issue.selfLoops': '有自己连自己的边（自环）：{ids}',
+  'canvas.file.issue.repeatedEdges': '有重复的边（同向同端点）：{ids}',
+  'canvas.file.reason.notJson': '这不是一份 JSON 文件（解析失败）—— 请选择本产品「⤓ 导出编排」导出的文件',
+  'canvas.file.reason.notObject': '文件顶层不是对象 —— 不像本产品导出的编排文件',
+  'canvas.file.reason.notPlanFileKind':
+    '这不是编排文件（kind = {kind}）—— 本产品导出的编排文件 kind 应为 {expected}',
+  'canvas.file.reason.notPlanFileNoKind':
+    '这不是编排文件（文件里没有 kind 标识）—— 请选择本产品「⤓ 导出编排」导出的文件',
+  'canvas.file.reason.newerVersion':
+    '这份编排文件来自更新的版本（v{fileVersion} > 本机 v{localVersion}）：请升级本机版本后再打开',
+  'canvas.file.reason.migrationBroken': '内部错误：迁移链没把 v{fromVersion} 带到 v{toVersion}',
+  'canvas.file.reason.invalidPlan': '编排内容不完整或格式不对',
+  'canvas.file.reason.invalidPlanDetail': '编排内容不完整或格式不对：{detail}',
+  'canvas.file.reason.badGraph': '编排里的图不成立：{issues}',
+  'canvas.file.note.noVersion': '文件里没有版本号，按 v1 处理',
+
   // ── 血缘图（`lib/lineage.ts`；语言迁移第十五批）──
   // 幽灵节点的标签是**界面文案**（画布上真会显示"任务 7f3a12b0 / 不在最近记录里"），走字典；
   // 而导出包里那两条 `notes` 是**产物内容**（写进 JSON，且会被下游按格式读），**保持中文**
@@ -557,6 +583,29 @@ export const CANVAS_EN = {
   'canvas.mobile.part1': 'The canvas is hard to use on a narrow screen: open it on a desktop, or go to the ',
   'canvas.mobile.library': 'library',
   'canvas.mobile.part2': ' for a list.',
+
+  'canvas.file.listSeparator': ', ',
+  'canvas.file.issueSeparator': '; ',
+  'canvas.file.issue.duplicateNodes': 'Duplicate node ids: {ids}',
+  'canvas.file.issue.danglingEdges': 'Edges pointing at nodes that do not exist: {ids}',
+  'canvas.file.issue.selfLoops': 'Edges from a node to itself: {ids}',
+  'canvas.file.issue.repeatedEdges': 'Duplicate edges (same direction and endpoints): {ids}',
+  'canvas.file.reason.notJson':
+    'This is not a JSON file (parse failed) — pick a file exported by 「⤓ Export plan」',
+  'canvas.file.reason.notObject':
+    'The file is not an object at the top level — it does not look like a plan file from this product',
+  'canvas.file.reason.notPlanFileKind':
+    'This is not a plan file (kind = {kind}) — a plan file exported by this product should have kind = {expected}',
+  'canvas.file.reason.notPlanFileNoKind':
+    'This is not a plan file (no kind marker in the file) — pick a file exported by 「⤓ Export plan」',
+  'canvas.file.reason.newerVersion':
+    'This plan file comes from a newer version (v{fileVersion} > local v{localVersion}): upgrade this deployment first',
+  'canvas.file.reason.migrationBroken':
+    'Internal error: the migration chain did not bring v{fromVersion} to v{toVersion}',
+  'canvas.file.reason.invalidPlan': 'The plan content is incomplete or malformed',
+  'canvas.file.reason.invalidPlanDetail': 'The plan content is incomplete or malformed: {detail}',
+  'canvas.file.reason.badGraph': 'The graph inside the plan does not hold up: {issues}',
+  'canvas.file.note.noVersion': 'The file has no version number; treating it as v1',
 
   'canvas.lineage.nodeMissing': 'No such node on the canvas: {id}',
   'canvas.lineage.ghostTaskLabel': 'Task {id}',

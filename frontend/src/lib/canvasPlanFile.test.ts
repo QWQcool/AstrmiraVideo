@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CANVAS_PLAN_FILE_KIND,
   CANVAS_PLAN_VERSION,
-  buildCanvasPlanFile,
-  canvasPlanFileText,
-  planStructuralIssues,
-  readCanvasPlanFile,
   type CanvasPlan,
   type CanvasPlanEdge,
   type CanvasPlanNode,
 } from '@astrmira/shared';
+import {
+  CANVAS_PLAN_FILE_KIND,
+  buildCanvasPlanFile,
+  canvasPlanFileText,
+  planStructuralIssues,
+  readCanvasPlanFile,
+} from './canvasPlanFile';
 import { PLAN_NODE_DEFAULTS, withNewPlanIdentity } from './canvasPlan';
 
 /**

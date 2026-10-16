@@ -189,27 +189,37 @@ describe('本地 worker 客户端（A1 片 A：协议 + 假 worker）', () => {
   });
 
   it('连接前静态检查：HTTPS 页面 + 非回环地址 → 拦住并给可执行指引；回环 → 只提醒 PNA', () => {
+    /**
+     * 语言迁移第十八批：判据在共享包（**只回 code**），句子在前端。
+     * 所以这一例分两段断言 —— 这正是那条分工在测试里的样子。
+     */
     const lan = workerLinkCheck('https:', 'http://192.168.1.20:8765');
     expect(lan.blocked).toContain('127.0.0.1:8765');
     expect(lan.notice).toBeNull();
+
+    expect(
+      checkWorkerLink({ pageProtocol: 'https:', workerUrl: 'http://192.168.1.20:8765' }),
+    ).toEqual({ kind: 'mixedContent', origin: 'http://192.168.1.20:8765' });
 
     const loopback = checkWorkerLink({
       pageProtocol: 'https:',
       workerUrl: 'http://127.0.0.1:8765',
     });
-    expect(loopback.blocked).toBeNull();
-    expect(loopback.notice).toContain('Access-Control-Allow-Private-Network');
-
-    const httpPage = checkWorkerLink({
-      pageProtocol: 'http:',
-      workerUrl: 'http://127.0.0.1:8765',
-    });
-    expect(httpPage.blocked).toBeNull();
-    expect(httpPage.notice).toBeNull();
+    expect(loopback).toEqual({ kind: 'pnaHint' });
+    // 回环那种**只提醒、不拦**（拦下来会让"本来能用"的部署用不了）
+    const loopbackText = workerLinkCheck('https:', 'http://127.0.0.1:8765');
+    expect(loopbackText.blocked).toBeNull();
+    expect(loopbackText.notice).toContain('Access-Control-Allow-Private-Network');
 
     expect(
-      checkWorkerLink({ pageProtocol: 'https:', workerUrl: '不是 URL' }).blocked,
-    ).toContain('不是合法 URL');
+      checkWorkerLink({ pageProtocol: 'http:', workerUrl: 'http://127.0.0.1:8765' }),
+    ).toEqual({ kind: 'ok' });
+
+    expect(checkWorkerLink({ pageProtocol: 'https:', workerUrl: '不是 URL' })).toEqual({
+      kind: 'badUrl',
+      url: '不是 URL',
+    });
+    expect(workerLinkCheck('https:', '不是 URL').blocked).toContain('不是合法 URL');
   });
 
   it('失败文案统一出口：WorkerError 带码与提示，其它错误不吞', () => {

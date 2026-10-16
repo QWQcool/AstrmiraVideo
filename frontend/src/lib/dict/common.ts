@@ -114,6 +114,15 @@ export const COMMON_ZH = {
   'common.worker.noJobId': 'worker 接受了提交但响应形状不对（缺 jobId？）',
   'common.worker.badJobStatus': 'worker 的任务状态不符合协议（jobId={jobId}）',
 
+  // 链接自检的指引（`checkWorkerLink` 只回 code，**句子在这里**——语言迁移第十八批）
+  'common.worker.link.badUrl': 'worker 地址不是合法 URL：{url}',
+  'common.worker.link.mixedContent':
+    '当前页面是 HTTPS，而 worker 地址（{origin}）不是回环地址 —— 浏览器会按混合内容把它拦掉。' +
+    '把 worker 地址改成 http://127.0.0.1:8765（回环地址是潜在可信来源，不会被拦）。',
+  'common.worker.link.pna':
+    '若浏览器提示"本地网络访问被拦"：这是 Chrome 的 Private Network Access 预检 —— ' +
+    'worker 需要在响应里带上 Access-Control-Allow-Private-Network: true。',
+
   // ── 引擎显示名（`lib/engineOptions.ts`；`common.engine.cloud` 见上面"算力归属"）──
   // ⚠️ `common.engine.h3Revoked` 的那对括号是**如实标注**（V2.37 / D56：那一档已撤，
   // 但历史任务与旧编排文件里仍会出现它）—— 视觉自检有一条断言专门盯它
@@ -211,6 +220,14 @@ export const COMMON_EN = {
     'The worker accepted the submission but the response shape is wrong (missing jobId?)',
   'common.worker.badJobStatus':
     'The worker’s job status does not match the protocol (jobId={jobId})',
+
+  'common.worker.link.badUrl': 'The worker URL is not a valid URL: {url}',
+  'common.worker.link.mixedContent':
+    'This page is HTTPS but the worker URL ({origin}) is not a loopback address — the browser will block it as mixed content. ' +
+    'Change the worker URL to http://127.0.0.1:8765 (loopback is a potentially trustworthy origin and will not be blocked).',
+  'common.worker.link.pna':
+    'If the browser says "local network access blocked": that is Chrome’s Private Network Access preflight — ' +
+    'the worker must respond with Access-Control-Allow-Private-Network: true.',
 
   'common.engine.localComfyUi': 'Local ComfyUI',
   'common.engine.comfyUiUnknown': 'Local ComfyUI status unknown',

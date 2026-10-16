@@ -200,8 +200,36 @@ export function createWorkerClient(options: WorkerClientOptions = {}): WorkerCli
  * 连接前的静态检查（页面 ↔ worker 地址）：**不联网**，只回答"这条路会不会一出发就被浏览器拦"。
  * 直接用 shared 的纯函数（文案与判定在同一处，前后端不漂移）。
  */
-export function workerLinkCheck(pageProtocol: string, workerUrl: string) {
-  return checkWorkerLink({ pageProtocol, workerUrl });
+/**
+ * 链接自检 → **给用户看的文案**（语言迁移第十八批）。
+ *
+ * 共享包的 `checkWorkerLink` 现在只回答"发生了什么"（一个 code），句子在**这里**拼 ——
+ * 返回形状与迁移前**完全一致**（`{ blocked, notice }`），所以调用点与单测零改动。
+ * 这是本仓处理"跨包文案"的第三条路（前两条：搬进前端字典 / 保留中文 + 对拍断言）：
+ * **回 code，不回句子** —— 适合"共享包要判断、界面要措辞"的情形。
+ */
+export function workerLinkCheck(
+  pageProtocol: string,
+  workerUrl: string,
+): { blocked: string | null; notice: string | null } {
+  const result = checkWorkerLink({ pageProtocol, workerUrl });
+  const lang = getLanguage();
+  switch (result.kind) {
+    case 'ok':
+      return { blocked: null, notice: null };
+    case 'badUrl':
+      return {
+        blocked: translate(lang, 'common.worker.link.badUrl', { url: result.url }),
+        notice: null,
+      };
+    case 'mixedContent':
+      return {
+        blocked: translate(lang, 'common.worker.link.mixedContent', { origin: result.origin }),
+        notice: null,
+      };
+    case 'pnaHint':
+      return { blocked: null, notice: translate(lang, 'common.worker.link.pna') };
+  }
 }
 
 /** ApiError 与 WorkerError 的统一展示（界面层只需要一句话） */

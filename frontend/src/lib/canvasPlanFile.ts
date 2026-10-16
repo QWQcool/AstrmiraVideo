@@ -1,4 +1,5 @@
-import { CANVAS_PLAN_VERSION, CanvasPlanSchema, type CanvasPlan } from './canvasPlan.js';
+import { CANVAS_PLAN_VERSION, CanvasPlanSchema, type CanvasPlan } from '@astrmira/shared';
+import { getLanguage, translate, type MessageKey } from './i18n';
 
 /**
  * 编排文件 `astrmira.canvas-plan`（CONTRACT §11-6 附 / V2.35；台账 A5 片 B 收口）。
@@ -19,7 +20,24 @@ import { CANVAS_PLAN_VERSION, CanvasPlanSchema, type CanvasPlan } from './canvas
  *    调用方决定"提示用户 / 保持原样"，**当前编排一动不动**。
  *
  * ⚠️ 这里的解析**不校验引用的任务是否存在** —— 那是运行那一刻的事（§11-6 第 7 / 8 条会如实跳过并说明）。
+ *
+ * ## 语言迁移第十八批：这一层`从共享包搬来前端`，原因（"这句话给谁看"）
+ * 它原先在 `packages/shared/src/canvasPlanFile.ts`，但**消费者只有前端**
+ * （`views/CanvasView.tsx` + 它自己的单测）—— 也就是说，这里每一句 `reason` 都是**给人看的**，
+ * 而共享包（纯类型 / 数据层）**没法持有界面文案**（它不能 import 前端字典）。
+ * 搬来前端之后，它与**本来就在前端**的编辑层 `lib/canvasPlan.ts` 重新成了对称的一对：
+ * 一个管"编排本身"，一个管"编排的文件形态"。
+ *
+ * ⚠️ **`CANVAS_PLAN_FILE_NOTES` 刻意没迁**（行内有 `i18n-exempt` 标记）：那四条是**产物内容**
+ * —— 它们会被**写进导出的 JSON 文件**（接收方按格式读它），与交付包里的 `交付清单.json`、
+ * 配方包的 `notes` 同一条口径：**产物不跟界面语言走**（换台机器、换个人打开，文件里的话还是那句话）。
+ * 代价如实：它们同时也会显示在导入/导出提示面板里，所以英文界面下那一段是中文
+ * （与交付清单的 warnings 同一取舍）。
  */
+
+/** 取文案的本地助手（本层是纯函数，没有 React 订阅；调用它的视图订阅了语言） */
+const msg = (key: MessageKey, vars?: Record<string, string | number>): string =>
+  translate(getLanguage(), key, vars);
 
 /** 文件标识（接收方据此判断"这是什么文件"；`kind` 不对 = 不是本格式） */
 export const CANVAS_PLAN_FILE_KIND = 'astrmira.canvas-plan';
@@ -30,11 +48,17 @@ export const CANVAS_PLAN_FILE_KIND = 'astrmira.canvas-plan';
  * 为什么是常量而不是函数：这些是**关于文件格式本身的事实**（不随导出时机变化）；
  * 而"导入会怎样"（新身份 / 装载语义）属于**导入端的行为**，写进文件反而会在将来变成谎言
  * —— 那部分由导入界面的提示负责（见 CanvasView）。
+ *
+ * 语言：**产物内容，不跟界面语言走**（理由见文件头）—— 四条各自带 `i18n-exempt` 标记。
  */
 export const CANVAS_PLAN_FILE_NOTES: readonly string[] = [
+  // i18n-exempt: 写进导出文件的 notes 第 1 条（产物内容，不跟界面语言走）
   '这是画布编排（"打算做什么"），不是运行记录 —— 提交出的任务与成片在服务端的任务表里（视频库 / 事实图）。',
+  // i18n-exempt: 写进导出文件的 notes 第 2 条（产物内容）
   '节点上的"上次产物 / 固定"ID 只在本机部署有意义：换一台部署导入后，那些任务不存在，运行时会如实跳过并说明。',
+  // i18n-exempt: 写进导出文件的 notes 第 3 条（产物内容）
   '不含凭据与 provider 私有参数（编排本身没有这两样，这里写出来是显式约定）。',
+  // i18n-exempt: 写进导出文件的 notes 第 4 条（产物内容）
   '文件里不含媒体文件：换一台部署要真正复现一支片，得把成片一起带上。',
 ];
 
@@ -105,9 +129,13 @@ function shortId(id: string): string {
  * （`addPlanEdge` / `removePlanNode`）保证不会产生它们，但**手改过的文件**可能有。
  * 放进来的后果不是"报错"而是"画布上画着一条连不到东西的线 / 环上跑任何一条都可能烧钱"，
  * 所以在导入这一刻就说清（失败给人话原因，不返回半成品）。
+ *
+ * 语言：这一层返回的是**给人看的句子**（界面直接显示），所以走字典；
+ * 列表分隔符也走字典（`、` 是中文标点，英文要用 `, ` —— 那是排版事实）。
  */
 export function planStructuralIssues(plan: CanvasPlan): string[] {
   const issues: string[] = [];
+  const sep = msg('canvas.file.listSeparator');
 
   const ids = new Set<string>();
   const duplicated: string[] = [];
@@ -116,7 +144,7 @@ export function planStructuralIssues(plan: CanvasPlan): string[] {
     ids.add(node.id);
   }
   if (duplicated.length > 0) {
-    issues.push(`有重复的节点 id：${duplicated.map(shortId).join('、')}`);
+    issues.push(msg('canvas.file.issue.duplicateNodes', { ids: duplicated.map(shortId).join(sep) }));
   }
 
   const dangling: string[] = [];
@@ -137,13 +165,13 @@ export function planStructuralIssues(plan: CanvasPlan): string[] {
     seen.add(key);
   }
   if (dangling.length > 0) {
-    issues.push(`有连到不存在节点的边：${dangling.join('、')}`);
+    issues.push(msg('canvas.file.issue.danglingEdges', { ids: dangling.join(sep) }));
   }
   if (selfLoops.length > 0) {
-    issues.push(`有自己连自己的边（自环）：${selfLoops.join('、')}`);
+    issues.push(msg('canvas.file.issue.selfLoops', { ids: selfLoops.join(sep) }));
   }
   if (repeated.length > 0) {
-    issues.push(`有重复的边（同向同端点）：${repeated.join('、')}`);
+    issues.push(msg('canvas.file.issue.repeatedEdges', { ids: repeated.join(sep) }));
   }
 
   return issues;
@@ -161,11 +189,11 @@ export function readCanvasPlanFile(raw: string): CanvasPlanFileReadResult {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return { ok: false, reason: '这不是一份 JSON 文件（解析失败）—— 请选择本产品「⤓ 导出编排」导出的文件' };
+    return { ok: false, reason: msg('canvas.file.reason.notJson') };
   }
 
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return { ok: false, reason: '文件顶层不是对象 —— 不像本产品导出的编排文件' };
+    return { ok: false, reason: msg('canvas.file.reason.notObject') };
   }
 
   const draft = parsed as Record<string, unknown>;
@@ -177,8 +205,11 @@ export function readCanvasPlanFile(raw: string): CanvasPlanFileReadResult {
       ok: false,
       reason:
         typeof kind === 'string'
-          ? `这不是编排文件（kind = ${kind}）—— 本产品导出的编排文件 kind 应为 ${CANVAS_PLAN_FILE_KIND}`
-          : '这不是编排文件（文件里没有 kind 标识）—— 请选择本产品「⤓ 导出编排」导出的文件',
+          ? msg('canvas.file.reason.notPlanFileKind', {
+              kind,
+              expected: CANVAS_PLAN_FILE_KIND,
+            })
+          : msg('canvas.file.reason.notPlanFileNoKind'),
     };
   }
 
@@ -188,13 +219,16 @@ export function readCanvasPlanFile(raw: string): CanvasPlanFileReadResult {
   let version = CANVAS_PLAN_VERSION;
   if (typeof rawVersion !== 'number' || !Number.isInteger(rawVersion) || rawVersion < 1) {
     // 没有版本号：被手改过 / 早期格式。按 v1 试一遍，**并如实标注**
-    migrationNotes.push('文件里没有版本号，按 v1 处理');
+    migrationNotes.push(msg('canvas.file.note.noVersion'));
     version = 1;
   } else if (rawVersion > CANVAS_PLAN_VERSION) {
     return {
       ok: false,
       futureVersion: rawVersion,
-      reason: `这份编排文件来自更新的版本（v${rawVersion} > 本机 v${CANVAS_PLAN_VERSION}）：请升级本机版本后再打开`,
+      reason: msg('canvas.file.reason.newerVersion', {
+        fileVersion: rawVersion,
+        localVersion: CANVAS_PLAN_VERSION,
+      }),
     };
   } else {
     version = rawVersion;
@@ -205,7 +239,13 @@ export function readCanvasPlanFile(raw: string): CanvasPlanFileReadResult {
   // 例：if (version < 2) { draft['plan'] = …; migrationNotes.push('v1 → v2：…') }
   // 走到这里说明迁移链没把它带到当前版本（加版本时忘了补步）—— 明确报错而不是"装作成功"
   if (version !== CANVAS_PLAN_VERSION) {
-    return { ok: false, reason: `内部错误：迁移链没把 v${version} 带到 v${CANVAS_PLAN_VERSION}` };
+    return {
+      ok: false,
+      reason: msg('canvas.file.reason.migrationBroken', {
+        fromVersion: version,
+        toVersion: CANVAS_PLAN_VERSION,
+      }),
+    };
   }
 
   // ⑤ 内容：plan 必须过编排 schema
@@ -214,14 +254,24 @@ export function readCanvasPlanFile(raw: string): CanvasPlanFileReadResult {
     const first = planParsed.error.issues[0];
     return {
       ok: false,
-      reason: `编排内容不完整或格式不对${first === undefined ? '' : `：${first.path.join('.')} ${first.message}`}`,
+      reason:
+        first === undefined
+          ? msg('canvas.file.reason.invalidPlan')
+          : msg('canvas.file.reason.invalidPlanDetail', {
+              detail: `${first.path.join('.')} ${first.message}`,
+            }),
     };
   }
 
   // ⑥ 图结构
   const issues = planStructuralIssues(planParsed.data);
   if (issues.length > 0) {
-    return { ok: false, reason: `编排里的图不成立：${issues.join('；')}` };
+    return {
+      ok: false,
+      reason: msg('canvas.file.reason.badGraph', {
+        issues: issues.join(msg('canvas.file.issueSeparator')),
+      }),
+    };
   }
 
   const rawNotes = draft['notes'];

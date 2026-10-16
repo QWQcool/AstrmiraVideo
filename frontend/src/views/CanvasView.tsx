@@ -23,13 +23,10 @@ import type {
   TaskProgress,
 } from '@astrmira/shared';
 import { logActionLabel } from '../lib/format';
-import {
-  buildCanvasPlanFile,
-  canvasPlanFileText,
-  formatYuan,
-  parseTaskRef,
-  readCanvasPlanFile,
-} from '@astrmira/shared';
+// 语言迁移第十八批：编排文件的读/写/校验**搬来了前端**（它的消费者只有前端，
+// 而它每一句 reason 都是给人看的 —— 共享包没法持有界面文案）。
+import { buildCanvasPlanFile, canvasPlanFileText, readCanvasPlanFile } from '../lib/canvasPlanFile';
+import { formatYuan, parseTaskRef } from '@astrmira/shared';
 import {
   ApiError,
   fetchAssets,

@@ -672,6 +672,7 @@ if (leftPanelText !== undefined) {
     'lib/workerClient.ts',
     'lib/zipStore.ts',
     'lib/recipes.ts',
+    'lib/canvasPlanFile.ts',
     'edit/model.ts',
     'edit/clipProperties.ts',
     'edit/draft.ts',

@@ -79,12 +79,27 @@ export type WorkerHealth = z.infer<typeof WorkerHealthSchema>;
 export type WorkerJobRequest = z.infer<typeof WorkerJobRequestSchema>;
 export type WorkerJobStatus = z.infer<typeof WorkerJobStatusSchema>;
 
-export interface WorkerLinkCheck {
-  /** 非 null = **静态阻塞**（页面上就该拦住并给可执行指引，而不是让用户看一条没有解释的失败） */
-  blocked: string | null;
-  /** 提醒（不阻塞）：可能被 PNA 预检拦 —— 需要在 worker 侧应对 */
-  notice: string | null;
-}
+/**
+ * 链接自检的**语言无关**结果（语言迁移第十八批）。
+ *
+ * 它原先直接返回中文的 `blocked` / `notice` —— 但那是**给用户看的指引**
+ * （"把 worker 地址改成 http://127.0.0.1:8765"），而共享包是纯类型 / 数据层，
+ * **没法持有界面文案**（不能 import 前端字典）。
+ * 现在只回答"发生了什么" + 一个可插值的事实，**文案由前端拼**：
+ * `frontend/src/lib/workerClient.ts` 的 `workerLinkCheck()` 把它翻成
+ * `{ blocked, notice }` 字符串（保持原来的形状，调用点零改动）——
+ * 那正是本仓处理"跨包文案"的第三条路：**回 code，不回句子**。
+ *
+ * 三种结果的含义（与 D49 登记的两件真事对应）：
+ * - `badUrl`：地址根本不是合法 URL（拦下来，让用户改）；
+ * - `mixedContent`：HTTPS 页面连非回环 http 地址 —— 浏览器会按混合内容拦掉（拦下来）；
+ * - `pnaHint`：HTTPS + 回环地址，可能被 Chrome 的 Private Network Access 预检拦（**只提醒，不拦**）。
+ */
+export type WorkerLinkCheck =
+  | { kind: 'ok' }
+  | { kind: 'badUrl'; url: string }
+  | { kind: 'mixedContent'; origin: string }
+  | { kind: 'pnaHint' };
 
 function isLoopbackHost(hostname: string): boolean {
   return (
@@ -113,26 +128,16 @@ export function checkWorkerLink(input: { pageProtocol: string; workerUrl: string
   try {
     worker = new URL(input.workerUrl);
   } catch {
-    return { blocked: `worker 地址不是合法 URL：${input.workerUrl}`, notice: null };
+    return { kind: 'badUrl', url: input.workerUrl };
   }
 
   if (pageIsHttps && !isLoopbackHost(worker.hostname)) {
-    return {
-      blocked:
-        `当前页面是 HTTPS，而 worker 地址（${worker.origin}）不是回环地址 —— 浏览器会按混合内容把它拦掉。` +
-        '把 worker 地址改成 http://127.0.0.1:8765（回环地址是潜在可信来源，不会被拦）。',
-      notice: null,
-    };
+    return { kind: 'mixedContent', origin: worker.origin };
   }
 
   if (pageIsHttps && isLoopbackHost(worker.hostname)) {
-    return {
-      blocked: null,
-      notice:
-        '若浏览器提示"本地网络访问被拦"：这是 Chrome 的 Private Network Access 预检 —— ' +
-        'worker 需要在响应里带上 Access-Control-Allow-Private-Network: true。',
-    };
+    return { kind: 'pnaHint' };
   }
 
-  return { blocked: null, notice: null };
+  return { kind: 'ok' };
 }
