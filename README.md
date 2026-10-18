@@ -139,6 +139,7 @@ AstrmiraVideo/
 | [README.en.md](README.en.md) | 入口与导航（**英文**） | 上述内容的英文版；**口径以中文文档为准**（英文版是给非中文读者的入口） |
 | **[NOTICE](NOTICE)** | **第三方许可说明** | 直接依赖的许可证清单、**Remotion 的 source-available 边界（B 端交付前必看）**、外部工具（ffmpeg / ComfyUI）与服务条款边界 |
 | [docs/PLAN.md](docs/PLAN.md) | 产品与开发规划 | 架构、功能清单、**七道防线**、**Step+AC**、**进度日志（§5，唯一权威）**、决策记录、安全合规、成本风险、**台账 §9** |
+| [docs/CREATION-EXPERIENCE-DESIGN.md](docs/CREATION-EXPERIENCE-DESIGN.md) | 创作体验设计基准 | 新版交互规则、视觉图、可点击稿、模型未配置状态、即梦观察证据；实施与进度仍见 PLAN |
 | [docs/CONTRACT.md](docs/CONTRACT.md) | 接口唯一权威 | TS 类型、**路由表**、错误码字典、存储与资产生命周期、备份与恢复契约 |
 | [docs/GUIDE.md](docs/GUIDE.md) | 上手指南与运维手册 | Tier 0~3 算力矩阵、双轨引擎接入、四种工作流、FAQ、**运维巡检与备份恢复 SOP** |
 | [docs/FRONTEND-REVIEW.md](docs/FRONTEND-REVIEW.md) | **前端框架与适配性复盘** | 技术选型逐层点名、"要不要换框架"的判据、移动端适配体检（含复现命令） |
