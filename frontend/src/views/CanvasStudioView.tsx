@@ -10,15 +10,17 @@ import {
   Background,
   Controls,
   MiniMap,
+  MarkerType,
   ReactFlow,
   useNodesState,
+  type Connection,
   type Edge,
   type Node as RFNode,
   type NodeTypes,
   type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { createEmptyCanvasDoc, type CanvasDocNode, type CanvasDoc, type CanvasNodeType, type CanvasProjectIndex, type TaskProgress } from '@astrmira/shared';
+import { createEmptyCanvasDoc, type CanvasDocNode, type CanvasDoc, type CanvasNodeType, type CanvasProjectIndex, type CanvasReferenceRole, type TaskProgress } from '@astrmira/shared';
 import type { AssetListEntry } from '@astrmira/shared';
 import {
   ApiError,
@@ -70,7 +72,13 @@ import {
 } from '../lib/canvasNodeSubmit';
 import { resolveProviderKey } from '../lib/byok';
 import { newIdempotencyKey } from '../lib/idempotency';
-import { useTranslate } from '../lib/i18n';
+import {
+  addCanvasLineageEdge,
+  planCanvasLineage,
+  removeCanvasLineageEdge,
+  type CanvasLineageProblem,
+} from '../lib/canvasLineage';
+import { useTranslate, type MessageKey } from '../lib/i18n';
 import { useShell } from '../lib/shell';
 import {
   defaultCanvasName,
@@ -104,8 +112,28 @@ const NODE_TYPES: NodeTypes = { studio: StudioNode };
 
 const ADDABLE: readonly CanvasNodeType[] = ['text', 'image', 'video', 'audio'];
 
-/** 稳定的空边数组（B4 会把来源边接进来；先固定类型，避免 `edges={[]}` 被推断成 never[]） */
+/** 稳定的空边数组（避免 `edges={[]}` 被推断成 never[]） */
 const NO_EDGES: Edge[] = [];
+
+const ROLE_KEYS: Record<CanvasReferenceRole, MessageKey> = {
+  'first-frame': 'canvas.studio.role.firstFrame',
+  'last-frame': 'canvas.studio.role.lastFrame',
+  'reference-image': 'canvas.studio.role.referenceImage',
+  'reference-video': 'canvas.studio.role.referenceVideo',
+  'reference-audio': 'canvas.studio.role.referenceAudio',
+};
+
+const LINEAGE_PROBLEM_KEYS: Record<CanvasLineageProblem, MessageKey> = {
+  'node-missing': 'canvas.studio.lineage.nodeMissing',
+  self: 'canvas.studio.lineage.self',
+  duplicate: 'canvas.studio.lineage.duplicate',
+  cycle: 'canvas.studio.lineage.cycle',
+  'source-no-output': 'canvas.studio.lineage.sourceNoOutput',
+  'source-audio': 'canvas.studio.lineage.sourceAudio',
+  'source-not-media': 'canvas.studio.lineage.sourceNotMedia',
+  'target-not-video': 'canvas.studio.lineage.targetNotVideo',
+  'role-taken': 'canvas.studio.lineage.roleTaken',
+};
 
 function toRfNode(node: CanvasDocNode, selected: boolean): StudioRfNode {
   return {
@@ -147,6 +175,7 @@ export function CanvasStudioView() {
     y: number;
     flow: { x: number; y: number };
     nodeId: string | null;
+    edgeId: string | null;
   } | null>(null);
   const [clipboardCount, setClipboardCount] = useState(0);
   const [historyRev, setHistoryRev] = useState(0);
@@ -763,6 +792,37 @@ export function CanvasStudioView() {
     [applyDoc],
   );
 
+  /** 连接柄拖拽 → 来源边（规则见 CONTRACT §21-11；不合法时只提示，不建边） */
+  const handleConnect = useCallback(
+    (connection: Connection): void => {
+      const current = docRef.current;
+      const from = connection.source;
+      const to = connection.target;
+      if (current === null || from === null || to === null) return;
+      const plan = planCanvasLineage(current, from, to);
+      if (!plan.ok) {
+        setNotice(t(LINEAGE_PROBLEM_KEYS[plan.problem]));
+        return;
+      }
+      const edgeId = `edge-${newCanvasProjectId()}`;
+      setNotice(null);
+      applyDoc((d) => addCanvasLineageEdge(d, from, to, edgeId).doc);
+    },
+    [applyDoc, t],
+  );
+
+  const deleteEdge = useCallback(
+    (edgeId: string): void => {
+      applyDoc((d) => removeCanvasLineageEdge(d, edgeId));
+    },
+    [applyDoc],
+  );
+
+  const isValidConnection = useCallback(
+    (connection: Connection | Edge): boolean => connection.source !== connection.target,
+    [],
+  );
+
   const openMenu = useCallback(
     (event: ReactMouseEvent | MouseEvent, nodeId: string | null): void => {
       event.preventDefault();
@@ -776,10 +836,24 @@ export function CanvasStudioView() {
           y: event.clientY,
         }) ?? { x: 0, y: 0 },
         nodeId,
+        edgeId: null,
       });
     },
     [],
   );
+
+  const openEdgeMenu = useCallback((event: ReactMouseEvent, edge: Edge): void => {
+    event.preventDefault();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (rect === undefined) return;
+    setMenu({
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+      flow: { x: 0, y: 0 },
+      nodeId: null,
+      edgeId: edge.id,
+    });
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -909,48 +983,75 @@ export function CanvasStudioView() {
   // historyRev 只负责让上面两行在栈变化后重新求值
   void historyRev;
 
+  const edgeSource = doc?.edges ?? null;
+  const rfEdges = useMemo<Edge[]>(() => {
+    if (edgeSource === null) return NO_EDGES;
+    return edgeSource.map((edge) => ({
+      id: edge.id,
+      source: edge.from,
+      target: edge.to,
+      type: 'smoothstep',
+      animated: edge.kind === 'dependency',
+      className: `cs-edge cs-edge--${edge.kind}`,
+      ...(edge.role === undefined ? {} : { label: t(ROLE_KEYS[edge.role]) }),
+      markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+    }));
+  }, [edgeSource, t]);
+
   const menuItems: CanvasMenuItem[] =
     menu === null
       ? []
-      : menu.nodeId === null
+      : menu.edgeId !== null
         ? [
-            ...ADDABLE.map((type) => ({
-              id: `new-${type}`,
-              label: t('canvas.studio.newNode', { type: labels[type] }),
-              onSelect: () => addNode(type, menu.flow),
-            })),
-            'separator',
             {
-              id: 'paste',
-              label: t('canvas.studio.paste'),
-              disabled: clipboardCount === 0,
-              onSelect: () => pasteAt(menu.flow),
+              id: 'delete-edge',
+              label: t('canvas.studio.deleteEdge'),
+              danger: true,
+              onSelect: () => deleteEdge(menu.edgeId as string),
             },
             'separator',
             { id: 'undo', label: t('canvas.studio.undo'), disabled: !canUndo, onSelect: undo },
             { id: 'redo', label: t('canvas.studio.redo'), disabled: !canRedo, onSelect: redo },
           ]
-        : [
-            {
-              id: 'copy',
-              label: t('canvas.studio.copy'),
-              onSelect: () => copyNodes([menu.nodeId as string]),
-            },
-            {
-              id: 'duplicate',
-              label: t('canvas.studio.duplicate'),
-              onSelect: () => duplicateNodes([menu.nodeId as string]),
-            },
-            {
-              id: 'delete',
-              label: t('canvas.studio.deleteNode'),
-              danger: true,
-              onSelect: () => deleteNodes([menu.nodeId as string]),
-            },
-            'separator',
-            { id: 'undo', label: t('canvas.studio.undo'), disabled: !canUndo, onSelect: undo },
-            { id: 'redo', label: t('canvas.studio.redo'), disabled: !canRedo, onSelect: redo },
-          ];
+        : menu.nodeId === null
+          ? [
+              ...ADDABLE.map((type) => ({
+                id: `new-${type}`,
+                label: t('canvas.studio.newNode', { type: labels[type] }),
+                onSelect: () => addNode(type, menu.flow),
+              })),
+              'separator',
+              {
+                id: 'paste',
+                label: t('canvas.studio.paste'),
+                disabled: clipboardCount === 0,
+                onSelect: () => pasteAt(menu.flow),
+              },
+              'separator',
+              { id: 'undo', label: t('canvas.studio.undo'), disabled: !canUndo, onSelect: undo },
+              { id: 'redo', label: t('canvas.studio.redo'), disabled: !canRedo, onSelect: redo },
+            ]
+          : [
+              {
+                id: 'copy',
+                label: t('canvas.studio.copy'),
+                onSelect: () => copyNodes([menu.nodeId as string]),
+              },
+              {
+                id: 'duplicate',
+                label: t('canvas.studio.duplicate'),
+                onSelect: () => duplicateNodes([menu.nodeId as string]),
+              },
+              {
+                id: 'delete',
+                label: t('canvas.studio.deleteNode'),
+                danger: true,
+                onSelect: () => deleteNodes([menu.nodeId as string]),
+              },
+              'separator',
+              { id: 'undo', label: t('canvas.studio.undo'), disabled: !canUndo, onSelect: undo },
+              { id: 'redo', label: t('canvas.studio.redo'), disabled: !canRedo, onSelect: redo },
+            ];
 
   return (
     <section className="wb-page cs-page">
@@ -1097,12 +1198,15 @@ export function CanvasStudioView() {
             <div className="cs-canvas" ref={canvasRef}>
               <ReactFlow
                 nodes={nodes}
-                edges={NO_EDGES}
+                edges={rfEdges}
                 nodeTypes={NODE_TYPES}
                 onNodesChange={onNodesChange}
                 onNodeDragStop={handleDragStop}
+                onConnect={handleConnect}
+                isValidConnection={isValidConnection}
                 onSelectionChange={handleSelectionChange}
                 onNodeContextMenu={(event, node) => openMenu(event, node.id)}
+                onEdgeContextMenu={openEdgeMenu}
                 onPaneContextMenu={(event) => openMenu(event, null)}
                 onPaneClick={() => setMenu(null)}
                 deleteKeyCode={null}

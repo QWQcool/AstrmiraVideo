@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
 import type { MessageKey } from '../lib/i18n';
-import { CanvasView } from './CanvasView';
 import { CanvasStudioView } from './CanvasStudioView';
+import { LegacyLineageView } from './LegacyLineageView';
 import { CostsView } from './CostsView';
 import { CreateView } from './CreateView';
 import { EditView } from './EditView';
@@ -67,10 +67,11 @@ export const VIEW_REGISTRY: readonly ViewDef[] = [
   { path: '#/workbench', titleKey: 'shell.nav.workbench', eyebrow: 'Workbench', icon: 'wand', component: WorkbenchView, hidden: true, preferRail: true },
   { path: '#/overview', titleKey: 'shell.nav.overview', eyebrow: 'Overview', icon: 'grid', component: OverviewView },
   { path: '#/library', titleKey: 'shell.nav.library', eyebrow: 'Library', icon: 'film', component: LibraryView },
-  // S3-B2：`#/canvas` 换成创作画布（多画布文档 + 媒体节点）；旧只读血缘图暂留 `#/lineage`，
-  // 等 B4 把来源边（lineage）做进新画布后下线。
+  // S3-B2：`#/canvas` 换成创作画布（多画布文档 + 媒体节点）。
+  // S3-B4：来源边已做进新画布 → 旧只读血缘图**下线**；`#/lineage` 只留一个可读的说明页
+  // （旧书签不会掉进"未知视图"），代码保留一个版本周期后再清理。
   { path: '#/canvas', titleKey: 'shell.nav.canvas', eyebrow: 'Canvas', icon: 'graph', component: CanvasStudioView },
-  { path: '#/lineage', titleKey: 'shell.nav.canvas', eyebrow: 'Lineage', icon: 'graph', component: CanvasView, hidden: true },
+  { path: '#/lineage', titleKey: 'shell.nav.canvas', eyebrow: 'Lineage', icon: 'graph', component: LegacyLineageView, hidden: true },
   // V2.12（台账 B48）：成本台账 —— D62（2026-10-19）**下线**：不做支付/积分，成本只保留"估算"，
   // 入口从侧栏移除；路由保留一个版本周期（旧链接不直接 404）。
   { path: '#/costs', titleKey: 'shell.nav.costs', eyebrow: 'Cost Ledger', icon: 'coins', component: CostsView, hidden: true },

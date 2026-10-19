@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { NodeToolbar, Position, useViewport, type NodeProps } from '@xyflow/react';
+import { Handle, NodeToolbar, Position, useViewport, type NodeProps } from '@xyflow/react';
 import { formatYuan, type CanvasNodeBatch, type CanvasNodeType, type TaskProgress } from '@astrmira/shared';
 
 import { resolveMediaUrl } from '../../lib/api';
@@ -139,13 +139,17 @@ export function StudioNode({ id, selected }: NodeProps) {
 
   const mediaUrl = preview === null ? null : resolveMediaUrl(preview.output.url);
   const previewKind = preview?.output.kind ?? null;
+  // 默认标题就是「视频 1 / 图片 1」：再在前面加一个类型标签会显示成「视频 视频 1」
+  const title = node.data.title;
+  const showType = title === undefined || !title.startsWith(labels[node.type]);
 
   return (
-    <div ref={cardRef} className={`cs-card cs-card--${node.type}${selected ? ' is-selected' : ''}`}>
-      <header className="cs-card-head">
-        <span className="cs-card-type">{labels[node.type]}</span>
+    <div ref={cardRef} className="cs-node-shell">
+      <div className={`cs-card cs-card--${node.type}${selected ? ' is-selected' : ''}`}>
+        <header className="cs-card-head">
+        {showType ? <span className="cs-card-type">{labels[node.type]}</span> : null}
         <span className="cs-card-title" title={node.data.title}>
-          {node.data.title ?? ''}
+          {title ?? ''}
         </span>
         {latest === null ? null : (
           <span className="cs-card-status" data-state={latest.status}>
@@ -327,6 +331,15 @@ export function StudioNode({ id, selected }: NodeProps) {
           )}
           </div>
         </StudioToolbar>
+      ) : null}
+      </div>
+
+      {/* 连接柄：只有能当上游（图片/视频）的节点有右侧出口；只有视频节点能接收参考（左侧入口） */}
+      {node.type === 'image' || node.type === 'video' ? (
+        <Handle type="source" position={Position.Right} className="cs-handle" />
+      ) : null}
+      {node.type === 'video' ? (
+        <Handle type="target" position={Position.Left} className="cs-handle" />
       ) : null}
     </div>
   );

@@ -882,7 +882,36 @@
   padding: 0 8px;
 }
 
-/* ── 节点卡（S3-B3）：媒体预览 + 批次状态 ───────────────────────────── */
+/* ── 节点卡（S3-B3/B4）：媒体预览 + 批次状态 + 连接柄 ───────────────── */
+.cs-node-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.cs-handle {
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--line-gold);
+  background: var(--panel2);
+}
+
+.cs-handle:hover {
+  background: var(--gold);
+}
+
+/* 来源边（S3-B4）：默认实线、依赖边虚线；颜色走主题变量 */
+.cs-canvas {
+  --xy-edge-stroke-default: var(--text-dim);
+  --xy-edge-stroke-selected-default: var(--gold);
+  --xy-edge-label-color-default: var(--text-dim);
+  --xy-edge-label-background-color-default: var(--panel);
+}
+
+.cs-canvas .react-flow__edge-text {
+  font-size: var(--fs-micro);
+}
+
 .cs-card {
   display: flex;
   flex-direction: column;
