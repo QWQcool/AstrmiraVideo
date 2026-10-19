@@ -119,6 +119,22 @@ describe('画布文档路由', () => {
     expect(read.statusCode).toBe(404);
   });
 
+  it('删除：文档与索引一起消失；再删同一项 → 404', async () => {
+    const { app } = await harness();
+    await app.inject({ method: 'PUT', url: '/api/canvas/docs/proj-1', payload: docFixture() });
+
+    const first = await app.inject({ method: 'DELETE', url: '/api/canvas/docs/proj-1' });
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toEqual({ deleted: true, projectId: 'proj-1' });
+
+    expect((await app.inject({ method: 'GET', url: '/api/canvas/docs/proj-1' })).statusCode).toBe(404);
+    const index = (await app.inject({ method: 'GET', url: '/api/canvas/projects' })).json();
+    expect(index.projects).toEqual([]);
+
+    const second = await app.inject({ method: 'DELETE', url: '/api/canvas/docs/proj-1' });
+    expect(second.statusCode).toBe(404);
+  });
+
   it('重复保存只更新同一条索引（不会堆出重复项目）', async () => {
     const { app } = await harness();
     await app.inject({ method: 'PUT', url: '/api/canvas/docs/proj-1', payload: docFixture() });

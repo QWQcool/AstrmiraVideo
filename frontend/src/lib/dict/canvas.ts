@@ -30,6 +30,16 @@
  */
 
 export const CANVAS_ZH = {
+  'canvas.studio.new': '新建画布',
+  'canvas.studio.delete': '删除画布',
+  'canvas.studio.empty': '还没有画布',
+  'canvas.studio.emptyHint': '新建一个画布，从左侧添加节点开始',
+  'canvas.studio.saved': '已保存',
+  'canvas.studio.saving': '保存中…',
+  'canvas.studio.saveFailed': '保存失败',
+  'canvas.studio.counts': '{nodes} 个节点 · {edges} 条连线',
+  'canvas.studio.add': '添加节点',
+  'canvas.node.text': '文本',
   // ── 便签（`canvas/NoteCard.tsx`）──
   'canvas.note.deleteAria': '删除便签',
   'canvas.note.placeholder': '写点什么：这是哪条链 / 为什么这么做 / 待办…',
@@ -333,6 +343,16 @@ export const CANVAS_ZH = {
 };
 
 export const CANVAS_EN = {
+  'canvas.studio.new': 'New canvas',
+  'canvas.studio.delete': 'Delete canvas',
+  'canvas.studio.empty': 'No canvas yet',
+  'canvas.studio.emptyHint': 'Create one, then add nodes from the left rail',
+  'canvas.studio.saved': 'Saved',
+  'canvas.studio.saving': 'Saving…',
+  'canvas.studio.saveFailed': 'Save failed',
+  'canvas.studio.counts': '{nodes} nodes · {edges} edges',
+  'canvas.studio.add': 'Add node',
+  'canvas.node.text': 'Text',
   'canvas.note.deleteAria': 'Delete note',
   'canvas.note.placeholder': 'Write something: which chain is this / why this way / to-do…',
   'canvas.note.editTitle': 'Click to edit',

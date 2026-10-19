@@ -741,3 +741,141 @@
   font-family: var(--mono);
   font-size: var(--fs-note);
 }
+
+/* ── 创作画布骨架（S3-B2） ─────────────────────────────────────────
+   顶栏（项目/标题/计数/保存态）+ 左侧加节点 + React Flow 画布。
+   类名统一 cs- 前缀（canvas.css 里此前没有该前缀，避免再次撞名）。 */
+.cs-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px 20px;
+  min-height: 100%;
+}
+
+.cs-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cs-top-left,
+.cs-top-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cs-select,
+.cs-title {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-note);
+}
+
+.cs-title {
+  min-width: 160px;
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.cs-title:hover,
+.cs-title:focus {
+  border-color: var(--line);
+}
+
+.cs-counts,
+.cs-save {
+  font-size: var(--fs-note);
+  color: var(--text-dim);
+}
+
+.cs-save[data-state='saving'] {
+  color: var(--gold);
+}
+
+.cs-save[data-state='error'] {
+  color: var(--danger, #c0392b);
+}
+
+.cs-error {
+  margin: 0;
+  color: var(--danger, #c0392b);
+}
+
+.cs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 360px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+
+.cs-empty-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.cs-workspace {
+  display: flex;
+  gap: 10px;
+  flex: 1;
+  min-height: 520px;
+}
+
+.cs-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 72px;
+  flex: none;
+}
+
+.cs-rail-btn {
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-note);
+  cursor: pointer;
+}
+
+.cs-rail-btn:hover {
+  color: var(--text);
+  border-color: var(--line-gold);
+}
+
+.cs-canvas {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.react-flow__node.cs-node {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  /* 用主题变量（浅色/深色各一套）；不写死深色兜底 —— 上一版就是因此浅色下文字看不见 */
+  background: var(--panel2);
+  color: var(--text);
+  font-size: var(--fs-note);
+  min-width: 120px;
+}
+
+.react-flow__node.cs-node--image {
+  border-color: var(--line-gold);
+}

@@ -4,6 +4,7 @@ import {
   CanvasDocSaveResponseSchema,
   CanvasDocSchema,
   CanvasProjectIndexSchema,
+  DeleteProjectResponseSchema,
   ErrorResponseSchema,
   ProjectIdSchema,
 } from '@astrmira/shared';
@@ -55,6 +56,25 @@ export const createCanvasRoutes =
             .send(createErrorResponse('PROJECT_NOT_FOUND', '这个画布还没有保存过（或已被删除）'));
         }
         return doc;
+      },
+    );
+
+    app.delete(
+      '/api/canvas/docs/:projectId',
+      {
+        schema: {
+          params: CanvasParamsSchema,
+          response: { 200: DeleteProjectResponseSchema, 404: ErrorResponseSchema },
+        },
+      },
+      async (request, reply) => {
+        const removed = store.deleteDoc(request.params.projectId);
+        if (!removed) {
+          return reply
+            .code(404)
+            .send(createErrorResponse('PROJECT_NOT_FOUND', '这个画布不存在（或已经被删除）'));
+        }
+        return { deleted: true, projectId: request.params.projectId };
       },
     );
 

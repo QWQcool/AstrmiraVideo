@@ -442,6 +442,15 @@ export function saveCanvasDoc(doc: CanvasDoc): Promise<CanvasDocSaveResponse> {
   });
 }
 
+/** 删除一个画布（文档 + 索引条目） */
+export function deleteCanvasDoc(projectId: string): Promise<DeleteProjectResponse> {
+  return request(
+    `/api/canvas/docs/${encodeURIComponent(projectId)}`,
+    DeleteProjectResponseSchema,
+    { method: 'DELETE' },
+  );
+}
+
 export function deleteHistory(taskId: string): Promise<OperationResult> {
   return request(`/api/history/${encodeURIComponent(taskId)}`, OperationResultSchema, {
     method: 'DELETE',

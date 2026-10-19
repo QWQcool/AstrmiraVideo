@@ -1,6 +1,10 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.43 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.44 · 已冻结（变更需先改本文，再改代码）**
+> **V2.44 修订（2026-10-19）**：**画布删除路由（§5 / §21-8）** —— `DELETE /api/canvas/docs/:projectId`
+>   （文档 + 索引条目一起删）。**200 → `{ deleted: true, projectId }`**；不存在 → **404 `PROJECT_NOT_FOUND`**；
+>   复用既有响应形状与错误码，**无新码**。用途：S3-B2 的"删除画布"。
+
 > **V2.43 修订（2026-10-19）**：**任务来源 `origin` 与生成历史过滤（§1 / §5）** ——
 >   ① `VideoGenerateRequest` 新增**可选** `origin: 'create' | 'canvas'` 与 `canvasProjectId?`（缺省 = `create`，老客户端行为不变）；
 >   ② `GET /api/history` 新增可选 `?origin=`，**缺省与 `create` 都排除画布产物**，`canvas` 时只看画布产物；
@@ -740,6 +744,7 @@ export interface AssetListResponse {
 | `GET` | `/api/canvas/projects` | **V2.42 新增（§21-8）**：画布项目索引。**200 → `CanvasProjectIndex`**（`{ version, projects[], activeProjectId? }`）。只读摘要，不含文档本体；索引文件损坏时**返回空索引**而不是 5xx |
 | `GET` | `/api/canvas/docs/:projectId` | **V2.42 新增**：整份画布文档。**200 → `CanvasDoc`**；未保存过 / 已删除 → **404 `PROJECT_NOT_FOUND`**（**不**返回空文档 —— "新建"与"打错 id"必须能区分） |
 | `PUT` | `/api/canvas/docs/:projectId` | **V2.42 新增**：保存画布文档（body = `CanvasDoc`，整份覆盖）。**200 → `{ ok: true, summary: CanvasProjectRef }`**；体里的 `projectId` 与路径不一致 → **400 `INVALID_REQUEST`**（否则会覆盖另一个画布）；`version` / 节点类型不认识 → **400**（schema 拒绝，不落盘） |
+| `DELETE` | `/api/canvas/docs/:projectId` | **V2.44 新增**：删除画布（文档 + 索引条目一起删）。**200 → `{ deleted: true, projectId }`**；不存在 → **404 `PROJECT_NOT_FOUND`**。只删文档与索引，**不删产物资产**（资产由 §7 的生命周期管理） |
 | `GET` | `/api/webhooks` | **V2.15 新增（台账 B51 片 A）**：**Webhook 订阅清单**（只读）。`?project=` —— **省略 = 默认项目**（与全站同口径）；项目不存在 → **404 `PROJECT_NOT_FOUND`**。**200 → `{ webhooks: WebhookView[] }`** —— **永远不含明文 secret**（只有 `secretMasked`，形如 `whsec_01…cdef`）。用途：客户系统自检"我的订阅还在不在" |
 | `POST` | `/api/webhooks` | **V2.15 新增**：新建订阅（body `{ projectId?, url, secret?, events? }`）。**201 → `{ webhook: WebhookView, secret }`** —— ⚠️ **明文 `secret` 只在这唯一一次响应里出现**（之后任何接口都只有掩码），客户必须自己存好；省略 `secret` 由服务端生成（推荐，手填弱 secret 是这条链路上最容易出的安全问题）；`events` 省略 = `['task.terminal']`。**URL 过 SSRF 准入**（只允许 http/https、不许带用户名密码、**默认拒绝环回 / 私网 / 链路本地 / 云元数据**，理由见 §15）→ 不通过 **400 `INVALID_REQUEST`**（文案含"部署者设 `WEBHOOK_ALLOW_PRIVATE=1` 可放行"）；项目不存在 → **404 `PROJECT_NOT_FOUND`** |
 | `PATCH` | `/api/webhooks/:webhookId` | **V2.15 新增**：改地址 / 启停（body `{ url?, enabled? }`，至少给一项）。**200 → `{ webhook: WebhookView }`**（同样**不回显**明文 secret）；订阅不存在 → **404 `WEBHOOK_NOT_FOUND`**；新 URL 不过 SSRF 准入 → **400 `INVALID_REQUEST`** |
@@ -2257,7 +2262,8 @@ interface CanvasProjectIndex {
   索引文件损坏 → `GET /api/canvas/projects` 返回空索引，不让整个列表打不开。
 - **文件名与文档一致**：文件名转义后的 `projectId` 必须等于文档里的 `projectId`，否则视为读不到
   （防止复制文件导致项目串号）。
-- **路由**：见 §5 的三条 `GET/PUT /api/canvas/*`；整份读写，不做字段级 PATCH。
+- **路由**：见 §5 的四条 `GET / PUT / DELETE /api/canvas/*`；整份读写，不做字段级 PATCH。
+- **删除只删文档与索引**：画布产物是资产，按 §7 的生命周期处理，不随画布删除而消失。
 - 本版本**不改既有存储键**：旧的 `astrmira.canvasPlan.<projectId>` 不读、不写、不迁移（D63）。
 
 ### 21-9 模型能力目录 `ModelCapability`（V2.41 新增；台账 B76）
