@@ -405,3 +405,67 @@
     align-items: stretch;
   }
 }
+
+/* ── 创作类型切换（S2；设计基准 §7.2） ─────────────────────────────
+   两态分段控件：一眼看全，且不把"还有图片这回事"藏进下拉。
+   图片态在 S4 接入前带"待接入"角标 —— 不假装可用。 */
+.cr-types {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cr-types-label {
+  font-size: var(--fs-note);
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+}
+
+.cr-types-seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-sunken, transparent);
+}
+
+.cr-types-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background 0.15s var(--ease-ui), color 0.15s var(--ease-ui);
+}
+
+.cr-types-btn:hover {
+  color: var(--text);
+}
+
+.cr-types-btn[aria-pressed='true'] {
+  background: var(--gold-wash, var(--panel-raised));
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-gold);
+}
+
+.cr-types-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.cr-types-badge {
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--text-faint, var(--text-dim));
+}

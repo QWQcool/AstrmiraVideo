@@ -1644,6 +1644,15 @@
 
 ## 5. 进度日志（唯一进度权威，其他文档只准链接本节）
 
+### 2026-10-19 · S2 片 B：创作类型条接入 `#/create`
+
+- **【已完成】界面**：`components/CreationTypeBar.tsx`（视频 / 图片 两态分段控件；图片带"待接入"角标），接在创作面板顶部。
+- **【已完成】草稿接线**：`hooks/useCreationDraft.ts` 首次读草稿 → 初始化类型/提示词/画幅/时长；变更后写回 `astrmira.creationDraft`。刷新验证：切到图片 + 输入提示词 → 重载后仍是图片态且提示词还在。
+- **【已完成】图片态如实禁用**：S4 之前不接图片模型，提交按钮禁用 + 就地说明"图像模型待配置…当前不会提交任务"；视频态链路**未改动**。
+- **【修掉一个自测发现的缺陷】**：初版 CreateView 又存了一份本地 `kind`，与 hook 内部草稿的 `kind` 分叉，落盘出现 `kind=video` 但 `settings.mode=t2i` 的脏草稿。改为**单一数据源**（只认 hook 的 kind），并在代码注释里钉住原因。
+- **【已知边界】**：素材（chips）不进草稿 —— 跨会话恢复需要按 `assetId` 重新解析并过滤已删除资产，留到 S3 与画布文档一起做。
+- **【验证】** `pnpm type` 通过、`pnpm lint` 0/0、前端 **450 passed**、`pnpm --filter frontend build` 成功；用生产构建（`vite preview`）实机走了一遍：类型切换、图片态禁用与文案、刷新恢复、切回视频保留提示词。
+
 ### 2026-10-19 · S2 片 A：创作草稿规则 + 导航收口
 
 - **【已完成】草稿规则** `frontend/src/lib/creationDraft.ts`：`CreationKind = agent | image | video`；`CREATION_KIND_CONTROLS` 决定每种类型显示哪些控件（Agent 一项都没有）；`switchCreationKind` **只改类型、不删提示词/素材/被隐藏的参数**；`settingsForKind` 提交时只带当前类型的字段（图片固定 `t2i`、视频沿用草稿或 `t2v`）；`creationIssue` 返回 `empty-prompt` 或能力目录的**第一个**问题码；草稿读写**坏数据一律回落默认值**（不为草稿弹错误）。

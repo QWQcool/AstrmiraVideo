@@ -47,6 +47,8 @@ import { appendSkeleton } from '../lib/recipeInsert';
 import { navigate } from '../lib/router';
 import { useShell } from '../lib/shell';
 import { useTaskPolling } from '../hooks/useTaskPolling';
+import { useCreationDraft } from '../hooks/useCreationDraft';
+import { CreationTypeBar, type ComposerKind } from '../components/CreationTypeBar';
 
 /**
  * 创作入口 `#/create`（Step 8 · P3 / 台账 B41；决策 = PLAN §6-D39）。
@@ -152,7 +154,18 @@ export function CreateView() {
   const t = useTranslate();
 
   // ── 意图与素材 ──
-  const [prompt, setPrompt] = useState('');
+  // S2（设计基准 §7.2）：创作类型驱动输入区。草稿在刷新后接上（类型 + 提示词 + 参数）；
+  // 素材不进草稿（chip 带临时预览 URL，跨会话恢复要按 assetId 重新解析，见 useCreationDraft）。
+  const {
+    kind: draftKind,
+    setKind,
+    initial: draftInitial,
+    persist: persistDraft,
+  } = useCreationDraft('video');
+  // 类型只有**一个**数据源（hook 里的草稿）：本地再存一份会让"落盘的 kind"与"界面显示的 kind"分叉
+  // —— S2 自测时确实出现过 kind=video 但 settings.mode=t2i 的脏草稿。
+  const kind: ComposerKind = draftKind === 'image' ? 'image' : 'video';
+  const [prompt, setPrompt] = useState(draftInitial.prompt);
   const [refs, setRefs] = useState<MentionRef[]>([]);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
@@ -170,13 +183,30 @@ export function CreateView() {
 
   // ── 更多设置（默认收起；D39："控件分层"而不是删控件）──
   const [moreOpen, setMoreOpen] = useState(false);
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
-  const [durationSec, setDurationSec] = useState<number>(DEFAULT_DURATION_SEC);
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>(
+    draftInitial.settings.aspectRatio ?? '16:9',
+  );
+  const [durationSec, setDurationSec] = useState<number>(
+    draftInitial.settings.durationSec ?? DEFAULT_DURATION_SEC,
+  );
   const [resolutionTier, setResolutionTier] = useState<ResolutionTier>(DEFAULT_RESOLUTION_TIER);
   const [provider, setProvider] = useState<ProviderType>(CLOUD_PROVIDER);
   const [seed, setSeed] = useState('');
   /** V2.36：本地 ComfyUI 可能是**多台**（§19-1）—— 名单来自 `/status`，前端不维护第二份 */
   const comfyEngines = comfyUiEngineOptions(providerStatus);
+
+  // 草稿落盘：提示词 / 类型 / 参数（素材不进草稿，理由见 useCreationDraft）。
+  useEffect(() => {
+    persistDraft({
+      prompt,
+      settings: {
+        aspectRatio,
+        durationSec,
+        resolution: resolveTargetSize(aspectRatio, resolutionTier),
+        ...(kind === 'image' ? { mode: 't2i' as const } : {}),
+      },
+    });
+  }, [persistDraft, prompt, aspectRatio, durationSec, resolutionTier, kind]);
 
   // ── 提交与内联任务卡 ──
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -233,7 +263,8 @@ export function CreateView() {
     providerStatus !== null &&
     !providerStatus.cloud.available;
 
-  const submitDisabled = submitting || prompt.trim() === '' || pending || needsKey;
+  // S2：图片态在 S4 接入模型前**不可提交**（如实禁用，而不是让用户填完才发现）
+  const submitDisabled = submitting || prompt.trim() === '' || pending || needsKey || kind === 'image';
 
   /**
    * V2.12（台账 B48）：**提交前预估**（用户点"生成"之前就该看到要花多少钱 —— 这是 D44 改口的落点）。
@@ -348,6 +379,8 @@ export function CreateView() {
 
   // ── 提交 ──
   const handleSubmit = async (): Promise<void> => {
+    // `submitDisabled` 已包含"图片态不可提交"（S4 才接图片链路）：这里不再重复判断，
+    // 否则 TS 5.5 的别名收窄会把 kind 断定成 'video'，让后面的守卫变成死代码。
     if (submitDisabled) return;
     setSubmitting(true);
     setSubmitError(null);
@@ -435,6 +468,12 @@ export function CreateView() {
         </header>
 
         <div className="cr-panel">
+          <CreationTypeBar
+            kind={kind}
+            onChange={setKind}
+            // S4 之前不假装可用：角标显示"待接入"，提交按钮同时禁用
+            imageReady={false}
+          />
           <textarea
             className="cr-input"
             rows={3}
@@ -746,17 +785,22 @@ export function CreateView() {
           </div>
         </div>
 
-        <div className="cr-mode-line">
-          <span className="cr-mode-tag">
-            {t('create.modeLine', { mode: t(MODE_KEYS[selection.mode]) })}
-          </span>
-          {ignoredHint === null ? null : <span className="wb-note">{ignoredHint}</span>}
-          {pending ? <span className="wb-note">{t('create.modeLine.pending')}</span> : null}
-        </div>
+        {/* 图片态没有"模式推断"这回事（t2i 是固定的），不显示视频的模式行免得误导 */}
+        {kind === 'image' ? null : (
+          <div className="cr-mode-line">
+            <span className="cr-mode-tag">
+              {t('create.modeLine', { mode: t(MODE_KEYS[selection.mode]) })}
+            </span>
+            {ignoredHint === null ? null : <span className="wb-note">{ignoredHint}</span>}
+            {pending ? <span className="wb-note">{t('create.modeLine.pending')}</span> : null}
+          </div>
+        )}
 
         <div className="cr-actions">
           <div className="wb-note">
-            {needsKey ? (
+            {kind === 'image' ? (
+              <>{t('create.type.imagePendingHint')}</>
+            ) : needsKey ? (
               <>
                 {t('create.needsKey')}{' '}
                 <button type="button" className="cr-link" onClick={openByok}>
