@@ -636,6 +636,7 @@ export function CreateView() {
           ) : null}
 
           <ComposerBar
+            kind={kind}
             aspectRatio={aspectRatio}
             resolutionTier={resolutionTier}
             durationSec={durationSec}

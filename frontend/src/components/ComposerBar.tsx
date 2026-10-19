@@ -10,6 +10,8 @@ export interface EngineOption {
 }
 
 export interface ComposerBarProps {
+  /** 图片态不显示"时长"与"模型名"：t2i 没有时长，模型由本地模板决定 */
+  kind: 'video' | 'image';
   aspectRatio: AspectRatio;
   resolutionTier: ResolutionTier;
   durationSec: number;
@@ -38,6 +40,7 @@ export interface ComposerBarProps {
  * 藏起来只会让人反复展开；真正低频的项（种子）留在 advanced。
  */
 export function ComposerBar({
+  kind,
   aspectRatio,
   resolutionTier,
   durationSec,
@@ -59,11 +62,11 @@ export function ComposerBar({
   const t = useTranslate();
 
   return (
-    <div className="cr-bar">
-      <div className="cr-bar-left">
-        <label className="cr-bar-field">
+    <div className="cr-params">
+      <div className="cr-params-left">
+        <label className="cr-params-field">
           <select
-            className="cr-bar-select"
+            className="cr-params-select"
             aria-label={t('create.more.aspect')}
             value={aspectRatio}
             onChange={(event) => onAspectChange(event.target.value as AspectRatio)}
@@ -76,9 +79,9 @@ export function ComposerBar({
           </select>
         </label>
 
-        <label className="cr-bar-field">
+        <label className="cr-params-field">
           <select
-            className="cr-bar-select"
+            className="cr-params-select"
             aria-label={t('create.more.resolution')}
             value={resolutionTier}
             onChange={(event) => onResolutionChange(event.target.value as ResolutionTier)}
@@ -91,24 +94,26 @@ export function ComposerBar({
           </select>
         </label>
 
-        <label className="cr-bar-field">
-          <select
-            className="cr-bar-select"
-            aria-label={t('create.more.duration')}
-            value={durationSec}
-            onChange={(event) => onDurationChange(Number(event.target.value))}
-          >
-            {DURATION_OPTIONS.map((value) => (
-              <option key={value} value={value}>
-                {value}s
-              </option>
-            ))}
-          </select>
-        </label>
+        {kind === 'video' ? (
+          <label className="cr-params-field">
+            <select
+              className="cr-params-select"
+              aria-label={t('create.more.duration')}
+              value={durationSec}
+              onChange={(event) => onDurationChange(Number(event.target.value))}
+            >
+              {DURATION_OPTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value}s
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
 
-        <label className="cr-bar-field cr-bar-field--engine">
+        <label className="cr-params-field cr-params-field--engine">
           <select
-            className="cr-bar-select"
+            className="cr-params-select"
             aria-label={t('create.more.engine')}
             value={provider}
             onChange={(event) => onProviderChange(event.target.value)}
@@ -122,11 +127,14 @@ export function ComposerBar({
           </select>
         </label>
 
-        {modelLabel === undefined ? null : <span className="cr-bar-model">{modelLabel}</span>}
+        {/* 图片态不显示模型名：真正用哪个模板由服务端能力目录决定，写一个名字反而会骗人 */}
+        {kind === 'image' || modelLabel === undefined ? null : (
+          <span className="cr-params-model">{modelLabel}</span>
+        )}
 
         <button
           type="button"
-          className="cr-bar-icon"
+          className="cr-params-icon"
           aria-label={t('create.hint.mention')}
           title={t('create.hint.mention')}
           onClick={onOpenMentions}
@@ -136,7 +144,7 @@ export function ComposerBar({
 
         <button
           type="button"
-          className="cr-bar-link"
+          className="cr-params-link"
           aria-expanded={advancedOpen}
           onClick={onToggleAdvanced}
         >
@@ -144,9 +152,9 @@ export function ComposerBar({
         </button>
       </div>
 
-      <div className="cr-bar-right">
+      <div className="cr-params-right">
         {priceText === null ? null : (
-          <span className="cr-bar-price" title={t('common.cost.title')}>
+          <span className="cr-params-price" title={t('common.cost.title')}>
             {priceText}
           </span>
         )}

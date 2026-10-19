@@ -471,7 +471,7 @@
 }
 
 /* ── 参数平铺行（S2；对齐实测产品：一行参数 + 右侧价格与提交） ───────── */
-.cr-bar {
+.cr-params {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -481,20 +481,20 @@
   border-top: 1px solid var(--line);
 }
 
-.cr-bar-left,
-.cr-bar-right {
+.cr-params-left,
+.cr-params-right {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
 }
 
-.cr-bar-field {
+.cr-params-field {
   display: inline-flex;
   align-items: center;
 }
 
-.cr-bar-select {
+.cr-params-select {
   height: 28px;
   padding: 0 8px;
   border: 1px solid var(--line);
@@ -505,17 +505,17 @@
   cursor: pointer;
 }
 
-.cr-bar-select:hover {
+.cr-params-select:hover {
   color: var(--text);
   border-color: var(--line-gold);
 }
 
-.cr-bar-select:focus-visible {
+.cr-params-select:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
-.cr-bar-model {
+.cr-params-model {
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -524,8 +524,8 @@
   color: var(--text-faint, var(--text-dim));
 }
 
-.cr-bar-icon,
-.cr-bar-link {
+.cr-params-icon,
+.cr-params-link {
   height: 28px;
   padding: 0 8px;
   border: 1px solid transparent;
@@ -536,19 +536,19 @@
   cursor: pointer;
 }
 
-.cr-bar-icon:hover,
-.cr-bar-link:hover {
+.cr-params-icon:hover,
+.cr-params-link:hover {
   color: var(--text);
   border-color: var(--line);
 }
 
-.cr-bar-price {
+.cr-params-price {
   font-size: var(--fs-note);
   color: var(--text-dim);
   white-space: nowrap;
 }
 
-.cr-bar .cr-submit {
+.cr-params .cr-submit {
   min-height: 30px;
   padding: 0 14px;
 }
