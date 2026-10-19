@@ -294,7 +294,7 @@ E2 / E3 的 REA evidence ID：`ev_0151defe86b38566583be0a0f86f0ac7e206e5efe17d49
 
 | # | 维度 | 我们现状 | 实测产品 | 落点 |
 |---|---|---|---|---|
-| 1 | 导航 | 功能页平铺（创作/工作台/总览/视频库/画布/成本/配方/日志） | 创作/探索/资产/主体 + **对话区与画布区**两组项目列表 | S2（AppShell）+ S5（后台入口归组） |
+| 1 | 导航 | 功能页平铺（创作/工作台/总览/视频库/画布/成本/配方/日志） | 创作/探索/资产/主体 + **对话区与画布区**两组项目列表 | S2（AppShell）+ S5（**下线成本与专业工作台，日志保留**） |
 | 2 | 创作入口 | 表单式：模型/参数/引用 chips 平铺 | **一个输入框 + 创作类型驱动**：Agent 态只有"自动/技能"，视频/图片态出现完整参数；顶部再分"生成/画布" | S2 |
 | 3 | 输入控件 | `textarea` + 外部 chips | **tiptap/ProseMirror**，`@` 是行内节点 | S2（评估引入） |
 | 4 | 画布 | L2 只读血缘图 + 编排；节点是卡片 | **可编辑媒体画布**：React Flow、锚定创作框、左右连接柄、小地图、显示连线、缩放 | S3 |
@@ -326,22 +326,31 @@ E2 / E3 的 REA evidence ID：`ev_0151defe86b38566583be0a0f86f0ac7e206e5efe17d49
 建议顺序：先 MiniMax（Agent 交互 → 直接喂给 B82），liblib 等到"要不要做模板市场"成为真问题时再看。
 两者都只做**公开页只读观察**，不登录、不抓私有接口。
 
-## 10. MiniMax Agent 公开面观察（2026-10-19）
+## 10. MiniMax Agent 观察（2026-10-19，已登录）
 
-**范围与限制**：只用未登录实例看了 `agent.minimax.io` 的落地页；**发一条消息即跳转登录**，因此
-**任务运行态（多步计划、产物预览、失败恢复）没有看到**，本篇不据此下结论。
+**范围**：先用未登录实例看落地页（发消息即跳登录），随后用户在独立实例登录，补看任务页、插件/技能目录、资产页。
+**未做**：没有跑生成类任务（网站/视频/PPT），只在文本任务上看了一次完整回合；产物卡片形态未验证。
 
 | 观察 | 内容 |
 |---|---|
-| 侧栏 | 极简：`New task` / `Plugins · Skills` / `Connect mobile` / `More`（MaxHermes、MaxClaw）/ 下载桌面 / 订阅 / 登录 |
-| 主区 | 一句标题 + **一个很大的输入框**（提示语"Drag files here for a quick start"）+ 模型选择器内联（`M3.1-Flash-Preview · default`）+ 发送键 |
-| 意图入口 | 输入框下方一排 **场景 chips**：`Video generation`（带 H3 标记）/ `Document` / `Website` / `Image Generation` / `More`；点 chip 只改输入框提示，不跳页 |
-| 参数 | **公开面上没有任何模型/比例/时长参数**——与即梦"参数显式"是两条路线 |
-| 前端 | Next.js（`mavis-chat`），资源在 `cdn.hailuo.ai`；路由未在公开产物里暴露 |
+| 侧栏（登录后） | `New task` / `Search` / `Plugins · Skills` / `Scheduled` / `Assets` / `Connect mobile` / `More`（MaxHermes、MaxClaw）/ **Projects**（可新建）/ **Recents**（会话历史）/ Agents 区 |
+| 主区 | 一句标题 + 一个很大的输入框 + 模型选择器内联 + 发送键；输入框上方可拖文件 |
+| 意图入口 | 场景 chips：`Video generation`（H3）/ `Document` / `Website` / `Image Generation` / `More`；点 chip 只改输入框提示 |
+| 参数 | 公开面上没有模型/比例/时长参数；参数交给 Agent 决定 |
+| **任务页** | 路由 `/mavis?id=…`；用户消息右对齐气泡，回答为富文本；中间一行可折叠的 **`Processed 5s ›`**（耗时而非步骤列表）；右侧悬浮 **Progress** 面板（"Track progress on longer tasks"）；回答下方是点赞/点踩/复制/重试 + 时间 |
+| 计费提示 | 顶部常驻 `Fewer than 1,000 Credits remain.` + `Buy Credits` / `Subscribe` |
+| 技能/插件 | `/plugins` 四个 tab：`Plugins` / `Skills` / `Manage` / `Create`；分类 `Featured / Office / Studio / Design & sites / Code / Biz / Prod / Sci & health`；技能库筛选 `Popular / Latest / MiniMax provided / User contributed`；卡片=名称+长描述+`Install` |
+| 资产 | `/assets`：来源筛选 `From agent / From you / Star` + 类型 `All / Websites / Documents / Excel / PPT / Images / Videos / Audio`；空态说明"AI 生成与你上传的文件都会出现在这里" |
+| 前端 | Next.js（`mavis-chat`），资源在 `cdn.hailuo.ai` |
 
-**对我们的用法**：只借两点——① **场景 chips 当意图入口**（比下拉菜单快，且能表达"我现在要视频/文档/网站"）；
-② **模型选择器留在输入框内**，不另开设置页。其余（参数隐式）**不采用**：我们单用户、本地模型、成本敏感，
-隐藏参数只会让"为什么这么贵/这么慢"说不清。
+**可借用的五点**（其余不学）：
+1. **场景 chips 当意图入口**：比下拉菜单快，且能表达"我现在要视频/文档/网站"。
+2. **模型选择器留在输入框内**，不另开设置页。
+3. **任务页用"耗时"而不是假步骤**：`Processed 5s` 可折叠，展开才看过程——比编造步骤条诚实。
+4. **资产页双轴筛选**（来源 × 类型），比单一 tab 更贴近"这些是我生成的 / 我上传的"。
+5. **技能库四象限**（热门/最新/官方/用户贡献）+ `Create` 入口，正好对应 B83。
+
+**不采用**：参数全隐式（我们单用户 + 本地模型 + 成本敏感，必须让参数可见）；积分/订阅话术（D59）。
 
 ## 11. 定稿图是否重画（结论：不重画）
 
