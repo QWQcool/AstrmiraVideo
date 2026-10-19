@@ -35,6 +35,8 @@ export * from './deliverables.js';
 export * from './webhooks.js';
 export * from './metrics.js';
 export * from './canvasPlan.js';
+export * from './canvasDoc.js';
+export * from './modelCapability.js';
 // `canvasPlanFile`（编排文件的读/写/校验）**已搬去前端** `frontend/src/lib/canvasPlanFile.ts`
 // （语言迁移第十八批）：它的消费者只有前端，而它每一句 `reason` / `migrationNote` 都是**给人看的**
 // —— 共享包（纯类型 / 数据层）没法持有界面文案。**共享包 API 变更：这个导出已移除。**

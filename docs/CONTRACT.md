@@ -1,6 +1,15 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.40 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.41 · 已冻结（变更需先改本文，再改代码）**
+> **V2.41 修订（2026-10-19）**：**创作画布文档 `astrmira.canvas-doc/v1`（§21）** ——
+>   Step 11 / S1 的契约先行项（台账 B78；决策 D60/D61/D62/D63）。
+>   ① **新增一份文档契约**，与 §11-6 的 `CanvasPlan` **并存但不互转**：`CanvasPlan` 仍是"可执行编排"
+>   （本契约不动它一个字段）；`CanvasDoc` 是编辑器文档（节点 = 媒体 + 内联草稿 + 产物批次 + 布局）。
+>   ② **无归属字段**：单用户部署（D60），文档里没有 `ownerId` / `tenantId`，也没有积分与扣费字段（D59）。
+>   ③ **不迁移旧数据**（D63）：旧编排与事实图不转换、不导入；`version` 只服务本契约自身的演进。
+>   ④ **产物以 `assetId` 为准**：`url` 仅展示，刷新后按 `assetId` 重新取（与 §7 一致）。
+>   **无新路由、无新错误码**：执行仍走既有 `POST /api/generate`。
+
 > **V2.40 修订（2026-10-16）**：**文生图（`t2i`）落地 · 工作流模板改「清单」（§1 / §4 / §19）** ——
 >   起因：本机验通"FLUX.2 Klein 出图 → 当 i2v 首帧 → 出片"（PLAN §5 的实测评测条目）后，
 >   把"出图"变成产品能力。三处变更：
@@ -2073,3 +2082,192 @@ interface SelfCheckResponse {
 **如实边界**：`available:true` 说的是"**连得上、模型与节点齐、能跑某些模式**"，
 **不等于**"这一条提交一定会成功"（显存不够、模型文件损坏、队列里排了别的任务都在它之外）；
 那类失败由提交与查状态如实回报（§19-4）。
+
+---
+
+## 21. 创作画布文档 `astrmira.canvas-doc/v1`（V2.41 新增；Step 11-S1 / 台账 B78）
+
+**定位**：这是**编辑器文档**，不是执行计划。节点是媒体（文本 / 图片 / 视频 / 音频），每个节点带
+「内联草稿 + 产物批次 + 布局」；执行仍走既有 `POST /api/generate`，**本契约不新增路由、不新增错误码**。
+
+**与 §11-6 `CanvasPlan` 的关系**：并存，不互转。`CanvasPlan` 继续承担"可执行编排"（字段一个不动）；
+`CanvasDoc` 承担"画布上有什么、每个节点上次填了什么、生成过几轮"。
+按 **D63**，旧 `CanvasPlan` 与旧事实图**不做数据迁移**。
+
+### 21-1 文档
+
+```ts
+const CANVAS_DOC_VERSION = 1;
+
+interface CanvasDoc {
+  version: 1;
+  projectId: string;          // 多画布项目 id（D60）；同时是存储键的一部分
+  name: string;
+  createdAt: number;          // epoch ms
+  updatedAt: number;
+  viewport: { x: number; y: number; zoom: number };  // zoom ∈ [0.1, 4]
+  nodes: CanvasDocNode[];
+  edges: CanvasDocEdge[];
+}
+```
+
+**没有 `ownerId` / `tenantId` / 积分 / 扣费字段**（D59 / D60）。文档属于这个部署实例。
+
+### 21-2 节点
+
+```ts
+type CanvasNodeType = 'text' | 'image' | 'video' | 'audio';   // 首发四类
+
+interface CanvasDocNode {
+  id: string;
+  type: CanvasNodeType;
+  layout: { x: number; y: number; width: number; height: number };  // 持久化（与事实图相反）
+  data: {
+    title?: string;
+    source: 'model_generated' | 'uploaded' | 'from_asset';
+    draft: CanvasNodeDraft;
+    batches: CanvasNodeBatch[];
+    tags: string[];
+  };
+  meta?: { createdAt?: number; createdFrom?: 'menu' | 'double_click' | 'toolbar' | 'skill' | 'import' };
+}
+```
+
+**明确不做**（Step 11「明确不做」）：时间线、主体、导演台、文档、group / external / file 节点。
+`type` 是**闭合枚举**：出现未知类型时整份文档**拒绝解析**（这是唯一"拒绝加载"的场景，
+因为它意味着写入了我们没定义的节点，静默保留会在渲染层炸）。
+
+### 21-3 草稿（内联创作框的内容）
+
+```ts
+interface CanvasNodeDraft {
+  kind: CanvasNodeType;
+  prompt: string;             // 允许空：边写边存，不能因为没写完就不让存
+  settings: {
+    modelId?: string;
+    mode?: GenerationMode;                    // 缺省按节点类型推断（video→t2v，image→t2i）
+    referenceMode?: 'none' | 'first-last-frame' | 'omni-reference';
+    aspectRatio?: AspectRatio;
+    resolution?: { width: number; height: number };
+    durationSec?: DurationSec;
+    count?: number;                           // 1..8（结构上限；真实上限由能力目录决定）
+  };
+  references: Array<{
+    assetId: string;                          // 只存资产 id，不存临时 URL
+    role: 'first-frame' | 'last-frame' | 'reference-image' | 'reference-video' | 'reference-audio';
+    order: number;                            // 同一用途内排序
+  }>;
+  updatedAt?: number;
+}
+```
+
+**参考模式与用途是两个维度**：`referenceMode` 决定"这个模型能不能带参考"，`role` 决定"这张图喂到哪"。
+不兼容组合**不在这里拒绝**——由能力目录（S1 另一份契约）判定并在界面上给理由，**不静默丢素材**。
+
+### 21-4 产物批次
+
+```ts
+interface CanvasNodeBatch {
+  id: string;
+  taskId?: string;                            // 还没提交成功时省略
+  createdAt: number;
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+  outputs: Array<{
+    assetId: string;
+    kind: 'image' | 'video' | 'audio' | 'text';
+    url?: string;                             // 仅展示；刷新后按 assetId 重新取
+    width?: number; height?: number; durationSec?: number;
+  }>;
+  failure?: { code: string; message: string }; // 失败批次保留，原位重试才说得清
+}
+```
+
+**批次不合并、不覆盖**：每提交一次 = 一个新批次，历史批次原样保留（版本堆叠与"回退到上一版"都靠它）。
+
+### 21-5 边
+
+```ts
+interface CanvasDocEdge {
+  id: string;
+  from: string;                               // 上游产物喂给下游
+  to: string;
+  kind: 'lineage' | 'dependency';             // 已发生的来源关系 / 待执行的依赖关系
+  role?: CanvasReferenceRole;
+}
+```
+
+**两类边不能互相改写**：拖动节点只改 `layout`；把 `dependency` 变成 `lineage` 必须是"真的跑过一次"。
+
+### 21-6 校验与容错（刻意的取舍）
+
+| 情形 | 行为 | 理由 |
+|---|---|---|
+| 未知 `version` | 拒绝解析 | 版本只服务本契约演进，跨版本必须有迁移函数 |
+| 未知节点 `type` | 拒绝解析 | 闭合枚举；渲染未知节点会崩 |
+| 悬空边（指向不存在的节点） | **允许解析**，由 `canvasDocDanglingEdges()` 单独报出 | 让用户能打开画布去修复，而不是卡在"打不开" |
+| 空 `prompt` / 空 `settings` | 允许 | 边写边存 |
+| 未知字段 | 丢弃（zod 默认） | 单用户部署；避免旧客户端写回时带坏字段 |
+
+以上判定在 `packages/shared/src/canvasDoc.ts` 实现，测试见 `frontend/src/lib/canvasDoc.test.ts`。
+
+### 21-7 多画布索引
+
+```ts
+interface CanvasProjectIndex {
+  version: 1;
+  projects: Array<{
+    projectId: string; name: string; updatedAt: number;
+    nodeCount: number; coverAssetId?: string;
+  }>;
+  activeProjectId?: string;
+}
+```
+
+列表只读索引，不读整份文档；打开某个项目时才读 `<projectId>` 的文档。
+
+### 21-8 存储位置（S3 落地）
+
+- 文档 **按 projectId 分键**，互不覆盖；索引单独一份。
+- **优先服务端**（清浏览器缓存不能丢画布）；本地只作缓存。服务端落地时需要两条路由
+  （预期 `GET/PUT /api/canvas/doc`，含索引），**届时按本文件流程先补 §5 再加实现**。
+- 本版本**不改既有存储键**：旧的 `astrmira.canvasPlan.<projectId>` 不读、不写、不迁移（D63）。
+
+### 21-9 模型能力目录 `ModelCapability`（V2.41 新增；台账 B76）
+
+`videoModels.ts` 解决"模型 id 别手打错"；这一节解决**"这个模型能干什么"**。界面按它决定
+参数能不能选、按钮能不能点、禁用时给什么理由。**没有声明就不开放。**
+
+```ts
+interface ModelCapability {
+  modelId: string;                    // 与 options.model 对齐
+  label: string;
+  provider: ProviderType;             // §1 的 provider 形状（含 host-comfyui:<name>）
+  modes: GenerationMode[];            // 至少一种
+  referenceModes: Array<'none' | 'first-last-frame' | 'omni-reference'>;
+  maxReferences: number;              // 0..64
+  referenceKinds: Array<'image' | 'video' | 'audio'>;
+  aspectRatios: AspectRatio[];
+  resolutions: Array<{ width: number; height: number; label?: string }>;
+  durations: DurationSec[];
+  maxCount: number;                   // 1..8
+  cost: {
+    source: 'provider' | 'local' | 'unknown';
+    unit: 'per-second' | 'per-image' | 'per-run' | 'unknown';
+    amountCny?: number;               // 仅估算输入，不是扣费依据
+  };
+  unavailableReason?: string;         // 有值 = 当前不可用，界面原样显示并禁用
+}
+```
+
+**判定函数 `checkCapability(capability, input)`**：只返回**第一个**问题码，前端映射成一句可执行的中文理由。
+问题码是闭合枚举：`model-unavailable` / `mode-unsupported` / `reference-mode-unsupported` /
+`too-many-references` / `reference-kind-unsupported` / `aspect-unsupported` /
+`resolution-unsupported` / `duration-unsupported` / `count-exceeded`。
+
+**判定顺序是契约的一部分**（先粗后细）：不可用 → 模式 → 参考模式 → 参考数量 → 参考类型 →
+比例 → 分辨率 → 时长 → 数量。先报"这个模型现在不能用"比先报"你时长选错了"更有用。
+
+**估值 `estimateCostCny(capability, units)`**：本地算力返回 `0`；没有报价返回 `null`
+（界面**必须**显示"待核算"，不能显示 0 元）；`per-run` 不乘 units（D59：只做估算，不做扣费）。
+
+**无新错误码**：能力不满足是**界面侧**的前置校验；服务端仍按 §1 校验请求，不因为有了这份目录就放松。
