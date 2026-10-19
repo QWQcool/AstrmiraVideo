@@ -62,12 +62,14 @@ export const DEFAULT_VIEW = '#/create';
 
 export const VIEW_REGISTRY: readonly ViewDef[] = [
   { path: '#/create', titleKey: 'shell.nav.create', eyebrow: 'Create', icon: 'spark', component: CreateView, preferRail: true },
-  { path: '#/workbench', titleKey: 'shell.nav.workbench', eyebrow: 'Workbench', icon: 'wand', component: WorkbenchView, preferRail: true },
+  // D62（2026-10-19）：专业工作台**下线**——入口不再出现在侧栏，路由保留一个版本周期便于回退。
+  { path: '#/workbench', titleKey: 'shell.nav.workbench', eyebrow: 'Workbench', icon: 'wand', component: WorkbenchView, hidden: true, preferRail: true },
   { path: '#/overview', titleKey: 'shell.nav.overview', eyebrow: 'Overview', icon: 'grid', component: OverviewView },
   { path: '#/library', titleKey: 'shell.nav.library', eyebrow: 'Library', icon: 'film', component: LibraryView },
   { path: '#/canvas', titleKey: 'shell.nav.canvas', eyebrow: 'Lineage', icon: 'graph', component: CanvasView },
-  // V2.12（台账 B48）：成本台账 —— 与总览并列的"经营视图"（不占空间，不必收侧栏）
-  { path: '#/costs', titleKey: 'shell.nav.costs', eyebrow: 'Cost Ledger', icon: 'coins', component: CostsView },
+  // V2.12（台账 B48）：成本台账 —— D62（2026-10-19）**下线**：不做支付/积分，成本只保留"估算"，
+  // 入口从侧栏移除；路由保留一个版本周期（旧链接不直接 404）。
+  { path: '#/costs', titleKey: 'shell.nav.costs', eyebrow: 'Cost Ledger', icon: 'coins', component: CostsView, hidden: true },
   { path: '#/recipes', titleKey: 'shell.nav.recipes', eyebrow: 'Recipe Library', icon: 'cards', component: RecipesView },
   { path: '#/logs', titleKey: 'shell.nav.logs', eyebrow: 'Logs', icon: 'list', component: LogsView },
   { path: '#/edit', titleKey: 'shell.nav.edit', eyebrow: 'Editing Desk', icon: 'scissors', component: EditView, hidden: true, preferRail: true },

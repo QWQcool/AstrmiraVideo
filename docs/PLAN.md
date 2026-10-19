@@ -1644,6 +1644,13 @@
 
 ## 5. 进度日志（唯一进度权威，其他文档只准链接本节）
 
+### 2026-10-19 · S2 片 A：创作草稿规则 + 导航收口
+
+- **【已完成】草稿规则** `frontend/src/lib/creationDraft.ts`：`CreationKind = agent | image | video`；`CREATION_KIND_CONTROLS` 决定每种类型显示哪些控件（Agent 一项都没有）；`switchCreationKind` **只改类型、不删提示词/素材/被隐藏的参数**；`settingsForKind` 提交时只带当前类型的字段（图片固定 `t2i`、视频沿用草稿或 `t2v`）；`creationIssue` 返回 `empty-prompt` 或能力目录的**第一个**问题码；草稿读写**坏数据一律回落默认值**（不为草稿弹错误）。
+- **【已完成】导航收口**（D62）：「工作台 · 专业」「成本台账」从侧栏移除（`hidden: true`，**路由保留**一版便于回退）；「配方库」暂留（S6 并入技能）。
+- **【测试】** `creationDraft.test.ts` **10 项**（切换不清空 / 只带当前类型参数 / 空提示词优先 / Agent 不判能力 / 无能力目录 / 能力问题码 / 存储往返与坏数据回落）；前端全量 **450 passed**、`pnpm type` 通过、`pnpm lint` 0/0。
+- **【下一步】S2 片 B**：把 `CreationComposer`（三态切换 + 参数行按 `CREATION_KIND_CONTROLS` 渲染 + 未配置禁用）接到 `#/create`；先只做"选参数、存草稿、禁用提交"，**不改变现有提交链路**。
+
 ### 2026-10-19 · S1 开工：`CanvasDoc` v1 契约落地
 
 - **【已完成】契约**：CONTRACT 升到 **V2.41**，新增 **§21 `astrmira.canvas-doc/v1`**（文档/节点/草稿/批次/边/索引/校验取舍/存储位置）。与 `CanvasPlan` 并存不互转；无 `ownerId`、无积分字段；按 **D63** 旧数据不迁移。
