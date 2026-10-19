@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { VideoGenerateRequest } from '@astrmira/shared';
 import { ComfyUiProvider } from './ComfyUiProvider.js';
 import {
@@ -379,6 +379,29 @@ describe('ComfyUiProvider · 查状态', () => {
     expect(progress.error).toBeUndefined();
   });
 
+  it('收尾竞态（2026-10-19 实测）：已出队但 history 还没写入 → 先报 running，不判失败', async () => {
+    const { provider } = setup({ queued: false });
+    const { taskId } = await provider.submit(request());
+    const progress = await provider.queryStatus(taskId);
+    expect(progress.status).toBe('running');
+    expect(progress.message).toContain('收尾');
+    expect(progress.error).toBeUndefined();
+  });
+
+  it('超出宽限期仍不在历史也不在队列 → 如实失败（记录真的丢了）', async () => {
+    vi.useFakeTimers();
+    try {
+      const { provider } = setup({ queued: false });
+      const { taskId } = await provider.submit(request());
+      vi.setSystemTime(Date.now() + 31_000);
+      const progress = await provider.queryStatus(taskId);
+      expect(progress.status).toBe('failed');
+      expect(progress.error?.message).toContain('找不到');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('t2i 幂等：重复查询返回同一产物，且写的是 **outputImageUrl**（不是 outputVideoUrl）', async () => {
     const bytes = Buffer.from('real-png-bytes');
     const { provider } = setup(
@@ -483,12 +506,26 @@ describe('ComfyUiProvider · 查状态', () => {
     expect(progress.error?.message).toContain('CUDA out of memory');
   });
 
-  it('既不在历史也不在队列 → failed 且直说"可能重启过"（不糊成"未知错误"）', async () => {
-    const { provider } = setup({ queued: false });
-    await provider.submit(request());
-    const progress = await provider.queryStatus('p-1');
-    expect(progress.status).toBe('failed');
-    expect(progress.error?.message).toContain('重启');
+  it('既不在历史也不在队列：宽限期内先报 running，超期后 failed 且直说"可能重启过"', async () => {
+    // 2026-10-19 实测：ComfyUI 先出队、后写 history，中间有个收尾窗口 ——
+    // 旧的"立刻判失败"会把刚跑完的任务判死（产物其实已落盘）。
+    // `shouldAdvanceTime` 让宽限期里那个 800ms 的补查等待能真实到期（否则测试会挂住）
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { provider } = setup({ queued: false });
+      await provider.submit(request());
+
+      const fresh = await provider.queryStatus('p-1');
+      expect(fresh.status).toBe('running');
+      expect(fresh.message).toContain('收尾');
+
+      vi.setSystemTime(Date.now() + 31_000);
+      const stale = await provider.queryStatus('p-1');
+      expect(stale.status).toBe('failed');
+      expect(stale.error?.message).toContain('重启');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('产物取不到（/view 非 200）→ failed 并带 HTTP 码', async () => {

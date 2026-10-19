@@ -37,6 +37,15 @@ import {
 } from './comfyuiTemplates.js';
 
 /**
+ * 收尾宽限期：「已出队、history 还没写入」的窗口有多长。
+ *
+ * 2026-10-19 实测：FLUX.2 Klein 出图约 15s，轮询正好落在收尾窗口里，
+ * 任务被误判成"记录丢失"（产物文件其实已经落盘）。给 30s 足够覆盖本地出图，
+ * 又不会让真正丢失的任务无限等待。
+ */
+const FINALIZE_GRACE_MS = 30_000;
+
+/**
  * `host-comfyui` provider（CONTRACT §19；台账 A1 片 B；形态 = 决策 **D53**）。
  *
  * ## 它与云端 provider 的结构性差异
@@ -476,7 +485,7 @@ export class ComfyUiProvider implements VideoProvider {
         return this.fail(taskId, requestSnapshot, createdAt, `ComfyUI /history 返回 HTTP ${historyResponse.status}`);
       }
       const history = (await historyResponse.json()) as Record<string, unknown>;
-      const entry = history[taskId];
+      let entry = history[taskId];
 
       if (entry === undefined) {
         // ② 还没进历史 → 在队列里就是在跑（ComfyUI 不报进度，如实说明）
@@ -493,7 +502,39 @@ export class ComfyUiProvider implements VideoProvider {
             message: 'ComfyUI 正在执行（它不上报进度百分比 —— 本地轨以出片为准）',
           };
         }
-        // ③ 既不在历史也不在队列 → 记录丢了（ComfyUI 重启过），如实说
+
+        /**
+         * ③ **收尾竞态**：任务跑完的瞬间会先出队、再把结果写进 `/history`。
+         * 轮询恰好落在两者之间时，"不在队列也不在历史"并不等于记录丢了 ——
+         * 2026-10-19 实测：FLUX 出图 15s，任务因此被误判成失败（产物文件其实已经落盘）。
+         *
+         * 处理：宽限期内先补查一次 history；仍没有就报"收尾中"，把判断留给下一次轮询。
+         * 超过宽限期才认定记录丢失（真丢失时也不会让用户无限等）。
+         */
+        const ageMs = Date.now() - createdAt;
+        if (ageMs <= FINALIZE_GRACE_MS) {
+          await new Promise((resolve) => setTimeout(resolve, 800));
+          const retry = await this.fetchImpl(`${this.baseUrl}/history/${taskId}`);
+          if (retry.ok) {
+            const retryHistory = (await retry.json()) as Record<string, unknown>;
+            entry = retryHistory[taskId];
+          }
+          if (entry === undefined) {
+            return {
+              taskId,
+              status: 'running',
+              progressPercent: 0,
+              requestSnapshot,
+              createdAt,
+              ...(warnings.length === 0 ? {} : { warnings }),
+              message: 'ComfyUI 正在收尾（结果还没写入历史，稍候会自动更新）',
+            };
+          }
+        }
+      }
+
+      if (entry === undefined) {
+        // ④ 超出宽限期仍不在历史也不在队列 → 记录丢了（ComfyUI 重启过），如实说
         return this.fail(
           taskId,
           requestSnapshot,

@@ -469,3 +469,95 @@
   line-height: 16px;
   color: var(--text-faint, var(--text-dim));
 }
+
+/* ── 参数平铺行（S2；对齐实测产品：一行参数 + 右侧价格与提交） ───────── */
+.cr-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.cr-bar-left,
+.cr-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cr-bar-field {
+  display: inline-flex;
+  align-items: center;
+}
+
+.cr-bar-select {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-note);
+  cursor: pointer;
+}
+
+.cr-bar-select:hover {
+  color: var(--text);
+  border-color: var(--line-gold);
+}
+
+.cr-bar-select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.cr-bar-model {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-note);
+  color: var(--text-faint, var(--text-dim));
+}
+
+.cr-bar-icon,
+.cr-bar-link {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-note);
+  cursor: pointer;
+}
+
+.cr-bar-icon:hover,
+.cr-bar-link:hover {
+  color: var(--text);
+  border-color: var(--line);
+}
+
+.cr-bar-price {
+  font-size: var(--fs-note);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.cr-bar .cr-submit {
+  min-height: 30px;
+  padding: 0 14px;
+}
+
+.cr-advanced {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+}

@@ -7,13 +7,7 @@ import type {
   TaskProgress,
   VideoGenerateRequest,
 } from '@astrmira/shared';
-import {
-  INDUSTRY_TEMPLATES,
-  RECIPE_CARDS,
-  estimateCostFromRequest,
-  formatYuan,
-  taskOutput,
-} from '@astrmira/shared';
+import { estimateCostFromRequest, formatYuan, taskOutput } from '@astrmira/shared';
 import {
   ApiError,
   fetchAssets,
@@ -26,8 +20,6 @@ import { resolveProviderKey } from '../lib/byok';
 import {
   DEFAULT_DURATION_SEC,
   DEFAULT_RESOLUTION_TIER,
-  DURATION_OPTIONS,
-  RESOLUTION_TIERS,
   resolveTargetSize,
   type ResolutionTier,
 } from '../lib/format';
@@ -43,12 +35,12 @@ import {
   type MentionRef,
 } from '../lib/mentions';
 import { comfyUiEngineOptions } from '../lib/engineOptions';
-import { appendSkeleton } from '../lib/recipeInsert';
 import { navigate } from '../lib/router';
 import { useShell } from '../lib/shell';
 import { useTaskPolling } from '../hooks/useTaskPolling';
 import { useCreationDraft } from '../hooks/useCreationDraft';
 import { CreationTypeBar, type ComposerKind } from '../components/CreationTypeBar';
+import { ComposerBar } from '../components/ComposerBar';
 
 /**
  * 创作入口 `#/create`（Step 8 · P3 / 台账 B41；决策 = PLAN §6-D39）。
@@ -91,8 +83,6 @@ const STATUS_KEYS: Record<TaskProgress['status'], MessageKey> = {
 };
 
 /** 配方 chips：横滚条只放前 12 张（全量在配方库），避免首页变成第二个配方库 */
-const STRIP_RECIPES = RECIPE_CARDS.slice(0, 12);
-
 function describeError(caught: unknown): string {
   if (caught instanceof ApiError) {
     const code = caught.failure.code === undefined ? '' : `【${caught.failure.code}】`;
@@ -193,7 +183,15 @@ export function CreateView() {
   const [provider, setProvider] = useState<ProviderType>(CLOUD_PROVIDER);
   const [seed, setSeed] = useState('');
   /** V2.36：本地 ComfyUI 可能是**多台**（§19-1）—— 名单来自 `/status`，前端不维护第二份 */
-  const comfyEngines = comfyUiEngineOptions(providerStatus);
+  const comfyEngines = useMemo(() => comfyUiEngineOptions(providerStatus), [providerStatus]);
+
+  // 图片只能走本地 ComfyUI（云端不做图片）：切到图片态时自动把引擎切到第一台本地实例，
+  // 而不是让用户点了提交才看到"云端不支持图片"。
+  useEffect(() => {
+    if (kind !== 'image' || provider !== CLOUD_PROVIDER) return;
+    const local = comfyEngines[0];
+    if (local !== undefined) setProvider(local.id);
+  }, [kind, provider, comfyEngines]);
 
   // 草稿落盘：提示词 / 类型 / 参数（素材不进草稿，理由见 useCreationDraft）。
   useEffect(() => {
@@ -263,8 +261,16 @@ export function CreateView() {
     providerStatus !== null &&
     !providerStatus.cloud.available;
 
-  // S2：图片态在 S4 接入模型前**不可提交**（如实禁用，而不是让用户填完才发现）
-  const submitDisabled = submitting || prompt.trim() === '' || pending || needsKey || kind === 'image';
+  /**
+   * 图片态能不能用：只看 `/status` 的**配置事实**（ComfyUI 地址合规且本地轨已开放）。
+   * 真正能不能出图（模板/节点齐不齐）由服务端在提交时判定并如实报错 —— 与 §19-2 同一口径，
+   * 不在这里假装"已就绪"。
+   */
+  const imageReady = providerStatus?.comfyui.available === true;
+
+  // 图片态：本地 ComfyUI 未配置时才禁用（配置了就走既有提交链路，失败由服务端如实报）
+  const submitDisabled =
+    submitting || prompt.trim() === '' || pending || needsKey || (kind === 'image' && !imageReady);
 
   /**
    * V2.12（台账 B48）：**提交前预估**（用户点"生成"之前就该看到要花多少钱 —— 这是 D44 改口的落点）。
@@ -286,6 +292,15 @@ export function CreateView() {
         { track: provider === 'cloud-volcano-seedance' ? 'cloud' : 'local' },
       ),
     [aspectRatio, resolutionTier, durationSec, byok.model, provider],
+  );
+
+  /** 参数行右侧的价格文案；null = 不显示（没有可信报价时也不显示 0 元） */
+  const priceLabel = useMemo(
+    () =>
+      costEstimate === null
+        ? null
+        : t('common.cost.estimated', { amount: formatYuan(costEstimate.yuan) }),
+    [costEstimate, t],
   );
 
   // ── 素材动作 ──
@@ -387,21 +402,33 @@ export function CreateView() {
     setNotice(null);
 
     const assets = assetsForRefs(refs);
-    const request: VideoGenerateRequest = {
-      prompt: prompt.trim(),
-      mode: selection.mode,
-      aspectRatio,
-      resolution: resolveTargetSize(aspectRatio, resolutionTier),
-      provider,
-      options: { baseUrl: byok.baseUrl, model: byok.model },
-      // V2.11（B47）：出到当前项目（它同时进幂等指纹 —— 见 CONTRACT §1）
-      projectId,
-      ...(assets === undefined ? {} : { assets }),
-      params: {
-        durationSec,
-        ...(seed.trim() === '' ? {} : { seed: Number.parseInt(seed, 10) }),
-      },
-    };
+    // 图片态：`t2i` 不接任何素材（模板自行出图），引擎已由上面的 effect 切到本地 ComfyUI。
+    const request: VideoGenerateRequest =
+      kind === 'image'
+        ? {
+            prompt: prompt.trim(),
+            mode: 't2i',
+            aspectRatio,
+            resolution: resolveTargetSize(aspectRatio, resolutionTier),
+            provider,
+            options: { baseUrl: byok.baseUrl, model: byok.model },
+            projectId,
+          }
+        : {
+            prompt: prompt.trim(),
+            mode: selection.mode,
+            aspectRatio,
+            resolution: resolveTargetSize(aspectRatio, resolutionTier),
+            provider,
+            options: { baseUrl: byok.baseUrl, model: byok.model },
+            // V2.11（B47）：出到当前项目（它同时进幂等指纹 —— 见 CONTRACT §1）
+            projectId,
+            ...(assets === undefined ? {} : { assets }),
+            params: {
+              durationSec,
+              ...(seed.trim() === '' ? {} : { seed: Number.parseInt(seed, 10) }),
+            },
+          };
 
     try {
       const result = await submitGenerate(request, {
@@ -471,8 +498,8 @@ export function CreateView() {
           <CreationTypeBar
             kind={kind}
             onChange={setKind}
-            // S4 之前不假装可用：角标显示"待接入"，提交按钮同时禁用
-            imageReady={false}
+            // 由 `/status` 的配置事实驱动：没配 ComfyUI 时角标"待接入"，配了就正常可选
+            imageReady={imageReady}
           />
           <textarea
             className="cr-input"
@@ -592,197 +619,41 @@ export function CreateView() {
             </div>
           ) : null}
 
-          <div className="cr-recipes" aria-label={t('create.recipes.aria')}>
-            {STRIP_RECIPES.map((card) => (
-              <button
-                key={card.id}
-                type="button"
-                className="cr-recipe"
-                title={card.pitfalls?.[0] ?? card.title}
-                onClick={() => setPrompt((prev) => appendSkeleton(prev, card.skeleton))}
-              >
-                {card.title}
-              </button>
-            ))}
-            <button
-              type="button"
-              className="cr-recipe cr-recipe-more"
-              onClick={() => navigate('#/recipes')}
-            >
-              {t('create.recipes.all')}
-            </button>
-          </div>
-
-          {/* V2.23（台账 B71）：行业模板 —— 客户第一次打开时，"你能做什么"不该由他自己想。
-              点一下 = 填入**起手式**（提示词骨架 + 画幅/时长/清晰度）；**模式仍由素材与提示词推断**，
-              所以这里的措辞是"推荐"，不假装"已切换"。 */}
-          <div className="cr-recipes cr-templates" aria-label={t('create.templates.aria')}>
-            <span className="cr-tpl-label">{t('create.templates.label')}</span>
-            {INDUSTRY_TEMPLATES.map((template) => (
-              <button
-                key={template.id}
-                type="button"
-                className="cr-recipe cr-recipe-tpl"
-                data-testid={`cr-template-${template.id}`}
-                title={t('create.templates.title', {
-                  summary: template.summary,
-                  mode: t(MODE_KEYS[template.recommendedMode]),
-                  ratio: template.aspectRatio,
-                  duration: template.durationSec,
-                  needImage: template.requiresImage ? t('create.templates.needImage') : '',
-                })}
-                onClick={() => {
-                  setPrompt(template.skeleton);
-                  setAspectRatio(template.aspectRatio);
-                  setDurationSec(template.durationSec);
-                  setResolutionTier(template.resolutionTier);
-                  setNotice(
-                    t('create.templates.applied', {
-                      industry: template.industry,
-                      title: template.title,
-                      mode: t(MODE_KEYS[template.recommendedMode]),
-                      ratio: template.aspectRatio,
-                      duration: template.durationSec,
-                      tier: template.resolutionTier,
-                    }),
-                  );
-                }}
-              >
-                {template.industry} · {template.title}
-              </button>
-            ))}
-          </div>
 
           {moreOpen ? (
-            <div className="cr-more">
-              <div className="cr-more-grid">
-                <div className="wb-field">
-                  <span className="wb-label">{t('create.more.aspect')}</span>
-                  <div className="wb-segmented">
-                    {(['16:9', '9:16'] as const).map((ratio) => (
-                      <button
-                        key={ratio}
-                        type="button"
-                        className="wb-segment"
-                        aria-pressed={aspectRatio === ratio}
-                        onClick={() => setAspectRatio(ratio)}
-                      >
-                        {ratio}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="wb-field">
-                  <span className="wb-label">{t('create.more.duration')}</span>
-                  <div className="wb-segmented">
-                    {DURATION_OPTIONS.map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        className="wb-segment"
-                        aria-pressed={durationSec === value}
-                        onClick={() => setDurationSec(value)}
-                      >
-                        {value}s
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="wb-field">
-                  <span className="wb-label">{t('create.more.resolution')}</span>
-                  <div className="wb-segmented">
-                    {RESOLUTION_TIERS.map((tier) => (
-                      <button
-                        key={tier}
-                        type="button"
-                        className="wb-segment"
-                        aria-pressed={resolutionTier === tier}
-                        onClick={() => setResolutionTier(tier)}
-                      >
-                        {tier}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="wb-field">
-                  <span className="wb-label">{t('create.more.engine')}</span>
-                  <div className="wb-segmented">
-                    <button
-                      type="button"
-                      className="wb-segment"
-                      aria-pressed={provider === CLOUD_PROVIDER}
-                      onClick={() => setProvider(CLOUD_PROVIDER)}
-                    >
-                      {t('common.engine.cloud')}
-                    </button>
-                    {/* ⚠️ V2.37（D56）：「本地 H3」这一档已撤掉（与左栏同步）——
-                        以前这里摆着一个永远不可用的选项；现在本地轨只有 ComfyUI。 */}
-                    {/* V2.31（A1 片 C / D53）：自备 ComfyUI —— 与左栏同一档语义，
-                        能不能跑（模型/节点）由服务端在提交时判定并如实报错（§19-2）。
-                        V2.36：可能有多台（§19-1）—— 单台时就在这一行，多台时另起一行。 */}
-                    {comfyEngines.length === 1 && comfyEngines[0] !== undefined ? (
-                      <button
-                        type="button"
-                        className="wb-segment"
-                        data-testid={`cr-engine-${comfyEngines[0].id}`}
-                        aria-pressed={provider === comfyEngines[0].id}
-                        onClick={() => setProvider(comfyEngines[0].id)}
-                        title={comfyEngines[0].hint}
-                      >
-                        {comfyEngines[0].label}
-                      </button>
-                    ) : null}
-                  </div>
-                  {comfyEngines.length > 1 ? (
-                    <div
-                      className="wb-segmented wb-segmented-engines"
-                      role="group"
-                      aria-label={t('create.more.enginesAria')}
-                    >
-                      {comfyEngines.map((option) => (
-                        <button
-                          key={option.id}
-                          type="button"
-                          className="wb-segment"
-                          data-testid={`cr-engine-${option.id}`}
-                          aria-pressed={provider === option.id}
-                          onClick={() => setProvider(option.id)}
-                          title={option.hint}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="wb-field">
-                  <span className="wb-label">{t('create.more.seed')}</span>
-                  <input
-                    className="wb-input"
-                    inputMode="numeric"
-                    placeholder={t('create.more.seedPlaceholder')}
-                    value={seed}
-                    onChange={(event) => setSeed(event.target.value.replace(/[^\d-]/g, ''))}
-                  />
-                </div>
-              </div>
+            <div className="cr-advanced">
+              <label className="cr-bar-field">
+                <span className="wb-label">{t('create.more.seed')}</span>
+                <input
+                  className="wb-input"
+                  inputMode="numeric"
+                  placeholder={t('create.more.seedPlaceholder')}
+                  value={seed}
+                  onChange={(event) => setSeed(event.target.value.replace(/[^\d-]/g, ''))}
+                />
+              </label>
             </div>
           ) : null}
 
-          <div className="cr-more-head">
-            <button
-              type="button"
-              className="cr-more-toggle"
-              aria-expanded={moreOpen}
-              onClick={() => setMoreOpen((open) => !open)}
-            >
-              {moreOpen ? t('create.more.collapse') : t('create.more.expand')}
-            </button>
-            <span className="wb-note">
-              {aspectRatio} · {durationSec}s · {resolutionTier} ·{' '}
-              {provider === CLOUD_PROVIDER ? t('common.scope.cloud') : t('common.scope.local')}
-            </span>
-          </div>
+          <ComposerBar
+            aspectRatio={aspectRatio}
+            resolutionTier={resolutionTier}
+            durationSec={durationSec}
+            engines={comfyEngines}
+            provider={provider}
+            modelLabel={byok.model === '' ? undefined : byok.model}
+            priceText={kind === 'image' ? null : priceLabel}
+            submitDisabled={submitDisabled}
+            submitting={submitting}
+            onAspectChange={setAspectRatio}
+            onResolutionChange={setResolutionTier}
+            onDurationChange={setDurationSec}
+            onProviderChange={(next) => setProvider(next as ProviderType)}
+            onOpenMentions={openMentions}
+            onSubmit={() => void handleSubmit()}
+            advancedOpen={moreOpen}
+            onToggleAdvanced={() => setMoreOpen((open) => !open)}
+          />
         </div>
 
         {/* 图片态没有"模式推断"这回事（t2i 是固定的），不显示视频的模式行免得误导 */}
@@ -796,42 +667,16 @@ export function CreateView() {
           </div>
         )}
 
-        <div className="cr-actions">
-          <div className="wb-note">
-            {kind === 'image' ? (
-              <>{t('create.type.imagePendingHint')}</>
-            ) : needsKey ? (
-              <>
-                {t('create.needsKey')}{' '}
-                <button type="button" className="cr-link" onClick={openByok}>
-                  {t('create.needsKey.action')}
-                </button>
-              </>
-            ) : (
-              <>
-                {costEstimate === null ? null : (
-                  <span className="cr-cost" title={t('common.cost.title')}>
-                    {t('common.cost.estimated', { amount: formatYuan(costEstimate.yuan) })}
-                    {costEstimate.source === 'local-free'
-                      ? t('common.cost.localFree')
-                      : t('common.cost.estimateOnly')}
-                    {costEstimate.fromPriceTable ? '' : t('common.cost.customTier')}
-                    {' · '}
-                  </span>
-                )}
-                {t('create.actions.note')}
-              </>
-            )}
-          </div>
-          <button
-            type="button"
-            className="wb-btn wb-btn-primary cr-submit"
-            disabled={submitDisabled}
-            onClick={() => void handleSubmit()}
-          >
-            {submitting ? t('common.submit.pending') : t('create.submit')}
-          </button>
-        </div>
+        {kind === 'image' ? (
+          imageReady ? null : <p className="wb-note">{t('create.type.imagePendingHint')}</p>
+        ) : needsKey ? (
+          <p className="wb-note">
+            {t('create.needsKey')}{' '}
+            <button type="button" className="cr-link" onClick={openByok}>
+              {t('create.needsKey.action')}
+            </button>
+          </p>
+        ) : null}
 
         {uploadError === null ? null : (
           <div className="wb-uncertain cr-alert">
