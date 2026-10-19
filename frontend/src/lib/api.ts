@@ -1,5 +1,8 @@
 import {
   AssetListResponseSchema,
+  CanvasDocSaveResponseSchema,
+  CanvasDocSchema,
+  CanvasProjectIndexSchema,
   CostSummaryResponseSchema,
   DeleteProjectResponseSchema,
   ErrorResponseSchema,
@@ -21,6 +24,9 @@ import {
 } from '@astrmira/shared';
 import type {
   AssetListResponse,
+  CanvasDoc,
+  CanvasDocSaveResponse,
+  CanvasProjectIndex,
   CostSummaryResponse,
   DeleteProjectResponse,
   EditProject,
@@ -91,7 +97,8 @@ export class ApiError extends Error {
 
 interface RequestOptions {
   // V2.11（B47）：项目改名走 PATCH（`/api/projects/:projectId`）
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  // V2.42：画布文档保存走 PUT（整份覆盖，不做字段级 PATCH）
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
   /** 仅用于请求头；`undefined` 表示不带（服务端回落到 env 兜底 Key） */
   providerKey?: string;
@@ -409,6 +416,29 @@ export function renameProject(projectId: string, name: string): Promise<ProjectR
 export function deleteProject(projectId: string): Promise<DeleteProjectResponse> {
   return request(`/api/projects/${encodeURIComponent(projectId)}`, DeleteProjectResponseSchema, {
     method: 'DELETE',
+  });
+}
+
+/**
+ * 画布项目索引（CONTRACT §21-8 / V2.42）。
+ *
+ * 只读摘要：`{ version, projects[], activeProjectId? }`。不返回文档本体 ——
+ * 列表页不应该为了显示"节点数"去读 20 份完整文档。
+ */
+export function fetchCanvasIndex(): Promise<CanvasProjectIndex> {
+  return request('/api/canvas/projects', CanvasProjectIndexSchema);
+}
+
+/** 整份画布文档；未保存过 → 404（调用方应视为"新画布"，不当作错误弹窗） */
+export function fetchCanvasDoc(projectId: string): Promise<CanvasDoc> {
+  return request(`/api/canvas/docs/${encodeURIComponent(projectId)}`, CanvasDocSchema);
+}
+
+/** 整份覆盖保存（不做字段级 PATCH）；返回保存后的摘要，供列表就地更新 */
+export function saveCanvasDoc(doc: CanvasDoc): Promise<CanvasDocSaveResponse> {
+  return request(`/api/canvas/docs/${encodeURIComponent(doc.projectId)}`, CanvasDocSaveResponseSchema, {
+    method: 'PUT',
+    body: doc,
   });
 }
 
