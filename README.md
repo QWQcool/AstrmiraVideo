@@ -8,9 +8,9 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Node%2022%20%2B%20Fastify%205%20%2B%20SQLite-3178c6)](docs/PLAN.md)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20Vite%206-61dafb)](docs/PLAN.md)
-[![Contract](https://img.shields.io/badge/CONTRACT-V2.37-success)](docs/CONTRACT.md)
+[![Contract](https://img.shields.io/badge/CONTRACT-V2.46-success)](docs/CONTRACT.md)
 
-> **当前进度、已完成项与未做项的唯一权威是 [docs/PLAN.md](docs/PLAN.md) §5 与 §9 台账** ——
+> **当前进度、已完成项与未做项的唯一权威是 [docs/PLAN.md](docs/PLAN.md#creation-experience-status) §5 与 §9 台账** ——
 > 本文不维护第二份状态描述（历史上正是因为 README 里写了一份"进度"，它最先过期）。
 
 > **项目定位（如实）**：这是一个**面向"有私有化客户"的形态去写的学习向项目** ——
@@ -63,6 +63,8 @@
 > **手机端现状（如实）**：当前是**"能看能点"的浏览态，不是剪辑终端** —— 时间轴、画布、
 > 双栏检查器在 390px 下不可用（画布在窄屏**直接隐藏**）。三条手机截图与逐条证据见
 > [docs/FRONTEND-REVIEW.md](docs/FRONTEND-REVIEW.md) §三，收口项登记在 PLAN §9 台账 **B60**。
+
+> 后续开发与验收入口：[Step 11 当前分片](docs/PLAN.md#creation-experience-plan)；本文上方历史截图不作为新画布已验收的证明。
 
 ## 快速开始
 

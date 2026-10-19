@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Node%2022%20%2B%20Fastify%205%20%2B%20SQLite-3178c6)](docs/PLAN.md)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20Vite%206-61dafb)](docs/PLAN.md)
-[![Contract](https://img.shields.io/badge/CONTRACT-V2.37-success)](docs/CONTRACT.md)
+[![Contract](https://img.shields.io/badge/CONTRACT-V2.46-success)](docs/CONTRACT.md)
 
 > **The single source of truth for progress — what is finished and what is not — is
 > [docs/PLAN.md](docs/PLAN.md) §5 (progress log) and §9 (backlog).** This file deliberately keeps no second copy of it.
