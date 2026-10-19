@@ -146,6 +146,17 @@ export const VideoGenerateRequestSchema = z.object({
    * 缺省 = 默认项目（`DEFAULT_PROJECT_ID`），因此老客户端行为不变。
    */
   projectId: z.string().optional(),
+  /**
+   * V2.43（Step 11-S3）：这条任务是从哪来的。
+   *
+   * `create`（缺省）= 创作页/对话；`canvas` = 画布节点提交。
+   * 为什么要区分：实测产品的**画布产物不进“生成历史”**（它只在画布里看得到），
+   * 生成历史只收创作/对话产物。没有这个字段，服务端无法在分页/搜索时正确过滤 ——
+   * 界面层再怎么藏，翻页也会把它翻出来。
+   */
+  origin: z.enum(['create', 'canvas']).optional(),
+  /** 画布来源时建议带上，便于按项目回查（与 `projectId` 是两个维度：项目是资产归属，画布是工作区） */
+  canvasProjectId: z.string().min(1).optional(),
 });
 
 export type GenerationMode = z.infer<typeof GenerationModeSchema>;

@@ -45,6 +45,12 @@ beforeAll(async () => {
   seed({ taskId: 'gen-b', outputVideoUrl: '/media/gen-b.mp4' });
   // V2.40：图片产物（`t2i`）—— 它只有 outputImageUrl，没有 outputVideoUrl
   seed({ taskId: 'gen-img', outputImageUrl: '/media/gen-img.png' });
+  // V2.43：画布产物的任务（origin=canvas），用来钉“不进生成历史”
+  seed({
+    taskId: 'canvas-a',
+    outputImageUrl: '/media/canvas-a.png',
+    requestSnapshot: { ...SNAPSHOT, origin: 'canvas', canvasProjectId: 'proj-1' },
+  });
   seed({
     taskId: 'edit-legacy',
     outputVideoUrl: '/media/edit-legacy.mp4',
@@ -113,5 +119,28 @@ describe('listRecent · 三档口径', () => {
     expect(ids).toContain('edit-project');
     expect(ids).not.toContain('gen-a');
     expect(ids).not.toContain('gen-b');
+  });
+});
+
+/**
+ * V2.43（Step 11-S3）：画布产物不进“生成历史”。
+ *
+ * 实测产品的边界是：对话/创作生成的产物进生成历史，**画布节点的产物只在画布里看得到**。
+ * 这条在 SQL 层过滤（而不是界面层藏），否则分页/搜索一翻就漏。
+ */
+describe('listRecent · 来源过滤（V2.43）', () => {
+  it('默认与 create：都排除画布产物', () => {
+    const byDefault = store.listRecent(50).map((r) => r.taskId);
+    const byCreate = store.listRecent(50, { origin: 'create' }).map((r) => r.taskId);
+    expect(byDefault).not.toContain('canvas-a');
+    expect(byCreate).not.toContain('canvas-a');
+    expect(byDefault).toContain('gen-a');
+  });
+
+  it('origin=canvas：只回画布产物，且老记录（无 origin）不被误伤', () => {
+    const ids = store.listRecent(50, { origin: 'canvas' }).map((r) => r.taskId);
+    expect(ids).toEqual(['canvas-a']);
+    // 没有 origin 字段的老任务按 create 处理
+    expect(ids).not.toContain('gen-a');
   });
 });

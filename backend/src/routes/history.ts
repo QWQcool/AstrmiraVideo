@@ -46,6 +46,12 @@ const HistoryQuerySchema = z.object({
    * 与排序键（`created_at DESC`）同源，"加载更早"逐页向过去推进。
    */
   before: z.coerce.number().int().nonnegative().optional(),
+  /**
+   * V2.43（Step 11-S3）：来源过滤。
+   * - 缺省 / `create`：**排除画布产物**（画布结果只在画布里看得到，与实测产品一致）；
+   * - `canvas`：只看画布产物（画布内回查用）。
+   */
+  origin: z.enum(['create', 'canvas']).optional(),
 });
 
 /** V2.25：`limit` 省略时的条数（= V2.25 之前写死的 50 —— 老调用方行为不变） */
@@ -120,6 +126,7 @@ export const createHistoryRoutes =
             : deps.store.listRecent(probe, {
                 projectId,
                 ...(before === undefined ? {} : { before }),
+                ...(request.query.origin === undefined ? {} : { origin: request.query.origin }),
               })
         ).map(toTaskProgress);
         const hasMore = page.length > limit;

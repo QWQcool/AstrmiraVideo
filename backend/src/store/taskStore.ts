@@ -449,6 +449,12 @@ export class TaskStore {
       projectId?: string;
       /** V2.25（台账 B44）：只返回 `created_at < before` 的任务 —— "加载更早"的游标 */
       before?: number;
+      /**
+       * V2.43（Step 11-S3）：来源过滤。
+       * - 缺省 / `create`：**排除画布产物**（实测产品的生成历史不含画布结果）；
+       * - `canvas`：只看画布产物（画布内回查用）。
+       */
+      origin?: 'create' | 'canvas';
     } = {},
   ): TaskRecord[] {
     const projectClause = options.projectId === undefined ? '' : ' AND project_id = @projectId';
@@ -475,10 +481,16 @@ export class TaskStore {
       return rows.map(rowToRecord);
     }
 
+    // V2.43：画布产物不进生成历史。老记录没有 origin 字段 → `coalesce` 当 `create` 处理。
+    const originClause =
+      options.origin === 'canvas'
+        ? " AND json_extract(request_snapshot, '$.origin') = 'canvas'"
+        : " AND coalesce(json_extract(request_snapshot, '$.origin'), 'create') <> 'canvas'";
+
     const rows = this.db
       .prepare(
         `SELECT * FROM tasks
-          WHERE edit_script IS NULL AND edit_origin IS NULL${projectClause}${beforeClause}
+          WHERE edit_script IS NULL AND edit_origin IS NULL${projectClause}${beforeClause}${originClause}
           ORDER BY created_at DESC LIMIT @limit`,
       )
       .all(params) as TaskRow[];

@@ -1,6 +1,12 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.42 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.43 · 已冻结（变更需先改本文，再改代码）**
+> **V2.43 修订（2026-10-19）**：**任务来源 `origin` 与生成历史过滤（§1 / §5）** ——
+>   ① `VideoGenerateRequest` 新增**可选** `origin: 'create' | 'canvas'` 与 `canvasProjectId?`（缺省 = `create`，老客户端行为不变）；
+>   ② `GET /api/history` 新增可选 `?origin=`，**缺省与 `create` 都排除画布产物**，`canvas` 时只看画布产物；
+>   过滤在 SQL 层（`json_extract(request_snapshot,'$.origin')`），不在界面层藏 —— 否则分页/搜索会漏；
+>   ③ **无新错误码、无新路由**。设计依据：实测产品的画布产物不进"生成历史"（只在画布项目里可见）。
+
 > **V2.42 修订（2026-10-19）**：**画布文档持久化路由（§5 / §21-8）** ——
 >   Step 11-S3 片 A（台账 B78）。三条路由：`GET /api/canvas/projects`、`GET /api/canvas/docs/:projectId`、
 >   `PUT /api/canvas/docs/:projectId`。**整份读写、不做字段级 PATCH**（避免"撤销栈"与"服务端副本"互相覆盖）；
@@ -486,6 +492,13 @@ export interface VideoGenerateRequest {
   // 它**必须进幂等指纹**：否则"同一提示词在两个项目各提交一次"会被去重成同一条任务，
   // 用户在第二个项目里将看不到自己刚提交的东西。
   projectId?: string;
+
+  // V2.43（Step 11-S3）：任务来源。缺省 = 'create'（创作页/对话）。
+  // 'canvas' = 画布节点提交的产物：它**不进生成历史**（`GET /api/history` 默认排除），
+  // 只在画布文档的 batches 里可见。缺省值保证老客户端行为完全不变。
+  origin?: 'create' | 'canvas';
+  // 画布来源时建议带上（工作区维度，与 projectId 的资产归属维度不同）；不透传给上游。
+  canvasProjectId?: string;
 }
 ```
 
@@ -735,7 +748,7 @@ export interface AssetListResponse {
 | `GET` | `/api/health/live` | **V2.16 新增（台账 B53）**：**存活探针**（与 `/api/health` **同语义**，新路径为了与 ready 成对）。**任何来源免鉴权**（编排器的 livenessProbe 不会带 Bearer）。**零依赖**：不碰数据库、不扫目录 —— 探针若在依赖故障时也变慢/失败，编排器会把"数据库卡住"当成"进程死了"并重启，把一次依赖故障放大成服务不可用。**200 → `HealthLiveResponse`（§16）** |
 | `GET` | `/api/health/ready` | **V2.16 新增**：**就绪探针**（进程活着 ≠ 能干活）。检查项：数据库可读、输出目录**真写一次**、容量余量、媒体工具（见 §16）。**需鉴权**（回环免；它暴露部署内部细节 —— 探针自己带 `Authorization: Bearer <PUBLIC_API_TOKEN>`）。`required` 检查失败 → **503**（响应体**照样**给完整 `checks`：排错要看原因，不是只看状态码）；**非 required** 失败（ffmpeg 缺失、容量接近阈值、凭据未配）**不降级** —— BYOK / 纯云端部署下它们不影响力 |
 | `GET` | `/api/metrics` | **V2.16 新增**：**运维快照**（任务按状态 / 队列积压 / 存储 / 数据库体积 / Webhook 投递 / 告警 / 生效阈值）。**需鉴权**（回环免）。**200 → `MetricsResponse`（§16）**。⚠️ 它含**一次目录扫描**（毫秒级，本项目规模下），因此**不做服务端自动轮询** —— 调用方自己决定频率（建议 15~60s）。无新错误码 |
-| `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage, hasMore: boolean }`**（`items` 默认最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾）。**V2.4 起**：默认只返回**生成产物**（剪辑产物不进历史，避免提示词与源片相同造成的"重复"观感）；查询参数 `?kind=edit`：**V2.6 起 `source` 可选** —— 带 `source=<taskId>` 返回某源片的剪辑产物（剪辑台"本片剪辑历史"用）；**不带 `source` 返回全部剪辑产物**（剪辑台素材候选 / L2 血缘画布用，同样受条数上限约束）。**V2.11（B47）**：可选 `?project=<projectId>` —— **省略 = 默认项目**（不是"全部项目"：界面的心智模型是"我在哪个项目里"）；`storage` 聚合仍是**目录级全局**（它描述磁盘，不描述项目）。**V2.25（B44）**：新增可选 `?limit=`（**1~200，省略 = 50**，超出范围 → 400 `INVALID_REQUEST`）与 `?before=<epoch ms>`（只返回 `created_at < before` 的任务 —— "加载更早"的游标）；响应新增必填 `hasMore`（服务端按 `limit + 1` 探测后截断，不做额外 COUNT；老客户端忽略它即可）。**排序键是 `created_at`**（游标语义与之一致） |
+| `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage, hasMore: boolean }`**（`items` 默认最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾）。**V2.4 起**：默认只返回**生成产物**（剪辑产物不进历史，避免提示词与源片相同造成的"重复"观感）；查询参数 `?kind=edit`：**V2.6 起 `source` 可选** —— 带 `source=<taskId>` 返回某源片的剪辑产物（剪辑台"本片剪辑历史"用）；**不带 `source` 返回全部剪辑产物**（剪辑台素材候选 / L2 血缘画布用，同样受条数上限约束）。**V2.11（B47）**：可选 `?project=<projectId>` —— **省略 = 默认项目**（不是"全部项目"：界面的心智模型是"我在哪个项目里"）；`storage` 聚合仍是**目录级全局**（它描述磁盘，不描述项目）。**V2.25（B44）**：新增可选 `?limit=`（**1~200，省略 = 50**，超出范围 → 400 `INVALID_REQUEST`）与 `?before=<epoch ms>`（只返回 `created_at < before` 的任务 —— "加载更早"的游标）；响应新增必填 `hasMore`（服务端按 `limit + 1` 探测后截断，不做额外 COUNT；老客户端忽略它即可）。**排序键是 `created_at`**（游标语义与之一致）。**V2.43**：新增可选 `?origin=create|canvas` —— **缺省与 `create` 都排除画布产物**（画布节点的结果只在画布里看得到，与实测产品一致）；`origin=canvas` 时只返回画布产物（画布内回查用）。过滤在 SQL 层做（`json_extract(request_snapshot,'$.origin')`），否则分页/搜索会把画布产物翻出来 |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
 | `POST` | `/api/providers/keys/verify` | **V2.1 新增（原【规划·B2】）**：凭据与模型校验，**零费用**。请求头按轨取（视频 `X-Provider-Key` / 文本 `X-LLM-Key`）；**200 → `KeyVerifyResponse`（§9）**；未带 Key → **501 `KEY_MISSING`**；凭据被上游拒绝 → **401 `KEY_INVALID`**；上游不可达 → **502 `UPSTREAM_ERROR`**；**V2.8 起**：独立限流桶 `verify`（同一来源 IP **10 秒内最多 5 次**，内存突发窗口）→ 429 `RATE_LIMITED` + `Retry-After`。为什么：本端点**会向上游发真实请求**（`/models` + 空 content 探针），没有限流时被刷等于把部署者的服务器当免费探针——与生成任务的 60s 冷却（防线 5）分开计桶，互不影响。**为什么是"窗口 N 次"而不是"最小间隔"**：间隔语义会误伤正常交互（连点两次"测试连接"切轨道验证），窗口语义对"人"无感、对"脚本"生效；它是底线防护，真正的防线仍是 Caddy 登录 + `PUBLIC_API_TOKEN` |
 | `GET` | `/api/logs` | **V2.1 新增**：操作日志查询（筛选 + 分页，见 §10）。**200 → `{ items, total }`**；**V2.8 起**：独立限流桶 `logs`（同一来源 IP **10 秒内最多 30 次**，内存突发窗口）→ 429 `RATE_LIMITED` + `Retry-After`。为什么：日志页挂载 + 轮询 + 连续筛选的请求量远低于该配额（正常使用**完全无感**），但脚本级高频扫描会被挡住（读接口也要有一道底线）；同样独立计桶。**两个 DELETE 刻意不挂桶**（写操作、频率天然低，避免误伤"连续手删"） |
