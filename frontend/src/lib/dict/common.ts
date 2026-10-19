@@ -144,6 +144,18 @@ export const COMMON_ZH = {
 
   /** 音频素材（画布资产的副标签；`common.kind.image` / `video` 见上面"素材种类"） */
   'common.kind.audio': '音频',
+
+  // ── 结果动作（S4：全屏 / 下载 / 作为参考 / 去画布）──
+  'common.download': '下载',
+  'common.close': '关闭',
+  'common.preview': '作品预览',
+  'common.fullscreen': '全屏',
+  'common.asReference': '作为参考',
+  'common.toCanvas': '去画布编辑',
+  'common.refAdded': '已作为参考加入',
+  'common.resultToCanvas': '已放入画布',
+  'common.resultNotReady': '这条结果还没有可用的产物',
+  'common.resultInCanvas': '这条结果已经在画布中',
 };
 
 export const COMMON_EN = {
@@ -245,4 +257,15 @@ export const COMMON_EN = {
   'common.time.hoursAgo': '{count} h ago',
 
   'common.kind.audio': 'audio',
+
+  'common.download': 'Download',
+  'common.close': 'Close',
+  'common.preview': 'Preview',
+  'common.fullscreen': 'Full screen',
+  'common.asReference': 'Use as reference',
+  'common.toCanvas': 'Open in canvas',
+  'common.refAdded': 'Added as a reference',
+  'common.resultToCanvas': 'Added to the canvas',
+  'common.resultNotReady': 'This result has no playable output yet',
+  'common.resultInCanvas': 'This result is already on the canvas',
 };

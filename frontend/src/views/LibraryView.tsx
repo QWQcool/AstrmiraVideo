@@ -6,8 +6,10 @@ import {
 } from '@astrmira/shared';
 import { taskOutput, type HistoryResponse, type TaskProgress } from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
+import { MediaLightbox } from '../components/MediaLightbox';
 import { EDIT_OPERATION_KEYS, describeEditOrigin } from '../edit/model';
 import { ApiError, deleteHistory, fetchHistory, resolveMediaUrl } from '../lib/api';
+import { setCanvasResultHandoff } from '../lib/canvasHandoff';
 import {
   buildDeliverableZip,
   planDeliverablePackage,
@@ -94,6 +96,11 @@ export function LibraryView() {
   const [sort, setSort] = useState<LibrarySort>('time-desc');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{
+    kind: 'image' | 'video';
+    url: string;
+    title: string;
+  } | null>(null);
 
   const reload = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -128,6 +135,8 @@ export function LibraryView() {
 
   // 抽屉内容从**全量**里找：改筛选不该把已经打开的详情弄丢
   const selected = allItems.find((item) => item.taskId === selectedId) ?? null;
+  // 产物可能是视频或图片（V2.40）；`none` = 失败/取消，没有可播放/可下载的东西
+  const selectedOutput = selected === null ? null : taskOutput(selected);
 
   // ── 交付包（V2.13 / B49）──
   // 勾选的是"当前列表里选中的那些"（筛掉已删除 / 已不在列表的 id —— 陈旧勾选不该让打包失败）
@@ -557,33 +566,43 @@ export function LibraryView() {
                       type="button"
                       className="wb-btn lib-icon"
                       title={t(
-                        task.status === 'succeeded'
-                          ? 'library.card.editTitle'
-                          : 'library.card.editDisabledTitle',
+                        task.status !== 'succeeded'
+                          ? 'library.card.editDisabledTitle'
+                          : task.outputVideoUrl === undefined
+                            ? 'library.card.editNoVideo'
+                            : 'library.card.editTitle',
                       )}
-                      disabled={task.status !== 'succeeded'}
+                      disabled={task.status !== 'succeeded' || task.outputVideoUrl === undefined}
                       onClick={() => navigate(`#/edit?task=${encodeURIComponent(task.taskId)}`)}
                     >
                       ✂
                     </button>
-                    <button
-                      type="button"
-                      className="wb-btn lib-icon"
-                      title={t('library.card.reuseTitle')}
-                      onClick={() => navigate(`#/workbench?reuse=${encodeURIComponent(task.taskId)}`)}
-                    >
-                      ⟲
-                    </button>
                     {task.outputVideoUrl === undefined ? null : (
-                      <a
+                      <button
+                        type="button"
                         className="wb-btn lib-icon"
-                        title={t('library.card.downloadTitle')}
-                        href={mediaHref(task.outputVideoUrl)}
-                        download
+                        title={t('library.card.reuseTitle')}
+                        onClick={() =>
+                          navigate(`#/workbench?reuse=${encodeURIComponent(task.taskId)}`)
+                        }
                       >
-                        ⤓
-                      </a>
+                        ⟲
+                      </button>
                     )}
+                    {(() => {
+                      const output = taskOutput(task);
+                      if (output.kind === 'none') return null;
+                      return (
+                        <a
+                          className="wb-btn lib-icon"
+                          title={t('library.card.downloadTitle')}
+                          href={mediaHref(output.url)}
+                          download={`${task.taskId}.${output.kind === 'image' ? 'png' : 'mp4'}`}
+                        >
+                          ⤓
+                        </a>
+                      );
+                    })()}
                     <button
                       type="button"
                       className="wb-btn lib-icon lib-icon-danger"
@@ -618,25 +637,18 @@ export function LibraryView() {
             <div className="lib-drawer-body">
               <div className="lib-preview">
                 {/* V2.40：产物可能是视频或图片（`t2i`）—— 用 shared 的 `taskOutput()` 收口 */}
-                {(() => {
-                  const output = taskOutput(selected);
-                  if (output.kind === 'video') {
-                    return <video src={mediaHref(output.url)} controls preload="metadata" />;
-                  }
-                  if (output.kind === 'image') {
-                    return (
-                      <img src={mediaHref(output.url)} alt={t('library.drawer.imageAlt')} />
-                    );
-                  }
-                  return (
-                    <span className="wb-note">
-                      {t('library.drawer.noPlayable', {
-                        status: t(TASK_STATUS_KEYS[selected.status]),
-                      })}
-                      {selected.error === undefined ? '' : `（${selected.error.code}）`}
-                    </span>
-                  );
-                })()}
+                {selectedOutput === null ? null : selectedOutput.kind === 'video' ? (
+                  <video src={mediaHref(selectedOutput.url)} controls preload="metadata" />
+                ) : selectedOutput.kind === 'image' ? (
+                  <img src={mediaHref(selectedOutput.url)} alt={t('library.drawer.imageAlt')} />
+                ) : (
+                  <span className="wb-note">
+                    {t('library.drawer.noPlayable', {
+                      status: t(TASK_STATUS_KEYS[selected.status]),
+                    })}
+                    {selected.error === undefined ? '' : `（${selected.error.code}）`}
+                  </span>
+                )}
               </div>
 
               <dl className="lib-kv">
@@ -702,26 +714,82 @@ export function LibraryView() {
               </div>
 
               <div className="lib-drawer-acts">
-                <button
-                  type="button"
-                  className="wb-btn wb-btn-gold"
-                  onClick={() => navigate(`#/workbench?reuse=${encodeURIComponent(selected.taskId)}`)}
-                >
-                  {t('library.drawer.action.reuse')}
-                </button>
+                {selectedOutput?.kind === 'video' ? (
+                  <button
+                    type="button"
+                    className="wb-btn wb-btn-gold"
+                    onClick={() =>
+                      navigate(`#/workbench?reuse=${encodeURIComponent(selected.taskId)}`)
+                    }
+                  >
+                    {t('library.drawer.action.reuse')}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="wb-btn"
-                  disabled={selected.status !== 'succeeded'}
+                  disabled={selected.status !== 'succeeded' || selectedOutput?.kind !== 'video'}
+                  title={t(
+                    selected.status !== 'succeeded'
+                      ? 'library.card.editDisabledTitle'
+                      : selectedOutput?.kind !== 'video'
+                        ? 'library.card.editNoVideo'
+                        : 'library.card.editTitle',
+                  )}
                   onClick={() => navigate(`#/edit?task=${encodeURIComponent(selected.taskId)}`)}
                 >
                   {t('library.drawer.action.edit')}
                 </button>
-                {selected.outputVideoUrl === undefined ? null : (
-                  <a className="wb-btn" href={mediaHref(selected.outputVideoUrl)} download>
-                    {t('library.drawer.action.download')}
-                  </a>
-                )}
+
+                {selectedOutput !== null &&
+                (selectedOutput.kind === 'image' || selectedOutput.kind === 'video') ? (
+                  <>
+                    <button
+                      type="button"
+                      className="wb-btn"
+                      onClick={() =>
+                        setLightbox({
+                          kind: selectedOutput.kind === 'image' ? 'image' : 'video',
+                          url: mediaHref(selectedOutput.url) ?? '',
+                          title: selected.requestSnapshot.prompt,
+                        })
+                      }
+                    >
+                      {t('common.fullscreen')}
+                    </button>
+                    <button
+                      type="button"
+                      className="wb-btn"
+                      onClick={() =>
+                        navigate(`#/create?refTask=${encodeURIComponent(selected.taskId)}`)
+                      }
+                    >
+                      {t('common.asReference')}
+                    </button>
+                    <button
+                      type="button"
+                      className="wb-btn"
+                      onClick={() => {
+                        setCanvasResultHandoff({
+                          taskId: selected.taskId,
+                          kind: selectedOutput.kind,
+                          url: selectedOutput.url,
+                          title: selected.requestSnapshot.prompt.slice(0, 40),
+                        });
+                        navigate('#/canvas');
+                      }}
+                    >
+                      {t('common.toCanvas')}
+                    </button>
+                    <a
+                      className="wb-btn"
+                      href={mediaHref(selectedOutput.url)}
+                      download={`${selected.taskId}.${selectedOutput.kind === 'image' ? 'png' : 'mp4'}`}
+                    >
+                      {t('library.drawer.action.download')}
+                    </a>
+                  </>
+                ) : null}
                 <button
                   type="button"
                   className="wb-btn wb-btn-danger"
@@ -735,6 +803,17 @@ export function LibraryView() {
           </aside>
         )}
       </div>
+
+      {lightbox === null ? null : (
+        <MediaLightbox
+          open
+          kind={lightbox.kind}
+          url={lightbox.url}
+          title={lightbox.title}
+          downloadName={`${selected?.taskId ?? 'result'}.${lightbox.kind === 'image' ? 'png' : 'mp4'}`}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </section>
   );
 }

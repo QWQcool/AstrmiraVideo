@@ -71,6 +71,11 @@ import {
   canvasSubmitIssueText,
 } from '../lib/canvasNodeSubmit';
 import { resolveProviderKey } from '../lib/byok';
+import {
+  peekCanvasResultHandoff,
+  resultHandoffAsset,
+  takeCanvasResultHandoff,
+} from '../lib/canvasHandoff';
 import { newIdempotencyKey } from '../lib/idempotency';
 import {
   addCanvasLineageEdge,
@@ -122,6 +127,14 @@ const ROLE_KEYS: Record<CanvasReferenceRole, MessageKey> = {
   'reference-video': 'canvas.studio.role.referenceVideo',
   'reference-audio': 'canvas.studio.role.referenceAudio',
 };
+
+/** 资产入库只需要这四个字段（资产清单条目是它的超集；「去画布」交接只带这四个） */
+interface CanvasAssetInput {
+  assetId: string;
+  kind: 'image' | 'video' | 'audio';
+  url: string;
+  name?: string;
+}
 
 const LINEAGE_PROBLEM_KEYS: Record<CanvasLineageProblem, MessageKey> = {
   'node-missing': 'canvas.studio.lineage.nodeMissing',
@@ -284,7 +297,25 @@ export function CanvasStudioView() {
         if (!alive) return;
         setIndex(loaded);
         const initial = pickInitialCanvasProject(loaded);
-        if (initial !== null) await openProject(initial);
+        if (initial !== null) {
+          await openProject(initial);
+        } else if (peekCanvasResultHandoff() !== null) {
+          // 「去画布编辑」但一块画布都没有：先建一块，交接由下面的 effect 消费
+          const fresh = createEmptyCanvasDoc(newCanvasProjectId(), defaultCanvasName(loaded.projects));
+          const saved = await saveCanvasDoc(fresh);
+          if (!alive) return;
+          setIndex(
+            setActiveCanvasProject(upsertCanvasProject(loaded, saved.summary), fresh.projectId),
+          );
+          docRef.current = fresh;
+          setDoc(fresh);
+          setNodes([]);
+          setSelectedIds([]);
+          setLive({});
+          historyRef.current = createCanvasHistory();
+          setHistoryRev((value) => value + 1);
+          setSaveState('saved');
+        }
       } catch (caught) {
         if (alive) setError(describeError(caught));
       }
@@ -613,7 +644,7 @@ export function CanvasStudioView() {
 
   // ── 资产入库 ───────────────────────────────────────────────────────────
   const addAssets = useCallback(
-    (assets: readonly AssetListEntry[], source: 'from_asset' | 'uploaded'): void => {
+    (assets: readonly CanvasAssetInput[], source: 'from_asset' | 'uploaded'): void => {
       const current = docRef.current;
       if (current === null || assets.length === 0) return;
       const positions = nextCanvasNodePositions(current, assets.length);
@@ -639,6 +670,35 @@ export function CanvasStudioView() {
     },
     [applyDoc, labels],
   );
+
+  /**
+   * 消费「去画布编辑」交接：把结果作为资产节点放进当前画布。
+   *
+   * 去重：同一个 `task:<taskId>` 已经在当前文档里（比如连点两次），不再建第二个节点，
+   * 只选中已有节点并如实告诉用户"已经在画布中"。
+   */
+  useEffect(() => {
+    if (doc === null) return;
+    const handoff = takeCanvasResultHandoff();
+    if (handoff === null) return;
+    const assetId = `task:${handoff.taskId}`;
+    const existing = doc.nodes.find((node) =>
+      node.data.batches.some((batch) =>
+        batch.outputs.some((output) => output.assetId === assetId),
+      ),
+    );
+    if (existing !== undefined) {
+      pendingSelect.current = existing.id;
+      setSelectedIds([existing.id]);
+      setNodes((prev) =>
+        prev.map((node) => ({ ...node, selected: node.id === existing.id })),
+      );
+      setNotice(t('common.resultInCanvas'));
+      return;
+    }
+    addAssets([resultHandoffAsset(handoff)], 'from_asset');
+    setNotice(t('common.resultToCanvas'));
+  }, [doc?.projectId, addAssets, setNodes, t]);
 
   const handleUpload = useCallback(
     async (files: File[]): Promise<void> => {

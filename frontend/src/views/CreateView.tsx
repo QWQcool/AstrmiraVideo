@@ -12,11 +12,13 @@ import {
   ApiError,
   fetchAssets,
   fetchHistory,
+  fetchTask,
   resolveMediaUrl,
   submitGenerate,
   uploadAssets,
 } from '../lib/api';
 import { resolveProviderKey } from '../lib/byok';
+import { setCanvasResultHandoff } from '../lib/canvasHandoff';
 import {
   DEFAULT_DURATION_SEC,
   DEFAULT_RESOLUTION_TIER,
@@ -35,12 +37,13 @@ import {
   type MentionRef,
 } from '../lib/mentions';
 import { comfyUiEngineOptions } from '../lib/engineOptions';
-import { navigate } from '../lib/router';
+import { navigate, parseHash } from '../lib/router';
 import { useShell } from '../lib/shell';
 import { useTaskPolling } from '../hooks/useTaskPolling';
 import { useCreationDraft } from '../hooks/useCreationDraft';
 import { CreationTypeBar, type ComposerKind } from '../components/CreationTypeBar';
 import { ComposerBar } from '../components/ComposerBar';
+import { MediaLightbox } from '../components/MediaLightbox';
 
 /**
  * 创作入口 `#/create`（Step 8 · P3 / 台账 B41；决策 = PLAN §6-D39）。
@@ -91,13 +94,18 @@ function describeError(caught: unknown): string {
   return caught instanceof Error ? caught.message : String(caught);
 }
 
-/** 成片/剪辑产物 → chip 引用（`task:` 形态，V2.6） */
+/** 成片/剪辑/图片产物 → chip 引用（`task:` 形态，V2.6；V2.40 起按真实产物类型） */
 function refFromTask(task: TaskProgress): MentionRef {
+  const output = taskOutput(task);
+  const kind = output.kind === 'image' ? 'image' : 'video';
   return {
     id: newIdempotencyKey(),
     ref: `task:${task.taskId}`,
-    kind: 'video',
-    previewUrl: task.thumbnailUrl ?? null,
+    kind,
+    // 视频的 url 是 mp4，不能塞进 chip 的 <img>；没有封面就用类型字形
+    previewUrl:
+      task.thumbnailUrl ??
+      (output.kind === 'image' ? resolveMediaUrl(output.url) : null),
     label: `${task.origin?.kind === 'edit' ? '✂ ' : ''}${task.requestSnapshot.prompt.slice(0, 14)}·${task.taskId.slice(0, 6)}`,
   };
 }
@@ -211,6 +219,11 @@ export function CreateView() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{
+    kind: 'image' | 'video';
+    url: string;
+    title: string;
+  } | null>(null);
 
   const reloadPools = useCallback(async (): Promise<void> => {
     try {
@@ -223,7 +236,12 @@ export function CreateView() {
       setAssetPool(assets.assets.filter(isRefAsset));
       setTaskPool(
         [...generated.items, ...edits.items]
-          .filter((item) => item.status === 'succeeded' && item.outputVideoUrl !== undefined)
+          // V2.40：图片产物（t2i）也能当参考；S4 的「作为参考」不再只认视频
+          .filter(
+            (item) =>
+              item.status === 'succeeded' &&
+              (item.outputVideoUrl !== undefined || item.outputImageUrl !== undefined),
+          )
           .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)),
       );
       setPoolError(null);
@@ -309,6 +327,48 @@ export function CreateView() {
     setMentionOpen(false);
     setMentionFilter('');
   };
+
+  /**
+   * 从视频库点「作为参考」跳过来：`#/create?refTask=<taskId>`。
+   *
+   * ⚠️ 创作页是**常驻隐藏**的（App 的 keepalive），从别的视图切回来时**不会重新挂载** ——
+   * 所以不能只在 mount 时读一次 hash，必须监听 `hashchange`（S4 实机踩到：
+   * 直接打开链接有效，从视频库点按钮进来无效）。
+   *
+   * 用「上一次处理过的完整 hash」去重：同一个链接执行一次；成功后用 replaceState 把
+   * query 抹掉（不触发 hashchange，也就不会自激）。
+   */
+  const lastHandledHash = useRef<string | null>(null);
+  useEffect(() => {
+    const consume = (): void => {
+      const hash = window.location.hash;
+      if (hash === lastHandledHash.current) return;
+      const refTask = parseHash(hash).query.get('refTask');
+      if (refTask === null) return;
+      lastHandledHash.current = hash;
+      void (async () => {
+        try {
+          const fetched = await fetchTask(refTask);
+          if (fetched.status !== 'succeeded' || taskOutput(fetched).kind === 'none') {
+            setNotice(t('common.resultNotReady'));
+            return;
+          }
+          addRef(refFromTask(fetched));
+          setNotice(t('common.refAdded'));
+          window.history.replaceState(
+            null,
+            '',
+            `${window.location.pathname}${window.location.search}#/create`,
+          );
+        } catch (caught) {
+          setNotice(describeError(caught));
+        }
+      })();
+    };
+    window.addEventListener('hashchange', consume);
+    consume();
+    return () => window.removeEventListener('hashchange', consume);
+  }, [t]);
 
   const removeRef = (id: string): void => {
     setRefs((prev) => prev.filter((item) => item.id !== id));
@@ -765,6 +825,49 @@ export function CreateView() {
                   <a className="cr-link" href={outputUrl} download>
                     {t('create.task.download')}
                   </a>
+                  <button
+                    type="button"
+                    className="cr-link"
+                    onClick={() =>
+                      setLightbox({
+                        kind: outputKind === 'image' ? 'image' : 'video',
+                        url: outputUrl,
+                        title: task.requestSnapshot.prompt,
+                      })
+                    }
+                  >
+                    {t('common.fullscreen')}
+                  </button>
+                  <button
+                    type="button"
+                    className="cr-link"
+                    onClick={() => {
+                      addRef(refFromTask(task));
+                      setNotice(t('common.refAdded'));
+                    }}
+                  >
+                    {t('common.asReference')}
+                  </button>
+                  <button
+                    type="button"
+                    className="cr-link"
+                    onClick={() => {
+                      const output = taskOutput(task);
+                      if (output.kind === 'none') {
+                        setNotice(t('common.resultNotReady'));
+                        return;
+                      }
+                      setCanvasResultHandoff({
+                        taskId: task.taskId,
+                        kind: output.kind,
+                        url: output.url,
+                        title: task.requestSnapshot.prompt.slice(0, 40),
+                      });
+                      navigate('#/canvas');
+                    }}
+                  >
+                    {t('common.toCanvas')}
+                  </button>
                   {/* V2.40：图片产物**送不了剪辑台**（剪辑台要视频源片）—— 不摆一个点了会报错的按钮 */}
                   {outputKind === 'video' ? (
                     <button
@@ -792,6 +895,17 @@ export function CreateView() {
           </div>
         )}
       </div>
+
+      {lightbox === null ? null : (
+        <MediaLightbox
+          open
+          kind={lightbox.kind}
+          url={lightbox.url}
+          title={lightbox.title}
+          downloadName={`${task?.taskId ?? 'result'}.${lightbox.kind === 'image' ? 'png' : 'mp4'}`}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </section>
   );
 }

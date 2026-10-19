@@ -46,6 +46,9 @@
   --muted: #a8b3c4;
   --faint: #8794a8;
   --line: rgba(179, 195, 219, 0.18);
+  /* 全屏预览遮罩（S4）：两套主题都用同一层深色，避免浅色主题下"白底看片" */
+  --scrim: rgba(8, 10, 12, 0.86);
+  --on-scrim: #ffffff;
   --line-gold: rgba(214, 184, 129, 0.42);
   --gold: #d6b881;
   --gold-glow: rgba(214, 184, 129, 0.22);
@@ -148,6 +151,8 @@
   --muted: #5b6b80;
   --faint: #7c8ba0;
   --line: rgba(18, 32, 49, 0.14);
+  --scrim: rgba(8, 10, 12, 0.86);
+  --on-scrim: #ffffff;
   --line-gold: rgba(47, 111, 224, 0.35);
   --gold: #2f6fe0;
   --gold-glow: rgba(47, 111, 224, 0.16);
