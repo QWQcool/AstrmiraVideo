@@ -419,7 +419,7 @@
 .cr-types-label {
   font-size: var(--fs-note);
   color: var(--text-dim);
-  letter-spacing: 0.02em;
+  letter-spacing: var(--track-label);
 }
 
 .cr-types-seg {
@@ -465,7 +465,7 @@
   padding: 0 6px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   line-height: 16px;
   color: var(--text-faint, var(--text-dim));
 }

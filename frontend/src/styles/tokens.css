@@ -123,6 +123,8 @@
      不是界面 chrome，但同样不许在 TSX/CSS 里写字面量，故登记为 token。 */
   --fs-caption: 44px;
   --track-tight: -0.01em;
+  /* 小标签的轻微字距（S3-B3：创作类型条的标签原本写的是 0.02em 字面量） */
+  --track-label: 0.02em;
 }
 
 /**

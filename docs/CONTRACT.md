@@ -1,6 +1,17 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.44 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.45 · 已冻结（变更需先改本文，再改代码）**
+> **V2.45 修订（2026-10-19）**：**画布节点的创作提交与编辑器约定（§21-3 / §21-4 / §21-10）** ——
+>   Step 11-S3 片 B3（台账 B78）。**无新路由、无新错误码、无新必填字段**：
+>   ① `CanvasNodeSettings` 新增**可选** `provider?: string`（记录这个节点用哪台引擎提交；缺省由节点类型与
+>   `/api/providers/status` 推断）。加可选字段**不升 `CanvasDoc.version`** —— 旧文档没有它，读作"未指定"；
+>   ② **模型产物的引用形态**：`CanvasNodeBatch.outputs[].assetId` 与 `CanvasNodeDraft.references[].assetId`
+>   对模型产物统一写 **`task:<taskId>`**（与 §1 V2.6 的 `task:` 引用同形，可直接作为下游参考）；
+>   上传 / 资产库来源写真实 assetId。只做展示的 `url` **不参与引用解析**；
+>   ③ 新增 **§21-10 编辑器行为**：一次提交 = 一个批次、批次是服务端事实（轮询写回、**不参与撤销**）、
+>   撤销栈只覆盖编辑动作（增删/复制/粘贴/布局/草稿）、资产库多选 = 每项一个节点 + 一个 `succeeded` 批次。
+>   画布提交仍走 `POST /api/generate`，请求带 `origin:'canvas'` + `canvasProjectId`（V2.43 的字段，本次只写实用法）。
+
 > **V2.44 修订（2026-10-19）**：**画布删除路由（§5 / §21-8）** —— `DELETE /api/canvas/docs/:projectId`
 >   （文档 + 索引条目一起删）。**200 → `{ deleted: true, projectId }`**；不存在 → **404 `PROJECT_NOT_FOUND`**；
 >   复用既有响应形状与错误码，**无新码**。用途：S3-B2 的"删除画布"。
@@ -2172,6 +2183,7 @@ interface CanvasNodeDraft {
   prompt: string;             // 允许空：边写边存，不能因为没写完就不让存
   settings: {
     modelId?: string;
+    provider?: string;                        // V2.45：提交用的引擎 id（§1 的 provider）；缺省按节点类型与 /status 推断
     mode?: GenerationMode;                    // 缺省按节点类型推断（video→t2v，image→t2i）
     referenceMode?: 'none' | 'first-last-frame' | 'omni-reference';
     aspectRatio?: AspectRatio;
@@ -2180,7 +2192,7 @@ interface CanvasNodeDraft {
     count?: number;                           // 1..8（结构上限；真实上限由能力目录决定）
   };
   references: Array<{
-    assetId: string;                          // 只存资产 id，不存临时 URL
+    assetId: string;                          // 上传资产 id，或模型产物的 `task:<taskId>`（V2.45）；不存临时 URL
     role: 'first-frame' | 'last-frame' | 'reference-image' | 'reference-video' | 'reference-audio';
     order: number;                            // 同一用途内排序
   }>;
@@ -2200,7 +2212,7 @@ interface CanvasNodeBatch {
   createdAt: number;
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
   outputs: Array<{
-    assetId: string;
+    assetId: string;                          // 上传资产 id；模型产物 = `task:<taskId>`（V2.45）
     kind: 'image' | 'video' | 'audio' | 'text';
     url?: string;                             // 仅展示；刷新后按 assetId 重新取
     width?: number; height?: number; durationSec?: number;
@@ -2305,3 +2317,41 @@ interface ModelCapability {
 （界面**必须**显示"待核算"，不能显示 0 元）；`per-run` 不乘 units（D59：只做估算，不做扣费）。
 
 **无新错误码**：能力不满足是**界面侧**的前置校验；服务端仍按 §1 校验请求，不因为有了这份目录就放松。
+
+### 21-10 编辑器行为（V2.45 落地；Step 11-S3 片 B3）
+
+**提交与批次**
+- **一次提交 = 一个批次**：`batches` 追加，不合并、不覆盖。批次先以 `queued` 写进文档；拿到 `taskId` 后写回；
+  提交失败 → 该批次 `failed` + `failure{code,message}`，**原位保留**（重试 = 新批次 = 新任务，不复用旧批次）。
+- 请求走 `POST /api/generate`，带 `origin:'canvas'` 与 `canvasProjectId: doc.projectId`；
+  `mode` 由节点类型与参考用途决定：
+  - `image` 节点 → `t2i`；
+  - `video` 节点：有 `reference-video` → `v2v`；首帧 + 尾帧 → `fl2v`；只有首帧 → `i2v`；否则 → `t2v`。
+- **不静默丢素材**：参考用途在当前服务端没有通道（`reference-image` / `reference-audio`）时，
+  界面给理由并**阻止提交**，不允许"丢掉参考后照常提交"。
+- `projectId`（资产项目）与 `canvasProjectId`（画布项目）是两个维度，不能互相替代。
+
+**轮询写回**
+- 前端按 `batches[].taskId` 轮询 `GET /api/tasks/:taskId`（2s，与 §5 前端约定一致），终态写回
+  `status` / `outputs` / `failure`。
+- `progressPercent` **不写进文档**：它只用于运行中显示，刷新即丢；写进文档会让"上次跑到 42%"冒充历史事实。
+- 任务产物 → `outputs[]`：`assetId = task:<taskId>`，`url` 取 §4 的 `taskOutput()`（视频优先），
+  只写实际存在的那个产物；任务成功但没有产物时**不覆盖**已有产物。
+- **刷新中断的提交**：`queued` 但**没有 `taskId`** 表示"请求发出去了、响应没回来"（可能已建任务，也可能没有）。
+  这种批次**不可轮询**，界面如实显示「提交中断（结果未知）」，**不永久挡住重提或删除**
+  （与"有 `taskId` 的在跑批次"区分：后者有确定的任务要等）。
+
+**撤销栈（前端实现约定，不落盘、不跨刷新）**
+- 覆盖编辑动作：新建 / 删除 / 复制 / 粘贴节点、拖动落位、草稿（提示词 / 参数）修改；
+- **不覆盖**批次与服务端任务状态（这是事实，不是编辑）；撤销**不会取消**已提交的任务；
+- 撤销（或重做）会让"仍有 `queued` / `running` 批次的节点"消失时，**阻止这次撤销**并说明原因
+  —— 否则任务还在跑，产物没有地方可以写回；
+- 撤销恢复快照时，**幸存节点的批次以当前文档为准**（批次是事实，不被旧快照回滚）；
+- 删除节点**不删资产**（与 §21-8 同一条纪律）；复制节点会复制草稿与产物批次的**引用**（同一 id，不复制文件）。
+
+**资产库与上传**
+- 「从资产库添加」用 `GET /api/assets?project=<当前资产项目>` 拉清单；多选后**每项一个节点**：
+  `source:'from_asset'` + 一个 `status:'succeeded'` 的批次（`outputs[].assetId` = 资产 id）。
+- 「本地上传」走 `POST /api/upload`（≤4 个 / 次），成功后同样每项一个节点（`source:'uploaded'`）；
+  预览 URL 只做展示，刷新后按 `assetId` 重新取。
+- 节点排布由界面决定（新节点按类型递增命名、批量插入成网格排布）；资产本身不被修改。

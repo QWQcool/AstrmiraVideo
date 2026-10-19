@@ -52,6 +52,13 @@ export const CanvasNodeCreatedFromSchema = z.enum([
 export const CanvasNodeSettingsSchema = z.object({
   /** 能力目录里的模型标识（不是展示名） */
   modelId: z.string().min(1).optional(),
+  /**
+   * V2.45（CONTRACT §21-10）：提交用的引擎 id（§1 的 `provider`）。
+   *
+   * 缺省 = 由节点类型与 `/api/providers/status` 推断 —— 不写死某个引擎，
+   * 因为本地 ComfyUI 可能是多台、云端则可能没配兜底 Key（"默认 = 当前可用且最便宜"）。
+   */
+  provider: z.string().min(1).optional(),
   /** 生成模式；缺省由节点类型推断（video → t2v，image → t2i） */
   mode: GenerationModeSchema.optional(),
   referenceMode: CanvasReferenceModeSchema.optional(),
@@ -65,7 +72,10 @@ export const CanvasNodeSettingsSchema = z.object({
 });
 
 export const CanvasReferenceSchema = z.object({
-  /** 资产 id（§7）；不存 URL —— 临时链接会过期 */
+  /**
+   * 上传资产 id（§7），或**模型产物**的 `task:<taskId>`（V2.45，与 §1 的 `task:` 引用同形）。
+   * 不存 URL —— 临时链接会过期。
+   */
   assetId: z.string().min(1),
   role: CanvasReferenceRoleSchema,
   /** 同一用途内的顺序（首帧/尾帧只有一个，多图参考按此排序） */
@@ -82,6 +92,7 @@ export const CanvasNodeDraftSchema = z.object({
 });
 
 export const CanvasOutputSchema = z.object({
+  /** 上传资产 id；**模型产物写 `task:<taskId>`**（V2.45：可直接作为下游参考） */
   assetId: z.string().min(1),
   kind: z.enum(['image', 'video', 'audio', 'text']),
   /** 只做展示；刷新后按 assetId 重新取 */

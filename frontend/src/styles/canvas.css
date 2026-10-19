@@ -802,12 +802,12 @@
 }
 
 .cs-save[data-state='error'] {
-  color: var(--danger, #c0392b);
+  color: var(--danger);
 }
 
 .cs-error {
   margin: 0;
-  color: var(--danger, #c0392b);
+  color: var(--danger);
 }
 
 .cs-empty {
@@ -823,14 +823,16 @@
 
 .cs-empty-title {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--fs-title);
   font-weight: 600;
 }
 
 .cs-workspace {
   display: flex;
   gap: 10px;
-  flex: 1;
+  /* 画布要有确定的编辑高度：只靠 min-height 时，节点一多页面会整体拉长、小地图跟着跑 */
+  height: calc(100vh - 210px);
+  height: calc(100dvh - 210px);
   min-height: 520px;
 }
 
@@ -858,6 +860,7 @@
 }
 
 .cs-canvas {
+  position: relative;
   flex: 1;
   min-width: 0;
   border: 1px solid var(--line);
@@ -865,17 +868,483 @@
   overflow: hidden;
 }
 
-.react-flow__node.cs-node {
-  padding: 10px 12px;
+.cs-file {
+  display: none;
+}
+
+.cs-notice {
+  margin: 0;
+  color: var(--gold);
+}
+
+.cs-icon-btn {
+  min-width: 32px;
+  padding: 0 8px;
+}
+
+/* ── 节点卡（S3-B3）：媒体预览 + 批次状态 ───────────────────────────── */
+.cs-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 10px;
-  /* 用主题变量（浅色/深色各一套）；不写死深色兜底 —— 上一版就是因此浅色下文字看不见 */
+  /* 用主题变量（浅色/深色各一套）；不写死深色兜底 —— B2 曾因此浅色下文字看不见 */
   background: var(--panel2);
   color: var(--text);
   font-size: var(--fs-note);
-  min-width: 120px;
 }
 
-.react-flow__node.cs-node--image {
+.cs-card.is-selected {
   border-color: var(--line-gold);
+  box-shadow: 0 0 0 1px var(--line-gold) inset;
+}
+
+.cs-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cs-card-type {
+  flex: none;
+  color: var(--gold);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+}
+
+.cs-card-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.cs-card-status {
+  flex: none;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.cs-card-status[data-state='queued'] {
+  color: var(--gold);
+}
+
+.cs-card-status[data-state='running'] {
+  color: var(--gold);
+}
+
+.cs-card-status[data-state='failed'] {
+  color: var(--danger);
+}
+
+.cs-card-body {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.cs-card-media {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+audio.cs-card-media {
+  width: 90%;
+  height: auto;
+}
+
+.cs-card-text {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--fs-body);
+}
+
+.cs-card-empty {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-note);
+}
+
+.cs-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.cs-card-error {
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--danger);
+}
+
+/* ── 锚定浮动创作框（NodeToolbar） ─────────────────────────────────── */
+.cs-toolbar-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* 300 宽是为了放进"节点居中后左右各 ~330px"的空隙；360 会差几像素被裁 */
+  width: 300px;
+  max-width: 86vw;
+  padding: 10px;
+  border: 1px solid var(--line-gold);
+  border-radius: 12px;
+  background: var(--panel2);
+  color: var(--text);
+  box-shadow: 0 12px 28px var(--line-strong);
+}
+
+.cs-toolbar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cs-toolbar-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.cs-toolbar-count {
+  flex: none;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.cs-toolbar-input {
+  width: 100%;
+  min-height: 58px;
+  max-height: 160px;
+  padding: 8px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-note);
+}
+
+.cs-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cs-toolbar-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.cs-toolbar-select {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--fs-note);
+}
+
+.cs-toolbar-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cs-toolbar-price {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.cs-toolbar-issue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--gold);
+  font-size: var(--fs-micro);
+}
+
+.cs-toolbar-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--gold);
+  font-size: var(--fs-micro);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cs-toolbar-error {
+  max-height: 48px;
+  margin: 0;
+  overflow: auto;
+  color: var(--danger);
+  font-size: var(--fs-micro);
+  word-break: break-word;
+}
+
+/* ── 右键菜单 ─────────────────────────────────────────────────────── */
+.cs-menu {
+  position: absolute;
+  z-index: 30;
+  min-width: 170px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel2);
+  box-shadow: 0 10px 24px var(--line-strong);
+}
+
+.cs-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-note);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cs-menu-item:hover:enabled {
+  background: var(--line);
+}
+
+.cs-menu-item:disabled {
+  color: var(--text-dim);
+  cursor: default;
+  opacity: 0.6;
+}
+
+.cs-menu-item.is-danger {
+  color: var(--danger);
+}
+
+.cs-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--line);
+}
+
+/* ── 资产库选择器 ─────────────────────────────────────────────────── */
+.cs-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--canvas-veil);
+}
+
+.cs-modal-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: min(620px, 86vh);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.cs-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cs-modal-title {
+  margin: 0;
+  font-size: var(--fs-title);
+}
+
+.cs-modal-close {
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-body);
+  cursor: pointer;
+}
+
+.cs-modal-close:hover {
+  color: var(--text);
+}
+
+.cs-modal-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cs-modal-search {
+  flex: 1;
+  min-width: 200px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+  color: var(--text);
+  font-size: var(--fs-note);
+}
+
+.cs-modal-filters {
+  display: flex;
+  gap: 6px;
+}
+
+.cs-chip {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-note);
+  cursor: pointer;
+}
+
+.cs-chip[aria-pressed='true'] {
+  border-color: var(--line-gold);
+  color: var(--gold);
+}
+
+.cs-modal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px;
+  overflow: auto;
+}
+
+.cs-modal-note {
+  margin: 8px 0;
+  color: var(--text-dim);
+  font-size: var(--fs-note);
+}
+
+.cs-modal-error {
+  color: var(--danger);
+}
+
+.cs-asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.cs-asset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cs-asset.is-picked {
+  border-color: var(--line-gold);
+  box-shadow: 0 0 0 1px var(--line-gold) inset;
+}
+
+.cs-asset-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 92px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.cs-asset-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cs-asset-glyph {
+  color: var(--text-dim);
+  font-size: var(--fs-display);
+}
+
+.cs-asset-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-note);
+}
+
+.cs-asset-meta {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.cs-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+}
+
+.cs-modal-count {
+  color: var(--text-dim);
+  font-size: var(--fs-note);
+}
+
+.cs-modal-actions {
+  display: flex;
+  gap: 8px;
 }
