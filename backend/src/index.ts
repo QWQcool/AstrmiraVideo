@@ -36,6 +36,7 @@ import { SERVICE_VERSION } from './version.js';
 import { createKeyVerifyRoutes } from './routes/keysVerify.js';
 import { createLogRoutes } from './routes/logs.js';
 import { createProjectRoutes } from './routes/projects.js';
+import { createCanvasRoutes } from './routes/canvas.js';
 import { providerRoutes } from './routes/providers.js';
 import { createTaskRoutes } from './routes/tasks.js';
 import { createUploadRoutes, MAX_FILE_BYTES } from './routes/upload.js';
@@ -403,6 +404,8 @@ export async function buildApp() {
   );
   // V2.11（B47）：项目维度（列表 / 新建 / 改名 / 删除空项目）
   await app.register(createProjectRoutes({ projects }));
+  // V2.42（Step 11-S3 片 A）：创作画布文档（整份读写，单用户无归属字段）
+  await app.register(createCanvasRoutes());
   await app.register(createUploadRoutes({ projects }));
   // V2.7（B41）：资产库清单（只读；`@` 提及素材弹层用）
   await app.register(createAssetRoutes());

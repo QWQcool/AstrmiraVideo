@@ -202,6 +202,14 @@ export type CanvasDoc = z.infer<typeof CanvasDocSchema>;
 export type CanvasProjectRef = z.infer<typeof CanvasProjectRefSchema>;
 export type CanvasProjectIndex = z.infer<typeof CanvasProjectIndexSchema>;
 
+/** `PUT /api/canvas/docs/:projectId` 的响应：保存成功 + 列表用的摘要（免得客户端自己再算一遍） */
+export const CanvasDocSaveResponseSchema = z.object({
+  ok: z.boolean(),
+  summary: CanvasProjectRefSchema,
+});
+
+export type CanvasDocSaveResponse = z.infer<typeof CanvasDocSaveResponseSchema>;
+
 /** 各类节点的默认尺寸（新建节点时用；与 V1 设计稿的媒体卡比例一致） */
 export const CANVAS_NODE_DEFAULT_SIZE: Record<CanvasNodeType, { width: number; height: number }> = {
   text: { width: 320, height: 160 },

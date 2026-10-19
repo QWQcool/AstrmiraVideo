@@ -1,6 +1,12 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.41 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.42 · 已冻结（变更需先改本文，再改代码）**
+> **V2.42 修订（2026-10-19）**：**画布文档持久化路由（§5 / §21-8）** ——
+>   Step 11-S3 片 A（台账 B78）。三条路由：`GET /api/canvas/projects`、`GET /api/canvas/docs/:projectId`、
+>   `PUT /api/canvas/docs/:projectId`。**整份读写、不做字段级 PATCH**（避免"撤销栈"与"服务端副本"互相覆盖）；
+>   **未保存即 404**，不返回空文档；**无新错误码**（复用 `PROJECT_NOT_FOUND` / `INVALID_REQUEST`）。
+>   文档格式本身仍按 §21 v1 不变。
+
 > **V2.41 修订（2026-10-19）**：**创作画布文档 `astrmira.canvas-doc/v1`（§21）** ——
 >   Step 11 / S1 的契约先行项（台账 B78；决策 D60/D61/D62/D63）。
 >   ① **新增一份文档契约**，与 §11-6 的 `CanvasPlan` **并存但不互转**：`CanvasPlan` 仍是"可执行编排"
@@ -718,6 +724,9 @@ export interface AssetListResponse {
 | `POST` | `/api/projects` | **V2.11 新增**：新建项目（body `{ name }`，1~60 字符）。**200 → `{ project: ProjectEntry }`**（id 为服务端生成的 UUID）；名字为空 → **400 `INVALID_REQUEST`**；**重名 → 400 `INVALID_REQUEST`**（切换器里两个同名项目认不出来，这是可用性问题不是洁癖） |
 | `PATCH` | `/api/projects/:projectId` | **V2.11 新增**：改项目名（body `{ name }`）。**200 → `{ project: ProjectEntry }`**；不存在 → **404 `PROJECT_NOT_FOUND`**；空名 / 重名 → **400 `INVALID_REQUEST`** |
 | `DELETE` | `/api/projects/:projectId` | **V2.11 新增**：删除**空**项目。**200 → `{ deleted: true, projectId }`**；不存在 → **404 `PROJECT_NOT_FOUND`**；**默认项目 → 400 `INVALID_REQUEST`**（它是老数据与"未指定项目"的落点）；**项目非空 → 400 `INVALID_REQUEST`**（本项目**不做级联删除** —— 那会把任务与资产变成孤儿） |
+| `GET` | `/api/canvas/projects` | **V2.42 新增（§21-8）**：画布项目索引。**200 → `CanvasProjectIndex`**（`{ version, projects[], activeProjectId? }`）。只读摘要，不含文档本体；索引文件损坏时**返回空索引**而不是 5xx |
+| `GET` | `/api/canvas/docs/:projectId` | **V2.42 新增**：整份画布文档。**200 → `CanvasDoc`**；未保存过 / 已删除 → **404 `PROJECT_NOT_FOUND`**（**不**返回空文档 —— "新建"与"打错 id"必须能区分） |
+| `PUT` | `/api/canvas/docs/:projectId` | **V2.42 新增**：保存画布文档（body = `CanvasDoc`，整份覆盖）。**200 → `{ ok: true, summary: CanvasProjectRef }`**；体里的 `projectId` 与路径不一致 → **400 `INVALID_REQUEST`**（否则会覆盖另一个画布）；`version` / 节点类型不认识 → **400**（schema 拒绝，不落盘） |
 | `GET` | `/api/webhooks` | **V2.15 新增（台账 B51 片 A）**：**Webhook 订阅清单**（只读）。`?project=` —— **省略 = 默认项目**（与全站同口径）；项目不存在 → **404 `PROJECT_NOT_FOUND`**。**200 → `{ webhooks: WebhookView[] }`** —— **永远不含明文 secret**（只有 `secretMasked`，形如 `whsec_01…cdef`）。用途：客户系统自检"我的订阅还在不在" |
 | `POST` | `/api/webhooks` | **V2.15 新增**：新建订阅（body `{ projectId?, url, secret?, events? }`）。**201 → `{ webhook: WebhookView, secret }`** —— ⚠️ **明文 `secret` 只在这唯一一次响应里出现**（之后任何接口都只有掩码），客户必须自己存好；省略 `secret` 由服务端生成（推荐，手填弱 secret 是这条链路上最容易出的安全问题）；`events` 省略 = `['task.terminal']`。**URL 过 SSRF 准入**（只允许 http/https、不许带用户名密码、**默认拒绝环回 / 私网 / 链路本地 / 云元数据**，理由见 §15）→ 不通过 **400 `INVALID_REQUEST`**（文案含"部署者设 `WEBHOOK_ALLOW_PRIVATE=1` 可放行"）；项目不存在 → **404 `PROJECT_NOT_FOUND`** |
 | `PATCH` | `/api/webhooks/:webhookId` | **V2.15 新增**：改地址 / 启停（body `{ url?, enabled? }`，至少给一项）。**200 → `{ webhook: WebhookView }`**（同样**不回显**明文 secret）；订阅不存在 → **404 `WEBHOOK_NOT_FOUND`**；新 URL 不过 SSRF 准入 → **400 `INVALID_REQUEST`** |
@@ -2225,11 +2234,17 @@ interface CanvasProjectIndex {
 
 列表只读索引，不读整份文档；打开某个项目时才读 `<projectId>` 的文档。
 
-### 21-8 存储位置（S3 落地）
+### 21-8 存储位置与路由（V2.42 落地）
 
-- 文档 **按 projectId 分键**，互不覆盖；索引单独一份。
-- **优先服务端**（清浏览器缓存不能丢画布）；本地只作缓存。服务端落地时需要两条路由
-  （预期 `GET/PUT /api/canvas/doc`，含索引），**届时按本文件流程先补 §5 再加实现**。
+- **服务端为准**（清浏览器缓存不能丢画布），本地只作缓存。
+- 目录：`DATA_DIR/canvas/`（默认 `<repo>/data/canvas/`），一份文档一个文件
+  `<encodeURIComponent(projectId)>.doc.json`，索引单独 `index.json`。
+- **原子写**：先写 `<file>.tmp-<pid>-<ts>` 再 `rename` —— 崩溃不会留下半份 JSON。
+- **索引是派生数据**：保存时按 `canvasDocSummary()` 更新 `{projectId,name,updatedAt,nodeCount,coverAssetId}`；
+  索引文件损坏 → `GET /api/canvas/projects` 返回空索引，不让整个列表打不开。
+- **文件名与文档一致**：文件名转义后的 `projectId` 必须等于文档里的 `projectId`，否则视为读不到
+  （防止复制文件导致项目串号）。
+- **路由**：见 §5 的三条 `GET/PUT /api/canvas/*`；整份读写，不做字段级 PATCH。
 - 本版本**不改既有存储键**：旧的 `astrmira.canvasPlan.<projectId>` 不读、不写、不迁移（D63）。
 
 ### 21-9 模型能力目录 `ModelCapability`（V2.41 新增；台账 B76）
