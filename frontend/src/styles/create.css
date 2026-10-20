@@ -515,6 +515,19 @@
   outline-offset: 2px;
 }
 
+/* V2.50：图片态没有 480p/720p/1080p 档，只显示实际图片尺寸（仍是可聚焦的静态信息） */
+.cr-params-static {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: var(--fs-note);
+  font-variant-numeric: tabular-nums;
+}
+
 .cr-params-model {
   max-width: 200px;
   overflow: hidden;

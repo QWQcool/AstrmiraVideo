@@ -16,6 +16,7 @@ import {
   clampDurationSec,
   dialogueLength,
   isMultipleOf32,
+  resolveImageSize,
   resolveTargetSize,
   tierForSize,
   type ResolutionTier,
@@ -59,6 +60,18 @@ describe('清晰度档目标尺寸表', () => {
         expect(bins[tier](shortSide), `${tier} ${aspect} 短边 ${shortSide}`).toBe(true);
       }
     }
+  });
+
+  it('图片尺寸用 1024 系，不跟视频 480p 档走（V2.50）', () => {
+    for (const aspect of ASPECTS) {
+      const size = resolveImageSize(aspect);
+      expect(isMultipleOf32(size.width), `${aspect} 宽 ${size.width}`).toBe(true);
+      expect(isMultipleOf32(size.height), `${aspect} 高 ${size.height}`).toBe(true);
+      expect(Math.max(size.width, size.height)).toBe(1024);
+    }
+    expect(resolveImageSize('1:1')).toEqual({ width: 1024, height: 1024 });
+    expect(resolveImageSize('16:9')).toEqual({ width: 1024, height: 576 });
+    expect(resolveImageSize('9:16')).toEqual({ width: 576, height: 1024 });
   });
 
   it('默认档是 480p，且与历史上的固定值一致（默认行为不变）', () => {

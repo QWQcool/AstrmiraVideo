@@ -22,6 +22,7 @@ import { setCanvasResultHandoff } from '../lib/canvasHandoff';
 import {
   DEFAULT_DURATION_SEC,
   DEFAULT_RESOLUTION_TIER,
+  resolveImageSize,
   resolveTargetSize,
   type ResolutionTier,
 } from '../lib/format';
@@ -239,7 +240,10 @@ export function CreateView() {
       settings: {
         aspectRatio,
         durationSec,
-        resolution: resolveTargetSize(aspectRatio, resolutionTier),
+        resolution:
+          kind === 'image'
+            ? resolveImageSize(aspectRatio)
+            : resolveTargetSize(aspectRatio, resolutionTier),
         ...(kind === 'image' ? { mode: 't2i' as const } : {}),
       },
     });
@@ -341,13 +345,16 @@ export function CreateView() {
         ? null // 远程 HTTP 服务没有本仓单价表：宁可不报价，也不写成 0 元
         : estimateCostFromRequest(
             {
-              resolution: resolveTargetSize(aspectRatio, resolutionTier),
+              resolution:
+                kind === 'image'
+                  ? resolveImageSize(aspectRatio)
+                  : resolveTargetSize(aspectRatio, resolutionTier),
               params: { durationSec },
               options: { model: byok.model },
             },
             { track: provider === 'cloud-volcano-seedance' ? 'cloud' : 'local' },
           ),
-    [aspectRatio, resolutionTier, durationSec, byok.model, provider],
+    [aspectRatio, resolutionTier, durationSec, byok.model, provider, kind],
   );
 
   /** 参数行右侧的价格文案；null = 不显示（没有可信报价时也不显示 0 元） */
@@ -507,7 +514,7 @@ export function CreateView() {
             prompt: prompt.trim(),
             mode: 't2i',
             aspectRatio,
-            resolution: resolveTargetSize(aspectRatio, resolutionTier),
+            resolution: resolveImageSize(aspectRatio),
             provider,
             options: { baseUrl: byok.baseUrl, model: byok.model },
             projectId,

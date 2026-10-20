@@ -77,6 +77,25 @@ export function resolveTargetSize(
   return TARGET_SIZES[tier][ratio];
 }
 
+/**
+ * V2.50（S4-R3a）：图片模式（t2i）的尺寸档。
+ *
+ * 与视频的 480p/720p 档**分开**：480p 是 10GB 卡跑视频的实测上限，对 Flux 系原生 1024
+ * 太小；后端 `planComfyDimensions` 的 t2i 分支本来就用这组基准（1024×1024 / 1024×576 /
+ * 576×1024）。这里让界面显示的尺寸与后端实际提交一致，不再把视频档套到图片上。
+ *
+ * 当前一次任务一个产物，数量固定 1；不提供图片"多档分辨率"选择。
+ */
+export const IMAGE_TARGET_SIZES: Record<AspectRatio, TargetSize> = {
+  '16:9': { width: 1024, height: 576 },
+  '9:16': { width: 576, height: 1024 },
+  '1:1': { width: 1024, height: 1024 },
+};
+
+export function resolveImageSize(ratio: AspectRatio): TargetSize {
+  return IMAGE_TARGET_SIZES[ratio];
+}
+
 export function isMultipleOf32(value: number): boolean {
   return Number.isInteger(value) && value > 0 && value % 32 === 0;
 }

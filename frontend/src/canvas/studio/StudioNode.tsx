@@ -9,13 +9,20 @@ import {
   canvasAspectRatio,
   canvasDefaultProvider,
   canvasDurationSec,
+  canvasResolution,
   canvasResolutionTier,
   canvasSubmitIssue,
   canvasSubmitIssueText,
   estimateCanvasNodeCost,
 } from '../../lib/canvasNodeSubmit';
 import { comfyUiEngineOptions, httpServiceEngineOptions } from '../../lib/engineOptions';
-import { DURATION_OPTIONS, RESOLUTION_TIERS, resolveTargetSize, type ResolutionTier } from '../../lib/format';
+import {
+  DURATION_OPTIONS,
+  RESOLUTION_TIERS,
+  resolveImageSize,
+  resolveTargetSize,
+  type ResolutionTier,
+} from '../../lib/format';
 import { useTranslate, type Translate } from '../../lib/i18n';
 import { useShell } from '../../lib/shell';
 import { useStudio } from './StudioContext';
@@ -246,12 +253,15 @@ export function StudioNode({ id, selected }: NodeProps) {
                     className="cs-toolbar-select"
                     value={canvasAspectRatio(node)}
                     onChange={(event) => {
-                      const next = event.target.value;
+                      const next = event.target.value as '16:9' | '9:16' | '1:1';
                       const tier = canvasResolutionTier(node);
                       studio.onDraftChange(id, {
                         settings: {
-                          aspectRatio: next as '16:9' | '9:16' | '1:1',
-                          resolution: resolveTargetSize(next as '16:9' | '9:16' | '1:1', tier),
+                          aspectRatio: next,
+                          resolution:
+                            node.type === 'image'
+                              ? resolveImageSize(next)
+                              : resolveTargetSize(next, tier),
                         },
                       });
                     }}
@@ -266,26 +276,32 @@ export function StudioNode({ id, selected }: NodeProps) {
 
                 <label className="cs-toolbar-field">
                   <span>{t('create.more.resolution')}</span>
-                  <select
-                    className="cs-toolbar-select"
-                    value={canvasResolutionTier(node)}
-                    onChange={(event) =>
-                      studio.onDraftChange(id, {
-                        settings: {
-                          resolution: resolveTargetSize(
-                            canvasAspectRatio(node),
-                            event.target.value as ResolutionTier,
-                          ),
-                        },
-                      })
-                    }
-                  >
-                    {RESOLUTION_TIERS.map((tier) => (
-                      <option key={tier} value={tier}>
-                        {tier}
-                      </option>
-                    ))}
-                  </select>
+                  {node.type === 'image' ? (
+                    <span className="cs-toolbar-static">
+                      {canvasResolution(node).width}×{canvasResolution(node).height}
+                    </span>
+                  ) : (
+                    <select
+                      className="cs-toolbar-select"
+                      value={canvasResolutionTier(node)}
+                      onChange={(event) =>
+                        studio.onDraftChange(id, {
+                          settings: {
+                            resolution: resolveTargetSize(
+                              canvasAspectRatio(node),
+                              event.target.value as ResolutionTier,
+                            ),
+                          },
+                        })
+                      }
+                    >
+                      {RESOLUTION_TIERS.map((tier) => (
+                        <option key={tier} value={tier}>
+                          {tier}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </label>
 
                 {node.type === 'video' ? (

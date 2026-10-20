@@ -1,6 +1,6 @@
 import type { AspectRatio } from '@astrmira/shared';
 import type { ResolutionTier } from '../lib/format';
-import { DURATION_OPTIONS, RESOLUTION_TIERS } from '../lib/format';
+import { DURATION_OPTIONS, RESOLUTION_TIERS, resolveImageSize } from '../lib/format';
 import { useTranslate } from '../lib/i18n';
 
 export interface EngineOption {
@@ -60,6 +60,7 @@ export function ComposerBar({
   onToggleAdvanced,
 }: ComposerBarProps) {
   const t = useTranslate();
+  const imageSize = kind === 'image' ? resolveImageSize(aspectRatio) : null;
 
   return (
     <div className="cr-params">
@@ -79,20 +80,26 @@ export function ComposerBar({
           </select>
         </label>
 
-        <label className="cr-params-field">
-          <select
-            className="cr-params-select"
-            aria-label={t('create.more.resolution')}
-            value={resolutionTier}
-            onChange={(event) => onResolutionChange(event.target.value as ResolutionTier)}
-          >
-            {RESOLUTION_TIERS.map((tier) => (
-              <option key={tier} value={tier}>
-                {tier}
-              </option>
-            ))}
-          </select>
-        </label>
+        {kind === 'image' ? (
+          <span className="cr-params-static" aria-label={t('create.more.resolution')}>
+            {imageSize?.width}×{imageSize?.height}
+          </span>
+        ) : (
+          <label className="cr-params-field">
+            <select
+              className="cr-params-select"
+              aria-label={t('create.more.resolution')}
+              value={resolutionTier}
+              onChange={(event) => onResolutionChange(event.target.value as ResolutionTier)}
+            >
+              {RESOLUTION_TIERS.map((tier) => (
+                <option key={tier} value={tier}>
+                  {tier}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         {kind === 'video' ? (
           <label className="cr-params-field">

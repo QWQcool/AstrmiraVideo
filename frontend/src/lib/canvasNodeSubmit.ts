@@ -20,6 +20,7 @@ import { getLanguage, translate, type MessageKey } from './i18n';
 import {
   DEFAULT_DURATION_SEC,
   DEFAULT_RESOLUTION_TIER,
+  resolveImageSize,
   resolveTargetSize,
   tierForSize,
   type ResolutionTier,
@@ -196,6 +197,8 @@ export function canvasResolutionTier(node: CanvasDocNode): ResolutionTier {
 }
 
 export function canvasResolution(node: CanvasDocNode): { width: number; height: number } {
+  // V2.50：t2i 用图片尺寸档（1024 系），不沿用视频 480p；后端 t2i 分支同样是这组基准。
+  if (node.type === 'image') return resolveImageSize(canvasAspectRatio(node));
   return (
     node.data.draft.settings.resolution ??
     resolveTargetSize(canvasAspectRatio(node), canvasResolutionTier(node))

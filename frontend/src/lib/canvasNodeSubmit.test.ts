@@ -222,6 +222,8 @@ describe('请求组装与估算（B3）', () => {
     expect(request.mode).toBe('t2i');
     expect(request.params).toBeUndefined();
     expect(request.aspectRatio).toBe('1:1');
+    // V2.50：图片用 1024 系，不沿用视频 480p
+    expect(request.resolution).toEqual({ width: 1024, height: 1024 });
   });
 
   it('画幅 / 清晰度 / 时长的默认与回读', () => {

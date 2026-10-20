@@ -1127,6 +1127,19 @@ audio.cs-card-media {
   font-size: var(--fs-note);
 }
 
+/* V2.50：图片节点只显示实际图片尺寸（1024 系），不再摆视频清晰度档 */
+.cs-toolbar-static {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: var(--fs-note);
+  font-variant-numeric: tabular-nums;
+}
+
 .cs-toolbar-foot {
   display: flex;
   align-items: center;
