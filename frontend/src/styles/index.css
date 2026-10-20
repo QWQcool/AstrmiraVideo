@@ -37,6 +37,21 @@ button {
   outline: none;
 }
 
+/**
+ * S5-B4a：键盘焦点基线。
+ *
+ * 为什么必须用 `!important`：`button { outline: none }` 与 `.wb-input` / `.cr-input` 的
+ * `outline: none` 是**有意的旧写法**（去掉鼠标点击的默认描边），但组件级选择器
+ * （0,2,0）会压过普通的 `:focus-visible`（0,1,0）。如果这里只是普通声明，
+ * 键盘用户在很多控件上仍然看不到焦点 —— 那正是本片要修的缺陷。
+ *
+ * `:focus-visible` 只在键盘/辅助技术触发时匹配，鼠标点击不会出现这圈描边。
+ */
+:is(a, button, input, select, textarea, summary, [tabindex], [contenteditable='true']):focus-visible {
+  outline: 2px solid var(--focus) !important;
+  outline-offset: 2px !important;
+}
+
 /* 滚动条美化 */
 ::-webkit-scrollbar {
   width: 6px;

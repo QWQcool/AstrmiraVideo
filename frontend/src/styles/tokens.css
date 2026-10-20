@@ -45,6 +45,11 @@
   --text: #eeeae1;
   --muted: #a8b3c4;
   --faint: #8794a8;
+  /* S5-B4a：这两个 token 已被 create.css / canvas.css 引用 30+ 次，但一直没有定义 ——
+     `color: var(--text-dim)` 会整条声明失效，参数行退回正文色（看起来像"没有低干扰层级"）。
+     这里用别名而不是再写一份色值：主题切换时跟随 --muted / --faint。 */
+  --text-dim: var(--muted);
+  --text-faint: var(--faint);
   --line: rgba(179, 195, 219, 0.18);
   /* 全屏预览遮罩（S4）：两套主题都用同一层深色，避免浅色主题下"白底看片" */
   --scrim: rgba(8, 10, 12, 0.86);
@@ -58,6 +63,13 @@
   --blue-glow: rgba(145, 185, 213, 0.2);
   --action-fill: #e7dfd1;
   --action-hover: #f2ece2;
+  /* S5-B4a：键盘焦点环。此前 create.css 的 `:focus-visible` 引用了未定义的 --focus，
+     `outline: 2px solid var(--focus)` 整条失效；同时 index.css 给 button 写了 outline: none，
+     把浏览器默认焦点也关掉了 —— 结果是键盘用户看不见焦点。B4b 会把它换成青色。 */
+  --focus: #91b9d5;
+  /* S5-B4a：分段控件/凹陷底的背景；展开面板的抬高背景。此前只有引用，没有定义。 */
+  --panel-sunken: #0e1420;
+  --panel-raised: var(--panel2);
   /* 语义色（T5）：状态点 / 危险态 / 实心按钮与分段控件上的文字色 */
   --success: #34d399;
   --danger: #f87171;
@@ -150,6 +162,8 @@
   --text: #122031;
   --muted: #5b6b80;
   --faint: #7c8ba0;
+  --text-dim: var(--muted);
+  --text-faint: var(--faint);
   --line: rgba(18, 32, 49, 0.14);
   --scrim: rgba(8, 10, 12, 0.86);
   --on-scrim: #ffffff;
@@ -160,6 +174,9 @@
   --blue-glow: rgba(27, 79, 216, 0.16);
   --action-fill: #2f6fe0;
   --action-hover: #1b4fd8;
+  --focus: #2f6fe0;
+  --panel-sunken: #eef2f7;
+  --panel-raised: #ffffff;
   --success: #12a150;
   --danger: #d93b3b;
   --on-action: #ffffff;

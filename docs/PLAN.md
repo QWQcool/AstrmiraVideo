@@ -1683,6 +1683,14 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · S5-B4a：补齐缺失 token + 键盘焦点基线
+
+- **【补 token】** `tokens.css` 补齐 5 个**已被引用但从未定义**的变量：`--text-dim` / `--text-faint`（此前 `create.css`、`canvas.css` 共 30+ 处 `color: var(--text-dim)` 整条声明失效，参数行退回正文色）、`--focus`（`create.css` 两处 `outline: 2px solid var(--focus)` 失效）、`--panel-sunken` / `--panel-raised`（分段控件与抬高面板的兜底）。前两个用别名跟随 `--muted` / `--faint`，两套主题自动生效。
+- **【焦点环】** `index.css` 新增全局 `:is(a, button, input, select, textarea, summary, [tabindex], [contenteditable]):focus-visible`：2px + 2px offset。必须 `!important` 的原因写在注释里：旧的 `button { outline: none }`、`.wb-input`、`.cr-input` 的组件级选择器会压过普通 `:focus-visible`；不加就仍有一批控件没有焦点环。鼠标点击不触发 `:focus-visible`，不改变点击观感。
+- **【实机】** 新开 Chromium（1366×768，日间主题）：Tab 连走 16 个控件，项目选择、项目管理、侧栏链接、凭据设置、创作类型、引用按钮、画幅/清晰度下拉全部显示 `2px solid` 焦点环；`--text-dim/--text-faint/--panel-sunken/--panel-raised` 均解析出真实色值。截图存本地 `.tmp/b4a-focus.png`（过程证据，不入库）。
+- **【测试】** 前端 **571 passed**；`node scripts/visual-selfcheck.mjs` 通过（修掉一处自检正则被注释里 `button { outline: none }` 的花括号提前截断的问题）；`pnpm type` / `pnpm lint` 通过。本片只改 CSS，无 TS/契约/后端改动。
+- **【下一片】** B4b 会把 `--focus` 从当前的蓝色换成设计规格的青色 `#67DCF2`，并统一炭灰/无衬线；本片先把“看得见焦点”这件真缺陷修掉。
+
 ### 2026-10-20 · B4-0：CI 覆盖率门限修复（具名实例，无生产代码改动）
 
 - **【根因】** 最近 15 次 `main` 推送全部红在 `verify` 的覆盖率门限：后端 677 条测试全过，但 `src/providers/registry.ts` 函数覆盖率 **88.23% < 90%**；未覆盖的是 `host-comfyui:<name>` 具名分流（第 263 行）。V2.36 具名 ComfyUI 与 V2.47 具名 HTTP 服务加进 `getProvider` 后，一直没有对应的 registry 门控测试。
