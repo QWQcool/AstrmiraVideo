@@ -878,6 +878,26 @@
   overflow: hidden;
 }
 
+.cs-drop-hint {
+  position: absolute;
+  inset: 16px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--line-gold);
+  border-radius: 12px;
+  background-color: color-mix(in srgb, var(--panel) 72%, transparent);
+  color: var(--gold);
+  font-size: var(--fs-note);
+  pointer-events: none;
+}
+
+.cs-canvas.is-drop {
+  outline: 2px solid var(--gold);
+  outline-offset: -4px;
+}
+
 .cs-file {
   display: none;
 }
@@ -1061,12 +1081,23 @@ audio.cs-card-media {
   /* 300 宽是为了放进"节点居中后左右各 ~330px"的空隙；360 会差几像素被裁 */
   width: 300px;
   max-width: 86vw;
+  max-height: min(78vh, 640px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 10px;
   border: 1px solid var(--line-gold);
   border-radius: 12px;
   background: var(--panel2);
   color: var(--text);
   box-shadow: 0 12px 28px var(--line-strong);
+}
+
+@media (max-width: 768px) {
+  /* S5-B2：窄屏只保留一个编辑面板，长内容在面板内滚动 */
+  .cs-toolbar-inner {
+    width: min(300px, calc(100vw - 24px));
+    max-height: 60vh;
+  }
 }
 
 .cs-toolbar-head {

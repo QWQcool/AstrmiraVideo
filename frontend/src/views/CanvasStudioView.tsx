@@ -18,6 +18,7 @@ import {
   type Node as RFNode,
   type NodeTypes,
   type ReactFlowInstance,
+  type Viewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { createEmptyCanvasDoc, type CanvasDocNode, type CanvasDoc, type CanvasNodeType, type CanvasProjectIndex, type CanvasReferenceRole, type TaskProgress } from '@astrmira/shared';
@@ -197,6 +198,20 @@ function describeError(caught: unknown): string {
   return caught instanceof Error ? caught.message : String(caught);
 }
 
+/** S5-B2：输入框/弹窗/菜单里的 Delete、Backspace、Ctrl+V 不触发全局画布动作 */
+function isTextEditingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable
+  ) {
+    return true;
+  }
+  return target.closest('.cs-modal, .cs-menu, .cs-toolbar') !== null;
+}
+
 export function CanvasStudioView() {
   const t = useTranslate();
   const { byok, providerStatus, projectId } = useShell();
@@ -219,6 +234,7 @@ export function CanvasStudioView() {
   /** null = 添加节点；非 null = 给这个节点添加参考 */
   const [pickerReferenceNodeId, setPickerReferenceNodeId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const [menu, setMenu] = useState<{
     x: number;
     y: number;
@@ -322,6 +338,28 @@ export function CanvasStudioView() {
     [],
   );
 
+  /**
+   * S5-B2：视口按画布恢复。
+   *
+   * `{0,0,1}` 是新建文档的默认值，未真正移动过；有节点时仍走一次 fitView，
+   * 已保存过视口则原样恢复。用户点 Controls 的 fitView 属于显式适应，会写回文档。
+   */
+  const restoreCanvasViewport = useCallback((next: CanvasDoc): void => {
+    const instance = rfRef.current;
+    if (instance === null) return;
+    const viewport = next.viewport;
+    const explicit = viewport.x !== 0 || viewport.y !== 0 || viewport.zoom !== 1;
+    if (explicit) {
+      instance.setViewport(viewport, { duration: 0 });
+      return;
+    }
+    if (next.nodes.length > 0) {
+      instance.fitView({ padding: 0.2, maxZoom: 1, duration: 200 });
+    } else {
+      instance.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 0 });
+    }
+  }, []);
+
   const openProject = useCallback(
     async (project: { projectId: string; name: string }): Promise<void> => {
       if (switchingRef.current) return;
@@ -369,15 +407,7 @@ export function CanvasStudioView() {
         setSaveState('saved');
         setIndex((prev) => (prev === null ? prev : setActiveCanvasProject(prev, project.projectId)));
         writeActiveCanvasProjectId(project.projectId);
-        window.setTimeout(() => {
-          if (next.nodes.length > 0) {
-            // maxZoom 1：单个节点不该被放大到 2 倍贴满视口（创作框会因此被上边缘裁掉）
-            rfRef.current?.fitView({ padding: 0.2, maxZoom: 1, duration: 200 });
-          } else {
-            // 空画布：上一块画布的视口会留在实例里（React Flow 不随项目重挂载），重置到原点
-            rfRef.current?.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 0 });
-          }
-        }, 60);
+        window.setTimeout(() => restoreCanvasViewport(next), 60);
       } catch (caught) {
         setError(describeError(caught));
       } finally {
@@ -385,7 +415,7 @@ export function CanvasStudioView() {
         setBusy(false);
       }
     },
-    [setNodes, t],
+    [restoreCanvasViewport, setNodes, t],
   );
 
   /**
@@ -414,20 +444,14 @@ export function CanvasStudioView() {
       setConflict(false);
       setError(null);
       setReloadNonce((value) => value + 1);
-      window.setTimeout(() => {
-        if (next.nodes.length > 0) {
-          rfRef.current?.fitView({ padding: 0.2, maxZoom: 1, duration: 200 });
-        } else {
-          rfRef.current?.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 0 });
-        }
-      }, 60);
+      window.setTimeout(() => restoreCanvasViewport(next), 60);
     } catch (caught) {
       setError(describeError(caught));
     } finally {
       switchingRef.current = false;
       setBusy(false);
     }
-  }, [setNodes]);
+  }, [restoreCanvasViewport, setNodes]);
 
   // 首次进入：读索引 → 打开上次的画布（没有就显示空态，不擅自新建）
   useEffect(() => {
@@ -961,6 +985,34 @@ export function CanvasStudioView() {
     [addAssets, projectId, t],
   );
 
+  /**
+   * S5-B2：系统粘贴。
+   *
+   * - 图片/视频文件 → 上传成资产节点；
+   * - 内部复制的节点 → 在视口中心粘贴；
+   * - 输入框/弹窗/菜单里完全不拦，浏览器自己处理文本。
+   *
+   * Ctrl+V 从 keydown 移到这里：keydown 阶段拿不到剪贴板文件类型，先拦会把系统图片粘贴吞掉。
+   */
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent): void => {
+      if (docRef.current === null || menu !== null || pickerOpen) return;
+      if (isTextEditingTarget(event.target)) return;
+      const files = Array.from(event.clipboardData?.files ?? []);
+      if (files.length > 0) {
+        event.preventDefault();
+        void handleUpload(files);
+        return;
+      }
+      if (clipboardRef.current.length > 0) {
+        event.preventDefault();
+        pasteAt(viewportCenterFlow());
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [handleUpload, menu, pasteAt, pickerOpen, viewportCenterFlow]);
+
   // ── 提交生成 ───────────────────────────────────────────────────────────
   const submitNode = useCallback(
     async (nodeId: string): Promise<void> => {
@@ -1209,6 +1261,22 @@ export function CanvasStudioView() {
     [applyDoc],
   );
 
+  /** S5-B2：平移/缩放停止后写回视口（不占撤销栈；切画布时避免写错项目） */
+  const handleMoveEnd = useCallback(
+    (_event: unknown, viewport: Viewport): void => {
+      if (switchingRef.current || skipSaveRef.current) return;
+      applyDoc(
+        (d) => ({
+          ...d,
+          viewport: { x: viewport.x, y: viewport.y, zoom: viewport.zoom },
+          updatedAt: Date.now(),
+        }),
+        { record: false, coalesceKey: 'viewport' },
+      );
+    },
+    [applyDoc],
+  );
+
   /** 连接柄拖拽 → 来源边（规则见 CONTRACT §21-11；不合法时只提示，不建边） */
   const handleConnect = useCallback(
     (connection: Connection): void => {
@@ -1274,14 +1342,8 @@ export function CanvasStudioView() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
-      const target = event.target as HTMLElement | null;
-      const editing =
-        target !== null &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable);
-      if (editing) return;
+      if (menu !== null || pickerOpen) return;
+      if (isTextEditingTarget(event.target)) return;
 
       const mod = event.ctrlKey || event.metaKey;
       if (mod) {
@@ -1302,11 +1364,6 @@ export function CanvasStudioView() {
           copyNodes(selectedIds);
           return;
         }
-        if (key === 'v') {
-          event.preventDefault();
-          pasteAt(viewportCenterFlow());
-          return;
-        }
         if (key === 'd') {
           event.preventDefault();
           duplicateNodes(selectedIds);
@@ -1323,16 +1380,7 @@ export function CanvasStudioView() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [
-    copyNodes,
-    deleteNodes,
-    duplicateNodes,
-    pasteAt,
-    redo,
-    selectedIds,
-    undo,
-    viewportCenterFlow,
-  ]);
+  }, [copyNodes, deleteNodes, duplicateNodes, menu, pickerOpen, redo, selectedIds, undo]);
 
   // ── 项目动作 ───────────────────────────────────────────────────────────
   const handleCreate = async (): Promise<void> => {
@@ -1677,13 +1725,53 @@ export function CanvasStudioView() {
               />
             </nav>
 
-            <div className="cs-canvas" ref={canvasRef}>
+            <div
+              className={dragActive ? 'cs-canvas is-drop' : 'cs-canvas'}
+              ref={canvasRef}
+              onDoubleClick={(event) => {
+                if (
+                  (event.target as HTMLElement).closest(
+                    '.react-flow__node, .cs-toolbar, .cs-modal, .cs-menu',
+                  ) !== null
+                ) {
+                  return;
+                }
+                openMenu(event, null);
+              }}
+              onDragOver={(event) => {
+                if (!Array.from(event.dataTransfer.types).includes('Files')) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'copy';
+                setDragActive(true);
+              }}
+              onDragLeave={(event) => {
+                const next = event.relatedTarget;
+                if (next instanceof Node && event.currentTarget.contains(next)) return;
+                setDragActive(false);
+              }}
+              onDrop={(event) => {
+                if (
+                  (event.target as HTMLElement).closest('.cs-toolbar, .cs-modal, .cs-menu') !== null
+                ) {
+                  return;
+                }
+                const files = Array.from(event.dataTransfer.files);
+                if (files.length === 0) return;
+                event.preventDefault();
+                setDragActive(false);
+                void handleUpload(files);
+              }}
+            >
+              {dragActive ? (
+                <div className="cs-drop-hint">{t('canvas.studio.dropHint')}</div>
+              ) : null}
               <ReactFlow
                 nodes={nodes}
                 edges={rfEdges}
                 nodeTypes={NODE_TYPES}
                 onNodesChange={onNodesChange}
                 onNodeDragStop={handleDragStop}
+                onMoveEnd={handleMoveEnd}
                 onConnect={handleConnect}
                 isValidConnection={isValidConnection}
                 onSelectionChange={handleSelectionChange}
@@ -1695,10 +1783,9 @@ export function CanvasStudioView() {
                 onInit={(instance) => {
                   rfRef.current = instance;
                 }}
-                fitView
-                fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
                 minZoom={0.2}
                 maxZoom={2}
+                zoomOnDoubleClick={false}
                 proOptions={{ hideAttribution: true }}
               >
                 <Background gap={16} />

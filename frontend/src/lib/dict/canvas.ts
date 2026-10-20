@@ -46,6 +46,7 @@ export const CANVAS_ZH = {
   'canvas.studio.add': '添加节点',
   // ── 节点创作与编辑器（S3-B3；CONTRACT §21-10）──
   'canvas.studio.fromAssets': '资产库',
+  'canvas.studio.dropHint': '松开即可上传为画布节点（图片 / 视频 / 音频）',
   'canvas.studio.upload': '上传',
   'canvas.studio.uploading': '上传中…',
   'canvas.studio.uploadMissing': '有 {count} 个上传文件没能从资产库回读到，未建节点',
@@ -447,6 +448,7 @@ export const CANVAS_EN = {
   'canvas.studio.counts': '{nodes} nodes · {edges} edges',
   'canvas.studio.add': 'Add node',
   'canvas.studio.fromAssets': 'Assets',
+  'canvas.studio.dropHint': 'Drop to upload as canvas nodes (image / video / audio)',
   'canvas.studio.upload': 'Upload',
   'canvas.studio.uploading': 'Uploading…',
   'canvas.studio.uploadMissing': '{count} uploaded file(s) could not be read back from the library; no node was created',
