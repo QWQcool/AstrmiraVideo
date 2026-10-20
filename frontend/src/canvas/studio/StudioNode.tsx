@@ -1,9 +1,16 @@
-import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { Handle, NodeToolbar, Position, useViewport, type NodeProps } from '@xyflow/react';
 import {
   formatYuan,
   type CanvasNodeBatch,
   type CanvasNodeType,
+  type CanvasReference,
   type CanvasReferenceRole,
   type TaskProgress,
 } from '@astrmira/shared';
@@ -31,7 +38,10 @@ import {
   type ResolutionTier,
 } from '../../lib/format';
 import { useTranslate, type MessageKey, type Translate } from '../../lib/i18n';
-import { composerKeyAction } from '../../lib/composerKeys';
+import {
+  StructuredPromptInput,
+  type InlinePromptToken,
+} from '../../components/StructuredPromptInput';
 import { useShell } from '../../lib/shell';
 import { useStudio } from './StudioContext';
 
@@ -116,6 +126,8 @@ export function StudioNode({ id, selected }: NodeProps) {
 
   const cardRef = useRef<HTMLDivElement | null>(null);
 
+  /** 引用目录：删除行内 token 后原生撤销时找回 reference（只增不删） */
+  const referenceCatalog = useRef<Map<string, CanvasReference>>(new Map());
   const node = findCanvasNode(studio.doc, id);
   if (node === null) return null;
 
@@ -127,6 +139,21 @@ export function StudioNode({ id, selected }: NodeProps) {
   };
 
   const draft = node.data.draft;
+  for (const reference of draft.references) {
+    referenceCatalog.current.set(reference.assetId, reference);
+  }
+  const inlineTokens: InlinePromptToken[] = [...new Set(draft.references.map((item) => item.assetId))]
+    .map((assetId) => {
+      const reference = draft.references.find((item) => item.assetId === assetId);
+      return reference === undefined
+        ? null
+        : {
+            id: assetId,
+            label: `${assetId.slice(0, 10)}`,
+            kind: reference.role === 'reference-video' ? ('video' as const) : ('image' as const),
+          };
+    })
+    .filter((item): item is InlinePromptToken => item !== null);
   const preview = latestCanvasOutput(node);
   const latest = latestCanvasBatch(node);
   const active = node.data.batches.find(
@@ -252,24 +279,38 @@ export function StudioNode({ id, selected }: NodeProps) {
             </span>
           </div>
 
-          <textarea
-            className="cs-toolbar-input"
-            rows={3}
-            value={draft.prompt}
-            placeholder={
-              node.type === 'text'
-                ? t('canvas.studio.textPlaceholder')
-                : t('canvas.studio.promptPlaceholder')
-            }
-            onChange={(event) => studio.onDraftChange(id, { prompt: event.target.value })}
-            onKeyDown={(event) => {
-              if (node.type === 'text') return;
-              if (composerKeyAction(event, { mentionOpen: false }) === 'submit') {
-                event.preventDefault();
-                studio.onSubmit(id);
+          {node.type === 'text' ? (
+            <textarea
+              className="cs-toolbar-input"
+              rows={3}
+              value={draft.prompt}
+              placeholder={t('canvas.studio.textPlaceholder')}
+              onChange={(event) => studio.onDraftChange(id, { prompt: event.target.value })}
+            />
+          ) : (
+            <StructuredPromptInput
+              initialText={draft.prompt}
+              initialTokens={inlineTokens}
+              className="cs-toolbar-input cs-toolbar-input-rich"
+              placeholder={t('canvas.studio.promptPlaceholder')}
+              ariaLabel={t('canvas.studio.promptPlaceholder')}
+              enableMentions={false}
+              onChange={(prompt) => studio.onDraftChange(id, { prompt })}
+              onRemoveToken={(assetId) =>
+                studio.onDraftChange(id, {
+                  references: draft.references.filter((item) => item.assetId !== assetId),
+                })
               }
-            }}
-          />
+              onRestoreToken={(assetId) => {
+                const restored = referenceCatalog.current.get(assetId);
+                if (restored === undefined) return;
+                if (draft.references.some((item) => item.assetId === assetId)) return;
+                studio.onDraftChange(id, { references: [...draft.references, restored] });
+              }}
+              onPasteFiles={() => undefined}
+              onSubmit={() => studio.onSubmit(id)}
+            />
+          )}
           {node.type === 'text' ? null : (
             <p className="cs-toolbar-hint">{t('create.hint.submit')}</p>
           )}

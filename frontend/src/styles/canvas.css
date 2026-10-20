@@ -1103,6 +1103,19 @@ audio.cs-card-media {
   font-size: var(--fs-note);
 }
 
+.cs-toolbar-input-rich {
+  display: block;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cs-toolbar-input-rich:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
+}
+
 .cs-toolbar-row {
   display: flex;
   flex-wrap: wrap;

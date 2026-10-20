@@ -44,7 +44,6 @@ import {
   swapFirstLast,
   type MentionRef,
 } from '../lib/mentions';
-import { composerKeyAction } from '../lib/composerKeys';
 import {
   comfyUiEngineOptions,
   httpServiceEngineOptions,
@@ -56,6 +55,11 @@ import { useTaskPolling } from '../hooks/useTaskPolling';
 import { useCreationDraft } from '../hooks/useCreationDraft';
 import { CreationTypeBar, type ComposerKind } from '../components/CreationTypeBar';
 import { ComposerBar } from '../components/ComposerBar';
+import {
+  StructuredPromptInput,
+  type InlinePromptToken,
+  type StructuredPromptHandle,
+} from '../components/StructuredPromptInput';
 import { MediaLightbox } from '../components/MediaLightbox';
 
 /**
@@ -192,6 +196,10 @@ export function CreateView() {
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
   const [mentionActive, setMentionActive] = useState(0);
+  /** 行内 token 的编辑器句柄（与外部 chips 双向同步） */
+  const promptEditorRef = useRef<StructuredPromptHandle | null>(null);
+  /** 引用目录：删除后原生撤销恢复 token 时，从这里找回引用 */
+  const refCatalog = useRef<Map<string, MentionRef>>(new Map());
 
   // ── 素材池（`@` 弹层的候选：资产库 + 成片/剪辑产物）──
   // V2.10：池子里**只放可作为生成参考的资产**（音频素材挡在池外，见 `isRefAsset`）
@@ -370,6 +378,39 @@ export function CreateView() {
     });
   }, [assetPool, taskPool, poolsLoaded]);
 
+  // 目录只增不删：原生撤销恢复 token 时，引用可能已从当前 chips 移除
+  useEffect(() => {
+    for (const ref of refs) {
+      if (ref.ref !== '') refCatalog.current.set(ref.id, ref);
+    }
+  }, [refs]);
+
+  const inlineTokens = useMemo<InlinePromptToken[]>(
+    () =>
+      refs
+        .filter((ref) => ref.ref !== '' && ref.missing !== true)
+        .map((ref) => ({
+          id: ref.id,
+          label: ref.label ?? ref.ref.slice(0, 10),
+          kind: ref.kind,
+        })),
+    [refs],
+  );
+
+  // 引用在解析后确认失效 → 行内 token 也要撤掉（外部 chip 保留供修正）
+  useEffect(() => {
+    for (const ref of refs) {
+      if (ref.missing === true) promptEditorRef.current?.removeToken(ref.id);
+    }
+  }, [refs]);
+
+  // 预览/标签解析完成后同步 token 文案（不改变正文）
+  useEffect(() => {
+    for (const token of inlineTokens) {
+      promptEditorRef.current?.updateTokenLabel(token.id, token.label);
+    }
+  }, [inlineTokens]);
+
   // 预览用的 objectURL 在卸载时统一 revoke（与工作台同纪律：不泄漏到会话结束）
   useEffect(
     () => () => {
@@ -485,7 +526,19 @@ export function CreateView() {
 
   // ── 素材动作 ──
   const addRef = (ref: MentionRef): void => {
-    setRefs((prev) => (prev.some((item) => item.ref === ref.ref) ? prev : [...prev, ref]));
+    if (refs.some((item) => item.ref === ref.ref)) {
+      setMentionOpen(false);
+      setMentionFilter('');
+      return;
+    }
+    setRefs((prev) => [...prev, ref]);
+    if (ref.ref !== '' && ref.missing !== true) {
+      promptEditorRef.current?.insertToken({
+        id: ref.id,
+        label: ref.label ?? ref.ref.slice(0, 10),
+        kind: ref.kind,
+      });
+    }
     setMentionOpen(false);
     setMentionFilter('');
     setMentionActive(0);
@@ -535,6 +588,17 @@ export function CreateView() {
 
   const removeRef = (id: string): void => {
     setRefs((prev) => prev.filter((item) => item.id !== id));
+    // 外部 chip 的 × 同步删 token；token 自己删除时这里是无操作
+    promptEditorRef.current?.removeToken(id);
+  };
+
+  /** 原生撤销恢复了 token：从目录找回引用（不重新插 token，DOM 已经在了） */
+  const restoreRef = (id: string): void => {
+    const restored = refCatalog.current.get(id);
+    if (restored === undefined) return;
+    setRefs((prev) =>
+      prev.some((item) => item.id === id) ? prev : [...prev, { ...restored, missing: false }],
+    );
   };
 
   /** 单条上传（首次与失败重试共用）；失败保留 chip + 原文件，不再直接删掉 */
@@ -567,6 +631,11 @@ export function CreateView() {
             ),
           );
           setUploadError(null);
+          promptEditorRef.current?.insertToken({
+            id,
+            label: file.name,
+            kind,
+          });
           void reloadPools();
         })
         .catch((caught: unknown) => {
@@ -634,16 +703,6 @@ export function CreateView() {
     setMentionOpen(true);
     setMentionFilter('');
     void reloadPools();
-  };
-
-  /** `@` 唤起的输入检测：输入 `@` 打开弹层并从文本里去掉它（chip 才是真相，文本不留 `@`） */
-  const handlePromptChange = (value: string, previous: string): void => {
-    if (value.endsWith('@') && !previous.endsWith('@')) {
-      setPrompt(value.slice(0, -1));
-      openMentions();
-      return;
-    }
-    setPrompt(value);
   };
 
   const filteredTasks = useMemo(
@@ -771,30 +830,18 @@ export function CreateView() {
             // 由 `/status` 的配置事实驱动：没配 ComfyUI 时角标"待接入"，配了就正常可选
             imageReady={imageReady}
           />
-          <textarea
-            className="cr-input"
-            rows={3}
+          <StructuredPromptInput
+            ref={promptEditorRef}
+            initialText={prompt}
+            initialTokens={inlineTokens}
             placeholder={t('create.input.placeholder')}
-            value={prompt}
-            onChange={(event) => handlePromptChange(event.target.value, prompt)}
-            onKeyDown={(event) => {
-              const action = composerKeyAction(event, { mentionOpen });
-              if (action === 'close-mention') {
-                event.preventDefault();
-                setMentionOpen(false);
-                return;
-              }
-              if (action === 'select-mention') {
-                event.preventDefault();
-                pickMentionAt(mentionIndex);
-                return;
-              }
-              if (action === 'submit') {
-                event.preventDefault();
-                void handleSubmit();
-              }
-              // newline：不拦截，交给 textarea 原生换行
-            }}
+            ariaLabel={t('create.input.placeholder')}
+            onChange={setPrompt}
+            onRemoveToken={removeRef}
+            onRestoreToken={restoreRef}
+            onOpenMentions={openMentions}
+            onPasteFiles={handleFiles}
+            onSubmit={() => void handleSubmit()}
           />
 
           <div className="cr-hint-row">

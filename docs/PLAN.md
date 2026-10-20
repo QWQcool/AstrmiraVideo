@@ -1683,6 +1683,18 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · S5-B1c：行内结构化引用 token（B1 第三段，B1 功能收口）
+
+- **【编辑器】** 新增 `StructuredPromptInput`：contenteditable 正文 + `contenteditable=false` 的引用 token（稳定 id，不是文本名称）；首页与画布节点共用。正文仍只存 prompt 文本，token 不重复持久化 HTML。
+- **【插入】** 首页 `@` 弹层键盘选择后在**最近一次光标**插入 token；上传成功的引用也在原光标插入。节点引用由 `draft.references` 初始化成行内 token，外部 `.cs-ref` 用途行保留。
+- **【删除/撤销】** 删除 token → 引用 chip 同步消失；原生撤销恢复 token → 从 ref catalog 找回引用并恢复 chip。节点同样验证。外部 chip 的 × 也会同步删 token。
+- **【粘贴】** 粘贴一律按纯文本插入，不接收外部 HTML；复制出去的 token 只保留名称，粘回不会凭名称自动绑定。
+- **【刷新】** 草稿按 assetId/role/order 恢复；行内 token 在挂载时按引用重建（位置不持久化，恢复后追加到正文尾部，这是当前限制）。
+- **【实机 12/12 PASS（首页）】** @ 选择插入 token；正文不持久化 token 文本、引用单独持久化；刷新恢复 token+chip；删除 token→chip 消失；Ctrl+Z 恢复 token+chip；复制全文再粘贴不新增绑定；Enter 换行；Ctrl+Enter 提交；控制台零产品 error。
+- **【实机 6/6 PASS（节点）】** 节点正文两条 token + 外部用途行；删除 token→引用减少；Ctrl+Z 恢复；Ctrl+Enter 在行内编辑器提交；控制台零产品 error。
+- **【测试】** 前端 **549 passed**、`type`/`lint`/视觉自检通过；本片未改后端/契约。
+- **【B1 状态】** B1 的代码与交互收口：Enter 规则、@ 键盘、首尾交换、超量硬停用、草稿引用恢复、行内 token、删除/撤销、纯文本粘贴、节点宿主都已落地。**未验**：上传失败重试的真实失败注入（代码已接）、真实中文输入法组合与跨浏览器（只在 Chromium 实测）、刷新后 token 的**正文位置**（只恢复引用，不恢复位置）。
+
 ### 2026-10-20 · S5-B1b：超量引用硬停用 + 节点侧首尾交换（B1 第二段）
 
 - **【超量不再静默】** `ignored` 非空时**禁用提交**，文案从“已忽略”改成“不会参与本次生成，提交已停用 —— 请先删除对应 chip”；不再只提示后悄悄发子集。三条图片/视频+图片的冲突都走同一判定。

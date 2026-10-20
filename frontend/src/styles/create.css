@@ -92,6 +92,43 @@
   outline: none;
 }
 
+/* S5-B1c：contenteditable 正文 + 行内结构化引用 token */
+.cr-input-rich {
+  display: block;
+  min-height: 84px;
+  max-height: 260px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cr-input-rich:empty::before {
+  content: attr(data-placeholder);
+  color: var(--faint);
+  pointer-events: none;
+}
+
+.cr-inline-ref {
+  display: inline-flex;
+  align-items: center;
+  max-width: 260px;
+  margin: 0 2px;
+  padding: 1px 7px;
+  overflow: hidden;
+  border: 1px solid var(--line-gold);
+  border-radius: 999px;
+  background-color: var(--gold-soft);
+  color: var(--gold);
+  font-family: var(--sans);
+  font-size: var(--fs-note);
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: baseline;
+  user-select: all;
+  cursor: default;
+}
+
 /* ── 提示行（@ 入口 + 拖拽提示）── */
 .cr-hint-row {
   display: flex;
