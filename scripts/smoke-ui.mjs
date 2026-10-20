@@ -539,11 +539,14 @@ try {
     (await page.evaluate(() => localStorage.getItem('astrmira.activeProjectId'))) === 'default',
     '删除后记忆同步回落默认项目',
   );
-  const gone = await page.evaluate(
+  // refreshProjects 是异步的：select 值回落 default 只说明删除成功 + 当前项目已切换，
+  // 下拉选项要等下一次 /api/projects 返回才消失。这里轮询等待，避免把时序当功能失败。
+  await page.waitForFunction(
     (id) => document.querySelector(`.proj-select option[value="${id}"]`) === null,
     smokeProjectId,
+    { timeout: 10_000 },
   );
-  assert(gone, '被删项目从下拉里消失');
+  assert(true, '被删项目从下拉里消失（等待项目清单刷新）');
   await page.locator('.proj-pop-close').click();
 
   // 回到工作台（后续 [2] 起的检查按原假设从工作台开始）
