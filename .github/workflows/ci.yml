@@ -122,6 +122,8 @@ jobs:
     needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # 2026-10-20：主机不可达时 scp 曾挂 14+ 分钟；给整个部署一个上限，别让一次 push 卡住一整天
+    timeout-minutes: 12
 
     concurrency:
       group: deploy-production
@@ -181,6 +183,9 @@ jobs:
           # -f：从文件读密码，因此密码**不会出现在进程命令行**里
           sshpass -f /tmp/deploy-pass scp -P "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=15 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=2 \
             /tmp/deploy.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/root/astrmira/deploy.tar.gz"
 
       - name: 远程解压并部署
@@ -191,6 +196,9 @@ jobs:
         run: |
           sshpass -f /tmp/deploy-pass ssh -p "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=15 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=2 \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             'cd /root/astrmira && tar -xzf deploy.tar.gz && rm -f deploy.tar.gz && node scripts/deploy.mjs'
 
@@ -202,5 +210,8 @@ jobs:
         run: |
           sshpass -f /tmp/deploy-pass ssh -p "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=15 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=2 \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             'docker ps --format "{{.Names}} | {{.Status}}"'

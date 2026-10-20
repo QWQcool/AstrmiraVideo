@@ -1683,6 +1683,13 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · B4-0i：部署步骤加超时（verify 已首次转绿）
+
+- **【verify 首次转绿】** B4-0h 推送的 `verify` 在 **5m9s** 内通过：覆盖率 681、UI 冒烟（含导航/筛选/主题/复用/更多设置/旧血缘说明/中英/移动端）全过。这是自 S4-R3a 以来第一次 `verify` 绿。
+- **【deploy 挂死】** 同一次 run 的 `deploy` 在「上传代码包」`scp` 卡了 **14+ 分钟**（无 `ConnectTimeout`，主机不可达时会一直等）；已取消该 run，避免 `deploy-production` 并发组把后续推送全部堵住。
+- **【修复】** `deploy` 加 `timeout-minutes: 12`，三处 `scp/ssh` 加 `ConnectTimeout=15`、`ServerAliveInterval=15`、`ServerAliveCountMax=2`。主机不可达会快速失败并给出明确报错，不再无限挂起；是否修 `DEPLOY_HOST`/凭据是部署环境问题，另行处理。
+- **【边界】** 这不改变“verify 通过才部署”的门禁；deploy 仍可能因为主机/密码失败而红，但那不是代码或测试失败。
+
 ### 2026-10-20 · B4-0h：UI 冒烟的旧血缘画布整段下线
 
 - **【暴露】** 过了行业模板段后，冒烟进入 `[7e]`：35k 字符全部在测旧 `CanvasView` 的 `.cv-node/.cv-canvas/.cv-title`。S3-B4 已把 `#/lineage` 换成说明页、`#/canvas` 换成新多画布编辑器，旧视图已无引用（死代码），这一段从第一条 `waitForFunction('.cv-node')` 就会红。
