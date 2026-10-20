@@ -2,12 +2,14 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { ProviderStatusSchema, SelfCheckResponseSchema } from '@astrmira/shared';
 import type {
   ComfyUiServerStatus,
+  HttpServiceServerStatus,
   ProviderStatus,
   SelfCheckEntry,
   SelfCheckResponse,
 } from '@astrmira/shared';
 import { getProvider } from '../providers/registry.js';
 import { DEFAULT_COMFY_SERVER_ID, resolveComfyServers } from '../providers/comfyui/comfyuiServers.js';
+import { resolveHttpServices } from '../providers/httpService/httpServiceProfile.js';
 
 /** 部署者是否向访客开放 host 本地轨（CONTRACT §2：`EXPOSE_HOST_LOCAL_TRACK`，默认 0） */
 function isHostLocalTrackExposed(): boolean {
@@ -126,6 +128,43 @@ function resolveComfyUiStatus(): ProviderStatus['comfyui'] {
   };
 }
 
+/**
+ * V2.47（§22）：配置型 HTTP 任务服务——配置事实，不探测远端。
+ * 地址与 token 一律不下发；只给 id / label / modes / available / reason。
+ */
+function resolveHttpServicesStatus(): ProviderStatus['httpServices'] {
+  const { servers, problems } = resolveHttpServices();
+  const head = problems.length === 0 ? '' : `${problems.join('；')}；`;
+  const described: HttpServiceServerStatus[] = servers.map((server) => ({
+    id: server.id,
+    label: server.label,
+    modes: server.modes,
+    available: server.available,
+    ...(server.reason === undefined ? {} : { reason: server.reason }),
+  }));
+
+  if (servers.length === 0) {
+    return {
+      available: false,
+      provider: 'http-service',
+      servers: [],
+      reason: `${head}本服务未配置 HTTP 任务服务（缺 HTTP_SERVICES_FILE）`,
+    };
+  }
+
+  const usable = described.filter((server) => server.available).length;
+  const firstBad = described.find((server) => !server.available);
+  return {
+    available: usable > 0,
+    provider: 'http-service',
+    servers: described,
+    reason:
+      usable > 0
+        ? `${head}本服务已配置 ${servers.length} 个 HTTP 服务（可用 ${usable} 个；能力在提交时按 modes 判定）`
+        : `${head}本服务配置的 HTTP 服务都不可用：${firstBad?.reason ?? '原因见各实例'}`,
+  };
+}
+
 function resolveLlmStatus(): ProviderStatus['llm'] {
   return {
     available: false,
@@ -145,6 +184,7 @@ export function buildProviderStatus(): ProviderStatus {
     cloud: resolveCloudStatus(),
     local: resolveLocalStatus(),
     comfyui: resolveComfyUiStatus(),
+    httpServices: resolveHttpServicesStatus(),
     llm: resolveLlmStatus(),
     defaultProvider: 'cloud-volcano-seedance',
   };

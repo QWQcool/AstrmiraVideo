@@ -40,6 +40,8 @@ export const PROVIDER_BASE_TYPES = [
   // 旧前端产物与历史请求体带着这个值来，应当得到 503（人话），而不是形状校验 400。
   'local-minimax-h3',
   'host-comfyui',
+  // V2.47（§22）：配置型 HTTP 任务服务；具名实例 `http-service:<name>`，地址只允许回环/内网。
+  'http-service',
   'stock-local',
   'fixture-local',
 ] as const;
@@ -51,11 +53,20 @@ export type ProviderBaseType = z.infer<typeof ProviderBaseTypeSchema>;
 export const COMFYUI_PROVIDER_PREFIX = 'host-comfyui:';
 export const COMFYUI_SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,24}$/;
 
+/** V2.47：配置型 HTTP 任务服务的具名实例（§22） */
+export const HTTP_SERVICE_PROVIDER_PREFIX = 'http-service:';
+export const HTTP_SERVICE_NAME_PATTERN = /^[A-Za-z0-9_-]{1,24}$/;
+
 /** provider id 的**形状**是否合法（实例究竟存不存在，由服务端注册表判定 —— 未注册即 503） */
 export function isProviderIdShape(value: string): boolean {
   if ((PROVIDER_BASE_TYPES as readonly string[]).includes(value)) return true;
-  if (!value.startsWith(COMFYUI_PROVIDER_PREFIX)) return false;
-  return COMFYUI_SERVER_NAME_PATTERN.test(value.slice(COMFYUI_PROVIDER_PREFIX.length));
+  if (value.startsWith(COMFYUI_PROVIDER_PREFIX)) {
+    return COMFYUI_SERVER_NAME_PATTERN.test(value.slice(COMFYUI_PROVIDER_PREFIX.length));
+  }
+  if (value.startsWith(HTTP_SERVICE_PROVIDER_PREFIX)) {
+    return HTTP_SERVICE_NAME_PATTERN.test(value.slice(HTTP_SERVICE_PROVIDER_PREFIX.length));
+  }
+  return false;
 }
 
 /** 取基类型（`host-comfyui:office` → `host-comfyui`）；形状不合法返回 null */
@@ -63,6 +74,9 @@ export function providerBaseType(id: string): ProviderBaseType | null {
   if ((PROVIDER_BASE_TYPES as readonly string[]).includes(id)) return id as ProviderBaseType;
   if (id.startsWith(COMFYUI_PROVIDER_PREFIX)) {
     return isProviderIdShape(id) ? 'host-comfyui' : null;
+  }
+  if (id.startsWith(HTTP_SERVICE_PROVIDER_PREFIX)) {
+    return isProviderIdShape(id) ? 'http-service' : null;
   }
   return null;
 }
@@ -74,6 +88,13 @@ export function comfyUiServerNameOf(id: string): string | null {
   return COMFYUI_SERVER_NAME_PATTERN.test(name) ? name : null;
 }
 
+/** V2.47：HTTP 服务实例名（`http-service:h3-gpu` → `h3-gpu`）；形状不合法 → null */
+export function httpServiceNameOf(id: string): string | null {
+  if (!id.startsWith(HTTP_SERVICE_PROVIDER_PREFIX)) return null;
+  const name = id.slice(HTTP_SERVICE_PROVIDER_PREFIX.length);
+  return HTTP_SERVICE_NAME_PATTERN.test(name) ? name : null;
+}
+
 /**
  * ⚠️ 形状校验只是**第一道**：它拦"拼错的 id"，拦不住"这台实例没配"。
  * 后者走既有路径（注册表返回 null → `503 PROVIDER_UNAVAILABLE`），不新增错误码。
@@ -83,7 +104,7 @@ export const ProviderTypeSchema = z
   .min(1)
   .refine(isProviderIdShape, {
     message:
-      'provider 形状不合法：应为已知档位，或 host-comfyui:<name>（name 限 [A-Za-z0-9_-]{1,24}）',
+      'provider 形状不合法：应为已知档位，或 host-comfyui:<name> / http-service:<name>（name 限 [A-Za-z0-9_-]{1,24}）',
   });
 
 /** 成片时长上限 10s（公网部署防线，PLAN §7-3） */

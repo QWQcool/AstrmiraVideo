@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ProviderTypeSchema } from './request.js';
+import { GenerationModeSchema, ProviderTypeSchema } from './request.js';
 
 /**
  * 契约投影来源：docs/CONTRACT.md §2 算力状态检测契约 `ProviderStatus`（V1.8）
@@ -95,11 +95,34 @@ export const ComfyUiProviderStatusSchema = z.object({
   reason: z.string().optional(),
 });
 
+/**
+ * V2.47（§22）：配置型 HTTP 任务服务——**配置事实陈述**，不探测远端。
+ * 地址与 token 不下发；`modes` 是该服务声明的能力，供前端过滤。
+ */
+export const HttpServiceServerStatusSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  modes: z.array(GenerationModeSchema),
+  available: z.boolean(),
+  reason: z.string().optional(),
+});
+export type HttpServiceServerStatus = z.infer<typeof HttpServiceServerStatusSchema>;
+
+export const HttpServicesProviderStatusSchema = z.object({
+  available: z.boolean(),
+  provider: z.literal('http-service'),
+  servers: z.array(HttpServiceServerStatusSchema),
+  reason: z.string().optional(),
+});
+export type HttpServicesProviderStatus = z.infer<typeof HttpServicesProviderStatusSchema>;
+
 export const ProviderStatusSchema = z.object({
   cloud: CloudProviderStatusSchema,
   local: LocalProviderStatusSchema,
   /** V2.31（A1 片 C）：用户自备的 ComfyUI（地址合规 + 本地轨已开放才算可用） */
   comfyui: ComfyUiProviderStatusSchema,
+  /** V2.47（§22）：配置型 HTTP 任务服务（配置合法 + 凭据 env 齐才算可用） */
+  httpServices: HttpServicesProviderStatusSchema,
   llm: LlmProviderStatusSchema,
   // 初始建议值（V1.8：不再由 Tier 判定推导）
   defaultProvider: ProviderTypeSchema,

@@ -7,6 +7,8 @@ import { VolcanoSeedanceProvider } from './VolcanoSeedanceProvider.js';
 import { SEEDANCE_DEFAULT_BASE_URL, SEEDANCE_DEFAULT_MODEL } from './seedanceProtocol.js';
 import { ComfyUiProvider } from './comfyui/ComfyUiProvider.js';
 import { DEFAULT_COMFY_SERVER_ID, findComfyServer } from './comfyui/comfyuiServers.js';
+import { HttpServiceProvider } from './httpService/HttpServiceProvider.js';
+import { findHttpService } from './httpService/httpServiceProfile.js';
 import { createFaultInjectedProvider, resolveFaultPlanFromEnv } from './withFaultInjection.js';
 
 /**
@@ -167,6 +169,30 @@ function createComfyProviderFor(id: string, ctx: ProviderResolutionContext): Vid
 }
 
 /**
+ * V2.47（§22）：配置型 HTTP 任务服务的一个实例。
+ * 找不到 / 不可用 → null（503）；地址与 token 由 profile 解析时校验，这里不下发、不记录。
+ */
+function createHttpServiceProviderFor(
+  id: string,
+  ctx: ProviderResolutionContext,
+): VideoProvider | null {
+  const server = findHttpService(id);
+  if (server === null || !server.available) return null;
+
+  return new HttpServiceProvider({
+    id: server.id,
+    name: `HTTP 服务（${server.label}）`,
+    profile: server.profile,
+    outputDir: resolveOutputsDir(),
+    taskId: ctx.taskId,
+    ...(ctx.resolveAssetUrl === undefined ? {} : { resolveAssetUrl: ctx.resolveAssetUrl }),
+    ...(ctx.resolveTaskVideoUrl === undefined
+      ? {}
+      : { resolveTaskVideoUrl: ctx.resolveTaskVideoUrl }),
+  });
+}
+
+/**
  * 模板里的占位符曾被部署者当成真值抄进 `.env`（`VOLCANO_MODEL_NAME=doubao-seedance-video`），
  * 于是**所有**提交都在上游 404。模板已经改成注释态，但线上 `.env` 不会自动更新，
  * 所以启动时对"已知的坑值"告一次警 —— 让人在日志里一眼看见，而不是等用户来报错。
@@ -203,6 +229,9 @@ const REGISTRY: Record<ProviderBaseType, ProviderFactory> = {
   // **具名实例**（V2.36，`host-comfyui:<name>`）由 `getProvider` 按 id 分流 ——
   // 注册表只放"每类一个工厂"，实例是数据（见 comfyuiServers.ts）。
   'host-comfyui': (ctx) => createComfyProviderFor(DEFAULT_COMFY_SERVER_ID, ctx),
+  // V2.47（§22）：配置型 HTTP 任务服务；没有默认实例，只有具名 `http-service:<name>`。
+  // 这里保留 null 工厂，让 `ProviderBaseType` 的穷举检查仍成立；实例由 getProvider 分流。
+  'http-service': () => null,
 };
 
 /** ⚠️ 测试注入表（生产路径永不写入；见 `__setProviderForTesting`） */
@@ -227,11 +256,14 @@ export function getProvider(id: ProviderType, ctx?: ProviderResolutionContext): 
   const base = providerBaseType(id);
   if (base === null) return null;
 
-  // V2.36：具名实例按 id 取"那一台"；默认实例走注册表（一处逻辑一处真相）
+  // V2.36：具名实例按 id 取"那一台"；默认实例走注册表（一处逻辑一处真相）。
+  // V2.47：http-service 也按具名实例分流（没有默认实例）。
   const provider =
     base === 'host-comfyui' && id !== DEFAULT_COMFY_SERVER_ID
       ? createComfyProviderFor(id, context)
-      : REGISTRY[base](context);
+      : base === 'http-service' && id !== 'http-service'
+        ? createHttpServiceProviderFor(id, context)
+        : REGISTRY[base](context);
 
   return provider === null ? null : applyEnvFaultInjection(provider);
 }

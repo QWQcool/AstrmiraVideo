@@ -35,6 +35,7 @@ function status(input: { cloud: boolean; comfy: boolean }): ProviderStatus {
         { id: 'host-comfyui', label: '默认引擎', available: input.comfy },
       ],
     },
+    httpServices: { available: false, provider: 'http-service', servers: [] },
     llm: { available: false, provider: 'openai-compatible', acceptsClientKey: true },
     defaultProvider: 'cloud-volcano-seedance',
   };

@@ -47,6 +47,8 @@ export const COMMON_ZH = {
   'common.scope.cloud': '云端',
   'common.scope.local': '本地',
   'common.engine.cloud': '云端 Seedance',
+  'common.engine.httpService': '远程服务',
+  'common.engine.httpServiceNamed': '远程服务 · {name}',
 
   /**
    * ── 执行位置 `executedBy` 的显示名（V2.27 / 台账 B11；语言迁移第十二批收敛）──
@@ -65,9 +67,12 @@ export const COMMON_ZH = {
    */
   'common.executedBy.cloud': '云端',
   'common.executedBy.hostLocal': '本机',
+  'common.executedBy.remote': '远程服务',
   'common.executedBy.clientWorker': '你的电脑',
   'common.executedBy.title.cloud': '产物在云端生成：提示词与参考图会发到上游服务商',
   'common.executedBy.title.hostLocal': '在本服务所在机器上跑：数据不出这台机器',
+  'common.executedBy.title.remote':
+    '在部署者配置的远程 HTTP 服务上执行：提示词与参考素材会发到该服务',
   'common.executedBy.title.clientWorker':
     '在你的设备上执行（含浏览器端渲染的剪辑产物）：服务端不持有中间产物',
 
@@ -132,6 +137,7 @@ export const COMMON_ZH = {
   'common.engine.comfyUiUnknown': '本地 ComfyUI 状态未知',
   'common.engine.comfyUiNamed': 'ComfyUI · {name}',
   'common.engine.configured': '本服务已配置这一台（地址合规）',
+  'common.engine.httpConfigured': '本服务已配置这个远程服务（提交时验证）',
   'common.engine.unavailable': '这一台不可用',
   'common.engine.h3Revoked': '本地 MiniMax H3（已撤）',
   'common.engine.fixture': '开发期夹具',
@@ -183,14 +189,19 @@ export const COMMON_EN = {
   'common.scope.cloud': 'Cloud',
   'common.scope.local': 'Local',
   'common.engine.cloud': 'Cloud Seedance',
+  'common.engine.httpService': 'Remote service',
+  'common.engine.httpServiceNamed': 'Remote · {name}',
 
   'common.executedBy.cloud': 'Cloud',
   'common.executedBy.hostLocal': 'This machine',
+  'common.executedBy.remote': 'Remote service',
   'common.executedBy.clientWorker': 'Your device',
   'common.executedBy.title.cloud':
     'Produced in the cloud: the prompt and reference images are sent to the upstream provider',
   'common.executedBy.title.hostLocal':
     'Runs on the machine hosting this service: data never leaves it',
+  'common.executedBy.title.remote':
+    'Runs on the remote HTTP service configured by the operator: the prompt and references are sent there',
   'common.executedBy.title.clientWorker':
     'Runs on your device (including browser-rendered edit output): the server holds no intermediate files',
 
@@ -247,6 +258,7 @@ export const COMMON_EN = {
   'common.engine.comfyUiUnknown': 'Local ComfyUI status unknown',
   'common.engine.comfyUiNamed': 'ComfyUI · {name}',
   'common.engine.configured': 'This deployment has it configured (the address is valid)',
+  'common.engine.httpConfigured': 'This remote service is configured (checked when submitting)',
   'common.engine.unavailable': 'This instance is unavailable',
   'common.engine.h3Revoked': 'Local MiniMax H3 (retired)',
   'common.engine.fixture': 'Dev fixture',

@@ -36,7 +36,11 @@ import {
   selectMentions,
   type MentionRef,
 } from '../lib/mentions';
-import { comfyUiEngineOptions } from '../lib/engineOptions';
+import {
+  comfyUiEngineOptions,
+  httpServiceEngineOptions,
+  isHttpServiceEngine,
+} from '../lib/engineOptions';
 import { navigate, parseHash } from '../lib/router';
 import { useShell } from '../lib/shell';
 import { useTaskPolling } from '../hooks/useTaskPolling';
@@ -192,14 +196,41 @@ export function CreateView() {
   const [seed, setSeed] = useState('');
   /** V2.36：本地 ComfyUI 可能是**多台**（§19-1）—— 名单来自 `/status`，前端不维护第二份 */
   const comfyEngines = useMemo(() => comfyUiEngineOptions(providerStatus), [providerStatus]);
+  /** V2.47：配置型 HTTP 任务服务（§22）；没配时为空数组，不造假的“远程服务”档 */
+  const httpEngines = useMemo(() => httpServiceEngineOptions(providerStatus), [providerStatus]);
+  const engines = useMemo(() => [...comfyEngines, ...httpEngines], [comfyEngines, httpEngines]);
+  /** 图片：ComfyUI 或声明了 t2i 的 HTTP 服务；视频：ComfyUI 或声明了任一视频模式的 HTTP 服务 */
+  const imageEngines = useMemo(
+    () =>
+      engines.filter(
+        (engine) => !isHttpServiceEngine(engine.id) || engine.modes?.includes('t2i') === true,
+      ),
+    [engines],
+  );
+  const videoEngines = useMemo(
+    () =>
+      engines.filter(
+        (engine) =>
+          !isHttpServiceEngine(engine.id) ||
+          engine.modes?.some((mode) => mode !== 't2i') === true,
+      ),
+    [engines],
+  );
 
-  // 图片只能走本地 ComfyUI（云端不做图片）：切到图片态时自动把引擎切到第一台本地实例，
-  // 而不是让用户点了提交才看到"云端不支持图片"。
+  // 图片/视频切换：当前引擎不在目标能力列表里时，切到第一项可用引擎；
+  // 云端在视频态始终合法（ComposerBar 固定保留它），不因列表里没有就切走。
   useEffect(() => {
-    if (kind !== 'image' || provider !== CLOUD_PROVIDER) return;
-    const local = comfyEngines[0];
-    if (local !== undefined) setProvider(local.id);
-  }, [kind, provider, comfyEngines]);
+    if (kind === 'image') {
+      if (imageEngines.some((engine) => engine.id === provider)) return;
+      const fallback = imageEngines.find((engine) => engine.configured) ?? imageEngines[0];
+      if (fallback !== undefined) setProvider(fallback.id);
+      return;
+    }
+    if (!isHttpServiceEngine(provider)) return;
+    if (videoEngines.some((engine) => engine.id === provider)) return;
+    const fallback = videoEngines.find((engine) => engine.configured) ?? videoEngines[0];
+    if (fallback !== undefined) setProvider(fallback.id);
+  }, [kind, provider, imageEngines, videoEngines]);
 
   // 草稿落盘：提示词 / 类型 / 参数（素材不进草稿，理由见 useCreationDraft）。
   useEffect(() => {
@@ -284,7 +315,12 @@ export function CreateView() {
    * 真正能不能出图（模板/节点齐不齐）由服务端在提交时判定并如实报错 —— 与 §19-2 同一口径，
    * 不在这里假装"已就绪"。
    */
-  const imageReady = providerStatus?.comfyui.available === true;
+  const imageReady =
+    kind === 'image' &&
+    (isHttpServiceEngine(provider)
+      ? (httpEngines.find((engine) => engine.id === provider)?.configured === true &&
+        httpEngines.find((engine) => engine.id === provider)?.modes?.includes('t2i') === true)
+      : providerStatus?.comfyui.available === true);
 
   // 图片态：本地 ComfyUI 未配置时才禁用（配置了就走既有提交链路，失败由服务端如实报）
   const submitDisabled =
@@ -301,14 +337,16 @@ export function CreateView() {
    */
   const costEstimate = useMemo(
     () =>
-      estimateCostFromRequest(
-        {
-          resolution: resolveTargetSize(aspectRatio, resolutionTier),
-          params: { durationSec },
-          options: { model: byok.model },
-        },
-        { track: provider === 'cloud-volcano-seedance' ? 'cloud' : 'local' },
-      ),
+      isHttpServiceEngine(provider)
+        ? null // 远程 HTTP 服务没有本仓单价表：宁可不报价，也不写成 0 元
+        : estimateCostFromRequest(
+            {
+              resolution: resolveTargetSize(aspectRatio, resolutionTier),
+              params: { durationSec },
+              options: { model: byok.model },
+            },
+            { track: provider === 'cloud-volcano-seedance' ? 'cloud' : 'local' },
+          ),
     [aspectRatio, resolutionTier, durationSec, byok.model, provider],
   );
 
@@ -700,10 +738,16 @@ export function CreateView() {
             aspectRatio={aspectRatio}
             resolutionTier={resolutionTier}
             durationSec={durationSec}
-            engines={comfyEngines}
+            engines={kind === 'image' ? imageEngines : videoEngines}
             provider={provider}
             modelLabel={byok.model === '' ? undefined : byok.model}
-            priceText={kind === 'image' ? null : priceLabel}
+            priceText={
+              kind === 'image'
+                ? null
+                : isHttpServiceEngine(provider)
+                  ? t('canvas.studio.pricePending')
+                  : priceLabel
+            }
             submitDisabled={submitDisabled}
             submitting={submitting}
             onAspectChange={setAspectRatio}

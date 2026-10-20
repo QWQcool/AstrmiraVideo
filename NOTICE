@@ -52,7 +52,7 @@ Remotion 对个人与小型团队免费，但**公司用于生产需要购买商
 |---|---|---|
 | **ffmpeg / ffprobe** | 夹具合成、媒体探测、平台规格转码 | 许可取决于**你装的那一个构建**（常见 LGPL 或 GPL 变体）。本仓**不分发二进制**，`Dockerfile` 用的是基础镜像里的那一个 —— 商用前请确认你所用构建的条款 |
 | **ComfyUI**（用户自备） | 本地推理后端（`host-comfyui`） | 它是**部署者自己机器上的服务**，本仓只做接口适配（CONTRACT §19）。它的许可、插件与模型许可是**使用者自己的事** |
-| **MiniMax H3**（用户自备） | 本地推理后端 | **当前未实现**（选了会如实返回 `PROVIDER_UNAVAILABLE`）—— 见 README「能力边界」 |
+| **MiniMax H3**（用户自备） | 本地/远程推理后端 | **独立 H3 档仍不提供**（选了会如实返回 `PROVIDER_UNAVAILABLE`）；V2.47 起可通过 `http-service:<name>` 调用部署者自己的 H3 HTTP 任务服务（CONTRACT §22），模型与算力由部署者负责 |
 
 ---
 
@@ -69,3 +69,14 @@ Remotion 对个人与小型团队免费，但**公司用于生产需要购买商
 
 - `docs/UPSTREAM.md`：参考 / 复刻的项目与版本追溯（含外部工具的来源 / 版本 / 许可登记）；
 - `docs/N8N-REFERENCE.md`：n8n 的设计借鉴清单与**许可边界**（读源码学设计、**不并入**其源码）。
+
+---
+
+## 六、infOS / Pictoria 源码借鉴（Apache-2.0）
+
+- 项目：`https://github.com/YoKONCy/infOS`（Pictoria 子应用）。
+- 许可：**Apache-2.0**；本仓复核基线提交 `4fa1424`。
+- 借鉴范围：`ServiceProfile`（submit/poll/cancel/outputs/字段映射/幂等）与提交回执/不确定态的设计思路；
+  本仓按自己的 `VideoProvider` 接口与契约重写，当前落点是 `backend/src/providers/httpService/`
+  与 CONTRACT §22（V2.47），说明见 `docs/INFOS-REVIEW.md`。
+- 如后续**直接复制**其代码片段，除本说明外还应保留原文件的版权与 Apache-2.0 许可声明。

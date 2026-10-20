@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EXECUTED_BY_LABELS,
   EXECUTED_BY_TITLES,
+  resolveExecutedBy,
   type AspectRatio,
   type ExecutedBy,
 } from '@astrmira/shared';
@@ -131,8 +132,16 @@ describe('对白长度提示（防线 6 的前端半边）', () => {
  * 所以这里**逐字对拍**：改任何一边而忘了另一边，这条立刻红。
  * （`.trim()` 是给英文对拍留的余地 —— 中文这边本来就不允许有任何差异。）
  */
+describe('executedBy 判定：HTTP 服务是 remote（V2.47）', () => {
+  it('http-service:<name> → remote；其它轨保持原判', () => {
+    expect(resolveExecutedBy('http-service:h3-gpu')).toBe('remote');
+    expect(resolveExecutedBy('host-comfyui:office')).toBe('host-local');
+    expect(resolveExecutedBy('cloud-volcano-seedance')).toBe('cloud');
+  });
+});
+
 describe('executedBy 显示名：字典的中文与共享包常量逐字一致（防两份漂移）', () => {
-  const ids: ExecutedBy[] = ['cloud', 'host-local', 'client-worker'];
+  const ids: ExecutedBy[] = ['cloud', 'host-local', 'remote', 'client-worker'];
 
   it('短标签逐字一致', () => {
     for (const id of ids) {

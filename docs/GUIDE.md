@@ -74,8 +74,23 @@
 > `/selfcheck` 不再检测）。撤掉的正是一个"**点了才知道不行**"的按钮（本仓最反感的那种形态）。
 > 现在本地轨**只有 ComfyUI 这一条路**；**H3 的模型可以在 ComfyUI 里跑** ——
 > 这也正是当前满足"数据不出域"的方式，走上面那条路即可。
+> 如果 H3 在**另一台算力服务器**上以 HTTP 任务接口运行，用下面的「轨道 C」接入，
+> 不要把无认证的 ComfyUI/HTTP 端口直接暴露到公网。
 > （`local-minimax-h3` 这个 id 与 `/status` 的 `local` 段**仍保留**，只为兼容旧前端产物与历史请求体：
 > 它们会得到 `503`（人话），而不是被 schema 判成 `400`。)
+
+### 轨道 C：通用 HTTP 任务服务（V2.47 / D71）
+
+适用于“模型跑在另一台 GPU 服务器、对应用只暴露 submit/poll 接口”的情况（例如自建 H3 服务）：
+
+1. 写一份 JSON（数组，1–8 项），形如 [`docs/examples/http-services.example.json`](examples/http-services.example.json)；
+2. 在服务端 `.env` 配 `HTTP_SERVICES_FILE=<这份 JSON 的路径>`，重启；
+3. `GET /api/providers/status` 的 `httpServices.servers` 会出现 `http-service:<name>`，
+   首页/画布的引擎列表按 `modes` 过滤；提交时若上游缺能力会如实报错；
+4. 地址只允许**回环或内网**（`isAllowedEngineUrl`）；公网算力服务器请走 VPN / Tailscale / SSH 隧道。
+   认证只从 `tokenEnv` 指向的环境变量读，**不要**把 token 写进 JSON；
+5. 这是**配置型适配器**，不是模型管理器：不下载模型、不启动 GPU 进程、不做多产物/独立音频。
+   同步接口（submit 直接返回产物）与异步接口（submit→taskId→poll）都支持。
 
 ### 轨道 B：云端商业 API（火山方舟 · Seedance）
 

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { EditScriptSchema } from './edit.js';
 import { EditProjectSchema } from './editProject.js';
-import { VideoGenerateRequestSchema } from './request.js';
+import { providerBaseType, VideoGenerateRequestSchema } from './request.js';
 import { CostRecordSchema } from './cost.js';
 import type { ProviderType, VideoGenerateRequest } from './request.js';
 
@@ -58,28 +58,31 @@ export const TaskErrorSchema = z.object({
  * "用了哪个引擎"与"算力在哪"是两件事，而且后者是**用户最关心的那件**：
  * - `cloud`：产物在部署者/用户的云端账号里生成（提示词与参考图**发到了上游**）；
  * - `host-local`：在本服务所在的那台机器上跑（数据不出这台机器）；
+ * - `remote`：在部署者配置的远程 HTTP 服务上跑（V2.47；数据会发到该服务）；
  * - `client-worker`：在**访问者本机**跑（`astrmira-worker/v1` 协议，数据不出用户电脑）。
  *
  * 「数据不出域」这类承诺**只对 storage 成立是不够的** —— 云端 BYOK 下提示词仍会发到上游。
  * 所以本地轨（D49）的整个价值都建立在"这条任务到底在哪跑"能被**如实看到**上：
  * 画廊、视频库、画布都要标注它，而不是只在提交时选一次。
  */
-export const ExecutedBySchema = z.enum(['cloud', 'host-local', 'client-worker']);
+export const ExecutedBySchema = z.enum(['cloud', 'host-local', 'remote', 'client-worker']);
 
 /** 执行位置的**短标签**（卡片 / 节点上用的那一行；前后端唯一一份 —— 两处各写一遍必然漂移） */
 export const EXECUTED_BY_LABELS: Record<z.infer<typeof ExecutedBySchema>, string> = {
   cloud: '云端',
   'host-local': '本机',
+  remote: '远程服务',
   'client-worker': '你的电脑',
 };
 
 /**
  * 执行位置的**完整说法**（鼠标悬停 / 详情里用）。
- * 它比标签重要：三个位置对"数据去了哪"的含义完全不同，用户有权一眼看到。
+ * 它比标签重要：四个位置对"数据去了哪"的含义完全不同，用户有权一眼看到。
  */
 export const EXECUTED_BY_TITLES: Record<z.infer<typeof ExecutedBySchema>, string> = {
   cloud: '产物在云端生成：提示词与参考图会发到上游服务商',
   'host-local': '在本服务所在机器上跑：数据不出这台机器',
+  remote: '在部署者配置的远程 HTTP 服务上执行：提示词与参考素材会发到该服务',
   'client-worker': '在你的设备上执行（含浏览器端渲染的剪辑产物）：服务端不持有中间产物',
 };
 
@@ -91,7 +94,9 @@ export const EXECUTED_BY_TITLES: Record<z.infer<typeof ExecutedBySchema>, string
  * 但执行位置不同。所以判定要盯着 provider 语义，而不是调度桶。
  */
 export function resolveExecutedBy(provider: ProviderType): z.infer<typeof ExecutedBySchema> {
-  return provider === 'cloud-volcano-seedance' ? 'cloud' : 'host-local';
+  if (provider === 'cloud-volcano-seedance') return 'cloud';
+  if (providerBaseType(provider) === 'http-service') return 'remote';
+  return 'host-local';
 }
 
 export const TaskProgressSchema = z.object({

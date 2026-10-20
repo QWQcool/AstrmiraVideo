@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { ComfyUiServerStatus, ProviderStatus } from '@astrmira/shared';
+import type {
+  ComfyUiServerStatus,
+  HttpServiceServerStatus,
+  ProviderStatus,
+} from '@astrmira/shared';
 import {
   DEFAULT_COMFY_ENGINE_ID,
   comfyUiEngineOptions,
+  httpServiceEngineOptions,
   isComfyUiEngine,
+  isHttpServiceEngine,
   providerLabel,
 } from './engineOptions';
 
@@ -34,6 +40,7 @@ function status(servers: ComfyUiServerStatus[], reason?: string): ProviderStatus
       servers,
       ...(reason === undefined ? {} : { reason }),
     },
+    httpServices: { available: false, provider: 'http-service', servers: [] },
     llm: { available: false, provider: 'openai-compatible', acceptsClientKey: true },
     defaultProvider: 'cloud-volcano-seedance',
   };
@@ -110,6 +117,82 @@ describe('comfyUiEngineOptions（多实例）', () => {
     expect(options[0]?.configured).toBe(true);
     expect(options[1]?.configured).toBe(false);
     expect(options[1]?.hint).toContain('回环或内网');
+  });
+});
+
+function httpServer(
+  overrides: Partial<HttpServiceServerStatus> = {},
+): HttpServiceServerStatus {
+  return {
+    id: 'http-service:h3-gpu',
+    label: 'H3 算力服务器',
+    modes: ['t2v', 'i2v'],
+    available: true,
+    ...overrides,
+  };
+}
+
+function statusWithHttp(servers: HttpServiceServerStatus[], reason?: string): ProviderStatus {
+  const base = status([]);
+  return {
+    ...base,
+    httpServices: {
+      available: servers.some((server) => server.available),
+      provider: 'http-service',
+      servers,
+      ...(reason === undefined ? {} : { reason }),
+    },
+  };
+}
+
+describe('httpServiceEngineOptions（V2.47 / CONTRACT §22）', () => {
+  it('未配置 → 空数组（不造假的“远程服务”档）', () => {
+    expect(httpServiceEngineOptions(null)).toEqual([]);
+    expect(httpServiceEngineOptions(status([]))).toEqual([]);
+  });
+
+  it('按配置生成 id / label / modes / 可用性', () => {
+    const options = httpServiceEngineOptions(
+      statusWithHttp([
+        httpServer(),
+        httpServer({
+          id: 'http-service:flux-gpu',
+          label: 'Flux 生图',
+          modes: ['t2i'],
+          available: false,
+          reason: '凭据环境变量未设置（FLUX_TOKEN）',
+        }),
+      ]),
+    );
+    expect(options).toEqual([
+      {
+        id: 'http-service:h3-gpu',
+        label: '远程服务 · H3 算力服务器',
+        configured: true,
+        hint: '本服务已配置这个远程服务（提交时验证）',
+        modes: ['t2v', 'i2v'],
+      },
+      {
+        id: 'http-service:flux-gpu',
+        label: '远程服务 · Flux 生图',
+        configured: false,
+        hint: '凭据环境变量未设置（FLUX_TOKEN）',
+        modes: ['t2i'],
+      },
+    ]);
+  });
+
+  it('providerLabel 用服务 label；未知实例至少显示名字', () => {
+    expect(
+      providerLabel('http-service:h3-gpu', statusWithHttp([httpServer()])),
+    ).toBe('远程服务 · H3 算力服务器');
+    expect(providerLabel('http-service:h3-gpu', null)).toBe('HTTP · h3-gpu');
+  });
+
+  it('isHttpServiceEngine 只认具名实例', () => {
+    expect(isHttpServiceEngine('http-service:h3-gpu')).toBe(true);
+    expect(isHttpServiceEngine('http-service')).toBe(false);
+    expect(isHttpServiceEngine('host-comfyui')).toBe(false);
   });
 });
 

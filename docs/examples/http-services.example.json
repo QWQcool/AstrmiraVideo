@@ -1,0 +1,58 @@
+[
+  {
+    "name": "h3-gpu",
+    "label": "H3 算力服务器",
+    "baseUrl": "http://10.0.0.12:9000",
+    "modes": ["t2v", "i2v"],
+    "tokenEnv": "H3_GPU_TOKEN",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {},
+    "submit": {
+      "path": "/v1/jobs",
+      "method": "POST",
+      "body": { "model": "minimax-h3" },
+      "bodyFormat": "json",
+      "fields": {
+        "prompt": { "from": "prompt", "format": "text" },
+        "aspect_ratio": { "from": "aspectRatio" },
+        "duration": { "from": "durationSec" },
+        "first_frame": { "from": "assets.firstFrameImage", "format": "data_url" }
+      },
+      "taskIdField": "id"
+    },
+    "poll": {
+      "path": "/v1/jobs/{id}",
+      "method": "GET",
+      "stateField": "status",
+      "success": ["succeeded"],
+      "failed": ["failed", "cancelled"]
+    },
+    "cancel": { "path": "/v1/jobs/{id}/cancel", "method": "POST" },
+    "outputs": {
+      "video": { "path": "result.video_url", "kind": "video" }
+    },
+    "idempotencyHeader": "Idempotency-Key",
+    "timeoutMs": 1800000,
+    "requestTimeoutMs": 60000
+  },
+  {
+    "name": "image-gpu",
+    "label": "生图服务（同步）",
+    "baseUrl": "http://10.0.0.13:9001",
+    "modes": ["t2i"],
+    "submit": {
+      "path": "/generate",
+      "method": "POST",
+      "body": { "model": "flux" },
+      "fields": {
+        "prompt": { "from": "prompt", "format": "text" }
+      }
+    },
+    "outputs": {
+      "image": { "path": "image_url", "kind": "image" }
+    },
+    "timeoutMs": 300000,
+    "requestTimeoutMs": 60000
+  }
+]

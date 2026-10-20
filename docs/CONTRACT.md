@@ -1,6 +1,12 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.46 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.47 · 已冻结（变更需先改本文，再改代码）**
+> **V2.47 修订（2026-10-20）**：**通用 HTTP 任务服务（§22）** —— Step 11-S4 前置能力（D67 / D71）。
+>   ① `ProviderType` 新增具名实例 `http-service:<name>`（配置来自 `HTTP_SERVICES_FILE`，不落 token）；
+>   ② `/status` 新增 `httpServices` 段（id/label/modes/available/reason，不下发地址与 token）；
+>   ③ `executedBy` 新增 `remote`（远程服务；队列仍走 `cloud` 并发桶，`TrackId` 不变）；
+>   ④ 无新路由、无新错误码、无新必填字段；不支持音频/多产物/GPU 进程管理；
+>   ⑤ S4-R1b 的 revision/409 顺延为 **V2.48**（未实施）。
 > **V2.46 修订（2026-10-19）**：**画布来源边（§21-5 / §21-11）** —— Step 11-S3 片 B4（台账 B78）。
 >   **无新路由、无新错误码、无新字段**（`CanvasDocEdge` v1 的形状不变）：
 >   ① 新画布只创建 **`kind:'lineage'`** 的边（`dependency` 留给后续编排/Agent，本轮不创建）；
@@ -435,6 +441,9 @@ export type ProviderBaseType =
   // 保留这个 id 只为**兼容**：旧前端产物与历史请求体提交它会得到 503（人话），而不是被 schema 判成 400。
   // 本地轨请用 host-comfyui；H3 的模型可以在 ComfyUI 里跑。
   | 'host-comfyui'      // V2.30：用户自备的 ComfyUI（§19；executedBy 仍判 host-local；V2.36 支持多台实例）
+  // V2.47：配置型 HTTP 任务服务（§22）；具名实例 `http-service:<name>`，
+  // 地址必须是回环/内网，token 走 env，不落配置；executedBy 判 remote。
+  | 'http-service'
   | 'stock-local'
   | 'fixture-local';
 
@@ -450,7 +459,10 @@ export type ProviderBaseType =
  * **形状校验在前端/契约层，实例是否存在由服务端注册表判定**（未注册 = `503 PROVIDER_UNAVAILABLE`，
  * 与其它未实现档位同一条路径 —— 不新增错误码）。
  */
-export type ProviderType = ProviderBaseType | `host-comfyui:${string}`;
+export type ProviderType =
+  | ProviderBaseType
+  | `host-comfyui:${string}`
+  | `http-service:${string}`; // V2.47（§22）：配置型 HTTP 任务服务
 
 export interface VideoGenerateRequest {
   // 核心文本描述（可配合 LLM 扩写）
@@ -582,6 +594,23 @@ export interface ProviderStatus {
     }>;
     reason?: string; // 例：「本服务未向访客开放本地轨」/「缺 COMFYUI_BASE_URL」/「仅允许回环或内网地址」
   };
+  /**
+   * V2.47（§22）：配置型 HTTP 任务服务。
+   * 与 comfyui 同一套“配置事实”口径：available 表示配置/白名单/凭据 env 的检查结果，
+   * **不是**刚才通不通（运行时探测在提交时做）；地址与 token 一律不下发。
+   */
+  httpServices: {
+    available: boolean;
+    provider: 'http-service';
+    servers: Array<{
+      id: string;          // 'http-service:<name>'
+      label: string;
+      modes: GenerationMode[]; // 该服务声明的能力；前端据此过滤
+      available: boolean;
+      reason?: string;
+    }>;
+    reason?: string; // 例：「未配置 HTTP_SERVICES_FILE」/「地址不合规」/「凭据环境变量未设置」
+  };
   llm: {
     // V2.0：文本轨（提示词扩写）能力位。口径与 cloud 相同：本字段只表示**服务端视角**。
     // 前端合成实际能力：llmEffective = acceptsClientKey && hasLocalLlmKey()
@@ -680,7 +709,8 @@ export interface TaskProgress {
                                    // "不知道花了多少"与"花了 0 元"（本地轨）必须能分开，故不给默认值 0
   executedBy?: ExecutedBy;         // V2.27（台账 A1 片 A / B11）：**这条任务实际在哪台机器上跑的**。
                                    // 'cloud'（产物在上游生成）/ 'host-local'（服务端所在机器）/
-                                   // 'client-worker'（用户设备上执行 —— 含浏览器端渲染的剪辑产物，将来含本地 worker 轨）。
+                                   // 'client-worker'（用户设备上执行 —— 含浏览器端渲染的剪辑产物，将来含本地 worker 轨）/
+                                   // 'remote'（V2.47：配置型 HTTP 任务服务，算力在远程服务器；见 §22）。
                                    // 缺省 = V2.27 之前的老任务：界面**不猜**（不按 provider 反推历史事实）。
                                    // 为什么它是一个契约字段："数据不出域"只对存储成立是不够的 ——
                                    // 云端 BYOK 下提示词与参考图仍会发到上游，而这个字段是"到底发了没有"的唯一事实源。
@@ -840,7 +870,7 @@ export type ErrorDisposition =
 | :--- | :--- | :--- |
 | 任务状态 + 参数快照 + 画廊元数据 | SQLite（`data/app.db`，better-sqlite3） | 持久，服务重启可恢复 |
 | **项目（V2.11 落地，台账 B47）** | SQLite（同上）：`projects(project_id, name, created_at, updated_at)`；任务归属 = `tasks.project_id` | **默认项目 `default` 由启动引导保证存在**（`bootstrapProjects`：`INSERT ... ON CONFLICT DO NOTHING`），并**回填** `project_id IS NULL` 的老行为 `default`（幂等，每次启动跑一次）。删除只允许**空项目**且**默认项目不可删**（§5 / §12）；**不做级联删除** —— 任务与资产不随项目消失 |
-| **执行位置（V2.27 落地，台账 A1 片 A / B11）** | SQLite（同上）：`tasks.executed_by`（`cloud` / `host-local` / `client-worker`） | 入库那一刻按 provider 判定并写死（`resolveExecutedBy`，共享常量）；**NULL = V2.27 之前的老任务** —— 读路径**不猜**（不按 provider 反推）。用途：画廊 / 视频库 / 画布如实标注"这条在哪跑的"（本地轨 D49 的全部价值都建立在它上面） |
+| **执行位置（V2.27 落地，台账 A1 片 A / B11）** | SQLite（同上）：`tasks.executed_by`（`cloud` / `host-local` / `client-worker` / `remote`） | 入库那一刻按 provider 判定并写死（`resolveExecutedBy`，共享常量）；**NULL = V2.27 之前的老任务** —— 读路径**不猜**（不按 provider 反推）。用途：画廊 / 视频库 / 画布如实标注"这条在哪跑的"（本地轨 D49 的全部价值都建立在它上面） |
 | 幂等键 → taskId 映射 | SQLite（同上） | 持久；同一键重复提交返回同一任务（§5） |
 | 任务告警 `warnings[]` | SQLite（同上） | 随任务记录持久化，画廊 / 结果卡展示（V1.4 §4）；**仅写服务端日志不算告警** |
 | `submitting` 提交标记 | SQLite（同上） | 提交前写入、成功后写回上游 taskId；重启后据此判定是否已提交（§5，防线 7 前提） |
@@ -2395,3 +2425,122 @@ interface ModelCapability {
 - 删除边：在边上右键 →「删除来源边」；删除后同步移除下游对应的参考。
 
 **无新路由、无新错误码、无新字段**：边与参考都写在既有 `CanvasDoc` v1 里。
+
+## 22. 配置型 HTTP 任务服务 `http-service:<name>`（V2.47 新增；D67 / D71）
+
+> 目标：把“算力服务器跑模型、应用只提交/轮询/取产物”做成一个**可配置的通用适配器**，
+> 而不是为每个模型写死 provider。形态参考 infOS/Pictoria 的 `ServiceProfile`
+> （见 `docs/INFOS-REVIEW.md`），但只保留本仓需要的最小集合。
+
+### 22-1 配置与门控
+
+- 配置只认环境变量 **`HTTP_SERVICES_FILE`**（JSON 数组，1–8 项）；**不接受请求体指定地址**。
+- 每个实例一个 provider id：`http-service:<name>`；`name` 限 `[A-Za-z0-9_-]{1,24}`，
+  `label` 是显示名（可省，缺省用 `name`）。
+- 地址沿用 `isAllowedEngineUrl`：只允许 **回环 / RFC1918**（http/https）。
+  公网算力服务器必须走 VPN/Tailscale/SSH 隧道；若要直接放开公网，属**独立安全决策**，不在本版。
+- 凭据只从 **`tokenEnv` 指向的环境变量**读取；配置文件里写 token 视为配置错误。
+  普通 `headers` 里不允许出现 `authorization|cookie|api-key|token|secret` 这类键。
+- 非法配置**逐实例**标记 `available:false` 并在 `/status` 给人话原因，不影响其它实例；
+  文件读不出/不是 JSON/结构不对 → `httpServices.reason` 如实说明，**不静默回落为空**。
+- 未注册 / 未配置的 `http-service:<name>` 走既有路径：**503 `PROVIDER_UNAVAILABLE`**，不新增错误码。
+
+### 22-2 配置形状
+
+```json
+[
+  {
+    "name": "h3-gpu",
+    "label": "H3 算力服务器",
+    "baseUrl": "http://10.0.0.12:9000",
+    "modes": ["t2v", "i2v"],
+    "tokenEnv": "H3_GPU_TOKEN",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {},
+    "submit": {
+      "path": "/v1/jobs",
+      "method": "POST",
+      "body": { "model": "minimax-h3" },
+      "bodyFormat": "json",
+      "fields": {
+        "prompt": { "from": "prompt", "format": "text" },
+        "aspect_ratio": { "from": "aspectRatio" },
+        "duration": { "from": "durationSec" },
+        "first_frame": { "from": "assets.firstFrameImage", "format": "data_url" }
+      },
+      "taskIdField": "id"
+    },
+    "poll": {
+      "path": "/v1/jobs/{id}",
+      "method": "GET",
+      "stateField": "status",
+      "success": ["succeeded"],
+      "failed": ["failed", "cancelled"]
+    },
+    "cancel": { "path": "/v1/jobs/{id}/cancel", "method": "POST" },
+    "outputs": {
+      "video": { "path": "result.video_url", "kind": "video" }
+    },
+    "idempotencyHeader": "Idempotency-Key",
+    "timeoutMs": 1800000,
+    "requestTimeoutMs": 60000
+  }
+]
+```
+
+字段口径：
+
+| 字段 | 口径 |
+|---|---|
+| `modes` | 该服务声明的生成模式；提交时请求 `mode` 不在其中 → `503 PROVIDER_UNAVAILABLE`，不猜 |
+| `submit.method` | **本版只支持 `POST`**（GET + body 不合法；需要 GET 任务接口时再设计 query 映射） |
+| `submit.body` | 固定请求字段（JSON 或 multipart 的字符串字段） |
+| `submit.fields` | 把本仓请求映射到上游字段；`from` 见 22-3；`format` = `value` / `text` / `data_url` / `file` |
+| `submit.bodyFormat` | `json`（默认）或 `multipart`；`file` 只能配 multipart |
+| `submit.taskIdField` | 上游任务 id 的点路径；**配了它就必须配 `poll`** |
+| `poll` | `{id}` 会替换为上游任务 id；`success` / `failed` 是状态字符串数组 |
+| `cancel` | 可选；不配时 `cancel()` 返回 `false`（承认做不到，不假装取消成功） |
+| `outputs` | `path` 是响应里的点路径；**空字符串 = 整个响应体就是媒体字节**；`kind` 仅 `image` / `video` |
+| `idempotencyHeader` | 可选；发送时值为本仓 taskId（不生成新键） |
+| `timeoutMs` | 任务级上限（从提交时刻算）；超时返回 `UNCERTAIN_RESULT`，不自动重提 |
+| `requestTimeoutMs` | 单次 HTTP 请求超时（默认 60s） |
+| `health` | 可选 `{path}`；不配时提交时验证，`/status` 只报配置事实 |
+
+### 22-3 请求映射
+
+`fields.from` 可读取：
+
+- `prompt`、`mode`、`aspectRatio`、`width`、`height`、`durationSec`、`frames`、`steps`、`seed`；
+- `assets.firstFrameImage`、`assets.lastFrameImage`、`assets.referenceVideo`；
+- `options.*`（provider 私有参数，未识别键由配置决定是否读取）。
+
+`data_url` / `file` 会先把资产 id（或 `task:<taskId>`）解析为服务端可读地址，再下载：
+
+- 单份素材上限 32 MB，单次提交素材总量上限 100 MB；
+- `value` 直接传原值（适合把 URL 传给上游）；`text` 强制字符串；
+- 任何素材解析失败 → `INVALID_ASSET`，不把空值发给上游。
+
+### 22-4 输出与状态
+
+- 同步服务（无 `taskIdField` / `poll`）：`submit` 响应里直接按 `outputs` 取产物；返回本仓 taskId，
+  `queryStatus` 立即返回 `succeeded`。
+- 异步服务：`submit` 返回上游 id；`queryStatus` 轮询，成功时按 `outputs` 取第一个匹配
+  `mode === 't2i' ? image : video` 的产物，下载到本仓 `OUTPUT_DIR`，返回 `/media/<file>`。
+- 只支持**一个**图片或视频产物；多产物/独立音频本轮不接，配置了也会在提交/取产物时如实报错。
+- 查询 404 → `TASK_NOT_FOUND`；401/403 → `KEY_INVALID`；408/429/5xx/网络 → **继续 running**
+  （任务保留，稍后自动再查；不把长任务误判为失败）；其它 4xx → `UPSTREAM_ERROR`（terminal）。
+- 不编造进度：`progressPercent` 恒 0，`message` 写上游状态；上游没给百分比就不猜。
+
+### 22-5 执行位置与并发
+
+- `resolveExecutedBy('http-service:<name>')` → **`remote`**（不是 `host-local`，也不是 `cloud`）。
+- 队列仍走 `cloud` 并发桶（`TrackId` 不改）；本版不实现 per-service `concurrency`，
+  避免配置一个实际不生效的旋钮。
+- 本轮**不做**：服务编辑 UI、GPU 进程管理、模型下载/安装、提交回执/不确定态（留给 S4-R2）、
+  多输出、音频产物、公网地址白名单。
+
+### 22-6 无新路由 / 无新错误码
+
+- 路由不变：`POST /api/generate`、`GET /api/tasks/:id`、`GET /api/providers/status`。
+- 错误码复用既有集合；新增的 `remote` 只是 `executedBy` 的枚举值，不是错误码。

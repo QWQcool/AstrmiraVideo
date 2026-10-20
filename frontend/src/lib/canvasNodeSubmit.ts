@@ -9,7 +9,13 @@ import {
   type ProviderStatus,
   type VideoGenerateRequest,
 } from '@astrmira/shared';
-import { DEFAULT_COMFY_ENGINE_ID, comfyUiEngineOptions, isComfyUiEngine } from './engineOptions';
+import {
+  DEFAULT_COMFY_ENGINE_ID,
+  comfyUiEngineOptions,
+  httpServiceEngineOptions,
+  isComfyUiEngine,
+  isHttpServiceEngine,
+} from './engineOptions';
 import { getLanguage, translate, type MessageKey } from './i18n';
 import {
   DEFAULT_DURATION_SEC,
@@ -166,15 +172,17 @@ export function canvasDefaultProvider(node: CanvasDocNode, context: CanvasSubmit
   if (stored !== undefined && stored !== '') return stored;
 
   const local = comfyUiEngineOptions(context.providerStatus).find((item) => item.configured);
+  const http = httpServiceEngineOptions(context.providerStatus).filter((item) => item.configured);
 
   if (node.type === 'image') {
-    return local?.id ?? DEFAULT_COMFY_ENGINE_ID;
+    const imageHttp = http.find((item) => item.modes?.includes('t2i') === true);
+    return local?.id ?? imageHttp?.id ?? DEFAULT_COMFY_ENGINE_ID;
   }
 
   const cloudReady =
     context.hasCloudKey || context.providerStatus?.cloud.available === true;
   if (cloudReady) return 'cloud-volcano-seedance';
-  return local?.id ?? 'cloud-volcano-seedance';
+  return local?.id ?? http[0]?.id ?? 'cloud-volcano-seedance';
 }
 
 export function canvasAspectRatio(node: CanvasDocNode): AspectRatio {
@@ -220,9 +228,19 @@ export function canvasSubmitIssue(
   if (canvasDraftMode(node).unsupportedRoles.length > 0) return 'reference-unsupported';
 
   if (node.type === 'image') {
-    if (!isComfyUiEngine(provider)) return 'image-needs-local';
-    if (context.providerStatus?.comfyui.available !== true) return 'image-unavailable';
-    return null;
+    if (isComfyUiEngine(provider)) {
+      if (context.providerStatus?.comfyui.available !== true) return 'image-unavailable';
+      return null;
+    }
+    if (isHttpServiceEngine(provider)) {
+      const option = httpServiceEngineOptions(context.providerStatus).find(
+        (item) => item.id === provider,
+      );
+      if (option === undefined || !option.configured) return 'provider-unavailable';
+      if (option.modes?.includes('t2i') !== true) return 'provider-unavailable';
+      return null;
+    }
+    return 'image-needs-local';
   }
 
   if (provider === 'cloud-volcano-seedance') {
@@ -235,6 +253,15 @@ export function canvasSubmitIssue(
   if (isComfyUiEngine(provider)) {
     const option = comfyUiEngineOptions(context.providerStatus).find((item) => item.id === provider);
     if (option === undefined || !option.configured) return 'provider-unavailable';
+    return null;
+  }
+
+  if (isHttpServiceEngine(provider)) {
+    const option = httpServiceEngineOptions(context.providerStatus).find(
+      (item) => item.id === provider,
+    );
+    if (option === undefined || !option.configured) return 'provider-unavailable';
+    if ((option.modes ?? []).every((mode) => mode === 't2i')) return 'provider-unavailable';
     return null;
   }
 

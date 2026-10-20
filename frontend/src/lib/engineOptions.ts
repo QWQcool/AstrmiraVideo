@@ -1,4 +1,4 @@
-import type { ProviderStatus } from '@astrmira/shared';
+import type { GenerationMode, ProviderStatus } from '@astrmira/shared';
 import { getLanguage, translate } from './i18n';
 
 /**
@@ -21,6 +21,8 @@ export interface EngineOption {
   configured: boolean;
   /** 状态说明（按钮 title 与下方那行说明用） */
   hint: string;
+  /** V2.47：配置型 HTTP 服务声明的能力；ComfyUI 选项不填 */
+  modes?: GenerationMode[];
 }
 
 /** 没有配任何 ComfyUI 时界面上仍保留的那一档（与后端 `DEFAULT_COMFY_SERVER_ID` 同一个值） */
@@ -67,6 +69,33 @@ export function comfyUiEngineOptions(status: ProviderStatus | null): EngineOptio
 }
 
 /**
+ * V2.47（§22）：配置型 HTTP 任务服务的引擎选项。
+ *
+ * 没有配置时返回**空数组**（不造一个假的“远程服务”档）；每一项带 `modes`，
+ * 让首页/画布按目标能力过滤，而不是选了才报 503。
+ */
+export function httpServiceEngineOptions(status: ProviderStatus | null): EngineOption[] {
+  const servers = status?.httpServices.servers ?? [];
+  const lang = getLanguage();
+  return servers.map((server) => ({
+    id: server.id,
+    label: translate(lang, 'common.engine.httpServiceNamed', { name: server.label }),
+    configured: server.available,
+    hint:
+      server.reason ??
+      (server.available
+        ? translate(lang, 'common.engine.httpConfigured')
+        : translate(lang, 'common.engine.unavailable')),
+    modes: server.modes,
+  }));
+}
+
+/** 某个 id 是否属于配置型 HTTP 服务（含具名实例） */
+export function isHttpServiceEngine(id: string): boolean {
+  return id.startsWith('http-service:');
+}
+
+/**
  * provider id 的**显示名**（自检结果 / 画布节点 / 日志统一用它）。
  *
  * 未知 id **原样返回**（宁可显示一个 id，也不要显示空白 —— 空白最容易被当成"没这回事"）。
@@ -80,11 +109,14 @@ export function providerLabel(id: string, status: ProviderStatus | null): string
   if (id === 'fixture-local') return translate(lang, 'common.engine.fixture');
   if (id === 'stock-local') return translate(lang, 'common.engine.stockLibrary');
 
-  const option = comfyUiEngineOptions(status).find((item) => item.id === id);
-  if (option !== undefined) return option.label;
+  const comfyOption = comfyUiEngineOptions(status).find((item) => item.id === id);
+  if (comfyOption !== undefined) return comfyOption.label;
+  const httpOption = httpServiceEngineOptions(status).find((item) => item.id === id);
+  if (httpOption !== undefined) return httpOption.label;
 
   // 有实例名但 `/status` 里没有它（例如刚改配置还没刷新）→ 至少把名字显示出来
   if (id.startsWith('host-comfyui:')) return `ComfyUI · ${id.slice('host-comfyui:'.length)}`;
+  if (id.startsWith('http-service:')) return `HTTP · ${id.slice('http-service:'.length)}`;
   return id;
 }
 

@@ -7,6 +7,7 @@ import {
   VideoGenerateRequestSchema,
   normalizeProjectId,
   parseTaskRef,
+  providerBaseType,
 } from '@astrmira/shared';
 import type { ProviderType, VideoGenerateRequest, VideoProvider } from '@astrmira/shared';
 import { createErrorResponse } from '../errors.js';
@@ -93,7 +94,11 @@ export function resolveIdempotencyKey(
 
 /** 调度轨判定：云端并发轨 vs 本地单卡互斥轨（PLAN §1 / §6-D26） */
 export function trackFor(provider: ProviderType): TrackId {
-  return provider === 'cloud-volcano-seedance' ? 'cloud' : 'local';
+  // V2.47：HTTP 任务服务是远程算力，走 cloud 并发桶（TrackId 不变；executedBy 另判 remote）。
+  return providerBaseType(provider) === 'cloud-volcano-seedance' ||
+    providerBaseType(provider) === 'http-service'
+    ? 'cloud'
+    : 'local';
 }
 
 export const createGenerateRoutes =

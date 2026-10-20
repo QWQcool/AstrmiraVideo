@@ -14,7 +14,7 @@ import {
   canvasSubmitIssueText,
   estimateCanvasNodeCost,
 } from '../../lib/canvasNodeSubmit';
-import { comfyUiEngineOptions } from '../../lib/engineOptions';
+import { comfyUiEngineOptions, httpServiceEngineOptions } from '../../lib/engineOptions';
 import { DURATION_OPTIONS, RESOLUTION_TIERS, resolveTargetSize, type ResolutionTier } from '../../lib/format';
 import { useTranslate, type Translate } from '../../lib/i18n';
 import { useShell } from '../../lib/shell';
@@ -120,21 +120,36 @@ export function StudioNode({ id, selected }: NodeProps) {
   const issue = canvasSubmitIssue(node, provider, context);
   const estimate = estimateCanvasNodeCost(node, provider, byok.model);
 
+  const isHttpProvider = provider.startsWith('http-service:');
   const priceText =
     node.type === 'text'
       ? null
-      : provider === 'cloud-volcano-seedance'
-        ? estimate === null
-          ? t('canvas.studio.pricePending')
-          : t('common.cost.estimated', { amount: formatYuan(estimate.yuan) })
-        : t('canvas.studio.priceLocal');
+      : isHttpProvider
+        ? t('canvas.studio.pricePending')
+        : provider === 'cloud-volcano-seedance'
+          ? estimate === null
+            ? t('canvas.studio.pricePending')
+            : t('common.cost.estimated', { amount: formatYuan(estimate.yuan) })
+          : t('canvas.studio.priceLocal');
 
+  const comfyEngines = comfyUiEngineOptions(providerStatus).map((option) => ({
+    id: option.id,
+    label: option.label,
+  }));
+  const httpEngines = httpServiceEngineOptions(providerStatus)
+    .filter((option) =>
+      node.type === 'image'
+        ? option.modes?.includes('t2i') === true
+        : option.modes?.some((mode) => mode !== 't2i') === true,
+    )
+    .map((option) => ({ id: option.id, label: option.label }));
   const engines =
     node.type === 'image'
-      ? comfyUiEngineOptions(providerStatus).map((option) => ({ id: option.id, label: option.label }))
+      ? [...comfyEngines, ...httpEngines]
       : [
           { id: 'cloud-volcano-seedance', label: t('common.engine.cloud') },
-          ...comfyUiEngineOptions(providerStatus).map((option) => ({ id: option.id, label: option.label })),
+          ...comfyEngines,
+          ...httpEngines,
         ];
 
   const mediaUrl = preview === null ? null : resolveMediaUrl(preview.output.url);

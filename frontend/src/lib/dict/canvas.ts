@@ -68,7 +68,7 @@ export const CANVAS_ZH = {
   'canvas.studio.issue.emptyPrompt': '先写一句提示词',
   'canvas.studio.issue.activeTask': '这个节点还有任务在跑 —— 等它结束再提交（避免重复计费）',
   'canvas.studio.issue.references': '有参考素材当前服务端没有通道，不会被发送 —— 先移除它再提交',
-  'canvas.studio.issue.imageLocal': '图片只能走本地 ComfyUI',
+  'canvas.studio.issue.imageLocal': '图片只能走本地 ComfyUI 或声明了 t2i 的远程服务',
   'canvas.studio.issue.imageUnavailable': '本地 ComfyUI 未配置：需要 COMFYUI_BASE_URL 与 EXPOSE_HOST_LOCAL_TRACK=1',
   'canvas.studio.issue.cloudKey': '云端未配置 Key —— 去「凭据设置」填，或改用本地引擎',
   'canvas.studio.issue.provider': '这个引擎当前不可用（见设置里的引擎状态）',
@@ -448,7 +448,8 @@ export const CANVAS_EN = {
   'canvas.studio.issue.emptyPrompt': 'Write a prompt first',
   'canvas.studio.issue.activeTask': 'This node still has a running task — wait for it before submitting (avoids double billing)',
   'canvas.studio.issue.references': 'Some references have no channel on this server and would not be sent — remove them before submitting',
-  'canvas.studio.issue.imageLocal': 'Images can only run on the local ComfyUI',
+  'canvas.studio.issue.imageLocal':
+    'Images can only run on the local ComfyUI or a remote service that declares t2i',
   'canvas.studio.issue.imageUnavailable': 'Local ComfyUI is not configured: set COMFYUI_BASE_URL and EXPOSE_HOST_LOCAL_TRACK=1',
   'canvas.studio.issue.cloudKey': 'Cloud has no key — open Credentials to add one, or switch to a local engine',
   'canvas.studio.issue.provider': 'This engine is unavailable right now (see the engine status in settings)',

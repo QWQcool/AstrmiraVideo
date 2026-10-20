@@ -10,7 +10,9 @@ import type {
 import { ApiError, fetchSelfCheck } from '../lib/api';
 import {
   comfyUiEngineOptions,
+  httpServiceEngineOptions,
   isComfyUiEngine,
+  isHttpServiceEngine,
   providerLabel,
   type EngineOption,
 } from '../lib/engineOptions';
@@ -222,14 +224,16 @@ export function LeftPanel(props: LeftPanelProps) {
    */
   const comfyEngines = comfyUiEngineOptions(providerStatus);
   const selectedComfyEngine = comfyEngines.find((item) => item.id === provider);
+  const httpEngines = httpServiceEngineOptions(providerStatus);
+  const selectedHttpEngine = httpEngines.find((item) => item.id === provider);
 
   const engineConfigured =
     isCloud ||
     (isComfyUiEngine(provider)
       ? (selectedComfyEngine?.configured ?? providerStatus?.comfyui.available === true)
-      // 其余情况（当前只可能是**已撤掉的 H3 档**或未知 id）→ 视为"没配"：
-      // V2.37（D56）起 `local` 段恒为 `available:false`，这里不再去读它。
-      : false);
+      : isHttpServiceEngine(provider)
+        ? (selectedHttpEngine?.configured ?? false)
+        : false);
 
   /**
    * 一台 ComfyUI 实例的按钮。
@@ -515,6 +519,15 @@ export function LeftPanel(props: LeftPanelProps) {
             {comfyEngines.map((option) => renderComfyEngineButton(option))}
           </div>
         ) : null}
+        {httpEngines.length > 0 ? (
+          <div
+            className="wb-segmented wb-segmented-engines"
+            role="group"
+            aria-label={t('workbench.engine.instancesAria')}
+          >
+            {httpEngines.map((option) => renderComfyEngineButton(option))}
+          </div>
+        ) : null}
         <span className="wb-note" data-testid="wb-panel-engine-note">
           {isCloud
             ? byokSummary
@@ -522,7 +535,11 @@ export function LeftPanel(props: LeftPanelProps) {
               ? (selectedComfyEngine?.hint ??
                 providerStatus?.comfyui.reason ??
                 t('workbench.engine.localUnknown'))
-              : (providerStatus?.local.reason ?? t('workbench.engine.localReasonFallback'))}
+              : isHttpServiceEngine(provider)
+                ? (selectedHttpEngine?.hint ??
+                  providerStatus?.httpServices.reason ??
+                  t('workbench.engine.localUnknown'))
+                : (providerStatus?.local.reason ?? t('workbench.engine.localReasonFallback'))}
         </span>
 
         {/* V2.34（台账 B4 / CONTRACT §20）：**检测本地引擎** ——

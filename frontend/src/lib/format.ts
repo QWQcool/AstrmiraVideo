@@ -188,6 +188,7 @@ const STATUS_LABEL_KEYS: Record<string, MessageKey> = {
 export const EXECUTED_BY_LABEL_KEYS: Record<ExecutedBy, MessageKey> = {
   cloud: 'common.executedBy.cloud',
   'host-local': 'common.executedBy.hostLocal',
+  remote: 'common.executedBy.remote',
   'client-worker': 'common.executedBy.clientWorker',
 };
 
@@ -200,6 +201,7 @@ export const EXECUTED_BY_LABEL_KEYS: Record<ExecutedBy, MessageKey> = {
 export const EXECUTED_BY_TITLE_KEYS: Record<ExecutedBy, MessageKey> = {
   cloud: 'common.executedBy.title.cloud',
   'host-local': 'common.executedBy.title.hostLocal',
+  remote: 'common.executedBy.title.remote',
   'client-worker': 'common.executedBy.title.clientWorker',
 };
 

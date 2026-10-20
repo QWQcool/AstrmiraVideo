@@ -1683,16 +1683,26 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · 通用 HTTP 任务服务（CONTRACT V2.47 / D71）
+
+- **【契约】** V2.47 §22：`http-service:<name>`（配置来自 `HTTP_SERVICES_FILE`）、`/status.httpServices`、`executedBy:'remote'`；无新路由/错误码。设计参考 infOS/Pictoria 的 `ServiceProfile`（Apache-2.0，见 `docs/INFOS-REVIEW.md`），按本仓接口重写，不是整段照搬。
+- **【配置/门控】** JSON 数组 1–8 项；`name/label/baseUrl/modes/tokenEnv/authHeader/authPrefix/headers/submit/poll/cancel/health/outputs/timeoutMs/requestTimeoutMs`。地址只允许回环/RFC1918；`tokenEnv` 只读环境变量，普通 headers 拒绝认证键；坏配置逐实例标记不可用，文件级问题进 `/status`，不静默回空。
+- **【provider】** `HttpServiceProvider`：按 `fields`（`value/text/data_url/file`）映射 prompt/参数/`assets.firstFrameImage` 等；支持同步（submit 即产物）与异步（submit→taskId→poll）；产物下载到 `OUTPUT_DIR` 并写 `/media`；401/403→`KEY_INVALID`、404→`TASK_NOT_FOUND`、408/429/5xx/网络→继续 running、明确失败→terminal；不做假进度；`cancel` 仅在上游确认 2xx 时返回 true。
+- **【状态/前端】** `/status.httpServices` 只给 id/label/modes/available/reason；首页/画布/旧工作台按 `modes` 过滤（图片要 t2i，视频排除纯 t2i），HTTP 服务价格显示“待核算”，不写 0 元；`executedBy='remote'` 标签“远程服务”。
+- **【真实验证】** 后端 12 项新测试：配置解析/白名单/token/重复名/结构错误；provider 对真实 Node HTTP server 跑 submit→poll→下载→cancel、同步服务、401/失败终态；**Fastify 全链路 1 项**：`POST /api/generate` → dispatcher → mock 服务 → `/api/tasks` `succeeded` + `executedBy=remote` + `/media` 字节，`/status` 不含地址/token（3.1s）。
+- **【测试】** 前端 **530**（+4 引擎选项、+1 executedBy 判定）；后端 **674**（+12）；契约 11；`type`/`lint` 0/0、视觉自检通过。**未验证**：真实 H3 服务器（没有协议/端点）、服务编辑 UI、公网算力服务器（需 VPN/SSH 或单独白名单）、音频/多产物。
+- **【下一步】** S4-R1b（revision + 409，V2.48）；R2 再把 infOS 的提交回执/`uncertain`/`TaskRecovery` 接进来。
+
 ### 2026-10-20 · S4-R1a：保存队列与切换前落盘（B85 第一段）
 
-- **【无契约变更】** 只改前端保存调度与本地记忆；R1b 的修订号/409 才升 **V2.47**（D70）。
+- **【无契约变更】** 只改前端保存调度与本地记忆；R1b 的修订号/409 才升 **V2.48**（D70；V2.47 已被通用 HTTP 服务占用）。
 - **【保存队列】** 新增 `lib/canvasSaveQueue.ts`：同一时刻最多一个 PUT；保存期间的修改只记最新版，结束后补存；旧响应不能让界面误报“已保存”；`dirty → saving → saved/error`；失败保留最新文档，显式重试；`flush()` 供切换/新建前等待，`settle()` 供删除前等完在飞请求，`cancel()` 丢弃脏状态并抑制迟到状态。6 条单测覆盖去抖、保存中再改、失败重试、settle、cancel、空 flush。
 - **【切换/新建/删除】** 切换画布/新建画布前先 `flush()`；保存失败**留在原画布**并显示“保存失败：已留在当前画布，请重试后再切换”，不丢草稿。删除前 `settle()` 再删，成功后 `cancel()`，避免迟到的 PUT 把文档建回来。顶栏新增“未保存”与“重试保存”。
 - **【离开】** 站内 hash 离开画布时先落盘，成功才放行，失败留在画布；关标签/刷新在 dirty 时走 `beforeunload` 确认，`pagehide` 用 `keepalive` PUT 再兜一层；组件卸载时尽力 flush。打开/新建画布跳过“加载即保存”的无意义 PUT。
 - **【刷新恢复上次画布】** 新增浏览器本地记忆 `astrmira.canvas.active_project`（不改服务端索引）：打开/新建/切换时写入，删除当前项时清除，进入画布时优先于索引的 active/最近修改。单用户部署下满足 AC-R1 的“上次选择可恢复”；跨设备同步不在本轮。
 - **【真机验证】17/17 PASS**：编辑后立即切项目（先 PUT 再 GET，切回草稿仍在）→ 编辑后立即新建（旧画布草稿已存）→ 注入 500 时切换被阻止、显示保存失败、重试成功后放行 → 站内跳视频库先落盘再放行 → 打开画布无自动 PUT → 刷新恢复上次画布 → 控制台零 error（注入的 500 单列，不算产品错误）。
 - **【测试】** 前端 **525 passed**（517 + 6 保存队列 + 2 本地记忆）；后端 662 / 契约 11 未变；`pnpm type`、`lint` 0/0、视觉自检通过。
-- **【R1 剩余】** 同文档多标签/修订号 409、索引损坏恢复、删除后迟到写入的协议级防护 → **S4-R1b**（先改 V2.47）；之后 S4-R2（提交归属/刷新恢复/交接消费）。**R1a 不标成整个 R1 完成。**
+- **【R1 剩余】** 同文档多标签/修订号 409、索引损坏恢复、删除后迟到写入的协议级防护 → **S4-R1b**（先改 V2.48）；之后 S4-R2（提交归属/刷新恢复/交接消费）。**R1a 不标成整个 R1 完成。**
 
 ### 2026-10-20 · 同步 V8.70、测试数据清理与计划复核（未开工 S4-R1）
 
@@ -3801,7 +3811,9 @@
 
 ## 6. 决策记录（ADR-lite，新的关键决策追加在此）
 
-**D70 · 2026-10-20 · 画布并发写入用独立修订号 + 409（N7=①）**：`CanvasDoc.version` 继续只表示**格式版本**；新增独立的 `revision` 字段与 `409 DOC_CONFLICT`（契约 **V2.47**，S4-R1b 实施）。保存请求携带读取时的 revision，服务端只接受等于当前值的写入；旧修订被拒后界面提示重载/另存，不允许“最后写入者赢”。多标签编辑不再静默覆盖，也不通过删除现有画布制造单实例。R1a 的保存队列/切换前 flush 不依赖此字段；R1b 先改契约再改代码。
+**D71 · 2026-10-20 · 通用 HTTP 任务服务（配置层）**：用户要求先加一套**简单 HTTP 任务 API + 通用 service 层**，为 D67 的远程 H3 / 生图服务器预留，能改就改、不需要就删。落点：`HTTP_SERVICES_FILE` + 具名 `http-service:<name>` + submit/poll/cancel/outputs + `tokenEnv`；地址只允许回环/RFC1918，token 不落配置，`/status` 不下发地址/凭据；`executedBy` 新增 `remote`，队列仍走 cloud 并发桶；只做后端/状态/引擎选项，**不做**服务编辑 UI、GPU 进程管理、声音/多产物、提交回执（回执留 S4-R2）；契约 **V2.47**（§22），S4-R1b 顺延 V2.48。设计参考 infOS/Pictoria 的 ServiceProfile（Apache-2.0），见 `docs/INFOS-REVIEW.md`。
+
+**D70 · 2026-10-20 · 画布并发写入用独立修订号 + 409（N7=①）**：`CanvasDoc.version` 继续只表示**格式版本**；新增独立的 `revision` 字段与 `409 DOC_CONFLICT`（契约 **V2.48**，S4-R1b 实施；V2.47 已被通用 HTTP 服务占用）。保存请求携带读取时的 revision，服务端只接受等于当前值的写入；旧修订被拒后界面提示重载/另存，不允许“最后写入者赢”。多标签编辑不再静默覆盖，也不通过删除现有画布制造单实例。R1a 的保存队列/切换前 flush 不依赖此字段；R1b 先改契约再改代码。
 
 **D69 · 2026-10-20 · 统一输入规则（N6=①）**：首页与画布节点统一为 **Enter 换行、Ctrl/Cmd+Enter 提交**；输入法组合期间不提交，`@` 候选打开时 Enter 先选候选。这会替换首页当前“Enter 提交”的行为；在 **S5-B1** 实施，R1a 不改输入行为。理由：中文输入法下 Enter 提交容易误触，且两入口规则必须一致；这是本项目明确的设计选择，不声称与即梦快捷键实测一致。
 
