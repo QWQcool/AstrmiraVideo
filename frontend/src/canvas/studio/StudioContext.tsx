@@ -24,6 +24,8 @@ export interface StudioServices {
   onAddReference(nodeId: string): void;
   /** S5-B3：选择节点预览的批次版本（只允许成功且有产物的批次） */
   onSelectBatch(nodeId: string, batchId: string): void;
+  /** S5-B3b：用当前可见版本创建一个邻近草稿节点（不提交） */
+  onContinueFromVersion(nodeId: string): void;
 }
 
 const StudioContext = createContext<StudioServices | null>(null);

@@ -1,5 +1,5 @@
 import type { CanvasDoc, CanvasDocEdge, CanvasReferenceRole } from '@astrmira/shared';
-import { latestCanvasOutput } from './canvasDocOps';
+import { canvasNodeVisibleOutput } from './canvasDocOps';
 
 /**
  * 画布来源边（Step 11-S3 片 B4；CONTRACT §21-11）。
@@ -18,6 +18,7 @@ export type CanvasLineageProblem =
   | 'duplicate'
   | 'cycle'
   | 'source-no-output'
+  | 'source-version-invalid'
   | 'source-audio'
   | 'source-not-media'
   | 'target-not-video'
@@ -59,29 +60,42 @@ export function planCanvasLineage(doc: CanvasDoc, from: string, to: string): Can
     return { ok: false, problem: 'node-missing' };
   }
   if (from === to) return { ok: false, problem: 'self' };
-  if (doc.edges.some((edge) => edge.from === from && edge.to === to)) {
-    return { ok: false, problem: 'duplicate' };
-  }
   if (canReach(doc, to, from)) return { ok: false, problem: 'cycle' };
 
-  const output = latestCanvasOutput(source);
-  if (output === null) return { ok: false, problem: 'source-no-output' };
-  if (source.type === 'audio' || output.output.kind === 'audio') {
+  const visible = canvasNodeVisibleOutput(source);
+  if (visible.state === 'invalid') return { ok: false, problem: 'source-version-invalid' };
+  if (visible.state !== 'selected' && visible.state !== 'latest') {
+    return { ok: false, problem: 'source-no-output' };
+  }
+  const output = visible.output;
+  if (source.type === 'audio' || output.kind === 'audio') {
     return { ok: false, problem: 'source-audio' };
   }
-  if (output.output.kind !== 'image' && output.output.kind !== 'video') {
+  if (output.kind !== 'image' && output.kind !== 'video') {
     return { ok: false, problem: 'source-not-media' };
   }
   if (target.type !== 'video') return { ok: false, problem: 'target-not-video' };
 
+  // 同一对节点：同一产物重复连接拒绝；换了可见版本允许再连一条（旧边仍固定原产物）
+  if (
+    doc.edges.some(
+      (edge) =>
+        edge.from === from &&
+        edge.to === to &&
+        (edge.assetId === undefined || edge.assetId === output.assetId),
+    )
+  ) {
+    return { ok: false, problem: 'duplicate' };
+  }
+
   // 同一个产物不能既当首帧又当尾帧（重复参考没有意义）
-  if (target.data.draft.references.some((ref) => ref.assetId === output.output.assetId)) {
+  if (target.data.draft.references.some((ref) => ref.assetId === output.assetId)) {
     return { ok: false, problem: 'duplicate' };
   }
 
   const roles = target.data.draft.references.map((ref) => ref.role);
   let role: CanvasReferenceRole;
-  if (output.output.kind === 'image') {
+  if (output.kind === 'image') {
     if (!roles.includes('first-frame')) role = 'first-frame';
     else if (!roles.includes('last-frame')) role = 'last-frame';
     else return { ok: false, problem: 'role-taken' };
@@ -91,7 +105,7 @@ export function planCanvasLineage(doc: CanvasDoc, from: string, to: string): Can
   }
 
   const order = target.data.draft.references.filter((ref) => ref.role === role).length;
-  return { ok: true, role, assetId: output.output.assetId, order };
+  return { ok: true, role, assetId: output.assetId, order };
 }
 
 export interface CanvasLineageResult {
@@ -111,7 +125,14 @@ export function addCanvasLineageEdge(
   const plan = planCanvasLineage(doc, from, to);
   if (!plan.ok) return { doc, edge: null, problem: plan.problem };
 
-  const edge: CanvasDocEdge = { id: edgeId, from, to, kind: 'lineage', role: plan.role };
+  const edge: CanvasDocEdge = {
+    id: edgeId,
+    from,
+    to,
+    kind: 'lineage',
+    role: plan.role,
+    assetId: plan.assetId,
+  };
   const nodes = doc.nodes.map((node) => {
     if (node.id !== to) return node;
     return {
@@ -164,10 +185,18 @@ export function removeCanvasLineageEdge(
   const candidates = sourceAssetIds(doc, edge.from);
   const nodes = doc.nodes.map((node) => {
     if (node.id !== edge.to || candidates.size === 0) return node;
-    const index = node.data.draft.references.findIndex(
-      (ref) =>
-        candidates.has(ref.assetId) && (edge.role === undefined || ref.role === edge.role),
-    );
+    const index = node.data.draft.references.findIndex((ref) => {
+      // V2.53：新边按连接时的 assetId 精确删除；旧边缺 assetId 才退回候选集匹配
+      if (edge.assetId !== undefined) {
+        return (
+          ref.assetId === edge.assetId &&
+          (edge.role === undefined || ref.role === edge.role)
+        );
+      }
+      return (
+        candidates.has(ref.assetId) && (edge.role === undefined || ref.role === edge.role)
+      );
+    });
     if (index === -1) return node;
     const references = node.data.draft.references.filter((_ref, position) => position !== index);
     return {

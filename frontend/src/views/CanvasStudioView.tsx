@@ -21,7 +21,16 @@ import {
   type Viewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { createEmptyCanvasDoc, type CanvasDocNode, type CanvasDoc, type CanvasNodeType, type CanvasProjectIndex, type CanvasReferenceRole, type TaskProgress } from '@astrmira/shared';
+import {
+  createCanvasNode,
+  createEmptyCanvasDoc,
+  type CanvasDocNode,
+  type CanvasDoc,
+  type CanvasNodeType,
+  type CanvasProjectIndex,
+  type CanvasReferenceRole,
+  type TaskProgress,
+} from '@astrmira/shared';
 import type { AssetListEntry } from '@astrmira/shared';
 import {
   ApiError,
@@ -43,6 +52,7 @@ import {
   canvasDocCounts,
   canvasLostActiveTaskNodes,
   canvasNodeActiveBatches,
+  canvasNodeVisibleOutput,
   canvasNodeTitle,
   duplicateCanvasNode,
   findCanvasNode,
@@ -73,6 +83,7 @@ import {
   canvasSubmitIssueText,
 } from '../lib/canvasNodeSubmit';
 import { resolveProviderKey } from '../lib/byok';
+import { comfyUiEngineOptions, httpServiceEngineOptions } from '../lib/engineOptions';
 import { createCanvasSaveQueue, type CanvasSaveState } from '../lib/canvasSaveQueue';
 import { navigate, parseHash } from '../lib/router';
 import {
@@ -174,6 +185,7 @@ const LINEAGE_PROBLEM_KEYS: Record<CanvasLineageProblem, MessageKey> = {
   duplicate: 'canvas.studio.lineage.duplicate',
   cycle: 'canvas.studio.lineage.cycle',
   'source-no-output': 'canvas.studio.lineage.sourceNoOutput',
+  'source-version-invalid': 'canvas.studio.lineage.sourceVersionInvalid',
   'source-audio': 'canvas.studio.lineage.sourceAudio',
   'source-not-media': 'canvas.studio.lineage.sourceNotMedia',
   'target-not-video': 'canvas.studio.lineage.targetNotVideo',
@@ -1229,6 +1241,72 @@ export function CanvasStudioView() {
     [applyDoc],
   );
 
+  /** S5-B3b：用当前可见版本创建一个邻近**草稿**节点，绝不提交 */
+  const continueFromVersion = useCallback(
+    (nodeId: string): void => {
+      const current = docRef.current;
+      if (current === null) return;
+      const source = findCanvasNode(current, nodeId);
+      if (source === null) return;
+      const visible = canvasNodeVisibleOutput(source);
+      if (visible.state === 'invalid') {
+        setNotice(t('canvas.studio.versionInvalid'));
+        return;
+      }
+      if (visible.state !== 'selected' && visible.state !== 'latest') {
+        setNotice(t('canvas.studio.continueNoOutput'));
+        return;
+      }
+      const output = visible.output;
+      if (output.kind !== 'image' && output.kind !== 'video') {
+        setNotice(t('canvas.studio.continueUnsupported'));
+        return;
+      }
+
+      // 按当前引擎能力门控：图片需要 i2v/fl2v，视频需要 v2v；未自检不拦
+      const provider = canvasDefaultProvider(source, {
+        providerStatus,
+        hasCloudKey: resolveProviderKey(byok) !== undefined,
+      });
+      const modes = provider.startsWith('http-service:')
+        ? httpServiceEngineOptions(providerStatus).find((item) => item.id === provider)?.modes
+        : provider === 'cloud-volcano-seedance'
+          ? undefined
+          : comfyUiEngineOptions(providerStatus).find((item) => item.id === provider)?.modes;
+      const needed = output.kind === 'image' ? ['i2v', 'fl2v'] : ['v2v'];
+      if (modes !== undefined && !modes.some((mode) => needed.includes(mode))) {
+        setNotice(t('canvas.studio.continueUnsupported'));
+        return;
+      }
+
+      const id = newCanvasProjectId();
+      const draft = createCanvasNode({
+        id,
+        type: 'video',
+        x: source.layout.x + source.layout.width + 80,
+        y: source.layout.y,
+        title: t('canvas.studio.newNode', { type: labels.video }),
+        createdFrom: 'toolbar',
+      });
+      draft.data.draft.settings = { ...source.data.draft.settings };
+      draft.data.draft.references = [
+        {
+          assetId: output.assetId,
+          role: output.kind === 'video' ? 'reference-video' : 'first-frame',
+          order: 0,
+        },
+      ];
+      pendingSelect.current = id;
+      applyDoc((d) => ({
+        ...d,
+        nodes: [...d.nodes, draft],
+        updatedAt: Date.now(),
+      }));
+      setNotice(t('canvas.studio.continueCreated'));
+    },
+    [applyDoc, byok, labels.video, providerStatus, t],
+  );
+
   /** S5-Ac：把来源选择写成稳定引用（不复制文件、不新建节点） */
   const addReferencesToNode = useCallback(
     (nodeId: string, sources: readonly ReferenceSourceItem[]): void => {
@@ -1686,6 +1764,7 @@ export function CanvasStudioView() {
               setPickerOpen(true);
             },
             onSelectBatch: selectBatch,
+            onContinueFromVersion: continueFromVersion,
           }}
         >
           <div className="cs-workspace">

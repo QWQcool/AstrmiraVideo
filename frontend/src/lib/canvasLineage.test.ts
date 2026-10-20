@@ -158,3 +158,72 @@ describe('来源边：与参考的同步（B4）', () => {
     expect(addCanvasLineageEdge(doc, 'ghost', 'v', 'e1').doc).toBe(doc);
   });
 });
+
+describe('S5-B3b：来源边固定可见版本', () => {
+  function withTwoVersions(): { doc: CanvasDoc; source: CanvasDocNode; target: CanvasDocNode } {
+    const source = makeNode('src', 'image');
+    source.data.batches = [
+      {
+        id: 'b1',
+        taskId: 't1',
+        createdAt: 1,
+        status: 'succeeded',
+        outputs: [{ assetId: 'task:old', kind: 'image', url: '/media/old.png' }],
+      },
+      {
+        id: 'b2',
+        taskId: 't2',
+        createdAt: 2,
+        status: 'succeeded',
+        outputs: [{ assetId: 'task:new', kind: 'image', url: '/media/new.png' }],
+      },
+    ];
+    source.data.selectedBatchId = 'b1';
+    const target = makeNode('dst', 'video');
+    target.data.draft.references = [];
+    return { doc: makeDoc(source, target), source, target };
+  }
+
+  it('连接使用选中版本而不是最新成功；边记住 assetId', () => {
+    const { doc } = withTwoVersions();
+    expect(planCanvasLineage(doc, 'src', 'dst')).toMatchObject({
+      ok: true,
+      assetId: 'task:old',
+      role: 'first-frame',
+    });
+    const added = addCanvasLineageEdge(doc, 'src', 'dst', 'e1');
+    expect(added.doc.edges[0]).toMatchObject({ assetId: 'task:old', role: 'first-frame' });
+  });
+
+  it('选中版本失效时拒绝连边，提示独立问题码', () => {
+    const { doc, source } = withTwoVersions();
+    source.data.selectedBatchId = 'missing';
+    expect(planCanvasLineage(doc, 'src', 'dst')).toEqual({
+      ok: false,
+      problem: 'source-version-invalid',
+    });
+  });
+
+  it('删边按 edge.assetId 精确删参考，不误删另一条', () => {
+    const { doc } = withTwoVersions();
+    const first = addCanvasLineageEdge(doc, 'src', 'dst', 'e1').doc;
+    const sourceAfterFirst = first.nodes.find((node) => node.id === 'src');
+    expect(sourceAfterFirst).toBeDefined();
+    sourceAfterFirst!.data.selectedBatchId = 'b2';
+    expect(planCanvasLineage(first, 'src', 'dst')).toEqual({
+      ok: true,
+      assetId: 'task:new',
+      role: 'last-frame',
+      order: 0,
+    });
+    const second = addCanvasLineageEdge(first, 'src', 'dst', 'e2').doc;
+    expect(second.nodes[1]!.data.draft.references.map((ref) => ref.assetId)).toEqual([
+      'task:old',
+      'task:new',
+    ]);
+    const removed = removeCanvasLineageEdge(second, 'e1');
+    expect(removed.nodes[1]!.data.draft.references.map((ref) => ref.assetId)).toEqual([
+      'task:new',
+    ]);
+  });
+});

@@ -543,6 +543,16 @@ export function StudioNode({ id, selected }: NodeProps) {
                     {t('common.download')}
                   </a>
                 )}
+                {preview === null ||
+                (preview.output.kind !== 'image' && preview.output.kind !== 'video') ? null : (
+                  <button
+                    type="button"
+                    className="cs-toolbar-link"
+                    onClick={() => studio.onContinueFromVersion(id)}
+                  >
+                    {t('canvas.studio.continueAsReference')}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="wb-btn wb-btn-primary"

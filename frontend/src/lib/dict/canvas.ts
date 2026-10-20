@@ -58,6 +58,10 @@ export const CANVAS_ZH = {
   'canvas.studio.versions': '版本列表',
   'canvas.studio.versionInvalid':
     '所选版本已失效（批次不存在 / 非成功 / 无产物）—— 请选择其他成功版本',
+  'canvas.studio.continueAsReference': '作为参考继续',
+  'canvas.studio.continueCreated': '已创建邻近草稿节点，未提交',
+  'canvas.studio.continueNoOutput': '当前没有可续作的成功产物',
+  'canvas.studio.continueUnsupported': '当前引擎能力不支持把该产物作为参考，已取消',
   'canvas.studio.progress': '{status} · {percent}%',
   'canvas.studio.noOutput': '还没有产物',
   'canvas.studio.submitUnknown': '提交中断（结果未知）',
@@ -123,6 +127,8 @@ export const CANVAS_ZH = {
   'canvas.studio.lineage.duplicate': '这两个节点已经连过（或同一产物已在参考里）',
   'canvas.studio.lineage.cycle': '会形成环 —— 来源边不能绕回上游',
   'canvas.studio.lineage.sourceNoOutput': '上游还没有产物 —— 先让它出片，再连来源',
+  'canvas.studio.lineage.sourceVersionInvalid':
+    '上游当前选中的版本已失效 —— 先选一个成功版本，再连来源',
   'canvas.studio.lineage.sourceAudio': '音频上游当前没有参考通道',
   'canvas.studio.lineage.sourceNotMedia': '上游产物不是图片或视频',
   'canvas.studio.lineage.targetNotVideo': '只有视频节点能接收参考',
@@ -463,6 +469,11 @@ export const CANVAS_EN = {
   'canvas.studio.versions': 'Versions',
   'canvas.studio.versionInvalid':
     'The selected version is no longer valid (missing / not successful / no output) — choose another successful version',
+  'canvas.studio.continueAsReference': 'Continue as reference',
+  'canvas.studio.continueCreated': 'Created a nearby draft node (not submitted)',
+  'canvas.studio.continueNoOutput': 'No successful output to continue from',
+  'canvas.studio.continueUnsupported':
+    'The current engine cannot use this output as a reference; cancelled',
   'canvas.studio.progress': '{status} · {percent}%',
   'canvas.studio.noOutput': 'No output yet',
   'canvas.studio.submitUnknown': 'Submit interrupted (result unknown)',
@@ -530,6 +541,8 @@ export const CANVAS_EN = {
   'canvas.studio.lineage.duplicate': 'These two nodes are already connected (or the output is already a reference)',
   'canvas.studio.lineage.cycle': 'That would create a cycle — source edges cannot loop back upstream',
   'canvas.studio.lineage.sourceNoOutput': 'The upstream node has no output yet — generate first, then connect',
+  'canvas.studio.lineage.sourceVersionInvalid':
+    'The upstream selected version is invalid — choose a successful version before connecting',
   'canvas.studio.lineage.sourceAudio': 'Audio sources have no reference channel right now',
   'canvas.studio.lineage.sourceNotMedia': 'The upstream output is neither image nor video',
   'canvas.studio.lineage.targetNotVideo': 'Only video nodes can receive references',

@@ -178,6 +178,11 @@ export const CanvasDocEdgeSchema = z.object({
   kind: CanvasEdgeKindSchema,
   /** 这条边喂的是哪种用途（与 draft.references 的 role 对齐） */
   role: CanvasReferenceRoleSchema.optional(),
+  /**
+   * V2.53（S5-B3b）：连接那一刻上游的产物 id。
+   * 旧边缺省时退回“按上游全部产物 + role 匹配”的老行为。
+   */
+  assetId: z.string().min(1).optional(),
 });
 
 export const CanvasViewportSchema = z.object({
