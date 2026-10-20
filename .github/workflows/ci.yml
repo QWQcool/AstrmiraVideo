@@ -175,13 +175,15 @@ jobs:
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: 上传代码包
+        timeout-minutes: 3
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
           # -f：从文件读密码，因此密码**不会出现在进程命令行**里
-          sshpass -f /tmp/deploy-pass scp -P "$DEPLOY_PORT" \
+          # 外层 timeout 是硬上限：主机能建 TCP 但不回包时，ssh 选项仍可能等很久
+          timeout 90s sshpass -f /tmp/deploy-pass scp -P "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
             -o ConnectTimeout=15 \
             -o ServerAliveInterval=15 \
@@ -189,12 +191,13 @@ jobs:
             /tmp/deploy.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/root/astrmira/deploy.tar.gz"
 
       - name: 远程解压并部署
+        timeout-minutes: 5
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          sshpass -f /tmp/deploy-pass ssh -p "$DEPLOY_PORT" \
+          timeout 240s sshpass -f /tmp/deploy-pass ssh -p "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
             -o ConnectTimeout=15 \
             -o ServerAliveInterval=15 \
@@ -203,12 +206,13 @@ jobs:
             'cd /root/astrmira && tar -xzf deploy.tar.gz && rm -f deploy.tar.gz && node scripts/deploy.mjs'
 
       - name: 健康检查（容器状态）
+        timeout-minutes: 2
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          sshpass -f /tmp/deploy-pass ssh -p "$DEPLOY_PORT" \
+          timeout 60s sshpass -f /tmp/deploy-pass ssh -p "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
             -o ConnectTimeout=15 \
             -o ServerAliveInterval=15 \

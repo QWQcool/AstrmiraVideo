@@ -1683,6 +1683,12 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · B4-0k：部署步骤加硬超时（verify 已绿，deploy 主机侧仍挂）
+
+- **【verify 绿】** B4-0j 的 `verify` **5m17s 通过**（覆盖率 681 + 全量 UI 冒烟，含 [12] 语言与 [8] 控制台卫生）。B4 的代码/测试门禁在 HEAD 上是绿的。
+- **【deploy 仍挂】** B4-0i 的 job 级 `timeout-minutes: 12` 没有及时终止 `scp`（13+ 分钟仍在「上传代码包」）；主机侧不可达/不回包时，ssh 选项不足以保证退出。
+- **【修复】** 给三个部署步骤加 step 级 `timeout-minutes`（3/5/2），并在命令外层加 GNU `timeout`（90s/240s/60s）硬上限。主机仍不可达时会**快速失败并给出退出码**，不再挂住 `deploy-production` 并发组；是否修 `DEPLOY_HOST`/密码/安全组是部署环境问题。
+
 ### 2026-10-20 · B4-0j：UI 冒烟项目删除等待清单刷新
 
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
