@@ -110,6 +110,8 @@ interface RequestOptions {
   signal?: AbortSignal;
   /** 页面卸载时的 best-effort 保存（S4-R1a）：keepalive 让浏览器在卸载中继续发请求 */
   keepalive?: boolean;
+  /** V2.48：画布并发修订号（保存时原样带回读取时的值） */
+  canvasRevision?: number;
   timeoutMs?: number;
 }
 
@@ -121,6 +123,10 @@ function buildHeaders(options: RequestOptions): Record<string, string> {
   if (options.idempotencyKey !== undefined) headers['idempotency-key'] = options.idempotencyKey;
   // V2.26：编排运行的头（见 CONTRACT §11-6 与 PlanRunRegistry）
   if (options.planRunId !== undefined) headers['x-plan-run'] = options.planRunId;
+  // V2.48：画布保存的并发修订号
+  if (options.canvasRevision !== undefined) {
+    headers['x-canvas-revision'] = String(options.canvasRevision);
+  }
   return headers;
 }
 
@@ -437,15 +443,16 @@ export function fetchCanvasDoc(projectId: string): Promise<CanvasDoc> {
   return request(`/api/canvas/docs/${encodeURIComponent(projectId)}`, CanvasDocSchema);
 }
 
-/** 整份覆盖保存（不做字段级 PATCH）；返回保存后的摘要，供列表就地更新 */
+/** 整份覆盖保存（不做字段级 PATCH）；返回保存后的摘要 + 新修订号（V2.48） */
 export function saveCanvasDoc(
   doc: CanvasDoc,
-  options: { keepalive?: boolean } = {},
+  options: { keepalive?: boolean; revision?: number } = {},
 ): Promise<CanvasDocSaveResponse> {
   return request(`/api/canvas/docs/${encodeURIComponent(doc.projectId)}`, CanvasDocSaveResponseSchema, {
     method: 'PUT',
     body: doc,
     ...(options.keepalive === true ? { keepalive: true } : {}),
+    ...(options.revision === undefined ? {} : { canvasRevision: options.revision }),
   });
 }
 

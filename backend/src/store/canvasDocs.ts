@@ -1,4 +1,12 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -36,6 +44,14 @@ export function resolveCanvasDir(): string {
   return path.join(base, 'canvas');
 }
 
+/** V2.48：修订号冲突 / 已删除文档（路由映射为 409 `DOC_CONFLICT`）。 */
+export class CanvasDocConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CanvasDocConflictError';
+  }
+}
+
 export class CanvasDocStore {
   constructor(private readonly dir: string) {}
 
@@ -49,6 +65,11 @@ export class CanvasDocStore {
     return path.join(this.dir, `${encodeURIComponent(projectId)}.doc.json`);
   }
 
+  /** V2.48：删除墓碑。存在它 = 这个 projectId 已被删除，迟到的 PUT 不得复活。 */
+  private tombstonePath(projectId: string): string {
+    return path.join(this.dir, `${encodeURIComponent(projectId)}.deleted`);
+  }
+
   private writeAtomic(file: string, payload: string): void {
     mkdirSync(this.dir, { recursive: true });
     const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
@@ -56,18 +77,27 @@ export class CanvasDocStore {
     renameSync(tmp, file);
   }
 
-  /** 读索引：坏文件/未知版本一律回落空索引（索引坏了不该让整个画布列表打不开） */
+  /**
+   * 读索引。
+   *
+   * V2.48：索引坏/缺失时**扫描文档重建**，不再一坏就返回空列表 ——
+   * 否则用户的画布明明在磁盘上，界面却显示“没有作品”。
+   */
   readIndex(): CanvasProjectIndex {
     try {
       const raw = readFileSync(this.indexPath(), 'utf8');
       const parsed = CanvasProjectIndexSchema.safeParse(JSON.parse(raw));
-      return parsed.success ? parsed.data : createEmptyCanvasProjectIndex();
+      // 空索引也可能只是“索引被清掉/写丢”，而文档还在 —— 先扫一遍再相信它
+      if (parsed.success && parsed.data.projects.length > 0) return parsed.data;
     } catch {
-      return createEmptyCanvasProjectIndex();
+      // 落到重建
     }
+    return this.rebuildIndex();
   }
 
   readDoc(projectId: string): CanvasDoc | null {
+    // 墓碑优先：删除后即使文档文件因为崩溃残留，也不该再被打开
+    if (existsSync(this.tombstonePath(projectId))) return null;
     try {
       const raw = readFileSync(this.docPath(projectId), 'utf8');
       const parsed = CanvasDocSchema.safeParse(JSON.parse(raw));
@@ -79,21 +109,60 @@ export class CanvasDocStore {
     }
   }
 
-  /** 保存文档并返回摘要；文档本体不合法时抛错（路由层转成 400） */
-  saveDoc(input: unknown): CanvasProjectRef {
+  /**
+   * 保存文档并返回摘要 + 新修订号。
+   *
+   * V2.48：已有文档必须带 `expectedRevision` 且等于当前值；否则抛
+   * `CanvasDocConflictError`（路由转 409 `DOC_CONFLICT`）。新建文档允许缺省/1。
+   */
+  saveDoc(
+    input: unknown,
+    expectedRevision?: number,
+  ): { summary: CanvasProjectRef; revision: number } {
     const doc = CanvasDocSchema.parse(input);
-    this.writeAtomic(this.docPath(doc.projectId), `${JSON.stringify(doc)}\n`);
-    const summary = canvasDocSummary(doc);
+    if (existsSync(this.tombstonePath(doc.projectId))) {
+      throw new CanvasDocConflictError('这个画布已被删除，不能通过迟到的保存复活');
+    }
+
+    const existing = this.readDoc(doc.projectId);
+    let revision: number;
+    if (existing === null) {
+      if (expectedRevision !== undefined && expectedRevision !== 1) {
+        throw new CanvasDocConflictError('画布不存在或已被删除，请重载后再保存');
+      }
+      revision = 1;
+    } else {
+      if (expectedRevision === undefined) {
+        throw new CanvasDocConflictError('缺少修订号：这个画布已在别处保存过，请重载后再编辑');
+      }
+      if (expectedRevision !== existing.revision) {
+        throw new CanvasDocConflictError(
+          `修订号不匹配（当前 ${existing.revision}，提交 ${expectedRevision}）：请重载后再编辑`,
+        );
+      }
+      revision = existing.revision + 1;
+    }
+
+    const next: CanvasDoc = { ...doc, revision };
+    this.writeAtomic(this.docPath(next.projectId), `${JSON.stringify(next)}\n`);
+    const summary = canvasDocSummary(next);
     this.upsertIndex(summary);
-    return summary;
+    return { summary, revision };
   }
 
   deleteDoc(projectId: string): boolean {
+    if (!existsSync(this.docPath(projectId))) return false;
+
+    // 先写墓碑再删文档：即使删文件失败，也可回滚墓碑；
+    // 反过来（先删再写）会留下“迟到 PUT 把文档建回来”的窗口。
+    this.writeAtomic(this.tombstonePath(projectId), `${Date.now()}\n`);
     try {
       rmSync(this.docPath(projectId), { force: false });
     } catch {
+      rmSync(this.tombstonePath(projectId), { force: true });
       return false;
     }
+
     const index = this.readIndex();
     const next: CanvasProjectIndex = {
       ...index,
@@ -112,6 +181,47 @@ export class CanvasDocStore {
     else next.activeProjectId = projectId;
     this.writeIndex(next);
     return next;
+  }
+
+  /** V2.48：索引坏/缺失时扫描文档重建（文件名必须与文档 projectId 一致） */
+  private rebuildIndex(): CanvasProjectIndex {
+    const projects: CanvasProjectRef[] = [];
+    try {
+      for (const file of readdirSync(this.dir)) {
+        if (!file.endsWith('.doc.json')) continue;
+        const encoded = file.slice(0, -'.doc.json'.length);
+        let projectId: string;
+        try {
+          projectId = decodeURIComponent(encoded);
+        } catch {
+          continue;
+        }
+        if (existsSync(this.tombstonePath(projectId))) continue;
+        try {
+          const raw = readFileSync(path.join(this.dir, file), 'utf8');
+          const parsed = CanvasDocSchema.safeParse(JSON.parse(raw));
+          if (!parsed.success) continue;
+          if (`${encodeURIComponent(parsed.data.projectId)}.doc.json` !== file) continue;
+          projects.push(canvasDocSummary(parsed.data));
+        } catch {
+          // 单份文档坏了不该拖垮整个列表
+        }
+      }
+    } catch {
+      // 目录还不存在 = 还没有作品
+    }
+
+    projects.sort((a, b) => b.updatedAt - a.updatedAt);
+    const index: CanvasProjectIndex = {
+      version: createEmptyCanvasProjectIndex().version,
+      projects,
+    };
+    try {
+      this.writeIndex(index);
+    } catch {
+      // 只读目录/磁盘错误：仍然返回扫描结果，让列表能打开
+    }
+    return index;
   }
 
   private upsertIndex(summary: CanvasProjectRef): void {

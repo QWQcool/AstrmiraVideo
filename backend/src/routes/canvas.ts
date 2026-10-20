@@ -9,7 +9,11 @@ import {
   ProjectIdSchema,
 } from '@astrmira/shared';
 import { createErrorResponse } from '../errors.js';
-import { CanvasDocStore, resolveCanvasDir } from '../store/canvasDocs.js';
+import {
+  CanvasDocConflictError,
+  CanvasDocStore,
+  resolveCanvasDir,
+} from '../store/canvasDocs.js';
 
 /**
  * 创作画布文档路由（CONTRACT §21-8 / V2.42；Step 11-S3 片 A）。
@@ -22,6 +26,14 @@ import { CanvasDocStore, resolveCanvasDir } from '../store/canvasDocs.js';
  */
 
 const CanvasParamsSchema = z.object({ projectId: ProjectIdSchema });
+
+/** V2.48：并发修订号。Fastify 把 header 名转小写。 */
+const CanvasRevisionHeadersSchema = z.object({
+  'x-canvas-revision': z
+    .string()
+    .regex(/^\d+$/, 'X-Canvas-Revision 必须是正整数')
+    .optional(),
+});
 
 export interface CanvasRoutesDeps {
   /** 测试注入临时目录；生产用 `DATA_DIR/canvas` */
@@ -83,8 +95,13 @@ export const createCanvasRoutes =
       {
         schema: {
           params: CanvasParamsSchema,
+          headers: CanvasRevisionHeadersSchema,
           body: CanvasDocSchema,
-          response: { 200: CanvasDocSaveResponseSchema, 400: ErrorResponseSchema },
+          response: {
+            200: CanvasDocSaveResponseSchema,
+            400: ErrorResponseSchema,
+            409: ErrorResponseSchema,
+          },
         },
       },
       async (request, reply) => {
@@ -94,8 +111,18 @@ export const createCanvasRoutes =
             .code(400)
             .send(createErrorResponse('INVALID_REQUEST', '文档里的 projectId 与路径不一致'));
         }
-        const summary = store.saveDoc(request.body);
-        return { ok: true, summary };
+        const raw = request.headers['x-canvas-revision'];
+        const expected =
+          typeof raw === 'string' && raw !== '' ? Number.parseInt(raw, 10) : undefined;
+        try {
+          const saved = store.saveDoc(request.body, expected);
+          return { ok: true, summary: saved.summary, revision: saved.revision };
+        } catch (caught) {
+          if (caught instanceof CanvasDocConflictError) {
+            return reply.code(409).send(createErrorResponse('DOC_CONFLICT', caught.message));
+          }
+          throw caught;
+        }
       },
     );
   };

@@ -177,6 +177,11 @@ export const CanvasDocSchema = z.object({
   viewport: CanvasViewportSchema,
   nodes: z.array(CanvasDocNodeSchema),
   edges: z.array(CanvasDocEdgeSchema),
+  /**
+   * V2.48（§21-8）：并发写入的修订号（不是格式版本；`version` 仍是格式版本）。
+   * 旧文档没有该字段 → 读作 1；服务端每次成功写入 +1，客户端保存时必须带回读取时的值。
+   */
+  revision: z.number().int().positive().default(1),
 });
 
 /** 画布项目索引条目（多画布列表用；D60）。文档本体另外按 projectId 存。 */
@@ -217,6 +222,8 @@ export type CanvasProjectIndex = z.infer<typeof CanvasProjectIndexSchema>;
 export const CanvasDocSaveResponseSchema = z.object({
   ok: z.boolean(),
   summary: CanvasProjectRefSchema,
+  /** V2.48：本次成功写入后的修订号；客户端下一次保存必须用它 */
+  revision: z.number().int().positive(),
 });
 
 export type CanvasDocSaveResponse = z.infer<typeof CanvasDocSaveResponseSchema>;
@@ -277,6 +284,7 @@ export function createEmptyCanvasDoc(
     viewport: { x: 0, y: 0, zoom: 1 },
     nodes: [],
     edges: [],
+    revision: 1,
   };
 }
 

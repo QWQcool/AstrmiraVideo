@@ -17,7 +17,8 @@ import type { CanvasDoc } from '@astrmira/shared';
 export type CanvasSaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
 export interface CanvasSaveQueueOptions {
-  save: (doc: CanvasDoc) => Promise<void>;
+  /** V2.48：入参是读取时的 revision，返回值是服务端写入后的新 revision */
+  save: (doc: CanvasDoc, revision: number) => Promise<number>;
   /** 状态回调带 projectId：视图切走后据此忽略旧项目的迟到状态 */
   onState: (state: CanvasSaveState, projectId: string) => void;
   /** 保存失败的具体原因（网络/契约）；视图用来显示可读错误 */
@@ -33,6 +34,9 @@ export interface CanvasSaveQueue {
   settle(): Promise<void>;
   cancel(): void;
   isDirty(): boolean;
+  /** V2.48：换文档/重载时设置读取到的修订号 */
+  setRevision(revision: number): void;
+  currentRevision(): number;
 }
 
 export function createCanvasSaveQueue({
@@ -49,6 +53,8 @@ export function createCanvasSaveQueue({
   let settling = false;
   /** cancel 后旧请求仍会完成，但不许再改界面状态 */
   let generation = 0;
+  /** V2.48：当前文档的修订号；每次成功保存后更新 */
+  let revision = 1;
 
   const clearTimer = (): void => {
     if (timer !== null) {
@@ -68,7 +74,8 @@ export function createCanvasSaveQueue({
 
     running = (async () => {
       try {
-        await save(doc);
+        const nextRevision = await save(doc, revision);
+        if (myGeneration === generation) revision = nextRevision;
         // 保存期间又改了：不要报 saved，回到循环再存一次
         // latest 为 null = 已 cancel（例如删除），不能再把脏状态复活
         if (latest !== null && latest !== doc) dirty = true;
@@ -136,6 +143,14 @@ export function createCanvasSaveQueue({
 
     isDirty() {
       return dirty || running !== null;
+    },
+
+    setRevision(next) {
+      revision = next;
+    },
+
+    currentRevision() {
+      return revision;
     },
   };
 }

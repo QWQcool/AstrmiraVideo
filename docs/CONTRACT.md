@@ -1,6 +1,13 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.47 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.48 · 已冻结（变更需先改本文，再改代码）**
+> **V2.48 修订（2026-10-20）**：**画布文档修订号与并发保护（§21-8 / §6）** —— Step 11-S4-R1b（D70）。
+>   ① `CanvasDoc` 新增独立 `revision`（正整数；旧文档读作 1；`version` 仍是格式版本）；
+>   ② `PUT /api/canvas/docs/:projectId` 必须带 `X-Canvas-Revision`（新建文档可缺省）；不匹配/缺失/已删除 → **409 `DOC_CONFLICT`**；
+>   ③ 成功响应新增 `revision`（下一次保存用它）；删除写墓碑，迟到的 PUT 不能复活文档；
+>   ④ 索引损坏时按 `<projectId>.doc.json` 扫描重建，不再静默返回空索引；
+>   ⑤ 新增错误码 `DOC_CONFLICT`（terminal）；无新路由。
+
 > **V2.47 修订（2026-10-20）**：**通用 HTTP 任务服务（§22）** —— Step 11-S4 前置能力（D67 / D71）。
 >   ① `ProviderType` 新增具名实例 `http-service:<name>`（配置来自 `HTTP_SERVICES_FILE`，不落 token）；
 >   ② `/status` 新增 `httpServices` 段（id/label/modes/available/reason，不下发地址与 token）；
@@ -789,9 +796,9 @@ export interface AssetListResponse {
 | `POST` | `/api/projects` | **V2.11 新增**：新建项目（body `{ name }`，1~60 字符）。**200 → `{ project: ProjectEntry }`**（id 为服务端生成的 UUID）；名字为空 → **400 `INVALID_REQUEST`**；**重名 → 400 `INVALID_REQUEST`**（切换器里两个同名项目认不出来，这是可用性问题不是洁癖） |
 | `PATCH` | `/api/projects/:projectId` | **V2.11 新增**：改项目名（body `{ name }`）。**200 → `{ project: ProjectEntry }`**；不存在 → **404 `PROJECT_NOT_FOUND`**；空名 / 重名 → **400 `INVALID_REQUEST`** |
 | `DELETE` | `/api/projects/:projectId` | **V2.11 新增**：删除**空**项目。**200 → `{ deleted: true, projectId }`**；不存在 → **404 `PROJECT_NOT_FOUND`**；**默认项目 → 400 `INVALID_REQUEST`**（它是老数据与"未指定项目"的落点）；**项目非空 → 400 `INVALID_REQUEST`**（本项目**不做级联删除** —— 那会把任务与资产变成孤儿） |
-| `GET` | `/api/canvas/projects` | **V2.42 新增（§21-8）**：画布项目索引。**200 → `CanvasProjectIndex`**（`{ version, projects[], activeProjectId? }`）。只读摘要，不含文档本体；索引文件损坏时**返回空索引**而不是 5xx |
+| `GET` | `/api/canvas/projects` | **V2.42 新增（§21-8）**：画布项目索引。**200 → `CanvasProjectIndex`**（`{ version, projects[], activeProjectId? }`）。只读摘要，不含文档本体；**V2.48**：索引损坏/缺失时先扫描文档重建，重建仍为空才返回空索引（不 5xx、不静默丢掉已有作品） |
 | `GET` | `/api/canvas/docs/:projectId` | **V2.42 新增**：整份画布文档。**200 → `CanvasDoc`**；未保存过 / 已删除 → **404 `PROJECT_NOT_FOUND`**（**不**返回空文档 —— "新建"与"打错 id"必须能区分） |
-| `PUT` | `/api/canvas/docs/:projectId` | **V2.42 新增**：保存画布文档（body = `CanvasDoc`，整份覆盖）。**200 → `{ ok: true, summary: CanvasProjectRef }`**；体里的 `projectId` 与路径不一致 → **400 `INVALID_REQUEST`**（否则会覆盖另一个画布）；`version` / 节点类型不认识 → **400**（schema 拒绝，不落盘） |
+| `PUT` | `/api/canvas/docs/:projectId` | **V2.42 新增；V2.48 加并发保护**：保存画布文档（body = `CanvasDoc`，整份覆盖）。**200 → `{ ok: true, summary: CanvasProjectRef, revision }`**；体里的 `projectId` 与路径不一致 → **400 `INVALID_REQUEST`**（否则会覆盖另一个画布）；`version` / 节点类型不认识 → **400**（schema 拒绝，不落盘）；已有文档缺 `X-Canvas-Revision`、修订不匹配或已删除 → **409 `DOC_CONFLICT`**（不静默覆盖） |
 | `DELETE` | `/api/canvas/docs/:projectId` | **V2.44 新增**：删除画布（文档 + 索引条目一起删）。**200 → `{ deleted: true, projectId }`**；不存在 → **404 `PROJECT_NOT_FOUND`**。只删文档与索引，**不删产物资产**（资产由 §7 的生命周期管理） |
 | `GET` | `/api/webhooks` | **V2.15 新增（台账 B51 片 A）**：**Webhook 订阅清单**（只读）。`?project=` —— **省略 = 默认项目**（与全站同口径）；项目不存在 → **404 `PROJECT_NOT_FOUND`**。**200 → `{ webhooks: WebhookView[] }`** —— **永远不含明文 secret**（只有 `secretMasked`，形如 `whsec_01…cdef`）。用途：客户系统自检"我的订阅还在不在" |
 | `POST` | `/api/webhooks` | **V2.15 新增**：新建订阅（body `{ projectId?, url, secret?, events? }`）。**201 → `{ webhook: WebhookView, secret }`** —— ⚠️ **明文 `secret` 只在这唯一一次响应里出现**（之后任何接口都只有掩码），客户必须自己存好；省略 `secret` 由服务端生成（推荐，手填弱 secret 是这条链路上最容易出的安全问题）；`events` 省略 = `['task.terminal']`。**URL 过 SSRF 准入**（只允许 http/https、不许带用户名密码、**默认拒绝环回 / 私网 / 链路本地 / 云元数据**，理由见 §15）→ 不通过 **400 `INVALID_REQUEST`**（文案含"部署者设 `WEBHOOK_ALLOW_PRIVATE=1` 可放行"）；项目不存在 → **404 `PROJECT_NOT_FOUND`** |
@@ -853,6 +860,7 @@ export type ErrorDisposition =
 | `KEY_MISSING` | 需要凭据的端点既未收到 `X-Provider-Key`，服务端也无 env 兜底 Key（也用于访问令牌缺失） | `terminal` |
 | `PROJECT_NOT_FOUND` | **V2.11 新增（台账 B47）**：请求显式指定的 `projectId`（正文 / 查询参数）在项目表里不存在。用于 `POST /api/generate` 与 `PATCH` / `DELETE /api/projects/:projectId`。**刻意不静默落到默认项目** —— 那会让用户在"默认项目"里看到本不属于它的东西，而他以为自己选中的项目并没有接住这条任务 | `terminal`（改 id 或先建项目） |
 | `WEBHOOK_NOT_FOUND` | **V2.15 新增（台账 B51）**：`/api/webhooks/:webhookId` 系列指定的订阅不存在（含"刚被删"）。**刻意不静默 200** —— 客户系统据此知道配置已被删（否则它会一直以为回调还在生效） | `terminal`（改 id 或重新创建订阅） |
+| `DOC_CONFLICT` | **V2.48 新增（§21-8 / D70）**：画布文档的 `X-Canvas-Revision` 与当前修订不匹配、已有文档缺少该头、或该文档已被删除（墓碑）。**不静默覆盖**：客户端应重载/另存，而不是自动重试旧修订 | `terminal`（重载/另存；同一旧修订重试无意义） |
 | `INVALID_REQUEST` | **V2.3 登记（V9 · B9 落地时补齐）**：请求**形状合法但值/组合不合法** —— 如剪辑台 `endSec ≤ startSec`、连续两次「拼接」、转场未跟在拼接之后。⚠️ 本码在 V2.2 的 §11-2 里就被引用过，但当时**没有登记进本字典**（契约内部不自洽）；B9 实现时按"契约优先且必须自洽"补齐，契约测试的双向校验（实现 ↔ 文档）会一直盯着这件事 | `terminal` |
 
 **V1.3 三条硬规则**：
@@ -2183,6 +2191,7 @@ interface CanvasDoc {
   viewport: { x: number; y: number; zoom: number };  // zoom ∈ [0.1, 4]
   nodes: CanvasDocNode[];
   edges: CanvasDocEdge[];
+  revision: number;           // V2.48：并发修订号（旧文档缺省读作 1；不是格式版本）
 }
 ```
 
@@ -2308,7 +2317,17 @@ interface CanvasProjectIndex {
   `<encodeURIComponent(projectId)>.doc.json`，索引单独 `index.json`。
 - **原子写**：先写 `<file>.tmp-<pid>-<ts>` 再 `rename` —— 崩溃不会留下半份 JSON。
 - **索引是派生数据**：保存时按 `canvasDocSummary()` 更新 `{projectId,name,updatedAt,nodeCount,coverAssetId}`；
-  索引文件损坏 → `GET /api/canvas/projects` 返回空索引，不让整个列表打不开。
+  索引文件损坏/缺失时**扫描 `<projectId>.doc.json` 重建**（能读出的文档都要出现在列表里），
+  重建仍为空才返回空索引 —— 不再"索引一坏就显示没有作品"。
+- **修订号（V2.48）**：`CanvasDoc.revision` 是**并发写入的修订号**（不是格式版本；旧文档缺省读作 1）。
+  保存成功时服务端把文档里的 `revision` 写成 `当前值 + 1` 并返回；客户端下一次保存用返回的值。
+- **保存协议（V2.48）**：`PUT` 必须带 `X-Canvas-Revision: <读取时的 revision>`。
+  - 文档不存在且**没有墓碑** → 新建，`revision=1`（允许缺省头，兼容首次保存/旧客户端）；
+  - 文档存在但缺头 → **409 `DOC_CONFLICT`**（不静默当 1）；
+  - 头值 ≠ 当前 revision → **409 `DOC_CONFLICT`**（另一个标签已写入）；
+  - 文档已被删除（有墓碑）→ **409 `DOC_CONFLICT`**（迟到的 PUT 不能复活）。
+- **删除墓碑（V2.48）**：删除时写 `<projectId>.deleted` 标记；`PUT` 遇到墓碑直接 409，
+  不因"文件不存在"走新建分支。`GET` 仍 404；墓碑很小，后续清理另行设计。
 - **文件名与文档一致**：文件名转义后的 `projectId` 必须等于文档里的 `projectId`，否则视为读不到
   （防止复制文件导致项目串号）。
 - **路由**：见 §5 的四条 `GET / PUT / DELETE /api/canvas/*`；整份读写，不做字段级 PATCH。

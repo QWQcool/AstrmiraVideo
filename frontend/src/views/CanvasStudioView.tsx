@@ -179,6 +179,10 @@ export function CanvasStudioView() {
   const [doc, setDoc] = useState<CanvasDoc | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<StudioRfNode>([]);
   const [saveState, setSaveState] = useState<CanvasSaveState>('saved');
+  /** V2.48：另一个标签已写入 / 文档已删除；此时只能重载，不能继续用旧 revision 重试 */
+  const [conflict, setConflict] = useState(false);
+  /** 重载时让受控的标题输入框重新挂载（正常保存不重挂载，避免打字时丢焦点） */
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -221,18 +225,22 @@ export function CanvasStudioView() {
    */
   if (saveQueueRef.current === null) {
     saveQueueRef.current = createCanvasSaveQueue({
-      save: async (doc) => {
-        const saved = await saveCanvasDoc(doc);
+      save: async (doc, revision) => {
+        const saved = await saveCanvasDoc(doc, { revision });
         setIndex((prev) => (prev === null ? prev : upsertCanvasProject(prev, saved.summary)));
+        return saved.revision;
       },
       onState: (state, projectId) => {
         if (!mountedRef.current) return;
         if (docRef.current?.projectId !== projectId) return;
         if (state === 'saving') setError(null);
+        if (state === 'saved') setConflict(false);
         setSaveState(state);
       },
       onError: (caught) => {
-        if (mountedRef.current) setError(describeError(caught));
+        if (!mountedRef.current) return;
+        if (caught instanceof ApiError && caught.failure.status === 409) setConflict(true);
+        setError(describeError(caught));
       },
     });
   }
@@ -306,6 +314,8 @@ export function CanvasStudioView() {
           }
         }
         skipSaveRef.current = true;
+        saveQueueRef.current?.setRevision(next.revision);
+        setConflict(false);
         docRef.current = next;
         setDoc(next);
         setNodes([]);
@@ -335,6 +345,47 @@ export function CanvasStudioView() {
     [setNodes, t],
   );
 
+  /**
+   * V2.48：修订冲突后**只能重载**（旧 revision 重试永远不会成功）。
+   * 这是一次显式的“丢弃本地未保存修改”，按钮文案必须说清。
+   */
+  const reloadCanvas = useCallback(async (): Promise<void> => {
+    const current = docRef.current;
+    if (current === null || switchingRef.current) return;
+    switchingRef.current = true;
+    setBusy(true);
+    try {
+      const next = await fetchCanvasDoc(current.projectId);
+      const queue = saveQueueRef.current;
+      queue?.cancel();
+      queue?.setRevision(next.revision);
+      skipSaveRef.current = true;
+      docRef.current = next;
+      setDoc(next);
+      setNodes([]);
+      setSelectedIds([]);
+      setLive({});
+      historyRef.current = createCanvasHistory();
+      setHistoryRev((value) => value + 1);
+      setSaveState('saved');
+      setConflict(false);
+      setError(null);
+      setReloadNonce((value) => value + 1);
+      window.setTimeout(() => {
+        if (next.nodes.length > 0) {
+          rfRef.current?.fitView({ padding: 0.2, maxZoom: 1, duration: 200 });
+        } else {
+          rfRef.current?.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 0 });
+        }
+      }, 60);
+    } catch (caught) {
+      setError(describeError(caught));
+    } finally {
+      switchingRef.current = false;
+      setBusy(false);
+    }
+  }, [setNodes]);
+
   // 首次进入：读索引 → 打开上次的画布（没有就显示空态，不擅自新建）
   useEffect(() => {
     let alive = true;
@@ -349,13 +400,14 @@ export function CanvasStudioView() {
         } else if (peekCanvasResultHandoff() !== null) {
           // 「去画布编辑」但一块画布都没有：先建一块，交接由下面的 effect 消费
           const fresh = createEmptyCanvasDoc(newCanvasProjectId(), defaultCanvasName(loaded.projects));
-          const saved = await saveCanvasDoc(fresh);
+          const saved = await saveCanvasDoc(fresh, { revision: 1 });
           if (!alive) return;
           setIndex(
             setActiveCanvasProject(upsertCanvasProject(loaded, saved.summary), fresh.projectId),
           );
           writeActiveCanvasProjectId(fresh.projectId);
           skipSaveRef.current = true;
+          saveQueueRef.current?.setRevision(saved.revision);
           docRef.current = fresh;
           setDoc(fresh);
           setNodes([]);
@@ -453,8 +505,12 @@ export function CanvasStudioView() {
     };
     const onPageHide = (): void => {
       const current = docRef.current;
-      if (current === null || !saveQueueRef.current?.isDirty()) return;
-      void saveCanvasDoc(current, { keepalive: true }).catch(() => undefined);
+      const queue = saveQueueRef.current;
+      if (current === null || queue === null || !queue.isDirty()) return;
+      void saveCanvasDoc(current, {
+        keepalive: true,
+        revision: queue.currentRevision(),
+      }).catch(() => undefined);
     };
     window.addEventListener('beforeunload', onBeforeUnload);
     window.addEventListener('pagehide', onPageHide);
@@ -1086,7 +1142,7 @@ export function CanvasStudioView() {
     setPickerOpen(false);
     setMenu(null);
     try {
-      const saved = await saveCanvasDoc(fresh);
+      const saved = await saveCanvasDoc(fresh, { revision: 1 });
       setIndex((prev) =>
         prev === null
           ? prev
@@ -1094,6 +1150,7 @@ export function CanvasStudioView() {
       );
       writeActiveCanvasProjectId(projectIdNext);
       skipSaveRef.current = true;
+      saveQueueRef.current?.setRevision(saved.revision);
       docRef.current = fresh;
       setDoc(fresh);
       setNodes([]);
@@ -1249,7 +1306,7 @@ export function CanvasStudioView() {
             </select>
           ) : null}
           <input
-            key={doc?.projectId ?? 'none'}
+            key={`${doc?.projectId ?? 'none'}:${reloadNonce}`}
             className="cs-title"
             defaultValue={doc?.name ?? ''}
             disabled={doc === null}
@@ -1275,9 +1332,12 @@ export function CanvasStudioView() {
             <button
               type="button"
               className="cs-save-retry"
-              onClick={() => void saveQueueRef.current?.flush()}
+              title={conflict ? t('canvas.studio.conflict') : undefined}
+              onClick={() =>
+                conflict ? void reloadCanvas() : void saveQueueRef.current?.flush()
+              }
             >
-              {t('canvas.studio.retrySave')}
+              {conflict ? t('canvas.studio.reload') : t('canvas.studio.retrySave')}
             </button>
           ) : null}
         </div>

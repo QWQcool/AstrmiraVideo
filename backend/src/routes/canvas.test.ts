@@ -77,6 +77,7 @@ describe('画布文档路由', () => {
     expect(saved.json()).toMatchObject({
       ok: true,
       summary: { projectId: 'proj-1', nodeCount: 1, coverAssetId: 'asset-1' },
+      revision: 1,
     });
 
     const read = await app.inject({ method: 'GET', url: '/api/canvas/docs/proj-1' });
@@ -139,10 +140,58 @@ describe('画布文档路由', () => {
     const { app } = await harness();
     await app.inject({ method: 'PUT', url: '/api/canvas/docs/proj-1', payload: docFixture() });
     const second = docFixture('proj-1', 1_700_000_100_000);
-    await app.inject({ method: 'PUT', url: '/api/canvas/docs/proj-1', payload: second });
+    const saved = await app.inject({
+      method: 'PUT',
+      url: '/api/canvas/docs/proj-1',
+      headers: { 'x-canvas-revision': '1' },
+      payload: second,
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json().revision).toBe(2);
     const index = (await app.inject({ method: 'GET', url: '/api/canvas/projects' })).json();
     expect(index.projects).toHaveLength(1);
     expect(index.projects[0].updatedAt).toBe(1_700_000_100_000);
+  });
+
+  it('V2.48：已有文档缺修订号 / 旧修订 → 409 DOC_CONFLICT，且不覆盖已保存内容', async () => {
+    const { app } = await harness();
+    await app.inject({ method: 'PUT', url: '/api/canvas/docs/proj-1', payload: docFixture() });
+
+    const missing = await app.inject({
+      method: 'PUT',
+      url: '/api/canvas/docs/proj-1',
+      payload: { ...docFixture(), name: '另一个标签' },
+    });
+    expect(missing.statusCode).toBe(409);
+    expect(missing.json().code).toBe('DOC_CONFLICT');
+
+    const stale = await app.inject({
+      method: 'PUT',
+      url: '/api/canvas/docs/proj-1',
+      headers: { 'x-canvas-revision': '5' },
+      payload: { ...docFixture(), name: '旧修订' },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().code).toBe('DOC_CONFLICT');
+
+    const read = await app.inject({ method: 'GET', url: '/api/canvas/docs/proj-1' });
+    expect(read.json().name).toBe('客厅灯光广告');
+    expect(read.json().revision).toBe(1);
+  });
+
+  it('V2.48：删除后迟到的 PUT 不能复活文档（墓碑）', async () => {
+    const { app } = await harness();
+    await app.inject({ method: 'PUT', url: '/api/canvas/docs/proj-1', payload: docFixture() });
+    await app.inject({ method: 'DELETE', url: '/api/canvas/docs/proj-1' });
+
+    const late = await app.inject({
+      method: 'PUT',
+      url: '/api/canvas/docs/proj-1',
+      payload: { ...docFixture(), revision: 1 },
+    });
+    expect(late.statusCode).toBe(409);
+    expect(late.json().code).toBe('DOC_CONFLICT');
+    expect((await app.inject({ method: 'GET', url: '/api/canvas/docs/proj-1' })).statusCode).toBe(404);
   });
 });
 
@@ -157,13 +206,15 @@ describe('CanvasDocStore', () => {
     expect(store.readIndex().projects).toHaveLength(0);
   });
 
-  it('索引文件损坏时回落空索引，而不是让画布列表打不开', async () => {
+  it('索引文件损坏时扫描文档重建，而不是显示“没有作品”', async () => {
     const { dir } = await harness();
     const store = new CanvasDocStore(dir);
     store.saveDoc(docFixture());
     // 直接写坏索引
     const fs = await import('node:fs');
     fs.writeFileSync(path.join(dir, 'index.json'), '{broken', 'utf8');
-    expect(store.readIndex()).toEqual({ version: 1, projects: [] });
+    const rebuilt = store.readIndex();
+    expect(rebuilt.projects).toHaveLength(1);
+    expect(rebuilt.projects[0]).toMatchObject({ projectId: 'proj-1', nodeCount: 1 });
   });
 });

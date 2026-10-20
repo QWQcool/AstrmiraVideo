@@ -1683,6 +1683,16 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · S4-R1b：修订号、409、墓碑与索引重建（CONTRACT V2.48 / D70）
+
+- **【契约 V2.48】** `CanvasDoc.revision`（旧文档读作 1；`version` 仍是格式版本）；`PUT` 必须带 `X-Canvas-Revision`（新建可缺省/1）；成功响应新增 `revision`；不匹配/缺头/已删除 → **409 `DOC_CONFLICT`**（新错误码，terminal）；删除写 `<projectId>.deleted` 墓碑；索引坏/空时扫描 `<projectId>.doc.json` 重建。
+- **【后端】** `CanvasDocStore.saveDoc` 串行校验“读取时的 revision == 当前 revision”并 +1；已有文档缺修订号直接拒绝（不静默当 1）；删除先写墓碑再删文档，删文件失败回滚墓碑；`readIndex` 在索引损坏/空时扫描重建，单份坏文档不拖垮列表。
+- **【前端】** 保存队列从“存完 void”改成“存完返回新 revision”，打开/新建/重载时 `setRevision`；`saveCanvasDoc` 带 `x-canvas-revision`；`pagehide` 的 keepalive 也带当前 revision；409 时顶栏把“重试保存”换成“**重载画布（丢弃本地修改）**”，重载后 revision 同步；标题输入框只在重载时重挂载（正常保存不丢焦点）。
+- **【双标签实机验证】11/11 PASS**：两个页面打开同一画布（rev 1）→ A 改名保存成功（rev 2）→ B 仍持 rev 1 保存 → 409、显示“保存失败”与“重载画布”、**没有覆盖 A 的内容** → 点重载 → 显示 A 的名字、冲突按钮消失、保存态回到“已保存”；控制台 409 单列，最终零 error。
+- **【测试】** 前端 **531 passed**（+1 队列 revision 测试）；后端 **676 passed**（+2 路由/索引重建断言；错误码穷举 16）；契约 11；`type`/`lint` 0/0、视觉自检通过。
+- **【未做】** 冲突时的“另存为”（目前只有重载）；墓碑清理；索引重建的规模性能（当前全目录扫描，单用户量级可接受）。
+- **【状态】** S4-R1 的保存队列/切换/多标签/删除迟到写入/索引恢复已收口；**下一片 S4-R2**（提交归属/刷新恢复/交接消费，接 infOS 的回执/uncertain 设计）。
+
 ### 2026-10-20 · 通用 HTTP 任务服务（CONTRACT V2.47 / D71）
 
 - **【契约】** V2.47 §22：`http-service:<name>`（配置来自 `HTTP_SERVICES_FILE`）、`/status.httpServices`、`executedBy:'remote'`；无新路由/错误码。设计参考 infOS/Pictoria 的 `ServiceProfile`（Apache-2.0，见 `docs/INFOS-REVIEW.md`），按本仓接口重写，不是整段照搬。
@@ -3813,7 +3823,7 @@
 
 **D71 · 2026-10-20 · 通用 HTTP 任务服务（配置层）**：用户要求先加一套**简单 HTTP 任务 API + 通用 service 层**，为 D67 的远程 H3 / 生图服务器预留，能改就改、不需要就删。落点：`HTTP_SERVICES_FILE` + 具名 `http-service:<name>` + submit/poll/cancel/outputs + `tokenEnv`；地址只允许回环/RFC1918，token 不落配置，`/status` 不下发地址/凭据；`executedBy` 新增 `remote`，队列仍走 cloud 并发桶；只做后端/状态/引擎选项，**不做**服务编辑 UI、GPU 进程管理、声音/多产物、提交回执（回执留 S4-R2）；契约 **V2.47**（§22），S4-R1b 顺延 V2.48。设计参考 infOS/Pictoria 的 ServiceProfile（Apache-2.0），见 `docs/INFOS-REVIEW.md`。
 
-**D70 · 2026-10-20 · 画布并发写入用独立修订号 + 409（N7=①）**：`CanvasDoc.version` 继续只表示**格式版本**；新增独立的 `revision` 字段与 `409 DOC_CONFLICT`（契约 **V2.48**，S4-R1b 实施；V2.47 已被通用 HTTP 服务占用）。保存请求携带读取时的 revision，服务端只接受等于当前值的写入；旧修订被拒后界面提示重载/另存，不允许“最后写入者赢”。多标签编辑不再静默覆盖，也不通过删除现有画布制造单实例。R1a 的保存队列/切换前 flush 不依赖此字段；R1b 先改契约再改代码。
+**D70 · 2026-10-20 · 画布并发写入用独立修订号 + 409（N7=①）**：`CanvasDoc.version` 继续只表示**格式版本**；新增独立的 `revision` 字段与 `409 DOC_CONFLICT`（契约 **V2.48**，S4-R1b **已实施**；V2.47 已被通用 HTTP 服务占用）。保存请求携带读取时的 revision，服务端只接受等于当前值的写入；旧修订被拒后界面提示重载/另存，不允许“最后写入者赢”。多标签编辑不再静默覆盖，也不通过删除现有画布制造单实例。R1a 的保存队列/切换前 flush 不依赖此字段；R1b 先改契约再改代码。
 
 **D69 · 2026-10-20 · 统一输入规则（N6=①）**：首页与画布节点统一为 **Enter 换行、Ctrl/Cmd+Enter 提交**；输入法组合期间不提交，`@` 候选打开时 Enter 先选候选。这会替换首页当前“Enter 提交”的行为；在 **S5-B1** 实施，R1a 不改输入行为。理由：中文输入法下 Enter 提交容易误触，且两入口规则必须一致；这是本项目明确的设计选择，不声称与即梦快捷键实测一致。
 

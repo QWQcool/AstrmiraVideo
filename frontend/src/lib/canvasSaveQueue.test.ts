@@ -19,10 +19,12 @@ function deferred<T>() {
 
 const wait = (ms = 20) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-describe('画布保存队列（S4-R1a）', () => {
-  it('去抖后只保存最后一次文档；dirty → saving → saved', async () => {
+describe('画布保存队列（S4-R1a / V2.48）', () => {
+  it('去抖后只保存最后一次文档；dirty → saving → saved；revision 递增', async () => {
     const states: CanvasSaveState[] = [];
-    const save = vi.fn<(doc: CanvasDoc) => Promise<void>>(async () => undefined);
+    const save = vi.fn<(doc: CanvasDoc, revision: number) => Promise<number>>(
+      async (_doc, revision) => revision + 1,
+    );
     const queue = createCanvasSaveQueue({
       save,
       onState: (state) => states.push(state),
@@ -36,17 +38,19 @@ describe('画布保存队列（S4-R1a）', () => {
     await wait();
     expect(save).toHaveBeenCalledTimes(1);
     expect(save.mock.calls[0]![0].name).toBe('third');
+    expect(save.mock.calls[0]![1]).toBe(1);
+    expect(queue.currentRevision()).toBe(2);
     expect(states).toEqual(['dirty', 'dirty', 'dirty', 'saving', 'saved']);
     expect(queue.isDirty()).toBe(false);
   });
 
-  it('保存期间的新修改会再存一次，中间不报 saved', async () => {
-    const first = deferred<void>();
+  it('保存期间的新修改会再存一次，第二次带新 revision，中间不报 saved', async () => {
+    const first = deferred<number>();
     const states: CanvasSaveState[] = [];
     const save = vi
-      .fn<(doc: CanvasDoc) => Promise<void>>()
+      .fn<(doc: CanvasDoc, revision: number) => Promise<number>>()
       .mockImplementationOnce(() => first.promise)
-      .mockResolvedValueOnce(undefined);
+      .mockImplementationOnce(async (_doc, revision) => revision + 1);
     const queue = createCanvasSaveQueue({
       save,
       onState: (state) => states.push(state),
@@ -59,21 +63,23 @@ describe('画布保存队列（S4-R1a）', () => {
 
     queue.schedule(docWithName('b'));
     expect(states.at(-1)).toBe('dirty');
-    first.resolve();
+    first.resolve(2);
     await wait(10);
 
     expect(save).toHaveBeenCalledTimes(2);
     expect(save.mock.calls[1]![0].name).toBe('b');
+    expect(save.mock.calls[1]![1]).toBe(2);
+    expect(queue.currentRevision()).toBe(3);
     expect(states).toEqual(['dirty', 'saving', 'dirty', 'saving', 'saved']);
     expect(queue.isDirty()).toBe(false);
   });
 
-  it('失败保留 dirty；flush 重试成功后才干净', async () => {
+  it('失败保留 dirty 与原 revision；flush 重试成功后才干净', async () => {
     const states: CanvasSaveState[] = [];
     const save = vi
-      .fn<(doc: CanvasDoc) => Promise<void>>()
-      .mockRejectedValueOnce(new Error('500'))
-      .mockResolvedValueOnce(undefined);
+      .fn<(doc: CanvasDoc, revision: number) => Promise<number>>()
+      .mockRejectedValueOnce(new Error('409 DOC_CONFLICT'))
+      .mockImplementationOnce(async (_doc, revision) => revision + 1);
     const queue = createCanvasSaveQueue({
       save,
       onState: (state) => states.push(state),
@@ -84,25 +90,30 @@ describe('画布保存队列（S4-R1a）', () => {
     await wait(5);
     expect(states).toEqual(['dirty', 'saving', 'error']);
     expect(queue.isDirty()).toBe(true);
+    expect(queue.currentRevision()).toBe(1);
 
     const ok = await queue.flush();
     expect(ok).toBe(true);
     expect(save).toHaveBeenCalledTimes(2);
+    expect(save.mock.calls[1]![1]).toBe(1);
+    expect(queue.currentRevision()).toBe(2);
     expect(states.at(-1)).toBe('saved');
     expect(queue.isDirty()).toBe(false);
   });
 
   it('flush 在没有脏数据时直接成功，不发请求', async () => {
-    const save = vi.fn<(doc: CanvasDoc) => Promise<void>>(async () => undefined);
+    const save = vi.fn<(doc: CanvasDoc, revision: number) => Promise<number>>(
+      async (_doc, revision) => revision + 1,
+    );
     const queue = createCanvasSaveQueue({ save, onState: () => undefined, delayMs: 1 });
     expect(await queue.flush()).toBe(true);
     expect(save).not.toHaveBeenCalled();
   });
 
   it('settle 只等完在飞请求，不补存脏数据', async () => {
-    const first = deferred<void>();
+    const first = deferred<number>();
     const save = vi
-      .fn<(doc: CanvasDoc) => Promise<void>>()
+      .fn<(doc: CanvasDoc, revision: number) => Promise<number>>()
       .mockImplementationOnce(() => first.promise);
     const queue = createCanvasSaveQueue({ save, onState: () => undefined, delayMs: 1 });
 
@@ -110,17 +121,17 @@ describe('画布保存队列（S4-R1a）', () => {
     await wait(5);
     queue.schedule(docWithName('b'));
     const settled = queue.settle();
-    first.resolve();
+    first.resolve(2);
     await settled;
     expect(save).toHaveBeenCalledTimes(1);
     expect(queue.isDirty()).toBe(true);
   });
 
   it('cancel 丢掉脏状态，并抑制在飞请求的迟到状态', async () => {
-    const first = deferred<void>();
+    const first = deferred<number>();
     const states: CanvasSaveState[] = [];
     const save = vi
-      .fn<(doc: CanvasDoc) => Promise<void>>()
+      .fn<(doc: CanvasDoc, revision: number) => Promise<number>>()
       .mockImplementationOnce(() => first.promise);
     const queue = createCanvasSaveQueue({
       save,
@@ -132,9 +143,19 @@ describe('画布保存队列（S4-R1a）', () => {
     await wait(5);
     expect(states).toEqual(['dirty', 'saving']);
     queue.cancel();
-    first.resolve();
+    first.resolve(2);
     await wait(10);
     expect(states).toEqual(['dirty', 'saving']);
     expect(queue.isDirty()).toBe(false);
+    expect(queue.currentRevision()).toBe(1);
+  });
+
+  it('setRevision 用于打开/重载文档后同步服务端值', () => {
+    const save = vi.fn<(doc: CanvasDoc, revision: number) => Promise<number>>(
+      async (_doc, revision) => revision + 1,
+    );
+    const queue = createCanvasSaveQueue({ save, onState: () => undefined });
+    queue.setRevision(7);
+    expect(queue.currentRevision()).toBe(7);
   });
 });

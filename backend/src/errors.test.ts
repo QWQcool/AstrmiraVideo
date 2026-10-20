@@ -39,12 +39,14 @@ const CONTRACT_TABLE: Record<ErrorCode, ErrorDisposition> = {
   PROJECT_NOT_FOUND: 'terminal',
   // V2.15（台账 B51）：Webhook 不存在 —— 与项目不存在同类（改 id 或先建订阅）
   WEBHOOK_NOT_FOUND: 'terminal',
+  // V2.48（D70）：画布修订冲突 —— 旧修订重试无意义
+  DOC_CONFLICT: 'terminal',
 };
 
-describe('三态映射表（CONTRACT §6，15 个码全覆盖）', () => {
-  it('契约码数量为 15（V1.8：9 原有 + 3；V2.3 补 `INVALID_REQUEST`；V2.11 补 `PROJECT_NOT_FOUND`；V2.15 补 `WEBHOOK_NOT_FOUND`）', () => {
+describe('三态映射表（CONTRACT §6，16 个码全覆盖）', () => {
+  it('契约码数量为 16（V1.8：9 原有 + 3；V2.3 补 `INVALID_REQUEST`；V2.11 补 `PROJECT_NOT_FOUND`；V2.15 补 `WEBHOOK_NOT_FOUND`；V2.48 补 `DOC_CONFLICT`）', () => {
     // 数量断言是刻意的"闸门"：加码必须同时改这里与 CONTRACT §6（两处都改才算数）
-    expect(listErrorCodes()).toHaveLength(15);
+    expect(listErrorCodes()).toHaveLength(16);
   });
 
   it('每个码的处置与 CONTRACT §6 表逐条一致', () => {

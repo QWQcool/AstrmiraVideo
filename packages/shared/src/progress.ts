@@ -43,6 +43,9 @@ export const ErrorCodeSchema = z.enum([
    * 与 `PROJECT_NOT_FOUND` 同风格 —— **显式 404 而不是静默 200**（客户系统据此知道配置已被删）。
    */
   'WEBHOOK_NOT_FOUND', // 指定的项目不存在（不静默落到默认项目 —— 否则用户会在"默认项目"里看到本不属于它的东西）
+  // V2.48（§21-8）：画布文档的修订号不匹配（另一个标签已写入 / 缺少修订号 / 已删除）。
+  // 与"任务"无关，是编辑器并发保护；重试无意义，必须重载或另存。
+  'DOC_CONFLICT',
 ]);
 
 export const TaskErrorSchema = z.object({

@@ -32,6 +32,8 @@ export const ERROR_DISPOSITION = {
   PROJECT_NOT_FOUND: 'terminal',
   // V2.15（台账 B51）：Webhook 不存在 —— 同上（客户系统据此知道订阅已被删）
   WEBHOOK_NOT_FOUND: 'terminal',
+  // V2.48（§21-8）：画布修订冲突 —— 重试同一条旧修订不会变好，必须重载/另存
+  DOC_CONFLICT: 'terminal',
 } satisfies Record<ErrorCode, ErrorDisposition>;
 
 /** 全部错误码（供契约层穷举断言使用，避免测试里手写第二份清单） */
@@ -151,6 +153,8 @@ function defaultMessageOf(code: ErrorCode): string {
       return '凭据被上游拒绝';
     case 'KEY_MISSING':
       return '缺少凭据：既未随请求提供，服务端也未配置兜底 Key';
+    case 'DOC_CONFLICT':
+      return '画布已在别处更新或已删除：请重载后再编辑';
     default: {
       const exhaustive: never = code;
       return String(exhaustive);
