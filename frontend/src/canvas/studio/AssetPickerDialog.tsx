@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchAssets, fetchHistory } from '../../lib/api';
+import { useDialogFocus } from '../../lib/dialogFocus';
 import { useTranslate } from '../../lib/i18n';
 import {
   filterReferenceSources,
@@ -78,13 +79,8 @@ export function AssetPickerDialog({
     };
   }, [projectId, reloadNonce]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // 选择器只在打开时挂载；hook 负责焦点移入/Tab 循环/Esc/回焦与 modalLayer
+  const dialogRef = useDialogFocus<HTMLDivElement>(true, onClose);
 
   const visible = useMemo(
     () =>
@@ -130,7 +126,7 @@ export function AssetPickerDialog({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="cs-modal-panel">
+      <div className="cs-modal-panel" ref={dialogRef}>
         <header className="cs-modal-head">
           <h3 className="cs-modal-title">
             {t(

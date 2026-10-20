@@ -1025,7 +1025,17 @@ export function CreateView() {
           ) : null}
 
           {mentionOpen ? (
-            <div className="cr-mention" role="listbox" aria-label={t('create.mention.select')}>
+            <div
+              className="cr-mention"
+              role="listbox"
+              aria-label={t('create.mention.select')}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setMentionOpen(false);
+                }
+              }}
+            >
               <input
                 className="wb-input cr-mention-search"
                 placeholder={t('create.mention.search')}
@@ -1073,6 +1083,7 @@ export function CreateView() {
                       index === mentionIndex ? 'cr-mention-item is-active' : 'cr-mention-item'
                     }
                     onMouseEnter={() => setMentionActive(index)}
+                    onFocus={() => setMentionActive(index)}
                     onClick={() => addRef(refFromSource(source))}
                   >
                     {source.kind === 'image' && source.previewUrl !== undefined ? (

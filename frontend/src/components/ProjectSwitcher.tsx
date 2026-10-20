@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError, createProject, deleteProject, renameProject } from '../lib/api';
+import { useDialogFocus } from '../lib/dialogFocus';
 import { useTranslate } from '../lib/i18n';
 import {
   DEFAULT_PROJECT_ID,
@@ -34,12 +35,27 @@ export function ProjectSwitcher() {
   const t = useTranslate();
 
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useDialogFocus<HTMLDivElement>(open, () => setOpen(false));
   const [newName, setNewName] = useState('');
   const [renameTo, setRenameTo] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const active = findActiveProject(projects, projectId);
+
+  // 管理面板打开时，点面板外关闭（点触发按钮由按钮自己 toggle，不能在这里重复处理）
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      if (rootRef.current !== null && event.target instanceof Node && rootRef.current.contains(event.target)) {
+        return;
+      }
+      setOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
 
   function describeError(caught: unknown): string {
     if (caught instanceof ApiError) {
@@ -97,7 +113,7 @@ export function ProjectSwitcher() {
   };
 
   return (
-    <div className="proj-switch">
+    <div className="proj-switch" ref={rootRef}>
       <select
         className="wb-input proj-select"
         value={projectId}
@@ -136,7 +152,13 @@ export function ProjectSwitcher() {
       </button>
 
       {open ? (
-        <div className="proj-pop" role="dialog" aria-label={t('shell.project.manage')}>
+        <div
+          ref={panelRef}
+          className="proj-pop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('shell.project.manage')}
+        >
           <div className="proj-pop-head">
             <span className="wb-note">
               {t('shell.project.current', { name: active?.name ?? t('shell.project.unknown') })}

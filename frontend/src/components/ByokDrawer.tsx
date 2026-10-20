@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useDialogFocus } from '../lib/dialogFocus';
 import {
   LLM_CUSTOM_PRESET_ID,
   LLM_PRESETS,
@@ -67,13 +68,8 @@ export function ByokDrawer({
     }
   }
 
-  useEffect(() => {
-    function handleKey(event: KeyboardEvent): void {
-      if (event.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [onClose]);
+  // 抽屉只在打开时挂载；焦点移入/Tab 循环/Esc/回焦与 modalLayer 由 hook 统一处理
+  const dialogRef = useDialogFocus<HTMLElement>(true, onClose);
 
   const notice = keyInputNotice(pageLocation);
   const keyInputDisabled = notice !== null;
@@ -82,7 +78,13 @@ export function ByokDrawer({
     <>
       <div className="wb-drawer-backdrop" onClick={onClose} role="presentation" />
 
-      <aside className="wb-drawer" role="dialog" aria-modal="true" aria-label={t('byok.aria')}>
+      <aside
+        ref={dialogRef}
+        className="wb-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('byok.aria')}
+      >
         <div className="wb-drawer-head">
           <Eyebrow tone="gold">{t('byok.title')}</Eyebrow>
           <button type="button" className="wb-btn" onClick={onClose}>

@@ -44,18 +44,52 @@ export function CanvasContextMenu({ x, y, items, onClose }: CanvasContextMenuPro
   }, [x, y]);
 
   useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const items = (): HTMLElement[] => [
+      ...(ref.current?.querySelectorAll<HTMLElement>('button[role="menuitem"]:not([disabled])') ?? []),
+    ];
+    const move = (delta: number): void => {
+      const list = items();
+      if (list.length === 0) return;
+      const current = list.indexOf(document.activeElement as HTMLElement);
+      const next = current < 0 ? (delta > 0 ? 0 : list.length - 1) : (current + delta + list.length) % list.length;
+      list[next]?.focus();
+    };
+    const raf = requestAnimationFrame(() => items()[0]?.focus());
+
     const onPointerDown = (event: PointerEvent): void => {
       if (ref.current !== null && event.target instanceof Node && ref.current.contains(event.target)) return;
       onClose();
     };
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape' || event.key === 'Tab') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        move(1);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        move(-1);
+        return;
+      }
+      if (event.key === 'Home' || event.key === 'End') {
+        event.preventDefault();
+        const list = items();
+        (event.key === 'Home' ? list[0] : list[list.length - 1])?.focus();
+      }
     };
     window.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('keydown', onKey);
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('keydown', onKey);
+      if (previous !== null && previous.isConnected) previous.focus();
     };
   }, [onClose]);
 

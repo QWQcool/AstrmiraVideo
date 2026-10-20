@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
 import { useTranslate } from '../lib/i18n';
+import { useDialogFocus } from '../lib/dialogFocus';
 
 /**
  * 结果全屏预览（Step 11-S4）。
@@ -25,20 +25,13 @@ export function MediaLightbox({
   onClose,
 }: MediaLightboxProps) {
   const t = useTranslate();
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  const dialogRef = useDialogFocus<HTMLDivElement>(open, onClose);
 
   if (!open) return null;
 
   return (
     <div
+      ref={dialogRef}
       className="wb-lightbox"
       role="dialog"
       aria-modal="true"

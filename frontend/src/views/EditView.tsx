@@ -7,6 +7,7 @@ import { ApiError, fetchAssets, fetchHistory, resolveMediaUrl } from '../lib/api
 // B61：懒加载失败的兜底要能说清"到底抛了什么"
 import { describeThrown } from '../lib/errorReport';
 import { useTranslate } from '../lib/i18n';
+import { isModalLayerOpen } from '../lib/modalLayer';
 import { navigate, useHashRoute } from '../lib/router';
 import { formatBytes, formatRelativeTime } from '../lib/overviewStats';
 import { DEFAULT_PROJECT_FPS, createProjectFromSource } from '../edit/model';
@@ -204,6 +205,8 @@ export function EditView() {
   useEffect(() => {
     if (store === null) return;
     const onKey = (event: KeyboardEvent): void => {
+      // S5-B4d：预览/抽屉等模态层打开时，剪辑台不响应后台快捷键
+      if (isModalLayerOpen()) return;
       const target = event.target as HTMLElement | null;
       if (
         target !== null &&

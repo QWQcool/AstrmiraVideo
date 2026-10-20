@@ -1683,6 +1683,15 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · S5-B4d：键盘、焦点约束与背景快捷键隔离
+
+- **【模态层】** 新增 `lib/modalLayer.ts`：任何浮层 push/pop 一层计数，并在 `<html>` 打 `data-modal-open`。画布 `CanvasStudioView` 的全局 keydown / paste 与剪辑台 `EditView` 的 keydown 在入口处问 `isModalLayerOpen()`；模态层打开时 Delete/Ctrl+Z/粘贴不再落到背景画布。
+- **【焦点约束】** 新增 `lib/dialogFocus.ts` + `lib/focusTrap.ts`：打开时焦点移入、Tab/Shift+Tab 层内循环、Esc 关闭、关闭后回焦触发元素。应用到 `MediaLightbox`、`AssetPickerDialog`、`ByokDrawer`、`ProjectSwitcher` 管理面板；后两者补 `aria-modal`，项目面板补「点外部关闭」。
+- **【菜单键盘】** `CanvasContextMenu` 打开即聚焦首个可用项，↑↓/Home/End 移动、Esc/Tab 关闭并回焦；版本列表 listbox 同样支持 ↑↓/Home/End/Esc，选中或 Esc 后焦点回到「N 轮」按钮；`@` 候选补容器级 Esc（焦点在候选项上也能关）。
+- **【实机（新 Chromium 1366×768）】** 版本列表：焦点在 v1「当前」→ ↓ 到 v2 → Esc 关闭并回到「2 轮」；右键菜单：焦点在「新建文本」→ ↓ 到「新建图片」→ Esc 关闭；凭据抽屉：`data-modal-open=1`、焦点在「关闭」、按 Delete 后画布仍是 2 个节点、Tab 6 次仍在抽屉内、Esc 后回到「凭据设置」且属性移除；项目面板 Esc 后回到 ⚙；资产选择器 Tab 5 次仍在面板内、Esc 后回「资产库」；视频库全屏预览 Tab 循环、Esc 后回「全屏」按钮。
+- **【测试】** 前端 **578 passed**（+3 modalLayer、+4 nextTabIndex）；`pnpm type` / `pnpm lint` / 视觉自检通过。
+- **【未覆盖】** 多层模态同时打开时“只关最上层”没做（当前入口不会同时开两层）；IME、触控板、跨浏览器仍留给 S5-C/后续登记。
+
 ### 2026-10-20 · S5-B4c：状态双通道 + 节点参数条收口
 
 - **【版本列表】** 当前版本除 `aria-selected` 与底色外，新增可见「当前」徽标；临时画布夹具（2 个成功批次，选中旧版）实测 `v1` 带「当前」、`v2` 不带，刷新后仍按 `selectedBatchId` 恢复。

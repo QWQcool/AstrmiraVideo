@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -148,7 +149,62 @@ export function StudioNode({ id, selected }: NodeProps) {
   /** 引用目录：删除行内 token 后原生撤销时找回 reference（只增不删） */
   const referenceCatalog = useRef<Map<string, CanvasReference>>(new Map());
   const [versionsOpen, setVersionsOpen] = useState(false);
+  const versionToggleRef = useRef<HTMLButtonElement | null>(null);
+  const versionListRef = useRef<HTMLDivElement | null>(null);
   const node = findCanvasNode(studio.doc, id);
+
+  /** 关闭版本列表并把焦点还给「N 轮」按钮（选中/ Esc 共用） */
+  const closeVersions = (): void => {
+    setVersionsOpen(false);
+    requestAnimationFrame(() => versionToggleRef.current?.focus());
+  };
+
+  // S5-B4d：版本列表是 listbox，方向键/Home/End/Esc 必须可用
+  useEffect(() => {
+    if (!versionsOpen) return;
+    const list = versionListRef.current;
+    if (list === null) return;
+    const items = (): HTMLButtonElement[] => [
+      ...list.querySelectorAll<HTMLButtonElement>('button[role="option"]:not([disabled])'),
+    ];
+    const raf = requestAnimationFrame(() => {
+      const active = list.querySelector<HTMLButtonElement>(
+        'button[role="option"][aria-selected="true"]:not([disabled])',
+      );
+      (active ?? items()[0])?.focus();
+    });
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' || event.key === 'Tab') {
+        event.preventDefault();
+        closeVersions();
+        return;
+      }
+      if (event.key === 'Home' || event.key === 'End') {
+        event.preventDefault();
+        const listItems = items();
+        (event.key === 'Home' ? listItems[0] : listItems[listItems.length - 1])?.focus();
+        return;
+      }
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      event.preventDefault();
+      const listItems = items();
+      if (listItems.length === 0) return;
+      const current = listItems.indexOf(document.activeElement as HTMLButtonElement);
+      const delta = event.key === 'ArrowDown' ? 1 : -1;
+      const next =
+        current < 0
+          ? delta > 0
+            ? 0
+            : listItems.length - 1
+          : (current + delta + listItems.length) % listItems.length;
+      listItems[next]?.focus();
+    };
+    list.addEventListener('keydown', onKey);
+    return () => {
+      cancelAnimationFrame(raf);
+      list.removeEventListener('keydown', onKey);
+    };
+  }, [versionsOpen]);
   if (node === null) return null;
 
   const labels: Record<CanvasNodeType, string> = {
@@ -315,6 +371,7 @@ export function StudioNode({ id, selected }: NodeProps) {
           <div className="cs-toolbar-head">
             <span className="cs-toolbar-title">{node.data.title ?? labels[node.type]}</span>
             <button
+              ref={versionToggleRef}
               type="button"
               className="cs-toolbar-count cs-version-toggle"
               aria-expanded={versionsOpen}
@@ -326,7 +383,12 @@ export function StudioNode({ id, selected }: NodeProps) {
           </div>
 
           {versionsOpen ? (
-            <div className="cs-version-list" role="listbox" aria-label={t('canvas.studio.versions')}>
+            <div
+              ref={versionListRef}
+              className="cs-version-list"
+              role="listbox"
+              aria-label={t('canvas.studio.versions')}
+            >
               {[...node.data.batches].reverse().map((batch, index) => {
                 const selectable = batch.status === 'succeeded' && batch.outputs.length > 0;
                 const active = batch.id === visibleBatchId;
@@ -343,7 +405,7 @@ export function StudioNode({ id, selected }: NodeProps) {
                     disabled={!selectable}
                     onClick={() => {
                       studio.onSelectBatch(id, batch.id);
-                      setVersionsOpen(false);
+                      closeVersions();
                     }}
                   >
                     <span>v{node.data.batches.length - index}</span>

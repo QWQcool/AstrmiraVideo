@@ -43,6 +43,7 @@ import {
   submitGenerate,
   uploadAssets,
 } from '../lib/api';
+import { isModalLayerOpen } from '../lib/modalLayer';
 import {
   addCanvasBatch,
   addCanvasNode,
@@ -1011,6 +1012,8 @@ export function CanvasStudioView() {
   useEffect(() => {
     const onPaste = (event: ClipboardEvent): void => {
       if (docRef.current === null || menu !== null || pickerOpen) return;
+      // S5-B4d：预览/凭据抽屉/项目面板等模态层打开时，背景画布不处理粘贴
+      if (isModalLayerOpen()) return;
       if (isTextEditingTarget(event.target)) return;
       const files = Array.from(event.clipboardData?.files ?? []);
       if (files.length > 0) {
@@ -1454,6 +1457,8 @@ export function CanvasStudioView() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (menu !== null || pickerOpen) return;
+      // S5-B4d：任何模态层（预览/凭据/资产选择/项目面板）打开时暂停全局快捷键
+      if (isModalLayerOpen()) return;
       if (isTextEditingTarget(event.target)) return;
 
       const mod = event.ctrlKey || event.metaKey;
