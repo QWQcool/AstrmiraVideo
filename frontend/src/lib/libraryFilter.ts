@@ -1,4 +1,4 @@
-import type { TaskProgress } from '@astrmira/shared';
+import { taskOutput, type TaskProgress } from '@astrmira/shared';
 import type { MessageKey } from './i18n';
 
 /**
@@ -15,11 +15,15 @@ import type { MessageKey } from './i18n';
 
 export type LibrarySort = 'time-desc' | 'time-asc' | 'size-desc';
 export type LibraryStatusFilter = 'all' | 'succeeded' | 'failed' | 'active';
+/** S5-A：媒体类型筛选；音频目前只可能来自上传资产，不在生成历史里造空行 */
+export type LibraryKindFilter = 'all' | 'image' | 'video' | 'audio';
 
 export interface LibraryFilterOptions {
   query: string;
   status: LibraryStatusFilter;
   sort: LibrarySort;
+  /** 缺省 = all（老调用方/测试行为不变） */
+  kind?: LibraryKindFilter;
 }
 
 /**
@@ -45,6 +49,12 @@ export const LIBRARY_STATUS_LABEL_KEYS: Record<LibraryStatusFilter, MessageKey> 
   active: 'library.statusFilter.active',
 };
 
+function matchesKind(task: TaskProgress, kind: LibraryKindFilter): boolean {
+  if (kind === 'all') return true;
+  const output = taskOutput(task);
+  return output.kind === kind;
+}
+
 function matchesStatus(task: TaskProgress, status: LibraryStatusFilter): boolean {
   switch (status) {
     case 'all':
@@ -66,6 +76,7 @@ export function filterLibrary(
   const needle = options.query.trim().toLowerCase();
 
   const filtered = items.filter((task) => {
+    if (!matchesKind(task, options.kind ?? 'all')) return false;
     if (!matchesStatus(task, options.status)) return false;
     if (needle === '') return true;
     return task.requestSnapshot.prompt.toLowerCase().includes(needle);
@@ -95,5 +106,9 @@ export function filterLibrary(
 
 /** 是否有任何筛选条件生效（"空态文案"要说清是筛出来的空还是真的没有） */
 export function hasActiveFilters(options: LibraryFilterOptions): boolean {
-  return options.query.trim() !== '' || options.status !== 'all';
+  return (
+    options.query.trim() !== '' ||
+    options.status !== 'all' ||
+    (options.kind ?? 'all') !== 'all'
+  );
 }

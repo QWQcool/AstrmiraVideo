@@ -72,7 +72,7 @@ import {
 } from '../lib/canvasNodeSubmit';
 import { resolveProviderKey } from '../lib/byok';
 import { createCanvasSaveQueue, type CanvasSaveState } from '../lib/canvasSaveQueue';
-import { navigate } from '../lib/router';
+import { navigate, parseHash } from '../lib/router';
 import {
   clearCanvasResultHandoff,
   peekCanvasResultHandoff,
@@ -430,7 +430,13 @@ export function CanvasStudioView() {
         const loaded = await fetchCanvasIndex();
         if (!alive) return;
         setIndex(loaded);
-        const initial = pickInitialCanvasProject(loaded, readActiveCanvasProjectId());
+        const requested = parseHash(window.location.hash).query.get('project');
+        const requestedProject =
+          requested === null
+            ? null
+            : (loaded.projects.find((project) => project.projectId === requested) ?? null);
+        const initial =
+          requestedProject ?? pickInitialCanvasProject(loaded, readActiveCanvasProjectId());
         if (initial !== null) {
           await openProject(initial);
         } else if (!autoCreateRef.current && peekCanvasResultHandoff() !== null) {
@@ -463,6 +469,24 @@ export function CanvasStudioView() {
       alive = false;
     };
   }, [openProject]);
+
+  /**
+   * S5-A：资产页的画布卡可以带着 `?project=<id>` 进来。
+   * 画布视图是 keepalive 的，初次挂载 effect 不会因为再次导航而重跑，所以单独监听 hash。
+   */
+  useEffect(() => {
+    const consume = (): void => {
+      if (!window.location.hash.startsWith('#/canvas')) return;
+      const target = parseHash(window.location.hash).query.get('project');
+      if (target === null || index === null) return;
+      if (docRef.current?.projectId === target) return;
+      const project = index.projects.find((item) => item.projectId === target);
+      if (project !== undefined) void openProject(project);
+    };
+    window.addEventListener('hashchange', consume);
+    consume();
+    return () => window.removeEventListener('hashchange', consume);
+  }, [index, openProject]);
 
   /**
    * 文档 → React Flow 的同步。

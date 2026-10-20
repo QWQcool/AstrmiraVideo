@@ -4,11 +4,27 @@ import {
   PLATFORM_PRESETS,
   findPlatformPreset,
 } from '@astrmira/shared';
-import { taskOutput, type HistoryResponse, type TaskProgress } from '@astrmira/shared';
+import {
+  taskOutput,
+  type AssetListEntry,
+  type CanvasDoc,
+  type CanvasOutput,
+  type CanvasProjectIndex,
+  type HistoryResponse,
+  type TaskProgress,
+} from '@astrmira/shared';
 import { Eyebrow } from '../components/Eyebrow';
 import { MediaLightbox } from '../components/MediaLightbox';
 import { EDIT_OPERATION_KEYS, describeEditOrigin } from '../edit/model';
-import { ApiError, deleteHistory, fetchHistory, resolveMediaUrl } from '../lib/api';
+import {
+  ApiError,
+  deleteHistory,
+  fetchAssets,
+  fetchCanvasDoc,
+  fetchCanvasIndex,
+  fetchHistory,
+  resolveMediaUrl,
+} from '../lib/api';
 import { setCanvasResultHandoff } from '../lib/canvasHandoff';
 import {
   buildDeliverableZip,
@@ -23,9 +39,11 @@ import {
   LIBRARY_STATUS_LABEL_KEYS,
   filterLibrary,
   hasActiveFilters,
+  type LibraryKindFilter,
   type LibrarySort,
   type LibraryStatusFilter,
 } from '../lib/libraryFilter';
+import { writeActiveCanvasProjectId } from '../lib/canvasProjects';
 import { staggerStyle } from '../lib/motion';
 import { navigate, useHashRoute } from '../lib/router';
 import { formatBytes, formatRelativeTime } from '../lib/overviewStats';
@@ -68,6 +86,22 @@ function mediaHref(url: string | undefined): string | undefined {
   return resolved ?? undefined;
 }
 
+type LibraryTab = 'history' | 'canvas';
+
+const LIBRARY_KIND_FILTERS: readonly LibraryKindFilter[] = ['all', 'image', 'video', 'audio'];
+const LIBRARY_KIND_LABEL_KEYS = {
+  all: 'library.kind.all',
+  image: 'common.kind.image',
+  video: 'common.kind.video',
+  audio: 'common.kind.audio',
+} as const;
+
+interface CanvasProduct {
+  key: string;
+  output: CanvasOutput;
+  nodeTitle: string;
+}
+
 export function LibraryView() {
   const route = useHashRoute();
   const t = useTranslate();
@@ -91,11 +125,24 @@ export function LibraryView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [tab, setTab] = useState<LibraryTab>('history');
   const [query, setQuery] = useState('');
+  const [kind, setKind] = useState<LibraryKindFilter>('all');
   const [status, setStatus] = useState<LibraryStatusFilter>('all');
   const [sort, setSort] = useState<LibrarySort>('time-desc');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // S5-A：画布作为一等资产（独立于生成历史）
+  const [canvasIndex, setCanvasIndex] = useState<CanvasProjectIndex | null>(null);
+  const [canvasTasks, setCanvasTasks] = useState<TaskProgress[]>([]);
+  const [canvasAssets, setCanvasAssets] = useState<AssetListEntry[]>([]);
+  const [canvasLoading, setCanvasLoading] = useState(false);
+  const [canvasError, setCanvasError] = useState<string | null>(null);
+  const [selectedCanvasId, setSelectedCanvasId] = useState<string | null>(null);
+  const [canvasDoc, setCanvasDoc] = useState<CanvasDoc | null>(null);
+  const [canvasDocLoading, setCanvasDocLoading] = useState(false);
+  const [canvasDocError, setCanvasDocError] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<{
     kind: 'image' | 'video';
     url: string;
@@ -120,15 +167,41 @@ export function LibraryView() {
     void reload();
   }, [reload]);
 
+  /** S5-A：画布索引 + 画布产物 + 封面资源，三者同一项目上下文 */
+  const reloadCanvas = useCallback(async (): Promise<void> => {
+    setCanvasLoading(true);
+    try {
+      const [index, generated, assets] = await Promise.all([
+        fetchCanvasIndex(),
+        fetchHistory({ project: projectId, origin: 'canvas', limit: 200 }),
+        fetchAssets(projectId),
+      ]);
+      setCanvasIndex(index);
+      setCanvasTasks(generated.items);
+      setCanvasAssets(assets.assets);
+      setCanvasError(null);
+    } catch (caught) {
+      // 保留旧索引：搜索/刷新失败不能把已经看到的画布清空
+      setCanvasError(describeError(caught));
+    } finally {
+      setCanvasLoading(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (tab === 'canvas') void reloadCanvas();
+  }, [tab, reloadCanvas]);
+
   // 从别处带过来的意图：总览的「去清理 →」= ?sort=size；总览九宫格 = ?task=<id>
   useEffect(() => {
     if (route.path !== '#/library') return;
     if (route.query.get('sort') === 'size') setSort('size-desc');
+    if (route.query.get('tab') === 'canvas') setTab('canvas');
     const task = route.query.get('task');
     if (task !== null) setSelectedId(task);
   }, [route]);
 
-  const options = useMemo(() => ({ query, status, sort }), [query, status, sort]);
+  const options = useMemo(() => ({ query, status, sort, kind }), [query, status, sort, kind]);
   const allItems = history?.items ?? [];
   const items = useMemo(() => filterLibrary(allItems, options), [allItems, options]);
   const filtered = hasActiveFilters(options);
@@ -137,6 +210,73 @@ export function LibraryView() {
   const selected = allItems.find((item) => item.taskId === selectedId) ?? null;
   // 产物可能是视频或图片（V2.40）；`none` = 失败/取消，没有可播放/可下载的东西
   const selectedOutput = selected === null ? null : taskOutput(selected);
+
+  // ── S5-A：画布 tab ──
+  const canvasCoverMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const task of canvasTasks) {
+      const output = taskOutput(task);
+      const thumb =
+        task.thumbnailUrl ?? (output.kind === 'image' || output.kind === 'video' ? output.url : undefined);
+      if (thumb !== undefined) map.set(`task:${task.taskId}`, thumb);
+    }
+    for (const asset of canvasAssets) map.set(asset.assetId, asset.url);
+    return map;
+  }, [canvasTasks, canvasAssets]);
+
+  const canvasProjects = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const source = canvasIndex?.projects ?? [];
+    return source
+      .filter((project) => needle === '' || project.name.toLowerCase().includes(needle))
+      .slice()
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [canvasIndex, query]);
+
+  const selectedCanvas =
+    canvasIndex?.projects.find((project) => project.projectId === selectedCanvasId) ?? null;
+
+  useEffect(() => {
+    if (selectedCanvasId === null) {
+      setCanvasDoc(null);
+      setCanvasDocError(null);
+      return;
+    }
+    let alive = true;
+    setCanvasDocLoading(true);
+    setCanvasDocError(null);
+    void fetchCanvasDoc(selectedCanvasId)
+      .then((doc) => {
+        if (alive) setCanvasDoc(doc);
+      })
+      .catch((caught: unknown) => {
+        if (alive) setCanvasDocError(describeError(caught));
+      })
+      .finally(() => {
+        if (alive) setCanvasDocLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [selectedCanvasId]);
+
+  const canvasProducts = useMemo<CanvasProduct[]>(() => {
+    if (canvasDoc === null) return [];
+    return canvasDoc.nodes.flatMap((node) =>
+      node.data.batches.flatMap((batch) =>
+        batch.outputs.map((output) => ({
+          key: `${node.id}:${batch.id}:${output.assetId}`,
+          output,
+          nodeTitle: node.data.title ?? node.type,
+        })),
+      ),
+    );
+  }, [canvasDoc]);
+
+  const openCanvas = (projectId: string): void => {
+    writeActiveCanvasProjectId(projectId);
+    navigate(`#/canvas?project=${encodeURIComponent(projectId)}`);
+  };
 
   // ── 交付包（V2.13 / B49）──
   // 勾选的是"当前列表里选中的那些"（筛掉已删除 / 已不在列表的 id —— 陈旧勾选不该让打包失败）
@@ -237,6 +377,13 @@ export function LibraryView() {
     }
   }
 
+  const activeLoading = tab === 'history' ? loading : canvasLoading;
+  const activeError = tab === 'history' ? error : canvasError;
+  const retryActive = (): void => {
+    if (tab === 'history') void reload();
+    else void reloadCanvas();
+  };
+
   return (
     <section className="wb-page">
       <div className="wb-page-head wb-page-head-row">
@@ -244,15 +391,44 @@ export function LibraryView() {
           <h1 className="wb-page-title">{t('library.title')}</h1>
           <Eyebrow tone="gold">Library</Eyebrow>
         </div>
-        <button type="button" className="wb-btn" onClick={() => void reload()} disabled={loading}>
-          {t(loading ? 'library.refresh.loading' : 'library.refresh.label')}
+        <button
+          type="button"
+          className="wb-btn"
+          onClick={retryActive}
+          disabled={activeLoading}
+        >
+          {t(activeLoading ? 'library.refresh.loading' : 'library.refresh.label')}
         </button>
       </div>
 
-      {error === null ? null : (
+      <div className="lib-tabs" role="tablist" aria-label={t('library.tabs.aria')}>
+        <button
+          type="button"
+          className="lib-tab"
+          role="tab"
+          aria-selected={tab === 'history'}
+          onClick={() => setTab('history')}
+        >
+          {t('library.tabs.history')}
+        </button>
+        <button
+          type="button"
+          className="lib-tab"
+          role="tab"
+          aria-selected={tab === 'canvas'}
+          onClick={() => setTab('canvas')}
+        >
+          {t('library.tabs.canvas')}
+        </button>
+      </div>
+
+      {activeError === null ? null : (
         <div className="wb-uncertain" style={{ marginBottom: 14 }}>
           <span className="wb-uncertain-title">{t('library.load.error')}</span>
-          <span className="wb-uncertain-body">{error}</span>
+          <span className="wb-uncertain-body">{activeError}</span>
+          <button type="button" className="wb-btn" onClick={retryActive} disabled={activeLoading}>
+            {t('library.load.retry')}
+          </button>
         </div>
       )}
       {notice === null ? null : (
@@ -268,68 +444,90 @@ export function LibraryView() {
             className="wb-input"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={t('library.search.placeholder')}
+            placeholder={t(tab === 'history' ? 'library.search.placeholder' : 'library.canvas.search')}
             aria-label={t('library.search.aria')}
           />
         </label>
 
-        <div className="chips" role="group" aria-label={t('library.statusFilter.aria')}>
-          {(Object.keys(LIBRARY_STATUS_LABEL_KEYS) as LibraryStatusFilter[]).map((key) => (
-            <button
-              key={key}
-              type="button"
-              className="lib-chip"
-              aria-pressed={status === key}
-              onClick={() => setStatus(key)}
-            >
-              {t(LIBRARY_STATUS_LABEL_KEYS[key])}
-            </button>
-          ))}
-        </div>
+        {tab === 'history' ? (
+          <>
+            <div className="chips" role="group" aria-label={t('library.statusFilter.aria')}>
+              {(Object.keys(LIBRARY_STATUS_LABEL_KEYS) as LibraryStatusFilter[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  className="lib-chip"
+                  aria-pressed={status === key}
+                  onClick={() => setStatus(key)}
+                >
+                  {t(LIBRARY_STATUS_LABEL_KEYS[key])}
+                </button>
+              ))}
+            </div>
 
-        <label className="wb-field lib-sort">
-          <span className="wb-label">{t('library.sort.label')}</span>
-          <select
-            className="wb-input"
-            value={sort}
-            onChange={(event) => setSort(event.target.value as LibrarySort)}
-            aria-label={t('library.sort.aria')}
-          >
-            {(Object.keys(LIBRARY_SORT_LABEL_KEYS) as LibrarySort[]).map((key) => (
-              <option key={key} value={key}>
-                {t(LIBRARY_SORT_LABEL_KEYS[key])}
-              </option>
-            ))}
-          </select>
-        </label>
+            <div className="chips" role="group" aria-label={t('library.kindFilter.aria')}>
+              {LIBRARY_KIND_FILTERS.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  className="lib-chip"
+                  aria-pressed={kind === key}
+                  onClick={() => setKind(key)}
+                >
+                  {t(LIBRARY_KIND_LABEL_KEYS[key])}
+                </button>
+              ))}
+            </div>
+
+            <label className="wb-field lib-sort">
+              <span className="wb-label">{t('library.sort.label')}</span>
+              <select
+                className="wb-input"
+                value={sort}
+                onChange={(event) => setSort(event.target.value as LibrarySort)}
+                aria-label={t('library.sort.aria')}
+              >
+                {(Object.keys(LIBRARY_SORT_LABEL_KEYS) as LibrarySort[]).map((key) => (
+                  <option key={key} value={key}>
+                    {t(LIBRARY_SORT_LABEL_KEYS[key])}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        ) : null}
 
         <span className="wb-note" style={{ marginLeft: 'auto' }}>
-          {t('library.count', { shown: items.length, total: allItems.length })}
-          {history === null
-            ? ''
-            : t('library.totalSize', { size: formatBytes(history.storage.totalBytes) })}
+          {tab === 'history'
+            ? t('library.count', { shown: items.length, total: allItems.length })
+            : t('library.canvas.count', { count: canvasProjects.length })}
+          {tab === 'history' && history !== null
+            ? t('library.totalSize', { size: formatBytes(history.storage.totalBytes) })
+            : ''}
         </span>
 
-        {/* 交付包入口（V2.13 / B49）：勾选 ≥1 条才可用 —— 灰按钮上写明为什么要先勾选 */}
-        <button
-          type="button"
-          className="wb-btn wb-btn-gold dl-open"
-          disabled={pickedTasks.length === 0}
-          title={t(
-            pickedTasks.length === 0 ? 'library.deliver.hintPick' : 'library.deliver.hintReady',
-          )}
-          onClick={() => {
-            setDeliverError(null);
-            setDeliverOpen(true);
-          }}
-        >
-          {pickedTasks.length === 0
-            ? t('library.deliver.button')
-            : t('library.deliver.buttonWithCount', { count: pickedTasks.length })}
-        </button>
+        {tab === 'history' ? (
+          /* 交付包入口（V2.13 / B49）：勾选 ≥1 条才可用 —— 灰按钮上写明为什么要先勾选 */
+          <button
+            type="button"
+            className="wb-btn wb-btn-gold dl-open"
+            disabled={pickedTasks.length === 0}
+            title={t(
+              pickedTasks.length === 0 ? 'library.deliver.hintPick' : 'library.deliver.hintReady',
+            )}
+            onClick={() => {
+              setDeliverError(null);
+              setDeliverOpen(true);
+            }}
+          >
+            {pickedTasks.length === 0
+              ? t('library.deliver.button')
+              : t('library.deliver.buttonWithCount', { count: pickedTasks.length })}
+          </button>
+        ) : null}
       </div>
 
-      {deliverOpen && pickedTasks.length > 0 ? (
+      {tab === 'history' && deliverOpen && pickedTasks.length > 0 ? (
         <section className="wb-panel dl-panel" role="dialog" aria-label={t('library.deliver.title')}>
           <div className="wb-field-head">
             <Eyebrow tone="gold" as="h2">
@@ -488,7 +686,8 @@ export function LibraryView() {
         </section>
       ) : null}
 
-      <div className="lib-body" data-drawer={selected === null ? '0' : '1'}>
+      {tab === 'history' ? (
+        <div className="lib-body" data-drawer={selected === null ? '0' : '1'}>
         <div className="lib-grid">
           {history === null && loading ? (
             // B6 动效项⑦：数据到达前先占住位置（骨架屏），避免"空 → 有"的布局跳动
@@ -808,6 +1007,159 @@ export function LibraryView() {
           </aside>
         )}
       </div>
+      ) : (
+        <div className="lib-body" data-drawer={selectedCanvas === null ? '0' : '1'}>
+          <div className="lib-grid">
+            {canvasIndex === null && canvasLoading ? (
+              Array.from({ length: 6 }, (_, index) => <div key={index} className="wb-skeleton" />)
+            ) : canvasProjects.length === 0 ? (
+              <p className="wb-note lib-empty">
+                {t(query.trim() === '' ? 'library.canvas.empty' : 'library.canvas.emptyFiltered')}
+              </p>
+            ) : (
+              canvasProjects.map((project, index) => {
+                const cover =
+                  project.coverAssetId === undefined
+                    ? undefined
+                    : canvasCoverMap.get(project.coverAssetId);
+                return (
+                  <article
+                    className="lib-card lib-canvas-card"
+                    key={project.projectId}
+                    data-canvas={project.projectId}
+                    style={staggerStyle(Math.min(index, 11))}
+                  >
+                    <button
+                      type="button"
+                      className="lib-thumb"
+                      onClick={() => setSelectedCanvasId(project.projectId)}
+                      aria-label={t('library.canvas.openAria', { name: project.name })}
+                    >
+                      {cover === undefined ? (
+                        <span className="lib-thumb-empty">{t('library.canvas.noCover')}</span>
+                      ) : (
+                        <img src={mediaHref(cover)} alt="" loading="lazy" />
+                      )}
+                      <span className="lib-canvas-badge">{t('library.canvas.badge')}</span>
+                    </button>
+                    <div className="lib-bar">
+                      <span className="lib-idx">{String(index + 1).padStart(3, '0')}</span>
+                      <span className="lib-canvas-name" title={project.name}>
+                        {project.name}
+                      </span>
+                      <span className="lib-meta">
+                        {formatRelativeTime(project.updatedAt, Date.now())} ·{' '}
+                        {t('library.canvas.nodes', { count: project.nodeCount })}
+                      </span>
+                      <span className="lib-acts">
+                        <button
+                          type="button"
+                          className="wb-btn lib-icon"
+                          title={t('library.canvas.open')}
+                          onClick={() => openCanvas(project.projectId)}
+                        >
+                          ↗
+                        </button>
+                      </span>
+                    </div>
+                  </article>
+                );
+              })
+            )}
+          </div>
+
+          {selectedCanvas === null ? null : (
+            <aside className="lib-drawer">
+              <div className="lib-drawer-head">
+                <Eyebrow tone="gold">{t('library.canvas.detail')}</Eyebrow>
+                <span className="wb-note">{selectedCanvas.name}</span>
+                <button
+                  type="button"
+                  className="wb-btn lib-icon"
+                  aria-label={t('library.drawer.closeAria')}
+                  onClick={() => setSelectedCanvasId(null)}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="lib-drawer-body">
+                <dl className="lib-kv">
+                  <dt>{t('library.canvas.updatedAt')}</dt>
+                  <dd>{new Date(selectedCanvas.updatedAt).toLocaleString()}</dd>
+                  <dt>{t('library.canvas.nodeCount')}</dt>
+                  <dd>{selectedCanvas.nodeCount}</dd>
+                  <dt>{t('library.canvas.products')}</dt>
+                  <dd>{canvasProducts.length}</dd>
+                </dl>
+
+                <div className="lib-drawer-acts">
+                  <button
+                    type="button"
+                    className="wb-btn wb-btn-gold"
+                    onClick={() => openCanvas(selectedCanvas.projectId)}
+                  >
+                    {t('library.canvas.open')}
+                  </button>
+                </div>
+
+                {canvasDocLoading ? (
+                  <p className="wb-note">{t('library.canvas.loading')}</p>
+                ) : null}
+                {canvasDocError === null ? null : (
+                  <p className="wb-note lib-canvas-error">{canvasDocError}</p>
+                )}
+                {!canvasDocLoading && canvasDocError === null && canvasProducts.length === 0 ? (
+                  <p className="wb-note">{t('library.canvas.noProducts')}</p>
+                ) : null}
+
+                <div className="lib-canvas-products">
+                  {canvasProducts.map((product) => {
+                    const output = product.output;
+                    const url = output.url === undefined ? undefined : mediaHref(output.url);
+                    const playable =
+                      (output.kind === 'image' || output.kind === 'video') && url !== undefined;
+                    return (
+                      <button
+                        key={product.key}
+                        type="button"
+                        className="lib-canvas-product"
+                        disabled={!playable}
+                        onClick={() => {
+                          if (!playable || url === undefined) return;
+                          setLightbox({
+                            kind: output.kind === 'image' ? 'image' : 'video',
+                            url,
+                            title: `${product.nodeTitle} · ${output.kind}`,
+                          });
+                        }}
+                      >
+                        <span className="lib-canvas-product-thumb">
+                          {output.kind === 'image' && url !== undefined ? (
+                            <img src={url} alt="" loading="lazy" />
+                          ) : (
+                            <span>
+                              {output.kind === 'video'
+                                ? '▶'
+                                : output.kind === 'audio'
+                                  ? '♪'
+                                  : 'T'}
+                            </span>
+                          )}
+                        </span>
+                        <span className="lib-canvas-product-meta">
+                          <span>{product.nodeTitle}</span>
+                          <span className="wb-note">{output.kind}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </aside>
+          )}
+        </div>
+      )}
 
       {lightbox === null ? null : (
         <MediaLightbox

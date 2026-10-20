@@ -115,6 +115,32 @@ describe('filterLibrary · 排序', () => {
   });
 });
 
+describe('filterLibrary · 媒体类型筛选（S5-A）', () => {
+  const items = [
+    task({ taskId: 'img', outputImageUrl: '/media/img.png' }),
+    task({ taskId: 'vid', outputVideoUrl: '/media/vid.mp4' }),
+    task({ taskId: 'none' }),
+  ];
+
+  it('全部 / 图片 / 视频各自只留对应产物', () => {
+    expect(filterLibrary(items, { ...OPTIONS, kind: 'all' }).map((t) => t.taskId)).toEqual([
+      'img',
+      'vid',
+      'none',
+    ]);
+    expect(filterLibrary(items, { ...OPTIONS, kind: 'image' }).map((t) => t.taskId)).toEqual([
+      'img',
+    ]);
+    expect(filterLibrary(items, { ...OPTIONS, kind: 'video' }).map((t) => t.taskId)).toEqual([
+      'vid',
+    ]);
+  });
+
+  it('音频筛选不会把没有音频通道的任务伪装成音频', () => {
+    expect(filterLibrary(items, { ...OPTIONS, kind: 'audio' })).toEqual([]);
+  });
+});
+
 describe('hasActiveFilters · 空态文案要靠它区分"筛出来的空"与"真的没有"', () => {
   it('无筛选 → false；有任何一项 → true', () => {
     expect(hasActiveFilters(OPTIONS)).toBe(false);

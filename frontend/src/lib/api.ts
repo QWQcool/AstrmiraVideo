@@ -358,6 +358,11 @@ export function fetchHistory(filter?: {
   kind?: 'edit';
   source?: string;
   project?: string;
+  /**
+   * S5-A：来源过滤。服务端默认排除画布产物；画布资产页显式传 `canvas`。
+   * 不传 = 现有“首页生成历史”行为。
+   */
+  origin?: 'create' | 'canvas';
   /** V2.25（台账 B44）：1~200；省略 = 服务端默认 50（与 V2.25 之前一致） */
   limit?: number;
   /** V2.25：游标 —— 只返回 `created_at < before` 的任务（"加载更早"） */
@@ -371,6 +376,7 @@ export function fetchHistory(filter?: {
   if (filter?.kind === 'edit') params.set('kind', 'edit');
   if (filter?.source !== undefined) params.set('source', filter.source);
   if (filter?.project !== undefined) params.set('project', filter.project);
+  if (filter?.origin !== undefined) params.set('origin', filter.origin);
   if (filter?.limit !== undefined) params.set('limit', String(filter.limit));
   if (filter?.before !== undefined) params.set('before', String(filter.before));
   const suffix = params.size === 0 ? '' : `?${params.toString()}`;
