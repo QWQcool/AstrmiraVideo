@@ -1683,6 +1683,12 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · B4-0b：UI 冒烟导航断言对齐退场路由
+
+- **【暴露】** B4-0 修掉覆盖率后，CI 才走到 UI 冒烟，暴露出一个更早的过期断言：脚本仍要求侧栏 **8 个**一级入口，并在 `#/costs` / `#/workbench` 上等待 `aria-current`。D62 之后侧栏只剩 6 个（创作/总览/视频库/画布/配方库/日志），两个退场路由不再进侧栏，因此 `waitForFunction` 5s 超时。
+- **【修复】** 冒烟改为：6 个一级入口逐个切换并核对 `aria-current`；`#/costs` / `#/workbench` / `#/lineage` 单独断言“路由仍可直达”，不再要求出现在侧栏。断言语义与 D62「下线入口但保留路由一版」一致。
+- **【未改】** 生产代码零改动；工作台/成本页本身仍可打开，后续 B4e 再加退场说明。
+
 ### 2026-10-20 · S5-B4a：补齐缺失 token + 键盘焦点基线
 
 - **【补 token】** `tokens.css` 补齐 5 个**已被引用但从未定义**的变量：`--text-dim` / `--text-faint`（此前 `create.css`、`canvas.css` 共 30+ 处 `color: var(--text-dim)` 整条声明失效，参数行退回正文色）、`--focus`（`create.css` 两处 `outline: 2px solid var(--focus)` 失效）、`--panel-sunken` / `--panel-raised`（分段控件与抬高面板的兜底）。前两个用别名跟随 `--muted` / `--faint`，两套主题自动生效。

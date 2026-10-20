@@ -382,13 +382,15 @@ try {
   assert(await page.locator('.sidebar').isVisible(), '侧栏渲染出来了');
   const bootRail = await page.locator('.sidebar').getAttribute('data-rail');
   assert(bootRail === '1', `工作台默认收起侧栏（data-rail=${bootRail}，期望 1）`);
+  // D62（2026-10-19）：工作台 / 成本台账从侧栏移除；侧栏只剩六个一级入口。
+  const NAV_HASHES = ['#/create', '#/overview', '#/library', '#/canvas', '#/recipes', '#/logs'];
   assert(
-    (await page.locator('.sidebar .nav-item').count()) === 8,
-    `侧栏有八个一级视图入口（创作/工作台/总览/视频库/画布/成本台账/配方库/日志；剪辑台不进侧栏；实际 ${await page.locator('.sidebar .nav-item').count()}）`,
+    (await page.locator('.sidebar .nav-item').count()) === NAV_HASHES.length,
+    `侧栏有六个一级视图入口（创作/总览/视频库/画布/配方库/日志；工作台与成本台账已退场；实际 ${await page.locator('.sidebar .nav-item').count()}）`,
   );
 
-  // 八个一级视图可切换，且侧栏 aria-current 跟随（剪辑台是 hidden 视图，单独验）
-  for (const hash of ['#/create', '#/overview', '#/library', '#/canvas', '#/costs', '#/recipes', '#/logs', '#/workbench']) {
+  // 六个一级视图可切换，且侧栏 aria-current 跟随（剪辑台是 hidden 视图，单独验）
+  for (const hash of NAV_HASHES) {
     await page.evaluate((h) => { location.hash = h; }, hash);
     await page.waitForFunction(
       (h) => document.querySelector('.nav-item[aria-current="page"]')?.getAttribute('href') === h,
@@ -396,7 +398,14 @@ try {
       { timeout: 5_000 },
     );
   }
-  assert(true, '八个一级视图可切换，侧栏 aria-current 跟随');
+  assert(true, '六个一级视图可切换，侧栏 aria-current 跟随');
+
+  // 退场路由仍可直达（D62：保留一版），但不再要求出现在侧栏 / aria-current
+  for (const hash of ['#/costs', '#/workbench', '#/lineage']) {
+    await page.evaluate((h) => { location.hash = h; }, hash);
+    await page.waitForFunction((h) => location.hash === h, hash, { timeout: 5_000 });
+  }
+  assert(true, '退场路由仍可直达（#/costs / #/workbench / #/lineage）');
 
   // 前进后退可用（hash 变化产生历史条目）
   await page.evaluate(() => { location.hash = '#/overview'; });
