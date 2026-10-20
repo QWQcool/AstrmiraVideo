@@ -7,10 +7,12 @@ import {
   isCanvasNameValid,
   normalizeCanvasName,
   pickInitialCanvasProject,
+  readActiveCanvasProjectId,
   removeCanvasProject,
   renameCanvasProject,
   setActiveCanvasProject,
   upsertCanvasProject,
+  writeActiveCanvasProjectId,
 } from './canvasProjects';
 
 function ref(projectId: string, name: string, updatedAt = 0): CanvasProjectRef {
@@ -92,5 +94,45 @@ describe('画布项目 · 索引操作', () => {
       nodeCount: 7,
       coverAssetId: 'cover',
     });
+  });
+});
+
+describe('画布项目 · 刷新恢复上次选择（S4-R1a）', () => {
+  it('preferredId 优先于 active/最近修改；失效则回退', () => {
+    const projects = [ref('a', 'A', 1), ref('b', 'B', 2)];
+    expect(pickInitialCanvasProject(index(projects, 'a'), 'b')?.projectId).toBe('b');
+    expect(pickInitialCanvasProject(index(projects, 'a'), 'gone')?.projectId).toBe('a');
+    expect(pickInitialCanvasProject(index(projects, 'a'), null)?.projectId).toBe('a');
+  });
+
+  it('激活项目本地记忆：写入/读取/清除；坏存储退化不抛', () => {
+    const map = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => map.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        map.set(key, value);
+      },
+      removeItem: (key: string) => {
+        map.delete(key);
+      },
+    };
+    writeActiveCanvasProjectId('b', storage);
+    expect(readActiveCanvasProjectId(storage)).toBe('b');
+    writeActiveCanvasProjectId(null, storage);
+    expect(readActiveCanvasProjectId(storage)).toBeNull();
+
+    const broken = {
+      getItem: () => {
+        throw new Error('blocked');
+      },
+      setItem: () => {
+        throw new Error('blocked');
+      },
+      removeItem: () => {
+        throw new Error('blocked');
+      },
+    };
+    expect(readActiveCanvasProjectId(broken)).toBeNull();
+    expect(() => writeActiveCanvasProjectId('a', broken)).not.toThrow();
   });
 });

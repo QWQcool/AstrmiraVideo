@@ -71,6 +71,8 @@ import {
   canvasSubmitIssueText,
 } from '../lib/canvasNodeSubmit';
 import { resolveProviderKey } from '../lib/byok';
+import { createCanvasSaveQueue, type CanvasSaveState } from '../lib/canvasSaveQueue';
+import { navigate } from '../lib/router';
 import {
   peekCanvasResultHandoff,
   resultHandoffAsset,
@@ -89,9 +91,11 @@ import {
   defaultCanvasName,
   newCanvasProjectId,
   pickInitialCanvasProject,
+  readActiveCanvasProjectId,
   removeCanvasProject,
   setActiveCanvasProject,
   upsertCanvasProject,
+  writeActiveCanvasProjectId,
 } from '../lib/canvasProjects';
 import { AssetPickerDialog } from '../canvas/studio/AssetPickerDialog';
 import { CanvasContextMenu, type CanvasMenuItem } from '../canvas/studio/CanvasContextMenu';
@@ -174,7 +178,7 @@ export function CanvasStudioView() {
   const [index, setIndex] = useState<CanvasProjectIndex | null>(null);
   const [doc, setDoc] = useState<CanvasDoc | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<StudioRfNode>([]);
-  const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [saveState, setSaveState] = useState<CanvasSaveState>('saved');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -193,8 +197,15 @@ export function CanvasStudioView() {
   const [clipboardCount, setClipboardCount] = useState(0);
   const [historyRev, setHistoryRev] = useState(0);
 
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const docRef = useRef<CanvasDoc | null>(null);
+  const saveQueueRef = useRef<ReturnType<typeof createCanvasSaveQueue> | null>(null);
+  /** 打开/新建画布时跳过它自己触发的那次保存（文档刚加载，没有修改） */
+  const skipSaveRef = useRef(false);
+  /** 切换/新建/删除的互斥：flush 期间用户再点一次不并发执行 */
+  const switchingRef = useRef(false);
+  const mountedRef = useRef(true);
+  /** 离开画布前的拦截目标（保存成功后放行） */
+  const leaveTargetRef = useRef<string | null>(null);
   const historyRef = useRef(createCanvasHistory());
   const clipboardRef = useRef<readonly CanvasDocNode[]>([]);
   const submittingRef = useRef<Set<string>>(new Set());
@@ -203,6 +214,28 @@ export function CanvasStudioView() {
   const rfRef = useRef<ReactFlowInstance<StudioRfNode, Edge> | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+
+  /**
+   * 保存队列（S4-R1a）：串行化 PUT、去抖、切换前 flush、失败可重试。
+   * 放在 render 里惰性创建一次；回调只依赖稳定的 setter 与 ref，不会读到旧闭包。
+   */
+  if (saveQueueRef.current === null) {
+    saveQueueRef.current = createCanvasSaveQueue({
+      save: async (doc) => {
+        const saved = await saveCanvasDoc(doc);
+        setIndex((prev) => (prev === null ? prev : upsertCanvasProject(prev, saved.summary)));
+      },
+      onState: (state, projectId) => {
+        if (!mountedRef.current) return;
+        if (docRef.current?.projectId !== projectId) return;
+        if (state === 'saving') setError(null);
+        setSaveState(state);
+      },
+      onError: (caught) => {
+        if (mountedRef.current) setError(describeError(caught));
+      },
+    });
+  }
 
   const labels = useMemo(
     () => ({
@@ -244,6 +277,17 @@ export function CanvasStudioView() {
 
   const openProject = useCallback(
     async (project: { projectId: string; name: string }): Promise<void> => {
+      if (switchingRef.current) return;
+      const current = docRef.current;
+      if (current !== null && current.projectId !== project.projectId) {
+        // 切换前先把当前文档落盘；失败就**留在原画布**，不丢草稿
+        const ok = (await saveQueueRef.current?.flush()) ?? true;
+        if (!ok) {
+          setError(t('canvas.studio.saveBlocked'));
+          return;
+        }
+      }
+      switchingRef.current = true;
       setBusy(true);
       setError(null);
       setNotice(null);
@@ -261,6 +305,7 @@ export function CanvasStudioView() {
             throw caught;
           }
         }
+        skipSaveRef.current = true;
         docRef.current = next;
         setDoc(next);
         setNodes([]);
@@ -270,6 +315,7 @@ export function CanvasStudioView() {
         setHistoryRev((value) => value + 1);
         setSaveState('saved');
         setIndex((prev) => (prev === null ? prev : setActiveCanvasProject(prev, project.projectId)));
+        writeActiveCanvasProjectId(project.projectId);
         window.setTimeout(() => {
           if (next.nodes.length > 0) {
             // maxZoom 1：单个节点不该被放大到 2 倍贴满视口（创作框会因此被上边缘裁掉）
@@ -282,10 +328,11 @@ export function CanvasStudioView() {
       } catch (caught) {
         setError(describeError(caught));
       } finally {
+        switchingRef.current = false;
         setBusy(false);
       }
     },
-    [setNodes],
+    [setNodes, t],
   );
 
   // 首次进入：读索引 → 打开上次的画布（没有就显示空态，不擅自新建）
@@ -296,7 +343,7 @@ export function CanvasStudioView() {
         const loaded = await fetchCanvasIndex();
         if (!alive) return;
         setIndex(loaded);
-        const initial = pickInitialCanvasProject(loaded);
+        const initial = pickInitialCanvasProject(loaded, readActiveCanvasProjectId());
         if (initial !== null) {
           await openProject(initial);
         } else if (peekCanvasResultHandoff() !== null) {
@@ -307,6 +354,8 @@ export function CanvasStudioView() {
           setIndex(
             setActiveCanvasProject(upsertCanvasProject(loaded, saved.summary), fresh.projectId),
           );
+          writeActiveCanvasProjectId(fresh.projectId);
+          skipSaveRef.current = true;
           docRef.current = fresh;
           setDoc(fresh);
           setNodes([]);
@@ -376,27 +425,69 @@ export function CanvasStudioView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc?.projectId, layoutKey, setNodes]);
 
-  // 自动保存：600ms 去抖；保存成功后把摘要写回索引（列表就地更新）
+  // 自动保存：队列负责 600ms 去抖与串行化；刚打开/新建的文档跳过首次保存
   useEffect(() => {
     if (doc === null) return;
-    if (saveTimer.current !== null) clearTimeout(saveTimer.current);
-    setSaveState('saving');
-    saveTimer.current = setTimeout(() => {
-      void (async () => {
-        try {
-          const saved = await saveCanvasDoc(doc);
-          setIndex((prev) => (prev === null ? prev : upsertCanvasProject(prev, saved.summary)));
-          setSaveState('saved');
-        } catch (caught) {
-          setSaveState('error');
-          setError(describeError(caught));
-        }
-      })();
-    }, 600);
-    return () => {
-      if (saveTimer.current !== null) clearTimeout(saveTimer.current);
-    };
+    if (skipSaveRef.current) {
+      skipSaveRef.current = false;
+      return;
+    }
+    saveQueueRef.current?.schedule(doc);
   }, [doc]);
+
+  // 卸载时尽力把未保存内容发出去（站内切走时队列仍能完成请求）
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      void saveQueueRef.current?.flush();
+    };
+  }, []);
+
+  // 关标签/刷新：有未保存内容时让浏览器确认；pagehide 用 keepalive 再兜一层
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent): void => {
+      if (!saveQueueRef.current?.isDirty()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    const onPageHide = (): void => {
+      const current = docRef.current;
+      if (current === null || !saveQueueRef.current?.isDirty()) return;
+      void saveCanvasDoc(current, { keepalive: true }).catch(() => undefined);
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, []);
+
+  // 站内离开画布：脏数据先落盘，成功再放行；失败留在画布并显示原因
+  useEffect(() => {
+    const onHashChange = (): void => {
+      const hash = window.location.hash;
+      if (hash.startsWith('#/canvas')) return;
+      const queue = saveQueueRef.current;
+      if (queue === null || !queue.isDirty()) return;
+      if (leaveTargetRef.current === hash) return;
+      leaveTargetRef.current = hash;
+      navigate('#/canvas');
+      void queue.flush().then((ok) => {
+        if (!mountedRef.current) return;
+        if (ok) {
+          leaveTargetRef.current = null;
+          navigate(hash);
+        } else {
+          leaveTargetRef.current = null;
+          setError(t('canvas.studio.saveBlocked'));
+        }
+      });
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [t]);
 
   // ── 轮询：按文档里的 batches[].taskId 拉任务；终态写回批次 ─────────────────
   const activeKey =
@@ -979,10 +1070,18 @@ export function CanvasStudioView() {
 
   // ── 项目动作 ───────────────────────────────────────────────────────────
   const handleCreate = async (): Promise<void> => {
-    if (index === null) return;
+    if (index === null || switchingRef.current) return;
+    if (docRef.current !== null) {
+      const ok = (await saveQueueRef.current?.flush()) ?? true;
+      if (!ok) {
+        setError(t('canvas.studio.saveBlocked'));
+        return;
+      }
+    }
     const projectIdNext = newCanvasProjectId();
     const name = defaultCanvasName(index.projects);
     const fresh = createEmptyCanvasDoc(projectIdNext, name);
+    switchingRef.current = true;
     setBusy(true);
     setPickerOpen(false);
     setMenu(null);
@@ -993,6 +1092,8 @@ export function CanvasStudioView() {
           ? prev
           : setActiveCanvasProject(upsertCanvasProject(prev, saved.summary), projectIdNext),
       );
+      writeActiveCanvasProjectId(projectIdNext);
+      skipSaveRef.current = true;
       docRef.current = fresh;
       setDoc(fresh);
       setNodes([]);
@@ -1008,17 +1109,24 @@ export function CanvasStudioView() {
     } catch (caught) {
       setError(describeError(caught));
     } finally {
+      switchingRef.current = false;
       setBusy(false);
     }
   };
 
   const handleDelete = async (): Promise<void> => {
-    if (doc === null) return;
+    if (doc === null || switchingRef.current) return;
+    switchingRef.current = true;
     setBusy(true);
     setPickerOpen(false);
     setMenu(null);
     try {
+      // 删除前等完在飞保存，避免迟到的 PUT 把文档又建回来；脏内容随删除丢弃
+      const queue = saveQueueRef.current;
+      if (queue !== null) await queue.settle();
       await deleteCanvasDoc(doc.projectId);
+      queue?.cancel();
+      if (readActiveCanvasProjectId() === doc.projectId) writeActiveCanvasProjectId(null);
       const nextIndex = removeCanvasProject(index ?? { version: 1, projects: [] }, doc.projectId);
       setIndex(nextIndex);
       docRef.current = null;
@@ -1029,10 +1137,16 @@ export function CanvasStudioView() {
       historyRef.current = createCanvasHistory();
       setHistoryRev((value) => value + 1);
       const fallback = pickInitialCanvasProject(nextIndex);
+      // 删除已成功：先放开互斥，fallback 的 openProject 才能进入
+      switchingRef.current = false;
       if (fallback !== null) await openProject(fallback);
     } catch (caught) {
       setError(describeError(caught));
+      // 删除失败：文档还在，把未保存内容重新排进队列
+      const current = docRef.current;
+      if (current !== null) saveQueueRef.current?.schedule(current);
     } finally {
+      switchingRef.current = false;
       setBusy(false);
     }
   };
@@ -1149,12 +1263,23 @@ export function CanvasStudioView() {
             {t('canvas.studio.counts', { nodes: counts.nodes, edges: counts.edges })}
           </span>
           <span className="cs-save" data-state={saveState}>
-            {saveState === 'saving'
-              ? t('canvas.studio.saving')
-              : saveState === 'error'
-                ? t('canvas.studio.saveFailed')
-                : t('canvas.studio.saved')}
+            {saveState === 'dirty'
+              ? t('canvas.studio.unsaved')
+              : saveState === 'saving'
+                ? t('canvas.studio.saving')
+                : saveState === 'error'
+                  ? t('canvas.studio.saveFailed')
+                  : t('canvas.studio.saved')}
           </span>
+          {saveState === 'error' ? (
+            <button
+              type="button"
+              className="cs-save-retry"
+              onClick={() => void saveQueueRef.current?.flush()}
+            >
+              {t('canvas.studio.retrySave')}
+            </button>
+          ) : null}
         </div>
         <div className="cs-top-right">
           <button

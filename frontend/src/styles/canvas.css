@@ -805,6 +805,16 @@
   color: var(--danger);
 }
 
+.cs-save-retry {
+  padding: 2px 8px;
+  border: 1px solid var(--line-gold);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--gold);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
 .cs-error {
   margin: 0;
   color: var(--danger);

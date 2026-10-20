@@ -93,14 +93,51 @@ export function setActiveCanvasProject(
 
 /**
  * 进入画布页时打开哪个项目：
- * - `activeProjectId` 仍然存在 → 它；
+ * - 浏览器记住的 `preferredId` 仍然存在 → 它（刷新恢复上次选择，S4-R1a）；
+ * - 否则 `activeProjectId`；
  * - 否则最近修改的那个；
  * - 一个都没有 → `null`（界面显示"新建画布"空态，不擅自创建）。
  */
-export function pickInitialCanvasProject(index: CanvasProjectIndex): CanvasProjectRef | null {
+export function pickInitialCanvasProject(
+  index: CanvasProjectIndex,
+  preferredId?: string | null,
+): CanvasProjectRef | null {
+  const preferred = index.projects.find((p) => p.projectId === preferredId);
+  if (preferred !== undefined) return preferred;
   const active = index.projects.find((p) => p.projectId === index.activeProjectId);
   if (active !== undefined) return active;
   return index.projects[0] ?? null;
+}
+
+const ACTIVE_CANVAS_KEY = 'astrmira.canvas.active_project';
+
+/**
+ * 上次打开的**画布**项目（浏览器本地，单用户）。
+ *
+ * 为什么不放服务端索引：索引里的 `activeProjectId` 目前没有写入路由，只有文档 PUT 会更新摘要；
+ * 单用户部署下"同一个浏览器恢复上次选择"已经满足 AC-R1，而且不需要改契约。
+ */
+export function readActiveCanvasProjectId(
+  storage: Pick<Storage, 'getItem'> = localStorage,
+): string | null {
+  try {
+    const value = storage.getItem(ACTIVE_CANVAS_KEY);
+    return value === null || value === '' ? null : value;
+  } catch {
+    return null;
+  }
+}
+
+export function writeActiveCanvasProjectId(
+  projectId: string | null,
+  storage: Pick<Storage, 'setItem' | 'removeItem'> = localStorage,
+): void {
+  try {
+    if (projectId === null) storage.removeItem(ACTIVE_CANVAS_KEY);
+    else storage.setItem(ACTIVE_CANVAS_KEY, projectId);
+  } catch {
+    // 隐私模式/配额满：退化为"刷新后按最近修改打开"，不打断编辑
+  }
 }
 
 /** 重命名后的摘要（保留节点数与封面，只改名字与时间） */

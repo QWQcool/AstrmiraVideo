@@ -108,6 +108,8 @@ interface RequestOptions {
   /** V2.26（A5 片 A）：编排运行 id —— 同一次「运行」内的连续提交共享一个冷却窗口 */
   planRunId?: string;
   signal?: AbortSignal;
+  /** 页面卸载时的 best-effort 保存（S4-R1a）：keepalive 让浏览器在卸载中继续发请求 */
+  keepalive?: boolean;
   timeoutMs?: number;
 }
 
@@ -172,6 +174,7 @@ async function request<S extends z.ZodType>(
       method: options.method ?? 'GET',
       headers: buildHeaders(options),
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+      ...(options.keepalive === true ? { keepalive: true } : {}),
       signal: options.signal ?? AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
     });
   } catch (err) {
@@ -435,10 +438,14 @@ export function fetchCanvasDoc(projectId: string): Promise<CanvasDoc> {
 }
 
 /** 整份覆盖保存（不做字段级 PATCH）；返回保存后的摘要，供列表就地更新 */
-export function saveCanvasDoc(doc: CanvasDoc): Promise<CanvasDocSaveResponse> {
+export function saveCanvasDoc(
+  doc: CanvasDoc,
+  options: { keepalive?: boolean } = {},
+): Promise<CanvasDocSaveResponse> {
   return request(`/api/canvas/docs/${encodeURIComponent(doc.projectId)}`, CanvasDocSaveResponseSchema, {
     method: 'PUT',
     body: doc,
+    ...(options.keepalive === true ? { keepalive: true } : {}),
   });
 }
 
