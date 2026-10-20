@@ -44,6 +44,7 @@ import {
 } from '../lib/mentions';
 import {
   filterReferenceSources,
+  referenceKindsForModes,
   referenceSourceLabelKey,
   referenceSourcesFromAssets,
   referenceSourcesFromTasks,
@@ -705,10 +706,16 @@ export function CreateView() {
     void reloadPools();
   };
 
-  // S5-Ab：上传素材 + 首页产物同一条搜索/渲染路径；来源由条目自己携带
+  // S5-Ab/Ab：上传素材 + 首页产物同一条搜索/渲染路径；来源由条目自己携带。
+  // S5-Ac：按当前引擎声明的参考能力过滤；未知（未自检）不隐藏，明确只支持 t2v/t2i 时给空态。
   const filteredSources = useMemo(
-    () => filterReferenceSources(mentionSources, mentionFilter),
-    [mentionSources, mentionFilter],
+    () =>
+      filterReferenceSources(
+        mentionSources,
+        mentionFilter,
+        kind === 'image' ? [] : referenceKindsForModes(selectedEngineModes),
+      ),
+    [mentionSources, mentionFilter, kind, selectedEngineModes],
   );
 
   // ── 提交 ──

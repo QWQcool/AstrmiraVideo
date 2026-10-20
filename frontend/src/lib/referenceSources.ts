@@ -1,4 +1,9 @@
-import { taskOutput, type AssetListEntry, type TaskProgress } from '@astrmira/shared';
+import {
+  taskOutput,
+  type AssetListEntry,
+  type GenerationMode,
+  type TaskProgress,
+} from '@astrmira/shared';
 
 /**
  * S5-Ab：引用来源的**唯一适配层**。
@@ -109,4 +114,24 @@ export function referenceSourceLabelKey(source: ReferenceSource):
 /** 画布资产选择器可添加的 kind（图/视频/音频；文本产物没有文件，不入选择器） */
 export function referenceKindsForCanvas(): ReferenceKind[] {
   return ['image', 'video', 'audio'];
+}
+
+/**
+ * 当前引擎声明能接收哪些参考。
+ *
+ * 返回 `undefined` = 还没自检/未知，**不据此禁用**（诚实边界）；
+ * `[]` = 明确只支持纯文本模式，参考入口应给空态而不是假装可选。
+ */
+export function referenceKindsForModes(
+  modes?: readonly GenerationMode[],
+): ReferenceKind[] | undefined {
+  if (modes === undefined) return undefined;
+  const kinds: ReferenceKind[] = [];
+  if (modes.includes('i2v') || modes.includes('fl2v')) kinds.push('image');
+  if (modes.includes('v2v')) kinds.push('video');
+  return kinds;
+}
+
+export function modesAllowReferences(modes?: readonly GenerationMode[]): boolean {
+  return modes === undefined || modes.some((mode) => mode === 'i2v' || mode === 'fl2v' || mode === 'v2v');
 }

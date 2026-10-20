@@ -25,6 +25,8 @@ export interface AssetPickerDialogProps {
   projectId: string;
   /** 只允许这些 kind；缺省 = 图/视频/音频（文本产物没有文件，不入选择器） */
   allowedKinds?: readonly ReferenceKind[];
+  /** 节点：新增节点；参考：只往当前节点加引用 */
+  mode?: 'node' | 'reference';
   onClose(): void;
   onConfirm(sources: ReferenceSourceItem[]): void;
 }
@@ -34,6 +36,7 @@ const KIND_FILTERS: readonly KindFilter[] = ['all', 'image', 'video', 'audio'];
 export function AssetPickerDialog({
   projectId,
   allowedKinds = ['image', 'video', 'audio'],
+  mode = 'node',
   onClose,
   onConfirm,
 }: AssetPickerDialogProps) {
@@ -129,7 +132,13 @@ export function AssetPickerDialog({
     >
       <div className="cs-modal-panel">
         <header className="cs-modal-head">
-          <h3 className="cs-modal-title">{t('canvas.studio.pickerTitle')}</h3>
+          <h3 className="cs-modal-title">
+            {t(
+              mode === 'reference'
+                ? 'canvas.studio.pickerReferenceTitle'
+                : 'canvas.studio.pickerTitle',
+            )}
+          </h3>
           <button
             type="button"
             className="cs-modal-close"
@@ -140,7 +149,13 @@ export function AssetPickerDialog({
           </button>
         </header>
 
-        <p className="cs-modal-note">{t('canvas.studio.pickerNodeNote')}</p>
+        <p className="cs-modal-note">
+          {t(
+            mode === 'reference'
+              ? 'canvas.studio.pickerReferenceNote'
+              : 'canvas.studio.pickerNodeNote',
+          )}
+        </p>
 
         <div className="cs-modal-tools">
           <input
@@ -232,7 +247,12 @@ export function AssetPickerDialog({
               disabled={selected.size === 0}
               onClick={confirm}
             >
-              {t('canvas.studio.confirmAssets', { count: selected.size })}
+              {t(
+                mode === 'reference'
+                  ? 'canvas.studio.confirmReferences'
+                  : 'canvas.studio.confirmAssets',
+                { count: selected.size },
+              )}
             </button>
           </div>
         </footer>

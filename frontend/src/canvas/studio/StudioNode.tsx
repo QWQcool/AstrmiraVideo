@@ -30,6 +30,7 @@ import {
   swapFirstLastReferences,
 } from '../../lib/canvasNodeSubmit';
 import { comfyUiEngineOptions, httpServiceEngineOptions } from '../../lib/engineOptions';
+import { modesAllowReferences } from '../../lib/referenceSources';
 import {
   DURATION_OPTIONS,
   RESOLUTION_TIERS,
@@ -175,6 +176,13 @@ export function StudioNode({ id, selected }: NodeProps) {
   const estimate = estimateCanvasNodeCost(node, provider, byok.model);
 
   const isHttpProvider = provider.startsWith('http-service:');
+  const engineModes = isHttpProvider
+    ? httpServiceEngineOptions(providerStatus).find((item) => item.id === provider)?.modes
+    : provider === 'cloud-volcano-seedance'
+      ? undefined
+      : comfyUiEngineOptions(providerStatus).find((item) => item.id === provider)?.modes;
+  /** S5-Ac：未自检 = 未知，不据此藏入口；明确只支持 t2v/t2i 时不显示参考入口 */
+  const canAddReference = node.type === 'video' && modesAllowReferences(engineModes);
   const priceText =
     node.type === 'text'
       ? null
@@ -339,6 +347,16 @@ export function StudioNode({ id, selected }: NodeProps) {
                 </button>
               ) : null}
             </div>
+          ) : null}
+
+          {canAddReference ? (
+            <button
+              type="button"
+              className="cs-toolbar-link cs-toolbar-add-ref"
+              onClick={() => studio.onAddReference(id)}
+            >
+              {t('canvas.studio.addReference')}
+            </button>
           ) : null}
 
           {node.type === 'text' ? (

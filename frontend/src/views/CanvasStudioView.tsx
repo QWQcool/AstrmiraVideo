@@ -99,6 +99,11 @@ import {
   writeActiveCanvasProjectId,
 } from '../lib/canvasProjects';
 import { AssetPickerDialog } from '../canvas/studio/AssetPickerDialog';
+import {
+  addReferencesToDraft,
+  allowedKindsForReferenceTarget,
+} from '../lib/canvasReferences';
+import type { ReferenceSourceItem } from '../lib/referenceSources';
 import { CanvasContextMenu, type CanvasMenuItem } from '../canvas/studio/CanvasContextMenu';
 import { StudioNode } from '../canvas/studio/StudioNode';
 import { StudioProvider } from '../canvas/studio/StudioContext';
@@ -211,6 +216,8 @@ export function CanvasStudioView() {
   const [live, setLive] = useState<Record<string, TaskProgress>>({});
   const [submitting, setSubmitting] = useState<ReadonlySet<string>>(new Set());
   const [pickerOpen, setPickerOpen] = useState(false);
+  /** null = 添加节点；非 null = 给这个节点添加参考 */
+  const [pickerReferenceNodeId, setPickerReferenceNodeId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [menu, setMenu] = useState<{
     x: number;
@@ -1161,6 +1168,32 @@ export function CanvasStudioView() {
     [applyDoc],
   );
 
+  /** S5-Ac：把来源选择写成稳定引用（不复制文件、不新建节点） */
+  const addReferencesToNode = useCallback(
+    (nodeId: string, sources: readonly ReferenceSourceItem[]): void => {
+      const current = docRef.current;
+      if (current === null) return;
+      const node = findCanvasNode(current, nodeId);
+      if (node === null) return;
+      const result = addReferencesToDraft(
+        node.data.draft.references,
+        sources.map((source) => ({ ref: source.ref, kind: source.kind })),
+        node.type,
+      );
+      if (result.added === 0) {
+        setNotice(t('canvas.studio.referenceLimited', { count: result.ignored }));
+        return;
+      }
+      handleDraftChange(nodeId, { references: result.references });
+      setNotice(
+        result.ignored > 0
+          ? t('canvas.studio.referenceLimited', { count: result.ignored })
+          : t('canvas.studio.referenceAdded', { count: result.added }),
+      );
+    },
+    [handleDraftChange, t],
+  );
+
   // ── 选择 / 菜单 / 快捷键 ────────────────────────────────────────────────
   const handleSelectionChange = useCallback(
     ({ nodes: selected }: { nodes: StudioRfNode[] }): void => {
@@ -1591,6 +1624,10 @@ export function CanvasStudioView() {
             onDraftChange: handleDraftChange,
             onSubmit: (id) => void submitNode(id),
             onRecover: (id, batchId) => void recoverSubmit(id, batchId),
+            onAddReference: (id) => {
+              setPickerReferenceNodeId(id);
+              setPickerOpen(true);
+            },
           }}
         >
           <div className="cs-workspace">
@@ -1609,7 +1646,10 @@ export function CanvasStudioView() {
               <button
                 type="button"
                 className="cs-rail-btn"
-                onClick={() => setPickerOpen(true)}
+                onClick={() => {
+                  setPickerReferenceNodeId(null);
+                  setPickerOpen(true);
+                }}
                 title={t('canvas.studio.fromAssets')}
               >
                 {t('canvas.studio.fromAssets')}
@@ -1681,18 +1721,37 @@ export function CanvasStudioView() {
       {pickerOpen ? (
         <AssetPickerDialog
           projectId={projectId}
-          onClose={() => setPickerOpen(false)}
-          onConfirm={(sources) => {
-            addAssets(
-              sources.map((source) => ({
-                assetId: source.ref,
-                kind: source.kind,
-                url: source.url,
-                name: source.label,
-              })),
-              'from_asset',
-            );
+          mode={pickerReferenceNodeId === null ? 'node' : 'reference'}
+          allowedKinds={
+            pickerReferenceNodeId === null
+              ? undefined
+              : allowedKindsForReferenceTarget(
+                  (doc === null
+                    ? null
+                    : findCanvasNode(doc, pickerReferenceNodeId)
+                  )?.data.draft.references ?? [],
+                )
+          }
+          onClose={() => {
             setPickerOpen(false);
+            setPickerReferenceNodeId(null);
+          }}
+          onConfirm={(sources) => {
+            if (pickerReferenceNodeId === null) {
+              addAssets(
+                sources.map((source) => ({
+                  assetId: source.ref,
+                  kind: source.kind,
+                  url: source.url,
+                  name: source.label,
+                })),
+                'from_asset',
+              );
+            } else {
+              addReferencesToNode(pickerReferenceNodeId, sources);
+            }
+            setPickerOpen(false);
+            setPickerReferenceNodeId(null);
           }}
         />
       ) : null}

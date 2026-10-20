@@ -20,6 +20,8 @@ export interface StudioServices {
   onSubmit(nodeId: string): void;
   /** V2.49：核对“提交结果未知”的批次（用原请求 + 原幂等键重放） */
   onRecover(nodeId: string, batchId: string): void;
+  /** S5-Ac：从资产库给节点添加参考（不新建节点、不复制文件） */
+  onAddReference(nodeId: string): void;
 }
 
 const StudioContext = createContext<StudioServices | null>(null);

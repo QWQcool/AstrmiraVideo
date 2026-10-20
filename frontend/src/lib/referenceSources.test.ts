@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { AssetListEntry, TaskProgress } from '@astrmira/shared';
 import {
   filterReferenceSources,
+  modesAllowReferences,
+  referenceKindsForModes,
   referenceSourceLabelKey,
   referenceSourcesFromAssets,
   referenceSourcesFromTasks,
@@ -91,5 +93,16 @@ describe('S5-Ab 引用来源适配', () => {
     expect(referenceSourceLabelKey('upload')).toBe('create.source.upload');
     expect(referenceSourceLabelKey('home')).toBe('create.source.home');
     expect(referenceSourceLabelKey('canvas')).toBe('create.source.canvas');
+  });
+
+  it('S5-Ac：引擎 modes 决定可选参考；未知不隐藏，纯 t2v/t2i 给空集', () => {
+    expect(referenceKindsForModes(undefined)).toBeUndefined();
+    expect(referenceKindsForModes(['t2v', 'i2v', 't2i'])).toEqual(['image']);
+    expect(referenceKindsForModes(['t2v', 'v2v'])).toEqual(['video']);
+    expect(referenceKindsForModes(['t2v'])).toEqual([]);
+    expect(referenceKindsForModes(['t2i'])).toEqual([]);
+    expect(modesAllowReferences(undefined)).toBe(true);
+    expect(modesAllowReferences(['t2v'])).toBe(false);
+    expect(modesAllowReferences(['i2v'])).toBe(true);
   });
 });

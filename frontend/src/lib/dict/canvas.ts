@@ -88,6 +88,14 @@ export const CANVAS_ZH = {
   'canvas.studio.priceLocal': '本地轨：无 API 费用',
   'canvas.studio.pricePending': '待核算',
   'canvas.studio.pickerTitle': '从资产库添加',
+  'canvas.studio.pickerReferenceTitle': '添加参考',
+  'canvas.studio.pickerReferenceNote':
+    '所选图片按顺序填首帧/尾帧（最多 2 张），视频作为参考视频；已占用的槽不会覆盖。',
+  'canvas.studio.confirmReferences': '添加参考 {count} 项',
+  'canvas.studio.addReference': '添加参考',
+  'canvas.studio.referenceAdded': '已添加 {count} 个参考',
+  'canvas.studio.referenceLimited':
+    '有 {count} 个选择没有加入：参考槽已占满或与当前参考类型不兼容',
   'canvas.studio.pickerNodeNote': '所选条目会添加为「新节点」，不会改写现有节点的参考；来源会标为上传素材 / 首页产物 / 画布产物。',
   'canvas.studio.pickerSearch': '搜索名字或资产 id',
   'canvas.studio.pickerEmpty': '资产库里还没有素材',
@@ -484,6 +492,14 @@ export const CANVAS_EN = {
   'canvas.studio.priceLocal': 'Local track: no API cost',
   'canvas.studio.pricePending': 'Not priced',
   'canvas.studio.pickerTitle': 'Add from assets',
+  'canvas.studio.pickerReferenceTitle': 'Add references',
+  'canvas.studio.pickerReferenceNote':
+    'Selected images fill first/last frame in order (max 2); a video becomes the reference video. Occupied slots are not overwritten.',
+  'canvas.studio.confirmReferences': 'Add references ({count})',
+  'canvas.studio.addReference': 'Add references',
+  'canvas.studio.referenceAdded': 'Added {count} references',
+  'canvas.studio.referenceLimited':
+    '{count} selections were not added: the reference slots are full or incompatible with the current kind',
   'canvas.studio.pickerNodeNote': 'Selections become new nodes and do not modify existing node references; each item is labelled uploaded asset, home output or canvas output.',
   'canvas.studio.pickerSearch': 'Search by name or asset id',
   'canvas.studio.pickerEmpty': 'No assets yet',
