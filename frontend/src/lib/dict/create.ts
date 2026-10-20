@@ -108,9 +108,9 @@ export const CREATE_ZH = {
   // 两条都**必须说清"多余的那几个被丢了"**，并给出下一步（删 chip 才能换）——
   // 静默丢素材会让人以为服务端吃下了全部。
   'create.mentions.videoOverflow':
-    '视频参考只使用第一个视频，已忽略另外 {count} 个素材（要换参考请先删除对应 chip）。',
+    '视频参考只允许第一个视频：另外 {count} 个素材不会参与本次生成，提交已停用 —— 请先删除对应 chip。',
   'create.mentions.imageOverflow':
-    '首尾帧只使用前两张图片，已忽略另外 {count} 张（要换请先删除对应 chip）。',
+    '首尾帧只允许前两张图片：另外 {count} 张不会参与本次生成，提交已停用 —— 请先删除对应 chip。',
 };
 
 export const CREATE_EN = {
@@ -196,7 +196,7 @@ export const CREATE_EN = {
   'create.upload.noVisual': 'This file has no picture (audio only): use it on the editor’s SFX track',
 
   'create.mentions.videoOverflow':
-    'Only the first video is used as a reference; {count} more assets were ignored (delete the extra chips to change the reference).',
+    'Only the first video is allowed as a reference: {count} more assets will not be sent, and submit is disabled — delete the extra chips first.',
   'create.mentions.imageOverflow':
-    'Only the first two images are used as frames; {count} more were ignored (delete the extra chips to change them).',
+    'Only the first two images are allowed as frames: {count} more will not be sent, and submit is disabled — delete the extra chips first.',
 };

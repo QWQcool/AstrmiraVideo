@@ -16,6 +16,7 @@ import {
   canvasResolutionTier,
   canvasSubmitIssue,
   estimateCanvasNodeCost,
+  swapFirstLastReferences,
 } from './canvasNodeSubmit';
 
 const CLOUD = { cloud: false, comfy: true } as const;
@@ -269,6 +270,37 @@ describe('请求组装与估算（B3）', () => {
     expect(estimateCanvasNodeCost(video, 'host-comfyui', undefined)?.yuan).toBe(0);
     const cloud = estimateCanvasNodeCost(video, 'cloud-volcano-seedance', 'doubao-seedance-2-0-mini-260615');
     expect(cloud?.yuan).toBeGreaterThan(0);
+  });
+});
+
+describe('S5-B1b · 节点首尾交换', () => {
+  it('交换 first-frame / last-frame 的 role 与 order，其它引用不动', () => {
+    const video: CanvasReference = {
+      assetId: 'video-1',
+      role: 'reference-video',
+      order: 0,
+    };
+    const first: CanvasReference = { assetId: 'img-a', role: 'first-frame', order: 1 };
+    const last: CanvasReference = { assetId: 'img-b', role: 'last-frame', order: 2 };
+    const withVideo = swapFirstLastReferences([video, first, last]);
+    expect(withVideo[0]).toEqual(video);
+    expect(withVideo.slice(1)).toEqual([
+      { assetId: 'img-b', role: 'first-frame', order: 1 },
+      { assetId: 'img-a', role: 'last-frame', order: 2 },
+    ]);
+    // 请求按 role 取图：交换后首帧确实是原来的尾帧
+    const swapped = swapFirstLastReferences([first, last]);
+    const node = createCanvasNode({ id: 'n', type: 'video', x: 0, y: 0 });
+    node.data.draft.references = swapped;
+    expect(canvasDraftMode(node).assets).toEqual({
+      firstFrameImage: 'img-b',
+      lastFrameImage: 'img-a',
+    });
+  });
+
+  it('缺任一端时原样返回（不制造半套首尾）', () => {
+    const first: CanvasReference = { assetId: 'img-a', role: 'first-frame', order: 0 };
+    expect(swapFirstLastReferences([first])).toEqual([first]);
   });
 });
 

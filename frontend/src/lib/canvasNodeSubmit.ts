@@ -2,6 +2,7 @@ import {
   estimateCostFromRequest,
   type AspectRatio,
   type CanvasDocNode,
+  type CanvasReference,
   type CanvasReferenceRole,
   type CostRecord,
   type GenerationAssets,
@@ -167,6 +168,25 @@ export function canvasDraftMode(node: CanvasDocNode): CanvasDraftMode {
 
 function dedupe(roles: CanvasReferenceRole[]): CanvasReferenceRole[] {
   return [...new Set(roles)];
+}
+
+/**
+ * S5-B1b：画布首尾帧交换。
+ *
+ * 只交换 `first-frame` 与 `last-frame` 的 role/order；参考视频和其它引用原位不动。
+ * 请求组装按 role 取产物（`firstByRole`），所以交换 role 就是交换真正发给上游的首尾帧。
+ */
+export function swapFirstLastReferences(
+  references: readonly CanvasReference[],
+): CanvasReference[] {
+  const first = references.find((item) => item.role === 'first-frame');
+  const last = references.find((item) => item.role === 'last-frame');
+  if (first === undefined || last === undefined) return [...references];
+  return references.map((item) => {
+    if (item === first) return { ...last, role: 'first-frame' as const, order: first.order };
+    if (item === last) return { ...first, role: 'last-frame' as const, order: last.order };
+    return item;
+  });
 }
 
 /** 节点默认引擎：存过就用存的；否则按"当前可用且最便宜"推断 */

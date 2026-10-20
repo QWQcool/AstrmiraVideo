@@ -444,6 +444,7 @@ export function CreateView() {
     needsKey ||
     !modeReady ||
     hasMissingRef(refs) ||
+    selection.ignored.length > 0 ||
     (kind === 'image' && !imageReady);
 
   /**

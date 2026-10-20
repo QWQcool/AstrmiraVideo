@@ -1,6 +1,12 @@
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Handle, NodeToolbar, Position, useViewport, type NodeProps } from '@xyflow/react';
-import { formatYuan, type CanvasNodeBatch, type CanvasNodeType, type TaskProgress } from '@astrmira/shared';
+import {
+  formatYuan,
+  type CanvasNodeBatch,
+  type CanvasNodeType,
+  type CanvasReferenceRole,
+  type TaskProgress,
+} from '@astrmira/shared';
 
 import { resolveMediaUrl } from '../../lib/api';
 import { resolveProviderKey } from '../../lib/byok';
@@ -14,6 +20,7 @@ import {
   canvasSubmitIssue,
   canvasSubmitIssueText,
   estimateCanvasNodeCost,
+  swapFirstLastReferences,
 } from '../../lib/canvasNodeSubmit';
 import { comfyUiEngineOptions, httpServiceEngineOptions } from '../../lib/engineOptions';
 import {
@@ -23,7 +30,7 @@ import {
   resolveTargetSize,
   type ResolutionTier,
 } from '../../lib/format';
-import { useTranslate, type Translate } from '../../lib/i18n';
+import { useTranslate, type MessageKey, type Translate } from '../../lib/i18n';
 import { composerKeyAction } from '../../lib/composerKeys';
 import { useShell } from '../../lib/shell';
 import { useStudio } from './StudioContext';
@@ -38,6 +45,14 @@ import { useStudio } from './StudioContext';
  *
  * 进度百分比**只在运行中显示**（来自内存里的 live 表），不写进文档。
  */
+
+const REFERENCE_LABEL_KEYS: Record<CanvasReferenceRole, MessageKey> = {
+  'first-frame': 'create.chip.firstFrame',
+  'last-frame': 'create.chip.lastFrame',
+  'reference-image': 'create.chip.referenceImage',
+  'reference-video': 'create.chip.referenceVideo',
+  'reference-audio': 'create.chip.referenceAudio',
+};
 
 function statusText(batch: CanvasNodeBatch, live: TaskProgress | undefined, t: Translate): string {
   if (batch.status === 'queued') {
@@ -258,6 +273,32 @@ export function StudioNode({ id, selected }: NodeProps) {
           {node.type === 'text' ? null : (
             <p className="cs-toolbar-hint">{t('create.hint.submit')}</p>
           )}
+
+          {node.type !== 'text' && draft.references.length > 0 ? (
+            <div className="cs-toolbar-refs">
+              {[...draft.references]
+                .sort((a, b) => a.order - b.order)
+                .map((item, index) => (
+                  <span className="cs-ref" key={`${item.role}-${item.assetId}-${index}`}>
+                    {t(REFERENCE_LABEL_KEYS[item.role])} · {item.assetId.slice(0, 8)}
+                  </span>
+                ))}
+              {draft.references.some((item) => item.role === 'first-frame') &&
+              draft.references.some((item) => item.role === 'last-frame') ? (
+                <button
+                  type="button"
+                  className="cs-toolbar-link"
+                  onClick={() =>
+                    studio.onDraftChange(id, {
+                      references: swapFirstLastReferences(draft.references),
+                    })
+                  }
+                >
+                  {t('create.chip.swap')}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           {node.type === 'text' ? (
             <p className="cs-toolbar-issue">{t('canvas.studio.textNodeHint')}</p>
