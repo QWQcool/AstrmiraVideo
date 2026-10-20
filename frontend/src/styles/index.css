@@ -37,6 +37,14 @@ button {
   outline: none;
 }
 
+/* S5-B4b：表单控件默认用 UA 的 Arial，不会继承 --sans；统一到界面字体栈。
+   这是"无衬线统一"的一部分，也避免中文/英文在参数行里出现两种字形。 */
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
 /**
  * S5-B4a：键盘焦点基线。
  *

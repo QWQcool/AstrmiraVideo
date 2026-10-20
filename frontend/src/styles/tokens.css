@@ -38,72 +38,75 @@
      提亮依据：`docs/assets/01~03` 三张参考图的底色明显比原先的 #090c12 亮、金线更显眼。
      这里**只向参考图靠一点**（底色 #090c12 → #111726，面板 #10141c → #1a2130，金线 0.35 → 0.42），
      不做整体趋同：星尘（深底 + 微光金）仍是内核。 */
-  --bg: #111726;
-  --panel: #1a2130;
-  --panel2: #1e2636;
-  --panel-glass: rgba(26, 33, 48, 0.88);
-  --text: #eeeae1;
-  --muted: #a8b3c4;
-  --faint: #8794a8;
+  --bg: #111315;
+  --panel: #1c1f22;
+  --panel2: #262a2e;
+  --panel-glass: rgba(28, 31, 34, 0.9);
+  --text: #eff1f1;
+  --muted: #939a9f;
+  --faint: #7c8388;
   /* S5-B4a：这两个 token 已被 create.css / canvas.css 引用 30+ 次，但一直没有定义 ——
      `color: var(--text-dim)` 会整条声明失效，参数行退回正文色（看起来像"没有低干扰层级"）。
      这里用别名而不是再写一份色值：主题切换时跟随 --muted / --faint。 */
   --text-dim: var(--muted);
   --text-faint: var(--faint);
-  --line: rgba(179, 195, 219, 0.18);
+  --line: #32373b;
   /* 全屏预览遮罩（S4）：两套主题都用同一层深色，避免浅色主题下"白底看片" */
-  --scrim: rgba(8, 10, 12, 0.86);
+  --scrim: rgba(8, 10, 12, 0.88);
   --on-scrim: #ffffff;
-  --line-gold: rgba(214, 184, 129, 0.42);
-  --gold: #d6b881;
-  --gold-glow: rgba(214, 184, 129, 0.22);
+  /* S5-B4b：交互色统一为青色（--gold 是历史命名，保留它以免逐个改 147 处引用）；
+     品牌金单独用 --brand，只给 logo / eyebrow 用。 */
+  --line-gold: rgba(103, 220, 242, 0.35);
+  --gold: #67dcf2;
+  --gold-glow: rgba(103, 220, 242, 0.18);
+  --brand: #ddbd83;
   /* ⚠️ --blue / --blue-glow 目前**没有任何使用点**（历史遗留；核对时发现）。
      保留定义是为了不制造"token 消失"的额外变更，后续要么用它、要么删。 */
-  --blue: #91b9d5;
-  --blue-glow: rgba(145, 185, 213, 0.2);
-  --action-fill: #e7dfd1;
-  --action-hover: #f2ece2;
+  --blue: #67dcf2;
+  --blue-glow: rgba(103, 220, 242, 0.2);
+  --action-fill: #67dcf2;
+  --action-hover: #8fe8f7;
   /* S5-B4a：键盘焦点环。此前 create.css 的 `:focus-visible` 引用了未定义的 --focus，
      `outline: 2px solid var(--focus)` 整条失效；同时 index.css 给 button 写了 outline: none，
-     把浏览器默认焦点也关掉了 —— 结果是键盘用户看不见焦点。B4b 会把它换成青色。 */
-  --focus: #91b9d5;
+     把浏览器默认焦点也关掉了 —— 结果是键盘用户看不见焦点。 */
+  --focus: #67dcf2;
   /* S5-B4a：分段控件/凹陷底的背景；展开面板的抬高背景。此前只有引用，没有定义。 */
-  --panel-sunken: #0e1420;
-  --panel-raised: var(--panel2);
+  --panel-sunken: #0c0e0f;
+  --panel-raised: #2a2e32;
   /* 语义色（T5）：状态点 / 危险态 / 实心按钮与分段控件上的文字色 */
   --success: #34d399;
   --danger: #f87171;
-  --on-action: #111726;
-  --on-segment: #1a2130;
-  --canvas: #0b101a;
+  --on-action: #0b1114;
+  --on-segment: #111315;
+  --canvas: #0b0d0e;
 
   /* ── 放映区专用文字色（V8.3 批次 7，2026-09-23 实测缺陷）──
      放映区（`--canvas`）在**两套主题下都是深色**，因此区内的文字必须用它自己的一组色，
      不能沿用 `--text` / `--faint` —— 日间主题把那两个换成了深色，于是"深底 + 深字"，
      用户在日间模式下**看不见**放映区里的提示文字（画廊预览/空态说明都中招）。
      这三个 token 只在主题块里定义、组件里用 `var()` 引用；对比度由自检脚本逐对核验。 */
-  --canvas-text: #eeeae1;
-  --canvas-muted: #a8b3c4;
-  --canvas-danger: #f87171;
+  --canvas-text: #eff1f1;
+  --canvas-muted: #a3aaaf;
+  --canvas-danger: #ff9d9d;
 
   /* ── 派生色（批次 2 收口）：原先散在组件里的 13 处硬编码色值，本质都是"主色 + alpha"。
      收成 token 后，换主题只需覆盖上面那一组，组件层零改动。── */
-  --gold-tint: rgba(214, 184, 129, 0.02);
-  --gold-soft: rgba(214, 184, 129, 0.08);
-  --gold-wash: rgba(214, 184, 129, 0.1);
-  --gold-line: rgba(214, 184, 129, 0.4);
-  --gold-shadow: rgba(214, 184, 129, 0.2);
-  --blue-soft: rgba(145, 185, 213, 0.08);
-  --blue-line: rgba(145, 185, 213, 0.3);
+  --gold-tint: rgba(103, 220, 242, 0.02);
+  --gold-soft: rgba(103, 220, 242, 0.08);
+  --gold-wash: rgba(103, 220, 242, 0.12);
+  --gold-line: rgba(103, 220, 242, 0.4);
+  --gold-shadow: rgba(103, 220, 242, 0.18);
+  --blue-soft: rgba(103, 220, 242, 0.08);
+  --blue-line: rgba(103, 220, 242, 0.3);
   --danger-tint: rgba(248, 113, 113, 0.06);
   --danger-soft: rgba(248, 113, 113, 0.08);
   --danger-line: rgba(248, 113, 113, 0.3);
   --danger-line-strong: rgba(248, 113, 113, 0.35);
-  --line-strong: rgba(179, 195, 219, 0.2);
+  --line-strong: rgba(239, 241, 241, 0.18);
   /* V2.12（B48）：浮层投影（项目切换器的管理面板等）。收进 tokens 的原因与其它色值一样 ——
      写在组件里会**绕过主题**（日间模式下仍是暗色的黑，深得不自然）。 */
-  --shadow-pop: 0 18px 40px rgba(0, 0, 0, 0.3);
-  --canvas-veil: rgba(5, 7, 10, 0.6);
+  --shadow-pop: 0 18px 40px rgba(0, 0, 0, 0.45);
+  --canvas-veil: rgba(5, 7, 8, 0.6);
 
   /* 几何与缓动 */
   --radius-control: 8px;
@@ -111,9 +114,10 @@
   --ease-ui: cubic-bezier(0.22, 0.61, 0.36, 1);
 
   /* 字体栈 */
-  /* 正文衬线：大小写混排的高对比衬线（PLAN §7 原始实测记录）；罗马碑铭体在大写混排
-     正文中不成立，已从 --serif 移除（P1-5） */
-  --serif: Georgia, "Noto Serif SC", "Songti SC", serif;
+  /* S5-B4b：界面统一无衬线。保留 --serif 这个名字作为兼容别名（12 个选择器在引用），
+     值直接指向 --sans；不逐个改选择器，也不动导出成片字幕（字幕用 --sans / --fs-caption）。
+     Cinzel 只保留给 11px 的全大写 eyebrow（品牌标签，不是正文）。 */
+  --serif: var(--sans);
   /* 全大写 eyebrow 标签专用（碑体只在这种全大写场景成立） */
   --serif-caps: "Cinzel", serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -155,53 +159,55 @@
  * 低对比水印字标按 AC5 的定位放宽到 ≥ 3.0）。
  */
 :root[data-theme='day'] {
-  --bg: #f4f7fb;
+  --bg: #f4f5f6;
   --panel: #ffffff;
-  --panel2: #f7f9fc;
-  --panel-glass: rgba(255, 255, 255, 0.88);
-  --text: #122031;
-  --muted: #5b6b80;
-  --faint: #7c8ba0;
+  --panel2: #eceef0;
+  --panel-glass: rgba(255, 255, 255, 0.9);
+  --text: #16191b;
+  --muted: #5d6469;
+  --faint: #7a8187;
   --text-dim: var(--muted);
   --text-faint: var(--faint);
-  --line: rgba(18, 32, 49, 0.14);
-  --scrim: rgba(8, 10, 12, 0.86);
+  --line: #d8dcdf;
+  --scrim: rgba(8, 10, 12, 0.88);
   --on-scrim: #ffffff;
-  --line-gold: rgba(47, 111, 224, 0.35);
-  --gold: #2f6fe0;
-  --gold-glow: rgba(47, 111, 224, 0.16);
-  --blue: #1b4fd8;
-  --blue-glow: rgba(27, 79, 216, 0.16);
-  --action-fill: #2f6fe0;
-  --action-hover: #1b4fd8;
-  --focus: #2f6fe0;
-  --panel-sunken: #eef2f7;
+  /* 日间用深青（#0E7490）而不是亮青：亮青在 #FFF 上只有 1.6:1，键盘焦点/正文都会失去对比度。 */
+  --line-gold: rgba(14, 116, 144, 0.32);
+  --gold: #0e7490;
+  --gold-glow: rgba(14, 116, 144, 0.15);
+  --brand: #8a6a2f;
+  --blue: #0e7490;
+  --blue-glow: rgba(14, 116, 144, 0.15);
+  --action-fill: #0e7490;
+  --action-hover: #0b5f77;
+  --focus: #0e7490;
+  --panel-sunken: #eef0f2;
   --panel-raised: #ffffff;
-  --success: #12a150;
-  --danger: #d93b3b;
+  --success: #0f7a45;
+  --danger: #c0392b;
   --on-action: #ffffff;
-  --on-segment: #122031;
-  --canvas: #0f1725;
-  /* 放映区底色换成了 #0f1725（略偏蓝），区内的文字色跟着重算（仍是浅色，绝不跟随 --text） */
-  --canvas-text: #e8eef7;
-  --canvas-muted: #a3b2c8;
+  --on-segment: #ffffff;
+  --canvas: #0f1113;
+  /* 放映区在两套主题下都保持深色，区内文字用独立的浅色（绝不跟随 --text） */
+  --canvas-text: #f2f4f5;
+  --canvas-muted: #aab1b6;
   --canvas-danger: #ff9d9d;
 
-  --gold-tint: rgba(47, 111, 224, 0.03);
-  --gold-soft: rgba(47, 111, 224, 0.08);
-  --gold-wash: rgba(47, 111, 224, 0.1);
-  --gold-line: rgba(47, 111, 224, 0.4);
-  --gold-shadow: rgba(47, 111, 224, 0.18);
+  --gold-tint: rgba(14, 116, 144, 0.03);
+  --gold-soft: rgba(14, 116, 144, 0.09);
+  --gold-wash: rgba(14, 116, 144, 0.12);
+  --gold-line: rgba(14, 116, 144, 0.4);
+  --gold-shadow: rgba(14, 116, 144, 0.16);
   /* 浮层投影（日间）：比暗色主题浅一档，否则白底上的黑尖角很脏 */
-  --shadow-pop: 0 18px 40px rgba(15, 23, 42, 0.12);
-  --blue-soft: rgba(47, 111, 224, 0.08);
-  --blue-line: rgba(47, 111, 224, 0.3);
-  --danger-tint: rgba(217, 59, 59, 0.06);
-  --danger-soft: rgba(217, 59, 59, 0.08);
-  --danger-line: rgba(217, 59, 59, 0.3);
-  --danger-line-strong: rgba(217, 59, 59, 0.35);
-  --line-strong: rgba(18, 32, 49, 0.22);
-  --canvas-veil: rgba(15, 23, 37, 0.55);
+  --shadow-pop: 0 18px 40px rgba(15, 17, 19, 0.14);
+  --blue-soft: rgba(14, 116, 144, 0.09);
+  --blue-line: rgba(14, 116, 144, 0.3);
+  --danger-tint: rgba(192, 57, 43, 0.06);
+  --danger-soft: rgba(192, 57, 43, 0.08);
+  --danger-line: rgba(192, 57, 43, 0.3);
+  --danger-line-strong: rgba(192, 57, 43, 0.35);
+  --line-strong: rgba(22, 25, 27, 0.2);
+  --canvas-veil: rgba(15, 17, 19, 0.55);
 }
 
 /* ── V9 · B6 追加的 3 个 keyframes（**已同步登记**进 frontend/scripts/visual-selfcheck.mjs）──

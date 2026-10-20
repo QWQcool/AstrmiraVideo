@@ -936,6 +936,24 @@
   --xy-edge-stroke-selected-default: var(--gold);
   --xy-edge-label-color-default: var(--text-dim);
   --xy-edge-label-background-color-default: var(--panel);
+  /* S5-B4b：React Flow 默认是浅色皮肤（小地图/控制条/点阵）。不覆盖时
+     深色画布上会出现两块白底浮层，和炭灰主题割裂。这里统一到 token。 */
+  --xy-background-color: var(--panel);
+  --xy-background-pattern-dots-color: var(--line-strong);
+  --xy-minimap-background-color: var(--panel2);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--bg) 70%, transparent);
+  --xy-minimap-node-background-color: var(--panel-raised);
+  --xy-minimap-node-stroke-color: var(--line);
+  --xy-controls-button-background-color: var(--panel2);
+  --xy-controls-button-background-color-hover: var(--panel-raised);
+  --xy-controls-button-color: var(--text);
+  --xy-controls-button-color-hover: var(--gold);
+  --xy-controls-button-border-color: var(--line);
+  --xy-controls-box-shadow: var(--shadow-pop);
+  --xy-edge-stroke: var(--line-strong);
+  --xy-edge-stroke-selected: var(--gold);
+  --xy-connectionline-stroke: var(--gold);
+  --xy-attribution-background-color: transparent;
 }
 
 .cs-canvas .react-flow__edge-text {

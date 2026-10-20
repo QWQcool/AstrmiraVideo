@@ -36,7 +36,7 @@
   font-size: var(--fs-eyebrow);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
-  color: var(--gold);
+  color: var(--brand);
 }
 
 .cr-title {
