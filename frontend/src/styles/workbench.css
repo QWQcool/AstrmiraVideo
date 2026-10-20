@@ -1043,6 +1043,12 @@
   color: var(--danger);
 }
 
+/* S5-B4c：role=alert 的错误块加图标；颜色之外还有第二通道 */
+[role='alert'] .wb-uncertain-title::before {
+  content: '⚠';
+  margin-right: 6px;
+}
+
 .wb-uncertain-body {
   font-size: var(--fs-note);
   color: var(--muted);

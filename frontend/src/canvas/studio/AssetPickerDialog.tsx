@@ -183,7 +183,7 @@ export function AssetPickerDialog({
         <div className="cs-modal-body">
           {loading ? <p className="cs-modal-note">{t('canvas.studio.pickerLoading')}</p> : null}
           {error !== null ? (
-            <p className="cs-modal-note cs-modal-error">
+            <p className="cs-modal-note cs-modal-error" role="alert">
               {t('canvas.studio.pickerError', { reason: error })}
               <button
                 type="button"
@@ -213,6 +213,11 @@ export function AssetPickerDialog({
                   onClick={() => toggle(source.ref)}
                 >
                   <span className="cs-asset-thumb">
+                    {picked ? (
+                      <span className="cs-asset-check" aria-hidden="true">
+                        ✓
+                      </span>
+                    ) : null}
                     {source.kind === 'image' && source.previewUrl !== undefined ? (
                       <img src={source.previewUrl} alt="" loading="lazy" draggable={false} />
                     ) : (

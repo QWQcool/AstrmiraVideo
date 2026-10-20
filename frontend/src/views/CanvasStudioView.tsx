@@ -1692,7 +1692,7 @@ export function CanvasStudioView() {
             className="cs-title"
             defaultValue={doc?.name ?? ''}
             disabled={doc === null}
-            aria-label="canvas name"
+            aria-label={t('canvas.studio.nameLabel')}
             onBlur={(event) => {
               const next = event.target.value;
               applyDoc((d) => renameCanvasDoc(d, next));
@@ -1701,7 +1701,7 @@ export function CanvasStudioView() {
           <span className="cs-counts">
             {t('canvas.studio.counts', { nodes: counts.nodes, edges: counts.edges })}
           </span>
-          <span className="cs-save" data-state={saveState}>
+          <span className="cs-save" data-state={saveState} role="status" aria-live="polite">
             {saveState === 'dirty'
               ? t('canvas.studio.unsaved')
               : saveState === 'saving'
@@ -1758,8 +1758,16 @@ export function CanvasStudioView() {
         </div>
       </header>
 
-      {error === null ? null : <p className="wb-note cs-error">{error}</p>}
-      {notice === null ? null : <p className="wb-note cs-notice">{notice}</p>}
+      {error === null ? null : (
+        <p className="wb-note cs-error" role="alert">
+          {error}
+        </p>
+      )}
+      {notice === null ? null : (
+        <p className="wb-note cs-notice" role="status">
+          {notice}
+        </p>
+      )}
 
       {doc === null ? (
         <div className="cs-empty">

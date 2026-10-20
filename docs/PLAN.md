@@ -1683,6 +1683,16 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · S5-B4c：状态双通道 + 节点参数条收口
+
+- **【版本列表】** 当前版本除 `aria-selected` 与底色外，新增可见「当前」徽标；临时画布夹具（2 个成功批次，选中旧版）实测 `v1` 带「当前」、`v2` 不带，刷新后仍按 `selectedBatchId` 恢复。
+- **【资产多选】** 已选项除边框外补 ✓（`aria-pressed` 保留）；实机点选后 DOM 同时有 `aria-pressed=true` 与 `.cs-asset-check`。
+- **【@ 候选】** 每个候选补 `role="option"` + `aria-selected`；首项活动项实测 `selected=true`，其余 `false`，不再只靠 `.is-active` 底色。
+- **【错误与状态】** 创作页 4 类错误块、画布错误条、视频库读取失败块补 `role="alert"`，并通过 `[role='alert'] .wb-uncertain-title::before` / `.cs-error::before` 给 ⚠ 图标；通知条补 ℹ；保存状态补 `role="status" aria-live="polite"`；任务状态徽章补 `role="status" aria-live="polite"`。注入 `/api/history` 500 实测：`role=alert` 生效、`::before` 计算值为 `"⚠"`。
+- **【参数条】** 节点浮动面板：标签视觉隐藏但仍在 label 内（`getByRole('combobox', { name: '画幅' })` 仍可命中），3~4 项值排成一行；下载/作为参考继续/复用参数从主行拆到 `.cs-toolbar-actions`，底部只留「费用 + 生成」，不再挤成一团。
+- **【i18n】** 新增 `canvas.studio.currentVersion`（当前/Current）与 `canvas.studio.nameLabel`（画布名称/Canvas name），替换硬编码 `aria-label="canvas name"`。
+- **【测试】** 前端 **571 passed**；视觉自检通过；`pnpm type` / `pnpm lint` 通过。截图见本地 `.tmp/b4c-*.png`（过程证据，不入库）。
+
 ### 2026-10-20 · S5-B4b：炭灰 / 无衬线 / 青色操作（暗 + 浅）
 
 - **【暗色】** 按设计规格 §3.2 换为炭灰：底 `#111315` / 卡片 `#1C1F22` / 浮层 `#262A2E`；文字 `#EFF1F1` / 次文字 `#939A9F` / 边框 `#32373B`；操作与选中统一青色 `#67DCF2`，品牌金 `#DDBD83` 只留 logo 与 11px eyebrow。`--gold` 保留历史名字（147 处引用不动），值改为青色；新增 `--brand`。

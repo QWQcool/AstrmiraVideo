@@ -1067,6 +1067,8 @@ export function CreateView() {
                   <button
                     key={source.key}
                     type="button"
+                    role="option"
+                    aria-selected={index === mentionIndex}
                     className={
                       index === mentionIndex ? 'cr-mention-item is-active' : 'cr-mention-item'
                     }
@@ -1173,13 +1175,13 @@ export function CreateView() {
         ) : null}
 
         {uploadError === null ? null : (
-          <div className="wb-uncertain cr-alert">
+          <div className="wb-uncertain cr-alert" role="alert">
             <span className="wb-uncertain-title">{t('create.alert.uploadFailed')}</span>
             <span className="wb-uncertain-body">{uploadError}</span>
           </div>
         )}
         {poolError === null ? null : (
-          <div className="wb-uncertain cr-alert">
+          <div className="wb-uncertain cr-alert" role="alert">
             <span className="wb-uncertain-title">{t('create.alert.poolFailed')}</span>
             <span className="wb-uncertain-body">{poolError}</span>
             <button type="button" className="wb-btn" onClick={() => void reloadPools()}>
@@ -1188,7 +1190,7 @@ export function CreateView() {
           </div>
         )}
         {submitError === null ? null : (
-          <div className="wb-uncertain cr-alert">
+          <div className="wb-uncertain cr-alert" role="alert">
             <span className="wb-uncertain-title">{t('create.alert.submitFailed')}</span>
             <span className="wb-uncertain-body">{submitError}</span>
           </div>
@@ -1200,7 +1202,7 @@ export function CreateView() {
           </div>
         )}
         {pollingError === null ? null : (
-          <div className="wb-uncertain cr-alert">
+          <div className="wb-uncertain cr-alert" role="alert">
             <span className="wb-uncertain-title">{t('create.alert.pollFailed')}</span>
             <span className="wb-uncertain-body">{pollingError.failure.message}</span>
           </div>
@@ -1217,6 +1219,8 @@ export function CreateView() {
                       ? 'wb-badge wb-badge-bad'
                       : 'wb-badge'
                 }
+                role="status"
+                aria-live="polite"
               >
                 <span className="wb-dot" />
                 {t(STATUS_KEYS[task.status])}

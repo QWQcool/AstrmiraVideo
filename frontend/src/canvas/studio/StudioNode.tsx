@@ -348,7 +348,14 @@ export function StudioNode({ id, selected }: NodeProps) {
                   >
                     <span>v{node.data.batches.length - index}</span>
                     <span>{statusText(batch, live, t)}</span>
-                    <span className="wb-note">{output?.kind ?? '—'}</span>
+                    <span className="cs-version-tail">
+                      {active ? (
+                        <span className="cs-version-current">
+                          {t('canvas.studio.currentVersion')}
+                        </span>
+                      ) : null}
+                      <span className="wb-note">{output?.kind ?? '—'}</span>
+                    </span>
                   </button>
                 );
               })}
@@ -533,11 +540,10 @@ export function StudioNode({ id, selected }: NodeProps) {
                 </label>
               </div>
 
-              <div className="cs-toolbar-foot">
-                <span className="cs-toolbar-price">{priceText}</span>
+              <div className="cs-toolbar-actions">
                 {mediaUrl === null ? null : (
                   <a
-                    className="wb-btn"
+                    className="cs-toolbar-link"
                     href={mediaUrl}
                     download={`${preview?.output.assetId ?? 'canvas-output'}.${downloadExt}`}
                   >
@@ -563,6 +569,9 @@ export function StudioNode({ id, selected }: NodeProps) {
                     {t('canvas.studio.reuseBatchParams')}
                   </button>
                 )}
+              </div>
+              <div className="cs-toolbar-foot">
+                <span className="cs-toolbar-price">{priceText}</span>
                 <button
                   type="button"
                   className="wb-btn wb-btn-primary"

@@ -820,6 +820,18 @@
   color: var(--danger);
 }
 
+/* S5-B4c：错误/通知不只靠颜色，给一个可读图标 */
+.cs-error::before {
+  content: '⚠';
+  margin-right: 6px;
+}
+
+.cs-notice::before {
+  content: 'ℹ';
+  margin-right: 6px;
+  color: var(--gold);
+}
+
 .cs-empty {
   display: flex;
   flex-direction: column;
@@ -1191,6 +1203,22 @@ audio.cs-card-media {
   opacity: 0.55;
 }
 
+/* S5-B4c：当前版本不只靠底色，补一个文字标记（aria-selected 仍然保留） */
+.cs-version-tail {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cs-version-current {
+  padding: 0 4px;
+  border: 1px solid var(--line-gold);
+  border-radius: 3px;
+  color: var(--gold);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
 .cs-toolbar-input {
   width: 100%;
   min-height: 58px;
@@ -1226,10 +1254,26 @@ audio.cs-card-media {
 
 .cs-toolbar-field {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  /* S5-B4c：标签与值同一行，300px 面板里少占一行 —— 参数条是辅助信息，不抢输入区 */
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
   color: var(--text-dim);
   font-size: var(--fs-micro);
+}
+
+/* S5-B4c：参数条的标签视觉隐藏，但仍在无障碍树里（label 包裹 select，名字不丢）。
+   值本身可读（16:9 / 1024×576 / 5s / 引擎名），这样 300px 面板能把 3~4 项排成一行。 */
+.cs-toolbar-field > span:first-child {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .cs-toolbar-select {
@@ -1255,11 +1299,22 @@ audio.cs-card-media {
   font-variant-numeric: tabular-nums;
 }
 
+.cs-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
 .cs-toolbar-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.cs-toolbar-foot .wb-btn-primary {
+  margin-left: auto;
 }
 
 .cs-toolbar-price {
@@ -1505,6 +1560,7 @@ audio.cs-card-media {
 }
 
 .cs-asset-thumb {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1512,6 +1568,24 @@ audio.cs-card-media {
   overflow: hidden;
   border-radius: 6px;
   background: var(--panel);
+}
+
+/* S5-B4c：多选已选状态补一个勾，不只靠边框颜色 */
+.cs-asset-check {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: var(--on-action);
+  font-size: var(--fs-micro);
+  font-weight: 700;
 }
 
 .cs-asset-thumb img {

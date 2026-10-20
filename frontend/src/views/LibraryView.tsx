@@ -423,7 +423,7 @@ export function LibraryView() {
       </div>
 
       {activeError === null ? null : (
-        <div className="wb-uncertain" style={{ marginBottom: 14 }}>
+        <div className="wb-uncertain" style={{ marginBottom: 14 }} role="alert">
           <span className="wb-uncertain-title">{t('library.load.error')}</span>
           <span className="wb-uncertain-body">{activeError}</span>
           <button type="button" className="wb-btn" onClick={retryActive} disabled={activeLoading}>
@@ -432,7 +432,7 @@ export function LibraryView() {
         </div>
       )}
       {notice === null ? null : (
-        <div className="wb-queue-item" style={{ marginBottom: 14 }}>
+        <div className="wb-queue-item" style={{ marginBottom: 14 }} role="status">
           <span className="wb-dot" />
           <span className="wb-note">{notice}</span>
         </div>

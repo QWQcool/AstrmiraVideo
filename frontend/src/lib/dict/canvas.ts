@@ -56,6 +56,8 @@ export const CANVAS_ZH = {
   'canvas.studio.textNodeHint': '文本节点只保存文字；要生成请用图片 / 视频节点',
   'canvas.studio.batches': '{count} 轮',
   'canvas.studio.versions': '版本列表',
+  'canvas.studio.currentVersion': '当前',
+  'canvas.studio.nameLabel': '画布名称',
   'canvas.studio.versionInvalid':
     '所选版本已失效（批次不存在 / 非成功 / 无产物）—— 请选择其他成功版本',
   'canvas.studio.continueAsReference': '作为参考继续',
@@ -470,6 +472,8 @@ export const CANVAS_EN = {
   'canvas.studio.textNodeHint': 'Text nodes only store text; use an image / video node to generate',
   'canvas.studio.batches': '{count} run(s)',
   'canvas.studio.versions': 'Versions',
+  'canvas.studio.currentVersion': 'Current',
+  'canvas.studio.nameLabel': 'Canvas name',
   'canvas.studio.versionInvalid':
     'The selected version is no longer valid (missing / not successful / no output) — choose another successful version',
   'canvas.studio.continueAsReference': 'Continue as reference',
