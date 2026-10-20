@@ -1683,6 +1683,12 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · B4-0h：UI 冒烟的旧血缘画布整段下线
+
+- **【暴露】** 过了行业模板段后，冒烟进入 `[7e]`：35k 字符全部在测旧 `CanvasView` 的 `.cv-node/.cv-canvas/.cv-title`。S3-B4 已把 `#/lineage` 换成说明页、`#/canvas` 换成新多画布编辑器，旧视图已无引用（死代码），这一段从第一条 `waitForFunction('.cv-node')` 就会红。
+- **【处理】** 删除整段旧 DAG 断言，替换为当前路由的最小检查：`#/lineage` 显示「血缘图已并入创作画布」说明；按钮进入 `#/canvas` 且出现 `.cs-workspace` 或空态；英文段 `#/canvas` 只断言 `.cs-title` 编辑器壳，不拿用户文档名硬比。
+- **【如实边界】** 这不是“静默跳过”：新画布的完整编辑/版本/键盘冒烟不在 CI 脚本里（本片用手工 Playwright 验收，S5-C 再做规模与发布证据）；旧 DAG 的能力已随 S3-B4 下线，不保留假通过。
+
 ### 2026-10-20 · B4-0g：UI 冒烟移除已下线的行业模板 UI 断言
 
 - **【暴露】** B4-0f 之后，冒烟进入 `[7d]` 行业模板段：等 `.cr-templates` / 点 `cr-template-lighting-midcentury` / 读 `textarea.cr-input`。S5 创作页改版后这三样当前都不存在（数据与 `lib/templates.test.ts` 仍在，UI 不在）。
