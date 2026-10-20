@@ -34,6 +34,8 @@ export interface StructuredPromptHandle {
   removeToken(id: string): void;
   /** 预览/标签解析完成后更新 token 文案（不改正文） */
   updateTokenLabel(id: string, label: string): void;
+  /** 复用历史参数时替换正文；现有 token 保留并追加到末尾 */
+  replaceText(text: string): void;
   focus(): void;
 }
 
@@ -217,6 +219,21 @@ export const StructuredPromptInput = forwardRef<StructuredPromptHandle, Structur
           if (span === undefined) return;
           span.textContent = `@${label}`;
           span.title = label;
+        },
+        replaceText(text) {
+          const editor = editorRef.current;
+          if (editor === null) return;
+          const tokens = Array.from(editor.querySelectorAll<HTMLElement>('[data-ref-id]')).map(
+            (span) => span.cloneNode(true) as HTMLElement,
+          );
+          editor.textContent = '';
+          if (text !== '') editor.appendChild(document.createTextNode(text));
+          for (const token of tokens) {
+            editor.appendChild(document.createTextNode(' '));
+            editor.appendChild(token);
+          }
+          lastText.current = text;
+          onChange(text);
         },
         focus() {
           editorRef.current?.focus();

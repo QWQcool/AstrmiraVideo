@@ -53,7 +53,7 @@ import { formatBytes, formatRelativeTime } from '../lib/overviewStats';
  *
  * 三件事各自单一来源：
  * - **筛选/排序**在 `lib/libraryFilter.ts`（纯函数 + 单测），本组件只持有"当前条件"；
- * - **参数回填**走 hash：`#/workbench?reuse=<taskId>`（工作台读取后自行回填）——
+ * - **参数回填**走 hash：`#/create?reuse=<taskId>`（创作页读取后回填）——
  *   两个视图之间不共享 React 状态，刷新/分享都成立；
  * - **剪辑入口**跳 `#/edit?task=<taskId>`（B9 的独立视图）。
  *
@@ -782,7 +782,7 @@ export function LibraryView() {
                         className="wb-btn lib-icon"
                         title={t('library.card.reuseTitle')}
                         onClick={() =>
-                          navigate(`#/workbench?reuse=${encodeURIComponent(task.taskId)}`)
+                          navigate(`#/create?reuse=${encodeURIComponent(task.taskId)}`)
                         }
                       >
                         ⟲
@@ -918,7 +918,7 @@ export function LibraryView() {
                     type="button"
                     className="wb-btn wb-btn-gold"
                     onClick={() =>
-                      navigate(`#/workbench?reuse=${encodeURIComponent(selected.taskId)}`)
+                      navigate(`#/create?reuse=${encodeURIComponent(selected.taskId)}`)
                     }
                   >
                     {t('library.drawer.action.reuse')}

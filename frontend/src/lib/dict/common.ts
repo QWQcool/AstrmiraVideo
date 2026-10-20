@@ -153,6 +153,8 @@ export const COMMON_ZH = {
 
   // ── 结果动作（S4：全屏 / 下载 / 作为参考 / 去画布）──
   'common.download': '下载',
+  'common.reuseParams': '复用参数',
+  'common.paramsReused': '已回填这条任务的参数（提示词 / 比例 / 时长 / 清晰度）',
   'common.close': '关闭',
   'common.preview': '作品预览',
   'common.fullscreen': '全屏',
@@ -273,6 +275,8 @@ export const COMMON_EN = {
   'common.kind.audio': 'audio',
 
   'common.download': 'Download',
+  'common.reuseParams': 'Reuse params',
+  'common.paramsReused': 'Filled prompt / ratio / duration / resolution from this task',
   'common.close': 'Close',
   'common.preview': 'Preview',
   'common.fullscreen': 'Full screen',

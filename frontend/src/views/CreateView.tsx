@@ -24,8 +24,10 @@ import { setCanvasResultHandoff } from '../lib/canvasHandoff';
 import {
   DEFAULT_DURATION_SEC,
   DEFAULT_RESOLUTION_TIER,
+  clampDurationSec,
   resolveImageSize,
   resolveTargetSize,
+  tierForSize,
   type ResolutionTier,
 } from '../lib/format';
 import { newIdempotencyKey } from '../lib/idempotency';
@@ -556,22 +558,53 @@ export function CreateView() {
    * query 抹掉（不触发 hashchange，也就不会自激）。
    */
   const lastHandledHash = useRef<string | null>(null);
+
+  /** S5-B3c：从历史任务快照回填到创作页；只认真实快照，缺字段保留默认 */
+  const applyReuse = useCallback(
+    (target: TaskProgress): void => {
+      const snapshot = target.requestSnapshot;
+      const output = taskOutput(target);
+      setKind(output.kind === 'image' ? 'image' : 'video');
+      setPrompt(snapshot.prompt);
+      promptEditorRef.current?.replaceText(snapshot.prompt);
+      setAspectRatio(snapshot.aspectRatio);
+      setDurationSec(
+        clampDurationSec(snapshot.params?.durationSec ?? DEFAULT_DURATION_SEC),
+      );
+      if (snapshot.resolution !== undefined) {
+        setResolutionTier(tierForSize(snapshot.resolution.width, snapshot.resolution.height));
+      }
+      setProvider(snapshot.provider);
+      setSeed(snapshot.params?.seed === undefined ? '' : String(snapshot.params.seed));
+      setSubmitError(null);
+      setNotice(t('common.paramsReused'));
+    },
+    [setKind, t],
+  );
+
   useEffect(() => {
     const consume = (): void => {
       const hash = window.location.hash;
       if (hash === lastHandledHash.current) return;
-      const refTask = parseHash(hash).query.get('refTask');
-      if (refTask === null) return;
+      const query = parseHash(hash).query;
+      const refTask = query.get('refTask');
+      const reuseTask = query.get('reuse');
+      if (refTask === null && reuseTask === null) return;
       lastHandledHash.current = hash;
       void (async () => {
         try {
-          const fetched = await fetchTask(refTask);
-          if (fetched.status !== 'succeeded' || taskOutput(fetched).kind === 'none') {
-            setNotice(t('common.resultNotReady'));
-            return;
+          if (reuseTask !== null) {
+            const fetched = await fetchTask(reuseTask);
+            applyReuse(fetched);
+          } else if (refTask !== null) {
+            const fetched = await fetchTask(refTask);
+            if (fetched.status !== 'succeeded' || taskOutput(fetched).kind === 'none') {
+              setNotice(t('common.resultNotReady'));
+              return;
+            }
+            addRef(refFromTask(fetched));
+            setNotice(t('common.refAdded'));
           }
-          addRef(refFromTask(fetched));
-          setNotice(t('common.refAdded'));
           window.history.replaceState(
             null,
             '',
@@ -585,7 +618,7 @@ export function CreateView() {
     window.addEventListener('hashchange', consume);
     consume();
     return () => window.removeEventListener('hashchange', consume);
-  }, [t]);
+  }, [applyReuse, t]);
 
   const removeRef = (id: string): void => {
     setRefs((prev) => prev.filter((item) => item.id !== id));
@@ -1178,6 +1211,13 @@ export function CreateView() {
                     }}
                   >
                     {t('common.asReference')}
+                  </button>
+                  <button
+                    type="button"
+                    className="cr-link"
+                    onClick={() => applyReuse(task)}
+                  >
+                    {t('common.reuseParams')}
                   </button>
                   <button
                     type="button"
