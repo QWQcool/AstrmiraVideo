@@ -1112,7 +1112,11 @@ try {
       `「失败」筛选对账：界面 ${failedCards} = API 现算 ${expectedFailed}`,
     );
   }
-  await page.getByRole('button', { name: '全部', exact: true }).click();
+  // S5-Aa 之后视频库有两组「全部」（状态 / 媒体类型）；这里只点状态组
+  await page
+    .getByRole('group', { name: '按状态筛选' })
+    .getByRole('button', { name: '全部', exact: true })
+    .click();
 
   // 排序对账：切到"旧→新"，DOM 首条必须等于 API 现算的最旧一条
   await page.getByLabel('排序方式').selectOption('time-asc');
