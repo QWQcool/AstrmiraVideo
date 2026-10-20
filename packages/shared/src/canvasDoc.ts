@@ -155,6 +155,11 @@ export const CanvasDocNodeSchema = z.object({
     source: CanvasNodeSourceSchema,
     draft: CanvasNodeDraftSchema,
     batches: z.array(CanvasNodeBatchSchema),
+    /**
+     * V2.52（S5-B3）：当前预览的**成功批次** id。
+     * 缺省 = 最新成功批次；指向不存在/非成功批次时界面如实报“版本失效”，不静默换版。
+     */
+    selectedBatchId: z.string().min(1).optional(),
     tags: z.array(z.string()),
   }),
   meta: z

@@ -55,6 +55,9 @@ export const CANVAS_ZH = {
   'canvas.studio.textPlaceholder': '写点什么（文本节点不提交生成）',
   'canvas.studio.textNodeHint': '文本节点只保存文字；要生成请用图片 / 视频节点',
   'canvas.studio.batches': '{count} 轮',
+  'canvas.studio.versions': '版本列表',
+  'canvas.studio.versionInvalid':
+    '所选版本已失效（批次不存在 / 非成功 / 无产物）—— 请选择其他成功版本',
   'canvas.studio.progress': '{status} · {percent}%',
   'canvas.studio.noOutput': '还没有产物',
   'canvas.studio.submitUnknown': '提交中断（结果未知）',
@@ -457,6 +460,9 @@ export const CANVAS_EN = {
   'canvas.studio.textPlaceholder': 'Write something (text nodes do not generate)',
   'canvas.studio.textNodeHint': 'Text nodes only store text; use an image / video node to generate',
   'canvas.studio.batches': '{count} run(s)',
+  'canvas.studio.versions': 'Versions',
+  'canvas.studio.versionInvalid':
+    'The selected version is no longer valid (missing / not successful / no output) — choose another successful version',
   'canvas.studio.progress': '{status} · {percent}%',
   'canvas.studio.noOutput': 'No output yet',
   'canvas.studio.submitUnknown': 'Submit interrupted (result unknown)',

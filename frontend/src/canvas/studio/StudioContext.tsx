@@ -22,6 +22,8 @@ export interface StudioServices {
   onRecover(nodeId: string, batchId: string): void;
   /** S5-Ac：从资产库给节点添加参考（不新建节点、不复制文件） */
   onAddReference(nodeId: string): void;
+  /** S5-B3：选择节点预览的批次版本（只允许成功且有产物的批次） */
+  onSelectBatch(nodeId: string, batchId: string): void;
 }
 
 const StudioContext = createContext<StudioServices | null>(null);

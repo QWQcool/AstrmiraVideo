@@ -1,6 +1,11 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.51 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.52 · 已冻结（变更需先改本文，再改代码）**
+> **V2.52 修订（2026-10-20）**：**画布节点选中版本（§21-14）** —— Step 11-S5-B3a。
+>   ① `CanvasDocNode.data.selectedBatchId` 新增可选字段：当前预览的成功批次；
+>   ② 缺省 = 最新成功批次；指向不存在/非成功批次时界面明确报“版本失效”，**不静默换版**；
+>   ③ 只写 `id`，不复制 taskId/assetId；预览、下载、引用、续作都从所选批次解析；
+>   ④ **无新路由、无新错误码、不升 `CanvasDoc.version`**；旧文档缺字段照常读。
 > **V2.51 修订（2026-10-20）**：**本地 ComfyUI 的模式能力缓存（§2 / §20 / §5）** —— Step 11-S4-R3b（云端跳过）。
 >   ① `/selfcheck` 的每条结果新增可选 `modes`；ComfyUI provider 在自检时把实际可跑模式写入**进程内缓存**；
 >   ② `/status.comfyui.servers[]` 新增可选 `modes` / `modesCheckedAt`，只读最近一次自检（缓存 30 分钟），**`/status` 不发探测请求**；
@@ -2233,8 +2238,10 @@ interface CanvasDocNode {
     source: 'model_generated' | 'uploaded' | 'from_asset';
     draft: CanvasNodeDraft;
     batches: CanvasNodeBatch[];
+    /** V2.52：当前预览的成功批次 id；缺省 = 最新成功批次 */
+    selectedBatchId?: string;
     tags: string[];
-  };
+    };
   meta?: { createdAt?: number; createdFrom?: 'menu' | 'double_click' | 'toolbar' | 'skill' | 'import' };
 }
 ```
@@ -2501,6 +2508,15 @@ interface ModelCapability {
   保存失败/刷新后保留并可重试；空索引自动建画布最多一次。
 
 **无新路由、无新错误码、不升 `CanvasDoc.version`**：只加可选 `request`，其余是行为约定。
+
+### 21-14 画布节点选中版本（V2.52 落地；Step 11-S5-B3a）
+
+- `CanvasDocNode.data.selectedBatchId` 可选，只存批次 `id`，不复制 `taskId` / `assetId`；
+- **缺省** = 取最近一次 `succeeded` 且至少有 1 个产物的批次；
+- 显式选中：只允许选 `succeeded` 且有产物的批次；写入后刷新/切画布保留；
+- 指向不存在、非成功或无产物批次 = **版本失效**：界面必须明确提示，预览不静默回退到最新成功版本；
+- 预览、下载、引用、续作**都从所选批次解析**；运行/失败状态仍来自最近批次，与预览版本分开展示；
+- **无新路由、无新错误码、不升 `CanvasDoc.version`**；旧文档缺字段照常读。
 
 ### 21-13 图片尺寸与数量（V2.50 落地；Step 11-S4-R3a）
 

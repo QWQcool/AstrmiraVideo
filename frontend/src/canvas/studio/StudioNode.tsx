@@ -17,7 +17,11 @@ import {
 
 import { resolveMediaUrl } from '../../lib/api';
 import { resolveProviderKey } from '../../lib/byok';
-import { findCanvasNode, latestCanvasBatch, latestCanvasOutput } from '../../lib/canvasDocOps';
+import {
+  canvasNodeVisibleOutput,
+  findCanvasNode,
+  latestCanvasBatch,
+} from '../../lib/canvasDocOps';
 import {
   canvasAspectRatio,
   canvasDefaultProvider,
@@ -143,6 +147,7 @@ export function StudioNode({ id, selected }: NodeProps) {
 
   /** 引用目录：删除行内 token 后原生撤销时找回 reference（只增不删） */
   const referenceCatalog = useRef<Map<string, CanvasReference>>(new Map());
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const node = findCanvasNode(studio.doc, id);
   if (node === null) return null;
 
@@ -169,8 +174,14 @@ export function StudioNode({ id, selected }: NodeProps) {
           };
     })
     .filter((item): item is InlinePromptToken => item !== null);
-  const preview = latestCanvasOutput(node);
+  const visible = canvasNodeVisibleOutput(node);
+  const preview =
+    visible.state === 'selected' || visible.state === 'latest' ? visible : null;
   const latest = latestCanvasBatch(node);
+  const latestSucceeded = [...node.data.batches]
+    .reverse()
+    .find((batch) => batch.status === 'succeeded' && batch.outputs.length > 0);
+  const visibleBatchId = node.data.selectedBatchId ?? latestSucceeded?.id;
   const active = node.data.batches.find(
     (batch) => batch.status === 'queued' || batch.status === 'running',
   );
@@ -236,6 +247,8 @@ export function StudioNode({ id, selected }: NodeProps) {
 
   const mediaUrl = preview === null ? null : resolveMediaUrl(preview.output.url);
   const previewKind = preview?.output.kind ?? null;
+  const downloadExt =
+    previewKind === 'image' ? 'png' : previewKind === 'audio' ? 'mp3' : 'mp4';
   // 默认标题就是「视频 1 / 图片 1」：再在前面加一个类型标签会显示成「视频 视频 1」
   const title = node.data.title;
   const showType = title === undefined || !title.startsWith(labels[node.type]);
@@ -268,7 +281,12 @@ export function StudioNode({ id, selected }: NodeProps) {
         {(mediaUrl === null || previewKind === 'text') && node.type === 'text' ? (
           <p className="cs-card-text">{draft.prompt || t('canvas.studio.textPlaceholder')}</p>
         ) : null}
-        {(mediaUrl === null || previewKind === 'text') && node.type !== 'text' ? (
+        {visible.state === 'invalid' ? (
+          <p className="cs-card-empty cs-card-error">{t('canvas.studio.versionInvalid')}</p>
+        ) : null}
+        {(mediaUrl === null || previewKind === 'text') &&
+        node.type !== 'text' &&
+        visible.state !== 'invalid' ? (
           <p className="cs-card-empty">{t('canvas.studio.noOutput')}</p>
         ) : null}
       </div>
@@ -296,10 +314,50 @@ export function StudioNode({ id, selected }: NodeProps) {
           <div className="cs-toolbar-inner nodrag nowheel" onPointerDown={(event) => event.stopPropagation()}>
           <div className="cs-toolbar-head">
             <span className="cs-toolbar-title">{node.data.title ?? labels[node.type]}</span>
-            <span className="cs-toolbar-count">
+            <button
+              type="button"
+              className="cs-toolbar-count cs-version-toggle"
+              aria-expanded={versionsOpen}
+              disabled={node.data.batches.length === 0}
+              onClick={() => setVersionsOpen((open) => !open)}
+            >
               {t('canvas.studio.batches', { count: node.data.batches.length })}
-            </span>
+            </button>
           </div>
+
+          {versionsOpen ? (
+            <div className="cs-version-list" role="listbox" aria-label={t('canvas.studio.versions')}>
+              {[...node.data.batches].reverse().map((batch, index) => {
+                const selectable = batch.status === 'succeeded' && batch.outputs.length > 0;
+                const active = batch.id === visibleBatchId;
+                const output = batch.outputs[batch.outputs.length - 1];
+                return (
+                  <button
+                    key={batch.id}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    className={
+                      active ? 'cs-version-item is-active' : 'cs-version-item'
+                    }
+                    disabled={!selectable}
+                    onClick={() => {
+                      studio.onSelectBatch(id, batch.id);
+                      setVersionsOpen(false);
+                    }}
+                  >
+                    <span>v{node.data.batches.length - index}</span>
+                    <span>{statusText(batch, live, t)}</span>
+                    <span className="wb-note">{output?.kind ?? '—'}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {visible.state === 'invalid' ? (
+            <p className="cs-toolbar-issue">{t('canvas.studio.versionInvalid')}</p>
+          ) : null}
 
           {node.type === 'text' ? (
             <textarea
@@ -476,6 +534,15 @@ export function StudioNode({ id, selected }: NodeProps) {
 
               <div className="cs-toolbar-foot">
                 <span className="cs-toolbar-price">{priceText}</span>
+                {mediaUrl === null ? null : (
+                  <a
+                    className="wb-btn"
+                    href={mediaUrl}
+                    download={`${preview?.output.assetId ?? 'canvas-output'}.${downloadExt}`}
+                  >
+                    {t('common.download')}
+                  </a>
+                )}
                 <button
                   type="button"
                   className="wb-btn wb-btn-primary"

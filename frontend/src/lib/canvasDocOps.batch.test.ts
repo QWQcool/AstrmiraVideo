@@ -13,11 +13,13 @@ import {
   canvasBatchPatchFromTask,
   canvasLostActiveTaskNodes,
   canvasNodeActiveBatches,
+  canvasNodeVisibleOutput,
   cloneCanvasNode,
   insertCanvasNodes,
   latestCanvasOutput,
   nextCanvasNodePositions,
   patchCanvasBatch,
+  selectCanvasNodeBatch,
   updateCanvasNodeDraft,
 } from './canvasDocOps';
 
@@ -304,5 +306,55 @@ describe('复制 / 批量插入 / 资产入库（B3）', () => {
     // 没有名字 → 按类型递增
     expect(result.nodes[1]!.data.title).toBe('视频 1');
     expect(result.doc.nodes.map((n) => n.layout.x)).toEqual([0, 480]);
+  });
+});
+
+describe('S5-B3 选中版本', () => {
+  function versionedDoc(): CanvasDoc {
+    const node = nodeOf('n1');
+    node.data.batches = [
+      {
+        id: 'b1',
+        createdAt: 1,
+        status: 'succeeded',
+        outputs: [{ assetId: 'a1', kind: 'image', url: '/media/a1.png' }],
+      },
+      {
+        id: 'b2',
+        createdAt: 2,
+        status: 'failed',
+        outputs: [],
+        failure: { code: 'X', message: '失败' },
+      },
+      {
+        id: 'b3',
+        createdAt: 3,
+        status: 'succeeded',
+        outputs: [{ assetId: 'a3', kind: 'video', url: '/media/a3.mp4' }],
+      },
+    ];
+    return docWith(node);
+  }
+
+  it('缺省预览最新成功批次；选中旧成功后只读旧产物', () => {
+    const doc = versionedDoc();
+    const node = doc.nodes[0]!;
+    expect(canvasNodeVisibleOutput(node)).toMatchObject({ state: 'latest', output: { assetId: 'a3' } });
+
+    const selected = selectCanvasNodeBatch(doc, 'n1', 'b2');
+    expect(selected).toBe(doc); // 失败批次不可选
+    const next = selectCanvasNodeBatch(doc, 'n1', 'b1');
+    expect(next.nodes[0]!.data.selectedBatchId).toBe('b1');
+    expect(canvasNodeVisibleOutput(next.nodes[0]!)).toMatchObject({
+      state: 'selected',
+      output: { assetId: 'a1' },
+    });
+  });
+
+  it('选中 id 失效时返回 invalid，不静默回退到最新成功版本', () => {
+    const doc = versionedDoc();
+    doc.nodes[0]!.data.selectedBatchId = 'missing';
+    expect(canvasNodeVisibleOutput(doc.nodes[0]!)).toEqual({ state: 'invalid', batch: null });
+    expect(canvasNodeVisibleOutput(nodeOf('empty'))).toEqual({ state: 'none' });
   });
 });

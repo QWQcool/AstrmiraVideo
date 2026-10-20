@@ -364,6 +364,54 @@ export function latestCanvasOutput(
 }
 
 /**
+ * S5-B3：当前预览的版本。
+ *
+ * 显式 `selectedBatchId` 失效时返回 `invalid`，**不静默回退**到最新成功批次；
+ * 没选过才取最近一次成功批次。
+ */
+export type CanvasVisibleOutput =
+  | { state: 'none' }
+  | { state: 'latest' | 'selected'; batch: CanvasNodeBatch; output: CanvasOutput }
+  | { state: 'invalid'; batch: CanvasNodeBatch | null };
+
+export function canvasNodeVisibleOutput(node: CanvasDocNode): CanvasVisibleOutput {
+  const selectedId = node.data.selectedBatchId;
+  if (selectedId !== undefined) {
+    const batch = node.data.batches.find((item) => item.id === selectedId) ?? null;
+    if (batch === null || batch.status !== 'succeeded' || batch.outputs.length === 0) {
+      return { state: 'invalid', batch };
+    }
+    const output = batch.outputs[batch.outputs.length - 1];
+    return output === undefined
+      ? { state: 'invalid', batch }
+      : { state: 'selected', batch, output };
+  }
+  const latest = latestCanvasOutput(node);
+  return latest === null ? { state: 'none' } : { state: 'latest', ...latest };
+}
+
+/** 选中一个成功批次；非成功/无产物批次不允许写进文档 */
+export function selectCanvasNodeBatch(
+  doc: CanvasDoc,
+  nodeId: string,
+  batchId: string,
+  now: number = Date.now(),
+): CanvasDoc {
+  let changed = false;
+  const nodes = doc.nodes.map((node) => {
+    if (node.id !== nodeId) return node;
+    const batch = node.data.batches.find((item) => item.id === batchId);
+    if (batch === undefined || batch.status !== 'succeeded' || batch.outputs.length === 0) {
+      return node;
+    }
+    if (node.data.selectedBatchId === batchId) return node;
+    changed = true;
+    return { ...node, data: { ...node.data, selectedBatchId: batchId } };
+  });
+  return changed ? { ...doc, nodes, updatedAt: now } : doc;
+}
+
+/**
  * 还在跑（可轮询）的批次。
  *
  * **只算有 `taskId` 的**：`queued` 但没有 taskId 表示"提交请求发出去了、响应还没回来"，

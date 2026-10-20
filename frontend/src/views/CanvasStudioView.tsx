@@ -50,6 +50,7 @@ import {
   moveCanvasNode,
   nextCanvasNodePosition,
   nextCanvasNodePositions,
+  selectCanvasNodeBatch,
   patchCanvasBatch,
   removeCanvasNodes,
   renameCanvasDoc,
@@ -1220,6 +1221,14 @@ export function CanvasStudioView() {
     [applyDoc],
   );
 
+  /** S5-B3：把选中版本写进文档（非成功批次不写） */
+  const selectBatch = useCallback(
+    (nodeId: string, batchId: string): void => {
+      applyDoc((d) => selectCanvasNodeBatch(d, nodeId, batchId));
+    },
+    [applyDoc],
+  );
+
   /** S5-Ac：把来源选择写成稳定引用（不复制文件、不新建节点） */
   const addReferencesToNode = useCallback(
     (nodeId: string, sources: readonly ReferenceSourceItem[]): void => {
@@ -1676,6 +1685,7 @@ export function CanvasStudioView() {
               setPickerReferenceNodeId(id);
               setPickerOpen(true);
             },
+            onSelectBatch: selectBatch,
           }}
         >
           <div className="cs-workspace">

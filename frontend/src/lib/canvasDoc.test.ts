@@ -151,4 +151,21 @@ describe('CanvasDoc v1', () => {
     });
     expect(parsed.nodes[0]?.data.batches[0]?.request?.prompt).toBe('一只猫');
   });
+
+  it('V2.52：selectedBatchId 可选；旧文档缺字段仍能读', () => {
+    const doc = makeDoc();
+    const legacy = CanvasDocSchema.parse(doc);
+    expect(legacy.nodes[0]?.data.selectedBatchId).toBeUndefined();
+
+    const selected = CanvasDocSchema.parse({
+      ...doc,
+      nodes: [
+        {
+          ...doc.nodes[0],
+          data: { ...doc.nodes[0].data, selectedBatchId: 'b1' },
+        },
+      ],
+    });
+    expect(selected.nodes[0]?.data.selectedBatchId).toBe('b1');
+  });
 });
