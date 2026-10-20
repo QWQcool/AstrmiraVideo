@@ -28,6 +28,8 @@ export interface StudioServices {
   onContinueFromVersion(nodeId: string): void;
   /** S5-B3d：把选中批次的真实 request 回填到当前节点草稿（不提交） */
   onReuseBatch(nodeId: string, batchId: string): void;
+  /** S5-B4f：窄屏底部抽屉的关闭（取消这个节点的选中态） */
+  onDeselect(nodeId: string): void;
 }
 
 const StudioContext = createContext<StudioServices | null>(null);

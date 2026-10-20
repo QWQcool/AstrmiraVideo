@@ -1130,6 +1130,52 @@ audio.cs-card-media {
   }
 }
 
+/* S5-B4f：≤768px 的锚定面板改为底部抽屉（portal 到 body，不会被画布 overflow 裁掉）。
+   保留节点标题/参数/输入，右上角有明确关闭；Esc 由 dialogFocus 接管。 */
+.cs-toolbar-sheet {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  z-index: 60;
+  max-height: 68vh;
+  overflow-y: auto;
+  padding: 14px 12px 12px;
+  border: 1px solid var(--line-gold);
+  border-radius: 16px;
+  background: var(--panel2);
+  box-shadow: var(--shadow-pop);
+}
+
+.cs-toolbar-sheet .cs-toolbar-inner {
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cs-toolbar-sheet .cs-toolbar-head {
+  padding-right: 32px;
+}
+
+.cs-sheet-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--fs-title);
+  line-height: 1;
+}
+
 .cs-toolbar-head {
   display: flex;
   align-items: baseline;

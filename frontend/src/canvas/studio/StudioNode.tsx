@@ -6,6 +6,8 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
+import { createPortal } from 'react-dom';
+import { useDialogFocus } from '../../lib/dialogFocus';
 import { Handle, NodeToolbar, Position, useViewport, type NodeProps } from '@xyflow/react';
 import {
   formatYuan,
@@ -96,14 +98,33 @@ function statusText(batch: CanvasNodeBatch, live: TaskProgress | undefined, t: T
  */
 function StudioToolbar({
   cardRef,
+  title,
+  closeLabel,
+  onClose,
   children,
 }: {
   cardRef: RefObject<HTMLDivElement | null>;
+  title: string;
+  closeLabel: string;
+  onClose(): void;
   children: ReactNode;
 }) {
   const [placement, setPlacement] = useState<Position>(Position.Right);
   const [align, setAlign] = useState<'start' | 'center' | 'end'>('center');
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches,
+  );
   const viewport = useViewport();
+
+  // S5-B4f：窄屏把锚定面板改成底部抽屉；用 dialogFocus 统一 Esc/回焦/背景快捷键隔离
+  const sheetRef = useDialogFocus<HTMLDivElement>(narrow, onClose);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 768px)');
+    const onChange = (): void => setNarrow(media.matches);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
 
   useLayoutEffect(() => {
     const card = cardRef.current;
@@ -131,6 +152,29 @@ function StudioToolbar({
       setAlign('center');
     }
   }, [cardRef, viewport.x, viewport.y, viewport.zoom]);
+
+  if (narrow) {
+    return createPortal(
+      <div
+        ref={sheetRef}
+        className="cs-toolbar-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        <button
+          type="button"
+          className="cs-sheet-close"
+          aria-label={closeLabel}
+          onClick={onClose}
+        >
+          ×
+        </button>
+        {children}
+      </div>,
+      document.body,
+    );
+  }
 
   return (
     <NodeToolbar className="cs-toolbar" position={placement} align={align} offset={12}>
@@ -366,7 +410,12 @@ export function StudioNode({ id, selected }: NodeProps) {
       </footer>
 
       {selected ? (
-        <StudioToolbar cardRef={cardRef}>
+        <StudioToolbar
+          cardRef={cardRef}
+          title={node.data.title ?? labels[node.type]}
+          closeLabel={t('canvas.studio.close')}
+          onClose={() => studio.onDeselect(id)}
+        >
           <div className="cs-toolbar-inner nodrag nowheel" onPointerDown={(event) => event.stopPropagation()}>
           <div className="cs-toolbar-head">
             <span className="cs-toolbar-title">{node.data.title ?? labels[node.type]}</span>

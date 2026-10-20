@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ProjectEntry, ProviderStatus } from '@astrmira/shared';
 import { ByokDrawer } from './components/ByokDrawer';
-import { useTranslate } from './lib/i18n';
+import { useLanguage, useTranslate } from './lib/i18n';
 // B61：视图级兜底（崩的是这一块，而不是整页）
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Eyebrow } from './components/Eyebrow';
@@ -108,6 +108,12 @@ export default function App() {
    * 否则文案会停留在切换前的语言（而侧栏已经变了 —— 那种不一致比不翻译更糟）。
    */
   const t = useTranslate();
+  const language = useLanguage();
+
+  // S5-B4f：界面语言切换时同步 <html lang>，否则英文界面仍被读屏按中文发音
+  useEffect(() => {
+    document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
+  }, [language]);
 
   const handleSetActiveProject = useCallback(
     (nextProjectId: string): void => {
@@ -338,17 +344,17 @@ export default function App() {
             {serviceError !== null ? (
               <span className="wb-badge wb-badge-bad" title={serviceError}>
                 <span className="wb-dot wb-dot-bad" />
-                {t('shell.service.bad')}
+                <span className="wb-badge-text">{t('shell.service.bad')}</span>
               </span>
             ) : providerStatus === null ? (
               <span className="wb-badge">
                 <span className="wb-dot" />
-                {t('shell.service.probing')}
+                <span className="wb-badge-text">{t('shell.service.probing')}</span>
               </span>
             ) : (
               <span className="wb-badge wb-badge-ok">
                 <span className="wb-dot wb-dot-ok" />
-                {t('shell.service.ok')}
+                <span className="wb-badge-text">{t('shell.service.ok')}</span>
               </span>
             )}
           </div>

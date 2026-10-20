@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useTranslate } from '../lib/i18n';
 import { useDialogFocus } from '../lib/dialogFocus';
 
@@ -29,7 +30,7 @@ export function MediaLightbox({
 
   if (!open) return null;
 
-  return (
+  const overlay = (
     <div
       ref={dialogRef}
       className="wb-lightbox"
@@ -61,4 +62,8 @@ export function MediaLightbox({
       </div>
     </div>
   );
+
+  // S5-B4f：portal 到 body —— 页面入场动画的 transform 会让 `position: fixed`
+  // 相对 `.wb-page` 定位，长页面/窄屏下预览遮罩会超出视口；portal 后才是真正的全屏层。
+  return createPortal(overlay, document.body);
 }

@@ -1144,12 +1144,23 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  width: min(92vw, 1400px);
   max-width: min(92vw, 1400px);
   color: var(--on-scrim);
 }
 
+/* S5-B4f：375 下长标题不要把下载按钮挤成竖排 */
 .wb-lightbox-bar .wb-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
   color: color-mix(in srgb, var(--on-scrim) 72%, transparent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-lightbox-bar .wb-btn {
+  flex: 0 0 auto;
 }
 
 .wb-crash {
@@ -2660,5 +2671,60 @@
   .wb-card-play {
     opacity: 1;
     transform: scale(1.08);
+  }
+}
+
+/* ── S5-B4f：375px 顶栏收口 ───────────────────────────────────────────
+   375 宽时品牌名 + 项目下拉 + 服务徽章会互相挤：项目下拉被裁到屏幕外。
+   这里只压缩顶栏，不改页面结构：隐藏 eyebrow、缩小品牌字、项目下拉限宽、
+   服务徽章只留状态点（文字仍在 DOM，仅视觉隐藏）。 */
+@media (max-width: 480px) {
+  .wb-header {
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  .wb-brand {
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .wb-brand .wb-eyebrow {
+    display: none;
+  }
+
+  .wb-brand-title {
+    overflow: hidden;
+    font-size: var(--fs-title);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wb-header-right {
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .proj-select {
+    min-width: 0;
+    max-width: 96px;
+  }
+
+  .wb-badge {
+    padding: 4px 6px;
+  }
+
+  .wb-badge-text {
+    display: none;
+  }
+
+  /* 项目管理面板在 375 下会从右侧伸出屏幕：改成顶栏下方的全宽浮层 */
+  .proj-pop {
+    position: fixed;
+    top: 64px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-width: none;
   }
 }

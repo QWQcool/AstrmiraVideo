@@ -17,6 +17,13 @@
   transition: box-shadow 0.2s var(--ease-ui);
 }
 
+/* S5-B4f：1920 下 880px 显得过窄（设计规格的主创作区上限是 1100） */
+@media (min-width: 1440px) {
+  .cr-wrap {
+    max-width: 1100px;
+  }
+}
+
 /* 整页拖拽态：整块面板浮起 + 金色晕圈（"把图拖到这里"的可见回应） */
 .cr-wrap-drag {
   box-shadow: 0 0 0 2px var(--gold-line), 0 0 42px var(--gold-glow);

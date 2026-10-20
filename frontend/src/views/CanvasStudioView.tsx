@@ -1237,6 +1237,17 @@ export function CanvasStudioView() {
     [applyDoc],
   );
 
+  /** S5-B4f：窄屏底部抽屉的关闭（取消这个节点的选中态，不改文档） */
+  const handleDeselect = useCallback(
+    (nodeId: string): void => {
+      setSelectedIds((prev) => prev.filter((id) => id !== nodeId));
+      setNodes((prev) =>
+        prev.map((node) => (node.id === nodeId ? { ...node, selected: false } : node)),
+      );
+    },
+    [setNodes],
+  );
+
   /** S5-B3：把选中版本写进文档（非成功批次不写） */
   const selectBatch = useCallback(
     (nodeId: string, batchId: string): void => {
@@ -1803,6 +1814,7 @@ export function CanvasStudioView() {
             onSelectBatch: selectBatch,
             onContinueFromVersion: continueFromVersion,
             onReuseBatch: reuseBatch,
+            onDeselect: handleDeselect,
           }}
         >
           <div className="cs-workspace">
