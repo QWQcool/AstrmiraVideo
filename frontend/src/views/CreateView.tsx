@@ -179,6 +179,9 @@ export function CreateView() {
     setKind,
     initial: draftInitial,
     persist: persistDraft,
+    backup: backupDraft,
+    readBackup: readDraftBackup,
+    clearBackup: clearDraftBackup,
   } = useCreationDraft('video');
   // 类型只有**一个**数据源（hook 里的草稿）：本地再存一份会让"落盘的 kind"与"界面显示的 kind"分叉
   // —— S2 自测时确实出现过 kind=video 但 settings.mode=t2i 的脏草稿。
@@ -191,6 +194,7 @@ export function CreateView() {
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
   const [mentionActive, setMentionActive] = useState(0);
+  const [backupAvailable, setBackupAvailable] = useState(false);
   /** 行内 token 的编辑器句柄（与外部 chips 双向同步） */
   const promptEditorRef = useRef<StructuredPromptHandle | null>(null);
   /** 引用目录：删除后原生撤销恢复 token 时，从这里找回引用 */
@@ -564,6 +568,21 @@ export function CreateView() {
     (target: TaskProgress): void => {
       const snapshot = target.requestSnapshot;
       const output = taskOutput(target);
+      // S5-B3e：覆盖前留一份当前草稿（只保留最近一份）
+      backupDraft({
+        prompt,
+        settings: {
+          aspectRatio,
+          ...(kind === 'image'
+            ? { mode: 't2i' as const, resolution: resolveImageSize(aspectRatio) }
+            : {
+                durationSec,
+                resolution: resolveTargetSize(aspectRatio, resolutionTier),
+              }),
+        },
+        references: canvasReferencesForMentionRefs(refs),
+      });
+      setBackupAvailable(true);
       setKind(output.kind === 'image' ? 'image' : 'video');
       setPrompt(snapshot.prompt);
       promptEditorRef.current?.replaceText(snapshot.prompt);
@@ -579,8 +598,55 @@ export function CreateView() {
       setSubmitError(null);
       setNotice(t('common.paramsReused'));
     },
-    [setKind, t],
+    [
+      aspectRatio,
+      backupDraft,
+      durationSec,
+      kind,
+      prompt,
+      refs,
+      resolutionTier,
+      setKind,
+      t,
+    ],
   );
+
+  /** S5-B3e：恢复覆盖前的草稿（prompt/参数/引用；token 正文按引用重建） */
+  const restoreDraft = useCallback((): void => {
+    const draft = readDraftBackup();
+    if (draft === null) {
+      setNotice(t('common.restoreDraftMissing'));
+      setBackupAvailable(false);
+      return;
+    }
+    setKind(draft.kind === 'image' ? 'image' : 'video');
+    setPrompt(draft.prompt);
+    promptEditorRef.current?.clearTokens();
+    promptEditorRef.current?.replaceText(draft.prompt);
+    setAspectRatio(draft.settings.aspectRatio ?? '16:9');
+    setDurationSec(
+      clampDurationSec(draft.settings.durationSec ?? DEFAULT_DURATION_SEC),
+    );
+    if (draft.settings.resolution !== undefined) {
+      setResolutionTier(
+        tierForSize(draft.settings.resolution.width, draft.settings.resolution.height),
+      );
+    }
+    if (draft.settings.provider !== undefined) setProvider(draft.settings.provider);
+    const restoredRefs = mentionRefsFromCanvasReferences(draft.references);
+    setRefs(restoredRefs);
+    for (const ref of restoredRefs) {
+      if (ref.ref === '' || ref.missing === true) continue;
+      promptEditorRef.current?.insertToken({
+        id: ref.id,
+        label: ref.label ?? ref.ref.slice(0, 10),
+        kind: ref.kind,
+      });
+    }
+    clearDraftBackup();
+    setBackupAvailable(false);
+    setNotice(t('common.draftRestored'));
+  }, [clearDraftBackup, readDraftBackup, setKind, t]);
 
   useEffect(() => {
     const consume = (): void => {
@@ -881,6 +947,11 @@ export function CreateView() {
             </button>
             <span className="wb-note">{t('create.hint.mentionNote')}</span>
             <span className="wb-note cr-shortcut">{t('create.hint.submit')}</span>
+            {backupAvailable ? (
+              <button type="button" className="cr-link" onClick={restoreDraft}>
+                {t('common.restoreDraft')}
+              </button>
+            ) : null}
           </div>
 
           {refs.length > 0 ? (

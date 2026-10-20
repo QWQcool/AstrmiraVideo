@@ -36,6 +36,8 @@ export interface StructuredPromptHandle {
   updateTokenLabel(id: string, label: string): void;
   /** 复用历史参数时替换正文；现有 token 保留并追加到末尾 */
   replaceText(text: string): void;
+  /** 恢复草稿前清空旧 token（随后按恢复的引用重建） */
+  clearTokens(): void;
   focus(): void;
 }
 
@@ -248,6 +250,14 @@ export const StructuredPromptInput = forwardRef<StructuredPromptHandle, Structur
         },
         replaceText(next) {
           replaceEditorText(next);
+        },
+        clearTokens() {
+          const editor = editorRef.current;
+          if (editor === null) return;
+          for (const span of Array.from(editor.querySelectorAll<HTMLElement>('[data-ref-id]'))) {
+            span.remove();
+          }
+          knownIds.current.clear();
         },
         focus() {
           editorRef.current?.focus();

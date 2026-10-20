@@ -58,6 +58,8 @@ export const CREATION_KIND_TO_NODE: Record<Exclude<CreationKind, 'agent'>, 'imag
 };
 
 export const CREATION_DRAFT_STORAGE_KEY = 'astrmira.creationDraft';
+/** S5-B3e：复用参数/覆盖草稿前保留一份可返回快照（只保存一份，后一次覆盖前一次） */
+export const CREATION_DRAFT_BACKUP_KEY = 'astrmira.creationDraft.backup';
 
 export function createCreationDraft(
   kind: CreationKind = 'agent',
@@ -182,6 +184,44 @@ export function clearCreationDraft(storage: DraftStorage): void {
   try {
     if (storage.removeItem) storage.removeItem(CREATION_DRAFT_STORAGE_KEY);
     else storage.setItem(CREATION_DRAFT_STORAGE_KEY, '');
+  } catch {
+    // 同上
+  }
+}
+
+export function writeCreationDraftBackup(storage: DraftStorage, draft: CreationDraft): void {
+  try {
+    storage.setItem(CREATION_DRAFT_BACKUP_KEY, JSON.stringify(draft));
+  } catch {
+    // 配额满/隐私模式：备份失败不阻塞主流程
+  }
+}
+
+export function readCreationDraftBackup(
+  storage: DraftStorage,
+  now: number = Date.now(),
+): CreationDraft | null {
+  try {
+    const raw = storage.getItem(CREATION_DRAFT_BACKUP_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CreationDraft> | null;
+    if (!parsed || typeof parsed !== 'object' || !isCreationKind(parsed.kind)) return null;
+    return {
+      kind: parsed.kind,
+      prompt: typeof parsed.prompt === 'string' ? parsed.prompt : '',
+      references: Array.isArray(parsed.references) ? parsed.references : [],
+      settings: parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {},
+      updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : now,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function clearCreationDraftBackup(storage: DraftStorage): void {
+  try {
+    if (storage.removeItem) storage.removeItem(CREATION_DRAFT_BACKUP_KEY);
+    else storage.setItem(CREATION_DRAFT_BACKUP_KEY, '');
   } catch {
     // 同上
   }

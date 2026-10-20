@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelCapability } from '@astrmira/shared';
 import {
+  CREATION_DRAFT_BACKUP_KEY,
   CREATION_DRAFT_STORAGE_KEY,
   CREATION_KIND_CONTROLS,
   clearCreationDraft,
+  clearCreationDraftBackup,
   createCreationDraft,
   creationIssue,
   readCreationDraft,
+  readCreationDraftBackup,
   settingsForKind,
   switchCreationKind,
   writeCreationDraft,
+  writeCreationDraftBackup,
   type CreationDraft,
 } from './creationDraft';
 
@@ -143,5 +147,22 @@ describe('creationDraft', () => {
     clearCreationDraft(storage);
     expect(storage.getItem(CREATION_DRAFT_STORAGE_KEY)).toBeNull();
     expect(readCreationDraft(storage).kind).toBe('agent');
+  });
+
+  it('S5-B3e：备份与主草稿分离，可读可清，坏数据返回 null', () => {
+    const storage = memoryStorage();
+    const draft = draftWith({ prompt: '覆盖前的草稿' });
+    writeCreationDraftBackup(storage, draft);
+    expect(storage.getItem(CREATION_DRAFT_BACKUP_KEY)).not.toBeNull();
+    expect(readCreationDraftBackup(storage)?.prompt).toBe('覆盖前的草稿');
+    // 主草稿不因备份而出现
+    expect(storage.getItem(CREATION_DRAFT_STORAGE_KEY)).toBeNull();
+
+    storage.setItem(CREATION_DRAFT_BACKUP_KEY, '{broken');
+    expect(readCreationDraftBackup(storage)).toBeNull();
+
+    writeCreationDraftBackup(storage, draft);
+    clearCreationDraftBackup(storage);
+    expect(readCreationDraftBackup(storage)).toBeNull();
   });
 });

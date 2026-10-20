@@ -2,9 +2,12 @@ import { useCallback, useMemo, useState } from 'react';
 import type { CanvasNodeSettings, CanvasReference } from '@astrmira/shared';
 import { browserStorage } from '../lib/storage';
 import {
+  clearCreationDraftBackup,
   createCreationDraft,
   readCreationDraft,
+  readCreationDraftBackup,
   writeCreationDraft,
+  writeCreationDraftBackup,
   type CreationDraft,
   type CreationKind,
 } from '../lib/creationDraft';
@@ -29,6 +32,14 @@ export interface CreationDraftHandle {
     settings: CanvasNodeSettings;
     references?: readonly CanvasReference[];
   }): void;
+  /** S5-B3e：覆盖前备份当前草稿 */
+  backup(input: {
+    prompt: string;
+    settings: CanvasNodeSettings;
+    references?: readonly CanvasReference[];
+  }): void;
+  readBackup(): CreationDraft | null;
+  clearBackup(): void;
 }
 
 export function useCreationDraft(defaultKind: CreationKind = 'video'): CreationDraftHandle {
@@ -68,5 +79,36 @@ export function useCreationDraft(defaultKind: CreationKind = 'video'): CreationD
     [store, kind],
   );
 
-  return { kind, setKind, initial, persist };
+  const backup = useCallback(
+    ({
+      prompt,
+      settings,
+      references,
+    }: {
+      prompt: string;
+      settings: CanvasNodeSettings;
+      references?: readonly CanvasReference[];
+    }) => {
+      if (!store) return;
+      writeCreationDraftBackup(store, {
+        kind,
+        prompt,
+        references: [...(references ?? [])],
+        settings,
+        updatedAt: Date.now(),
+      });
+    },
+    [store, kind],
+  );
+
+  const readBackup = useCallback(
+    (): CreationDraft | null => (store ? readCreationDraftBackup(store) : null),
+    [store],
+  );
+
+  const clearBackup = useCallback((): void => {
+    if (store) clearCreationDraftBackup(store);
+  }, [store]);
+
+  return { kind, setKind, initial, persist, backup, readBackup, clearBackup };
 }
