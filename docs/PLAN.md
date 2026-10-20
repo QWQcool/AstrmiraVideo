@@ -1683,6 +1683,13 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · B4-0：CI 覆盖率门限修复（具名实例，无生产代码改动）
+
+- **【根因】** 最近 15 次 `main` 推送全部红在 `verify` 的覆盖率门限：后端 677 条测试全过，但 `src/providers/registry.ts` 函数覆盖率 **88.23% < 90%**；未覆盖的是 `host-comfyui:<name>` 具名分流（第 263 行）。V2.36 具名 ComfyUI 与 V2.47 具名 HTTP 服务加进 `getProvider` 后，一直没有对应的 registry 门控测试。
+- **【修复】** 新增 `backend/src/providers/registry.named.test.ts` 4 条：具名 ComfyUI 从 `COMFYUI_SERVERS_FILE` 取到实例、找不到返回 null；具名 HTTP 服务从 `HTTP_SERVICES_FILE` 取到实例、找不到/无默认实例返回 null。测试用临时目录，结束后清理，不写用户数据。
+- **【门禁】** 本地 `backend test:coverage`：**72 文件 / 681 测试全过**；`registry.ts` 行 100%、函数 **94.11%**（≥90）、分支 87.64%。仅测试文件新增，生产代码零改动。
+- **【同步】** 该片先于 S5-B4，避免后续 7 片推送继续被同一个红点淹没；`deploy` 仍由 `needs: verify` 门控。
+
 ### 2026-10-20 · S5-B3e：草稿备份、真实拖连与追加批次（B3 收口）
 
 - **【覆盖前备份】** `creationDraft` 新增独立 backup key；复用参数覆盖前保存 prompt/kind/settings/references；创作页显示「恢复上一草稿」，恢复后清空备份并给反馈。主草稿与备份分离，坏数据返回 null。
