@@ -32,7 +32,7 @@ import { resolveLlmConfig, resolveLlmKey, resolveProviderKey } from '../lib/byok
 import { newIdempotencyKey } from '../lib/idempotency';
 import { useTranslate } from '../lib/i18n';
 import { appendSkeleton } from '../lib/recipeInsert';
-import { useHashRoute } from '../lib/router';
+import { navigate, useHashRoute } from '../lib/router';
 import { useShell } from '../lib/shell';
 import {
   STORAGE_KEYS,
@@ -685,6 +685,19 @@ export function WorkbenchView() {
 
   return (
     <>
+      {/* S5-B4e：D62 之后本页退场；功能与深链保留一版，但必须说明去哪继续 */}
+      <div className="wb-retired" role="status">
+        <span className="wb-retired-title">{t('workbench.retired.title')}</span>
+        <span className="wb-note">{t('workbench.retired.body')}</span>
+        <span className="wb-retired-actions">
+          <button type="button" className="wb-btn" onClick={() => navigate('#/create')}>
+            {t('workbench.retired.toCreate')}
+          </button>
+          <button type="button" className="wb-btn" onClick={() => navigate('#/canvas')}>
+            {t('workbench.retired.toCanvas')}
+          </button>
+        </span>
+      </div>
       <main className="wb-main">
         <LeftPanel
           costHint={costHint}

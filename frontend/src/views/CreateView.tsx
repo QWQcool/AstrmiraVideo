@@ -1245,9 +1245,9 @@ export function CreateView() {
               <button
                 type="button"
                 className="cr-link"
-                onClick={() => navigate('#/workbench')}
+                onClick={() => navigate(`#/library?task=${encodeURIComponent(task.taskId)}`)}
               >
-                {t('create.task.toWorkbench')}
+                {t('create.task.viewInLibrary')}
               </button>
             </div>
 

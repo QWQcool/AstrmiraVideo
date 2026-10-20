@@ -11,6 +11,7 @@ import {
   type CostRangeKey,
 } from '../lib/costView';
 import { useTranslate } from '../lib/i18n';
+import { navigate } from '../lib/router';
 import { useShell } from '../lib/shell';
 
 /**
@@ -74,6 +75,20 @@ export function CostsView() {
         <button type="button" className="wb-btn" onClick={() => void reload()} disabled={loading}>
           {t(loading ? 'costs.refresh.loading' : 'costs.refresh.label')}
         </button>
+      </div>
+
+      {/* S5-B4e：D62 之后本页退场；数据仍可看，但必须说明去哪继续 */}
+      <div className="wb-retired" role="status">
+        <span className="wb-retired-title">{t('costs.retired.title')}</span>
+        <span className="wb-note">{t('costs.retired.body')}</span>
+        <span className="wb-retired-actions">
+          <button type="button" className="wb-btn" onClick={() => navigate('#/create')}>
+            {t('costs.retired.toCreate')}
+          </button>
+          <button type="button" className="wb-btn" onClick={() => navigate('#/logs')}>
+            {t('costs.retired.toLogs')}
+          </button>
+        </span>
       </div>
 
       {/* 范围与区间（两个分段控件；"全部项目"是本页独有的能力） */}

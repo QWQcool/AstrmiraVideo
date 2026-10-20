@@ -67,6 +67,12 @@ export const COSTS_ZH = {
   'costs.byDay.note': '服务端本地时区',
   'costs.byModel.title': '按模型档位',
   'costs.byModel.note': '自定义接入点按 2.0 标准口径估算',
+  // S5-B4e：退场说明（页面本身保留，数据仍可看）
+  'costs.retired.title': '成本台账已下线',
+  'costs.retired.body':
+    '本产品不做支付/积分；单次费用在创作页与画布节点的参数行显示，历史请求可到「操作日志」查看。此页保留一版，便于回退。',
+  'costs.retired.toCreate': '去创作',
+  'costs.retired.toLogs': '查看操作日志',
 };
 
 export const COSTS_EN = {
@@ -117,4 +123,9 @@ export const COSTS_EN = {
   'costs.byDay.note': "The service host's local time zone",
   'costs.byModel.title': 'By model tier',
   'costs.byModel.note': 'Custom endpoints are estimated at the 2.0 standard rate',
+  'costs.retired.title': 'The cost ledger is retired',
+  'costs.retired.body':
+    'This product does not sell credits or take payments. Per-run cost is shown in the create and canvas parameter rows; past requests remain in the activity log. This page stays for one release for rollback.',
+  'costs.retired.toCreate': 'Go to Create',
+  'costs.retired.toLogs': 'Open activity log',
 };

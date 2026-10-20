@@ -95,6 +95,7 @@ export const CREATE_ZH = {
   // ── 任务卡 ──
   'create.task.idLine': '任务 {id} · {prompt}',
   'create.task.toWorkbench': '去专业模式查看',
+  'create.task.viewInLibrary': '查看生成记录',
   'create.task.failedFallback': '任务失败（详情见操作日志）',
   // V2.40：产物可能是图片（`t2i`）—— 文案不再写死 "MP4"
   'create.task.download': '⤓ 下载',
@@ -190,6 +191,7 @@ export const CREATE_EN = {
 
   'create.task.idLine': 'Task {id} · {prompt}',
   'create.task.toWorkbench': 'Open in Workbench',
+  'create.task.viewInLibrary': 'View in library',
   'create.task.failedFallback': 'Task failed (see the activity log for details)',
   'create.task.download': '⤓ Download',
   'create.task.imageAlt': 'The generated still image',

@@ -106,6 +106,40 @@
   opacity: 0.75;
 }
 
+/* S5-B4e：退场路由的说明条（工作台 / 成本台账）。信息层，不用错误色。 */
+.wb-retired {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 24px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line-gold);
+  border-left: 3px solid var(--gold);
+  border-radius: 12px;
+  background: var(--gold-tint);
+}
+
+.wb-page .wb-retired {
+  margin: 0 0 14px;
+}
+
+.wb-retired-title {
+  color: var(--gold);
+  font-size: var(--fs-label);
+  font-weight: 600;
+}
+
+.wb-retired .wb-note {
+  flex: 1 1 360px;
+}
+
+.wb-retired-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
 /* ── 三栏布局 ───────────────────────────────────────── */
 .wb-main {
   flex: 1;

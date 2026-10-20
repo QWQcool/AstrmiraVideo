@@ -1683,6 +1683,18 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · S5-B4e：退场路由说明与入口清单
+
+- **【成本台账】** `#/costs` 顶部加说明条：不做支付/积分、单次费用在创作/画布参数行、历史请求去操作日志；两个按钮实测可到 `#/create` 与 `#/logs`。成本数据仍按原逻辑展示，不删历史。
+- **【专业工作台】** `#/workbench` 顶部加说明条：创作输入/参数/结果动作已并入创作页，画布节点同一套参数；按钮实测到 `#/create` / `#/canvas`。工作台三栏与 `?reuse/?recipe/?frameAsset/?refTask` 读取逻辑原样保留一版。
+- **【创作页】** 任务卡「去专业模式查看」改为「查看生成记录」，目标 `#/library?task=<taskId>`；不再把用户送回退场工作台。资产页/详情「复用参数」仍走 `#/create?reuse=`（B3c 已收口）。
+- **【总览】** 空态链接从 `#/workbench` 改为 `#/create`，文案改为「创作页」。
+- **【旧血缘】** `#/lineage` 原有说明页与「打开创作画布」按钮保持；侧栏只有 6 个一级入口，`#/costs` / `#/workbench` / `#/lineage` 均仍可直达。
+- **【配方深链】** 实测 `#/recipes` →「插入骨架到提示词」→ `#/workbench?recipe=camera-push-in-slow`，提示词确实追加了骨架，且页面显示下线说明；配方并入技能仍留给 S6-A。`ExportPanel` 的 `?frameAsset=` 深链同样保留并带说明。
+- **【日志】** `#/logs` 未改动，仍是侧栏常驻入口；成本说明条提供直达。
+- **【测试】** 前端 **578 passed**、`pnpm type` / `pnpm lint` / 视觉自检通过。截图见 `.tmp/b4e-*.png`。
+- **【未改】** 已无引用的 `CanvasView.tsx` 死代码不删（D63 保留一版），登记到 S5-C 后清理。
+
 ### 2026-10-20 · S5-B4d：键盘、焦点约束与背景快捷键隔离
 
 - **【模态层】** 新增 `lib/modalLayer.ts`：任何浮层 push/pop 一层计数，并在 `<html>` 打 `data-modal-open`。画布 `CanvasStudioView` 的全局 keydown / paste 与剪辑台 `EditView` 的 keydown 在入口处问 `isModalLayerOpen()`；模态层打开时 Delete/Ctrl+Z/粘贴不再落到背景画布。

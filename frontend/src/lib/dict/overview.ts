@@ -37,7 +37,7 @@ export const OVERVIEW_ZH = {
   'overview.shots.all': '查看全部 →',
   // 中间夹着指向工作台的链接 → 拆三段（见文件头）
   'overview.shots.emptyBefore': '还没有成片。到 ',
-  'overview.shots.emptyLink': '生成工作台',
+  'overview.shots.emptyLink': '创作页',
   'overview.shots.emptyAfter': ' 提交第一条任务吧。',
   'overview.shots.noCover': '无封面',
 
@@ -68,7 +68,7 @@ export const OVERVIEW_EN = {
   'overview.shots.title': 'Recent clips',
   'overview.shots.all': 'See all →',
   'overview.shots.emptyBefore': 'No clips yet. Head to the ',
-  'overview.shots.emptyLink': 'generation workbench',
+  'overview.shots.emptyLink': 'Create page',
   'overview.shots.emptyAfter': ' and submit your first task.',
   'overview.shots.noCover': 'No cover',
 

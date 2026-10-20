@@ -172,7 +172,7 @@ export function OverviewView() {
           ) : shots.length === 0 ? (
             <p className="wb-note">
               {t('overview.shots.emptyBefore')}
-              <a href="#/workbench">{t('overview.shots.emptyLink')}</a>
+              <a href="#/create">{t('overview.shots.emptyLink')}</a>
               {t('overview.shots.emptyAfter')}
             </p>
           ) : (

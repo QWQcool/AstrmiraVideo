@@ -217,6 +217,12 @@ export const WORKBENCH_ZH = {
   'workbench.assets.needBothFramesNoFirst': '「首尾帧」需要参考首帧与参考尾帧：当前缺首帧',
   'workbench.assets.needBothFramesNoLast': '「首尾帧」需要参考首帧与参考尾帧：当前缺尾帧',
   'workbench.assets.needReferenceVideo': '「视频参考」需要参考视频：请在上方上传',
+  // S5-B4e：退场说明（路由与功能保留一版）
+  'workbench.retired.title': '专业工作台已下线',
+  'workbench.retired.body':
+    '创作输入、参数与结果动作已并入「创作」页；画布节点也使用同一套参数。此页保留一版，旧书签与历史深链仍可用。',
+  'workbench.retired.toCreate': '去创作',
+  'workbench.retired.toCanvas': '去画布',
 };
 
 export const WORKBENCH_EN = {
@@ -419,4 +425,9 @@ export const WORKBENCH_EN = {
     '「First & last frame」 needs both frames: the last frame is missing',
   'workbench.assets.needReferenceVideo':
     '「Video reference」 needs a reference video: upload one above',
+  'workbench.retired.title': 'The professional workbench is retired',
+  'workbench.retired.body':
+    'Prompt, parameters and result actions now live on the Create page; canvas nodes use the same parameter set. This page stays for one release so old bookmarks and deep links still work.',
+  'workbench.retired.toCreate': 'Go to Create',
+  'workbench.retired.toCanvas': 'Go to Canvas',
 };
