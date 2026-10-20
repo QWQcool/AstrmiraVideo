@@ -370,6 +370,7 @@ export function StudioNode({ id, selected }: NodeProps) {
           ) : (
             <StructuredPromptInput
               initialText={draft.prompt}
+              text={draft.prompt}
               initialTokens={inlineTokens}
               className="cs-toolbar-input cs-toolbar-input-rich"
               placeholder={t('canvas.studio.promptPlaceholder')}
@@ -551,6 +552,15 @@ export function StudioNode({ id, selected }: NodeProps) {
                     onClick={() => studio.onContinueFromVersion(id)}
                   >
                     {t('canvas.studio.continueAsReference')}
+                  </button>
+                )}
+                {preview === null ? null : (
+                  <button
+                    type="button"
+                    className="cs-toolbar-link"
+                    onClick={() => studio.onReuseBatch(id, preview.batch.id)}
+                  >
+                    {t('canvas.studio.reuseBatchParams')}
                   </button>
                 )}
                 <button

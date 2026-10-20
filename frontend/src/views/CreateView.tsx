@@ -863,6 +863,7 @@ export function CreateView() {
           <StructuredPromptInput
             ref={promptEditorRef}
             initialText={prompt}
+            text={prompt}
             initialTokens={inlineTokens}
             placeholder={t('create.input.placeholder')}
             ariaLabel={t('create.input.placeholder')}

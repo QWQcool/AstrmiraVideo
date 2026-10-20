@@ -42,6 +42,8 @@ export interface StructuredPromptHandle {
 interface StructuredPromptProps {
   /** 只在挂载时读取；之后的正文由组件内部维护 */
   initialText: string;
+  /** 外部草稿变化（复用参数/切换版本）时同步正文；相同则不动 */
+  text?: string;
   /** 只在挂载时读取；之后的 token 由 insertToken/removeToken 维护 */
   initialTokens: readonly InlinePromptToken[];
   placeholder: string;
@@ -109,6 +111,7 @@ export const StructuredPromptInput = forwardRef<StructuredPromptHandle, Structur
   function StructuredPromptInput(
     {
       initialText,
+      text,
       initialTokens,
       placeholder,
       ariaLabel,
@@ -162,6 +165,29 @@ export const StructuredPromptInput = forwardRef<StructuredPromptHandle, Structur
       knownIds.current.add(token.id);
       editor.focus();
     };
+
+    const replaceEditorText = (next: string): void => {
+      const editor = editorRef.current;
+      if (editor === null) return;
+      const tokens = Array.from(editor.querySelectorAll<HTMLElement>('[data-ref-id]')).map(
+        (span) => span.cloneNode(true) as HTMLElement,
+      );
+      editor.textContent = '';
+      if (next !== '') editor.appendChild(document.createTextNode(next));
+      for (const token of tokens) {
+        editor.appendChild(document.createTextNode(' '));
+        editor.appendChild(token);
+      }
+      lastText.current = next;
+      onChange(next);
+    };
+
+    useEffect(() => {
+      if (text === undefined || text === lastText.current) return;
+      replaceEditorText(text);
+      // replaceEditorText 只依赖当前 DOM 与 onChange；text 变化触发一次
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [text]);
 
     useLayoutEffect(() => {
       const editor = editorRef.current;
@@ -220,20 +246,8 @@ export const StructuredPromptInput = forwardRef<StructuredPromptHandle, Structur
           span.textContent = `@${label}`;
           span.title = label;
         },
-        replaceText(text) {
-          const editor = editorRef.current;
-          if (editor === null) return;
-          const tokens = Array.from(editor.querySelectorAll<HTMLElement>('[data-ref-id]')).map(
-            (span) => span.cloneNode(true) as HTMLElement,
-          );
-          editor.textContent = '';
-          if (text !== '') editor.appendChild(document.createTextNode(text));
-          for (const token of tokens) {
-            editor.appendChild(document.createTextNode(' '));
-            editor.appendChild(token);
-          }
-          lastText.current = text;
-          onChange(text);
+        replaceText(next) {
+          replaceEditorText(next);
         },
         focus() {
           editorRef.current?.focus();

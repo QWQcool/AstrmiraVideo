@@ -26,6 +26,8 @@ export interface StudioServices {
   onSelectBatch(nodeId: string, batchId: string): void;
   /** S5-B3b：用当前可见版本创建一个邻近草稿节点（不提交） */
   onContinueFromVersion(nodeId: string): void;
+  /** S5-B3d：把选中批次的真实 request 回填到当前节点草稿（不提交） */
+  onReuseBatch(nodeId: string, batchId: string): void;
 }
 
 const StudioContext = createContext<StudioServices | null>(null);

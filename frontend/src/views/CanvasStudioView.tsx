@@ -116,6 +116,7 @@ import {
   addReferencesToDraft,
   allowedKindsForReferenceTarget,
 } from '../lib/canvasReferences';
+import { reuseFromBatch } from '../lib/canvasNodeReuse';
 import type { ReferenceSourceItem } from '../lib/referenceSources';
 import { CanvasContextMenu, type CanvasMenuItem } from '../canvas/studio/CanvasContextMenu';
 import { StudioNode } from '../canvas/studio/StudioNode';
@@ -1241,6 +1242,29 @@ export function CanvasStudioView() {
     [applyDoc],
   );
 
+  /** S5-B3d：用选中批次的真实 request 回填节点草稿，不提交 */
+  const reuseBatch = useCallback(
+    (nodeId: string, batchId: string): void => {
+      const current = docRef.current;
+      if (current === null) return;
+      const node = findCanvasNode(current, nodeId);
+      const batch = node?.data.batches.find((item) => item.id === batchId);
+      if (node === null || batch === undefined) return;
+      const reused = reuseFromBatch(batch);
+      if (reused === null) {
+        setNotice(t('canvas.studio.reuseBatchMissing'));
+        return;
+      }
+      handleDraftChange(nodeId, {
+        prompt: reused.prompt,
+        settings: reused.settings,
+        references: reused.references,
+      });
+      setNotice(t('canvas.studio.reuseBatchDone'));
+    },
+    [handleDraftChange, t],
+  );
+
   /** S5-B3b：用当前可见版本创建一个邻近**草稿**节点，绝不提交 */
   const continueFromVersion = useCallback(
     (nodeId: string): void => {
@@ -1765,6 +1789,7 @@ export function CanvasStudioView() {
             },
             onSelectBatch: selectBatch,
             onContinueFromVersion: continueFromVersion,
+            onReuseBatch: reuseBatch,
           }}
         >
           <div className="cs-workspace">
