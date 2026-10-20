@@ -1683,6 +1683,11 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · B4-0e：UI 冒烟「复用参数」目标对齐
+
+- **【暴露】** B4-0d 之后，冒烟在视频库详情断言「复用参数」跳到 `#/workbench?reuse=` 并回填 `.wb-main textarea`。S5-B3c 已按 AC 改为 `#/create?reuse=`，工作台 textarea 不再是回填目标。
+- **【修复】** 改为等待 `#/create`（query 被创作页消费后回到无 query）并在 `.cr-input-rich`（contenteditable）里核对提示词包含详情值；断言文案改为「回填到创作页」。仅测试脚本改动。
+
 ### 2026-10-20 · B4-0d：UI 冒烟日间底色对齐（V2 主题）
 
 - **【暴露】** B4-0c 修掉筛选歧义后，冒烟走到主题段：它等 `.wb-shell` 的计算底色等于旧日间值 `rgb(244,247,251)`；B4b 把日间底色改成中性灰 `#F4F5F6`，30s 超时。

@@ -1139,18 +1139,20 @@ try {
   assert(true, '点卡片打开详情抽屉');
   const drawerPrompt = await page.locator('.lib-kv dd').first().innerText();
   await page.locator('.lib-drawer').getByRole('button', { name: '复用参数' }).click();
-  await page.waitForFunction(() => location.hash.startsWith('#/workbench?reuse='), {
-    timeout: 5_000,
-  });
+  // S5-B3c：复用参数改投创作页（不再回退场工作台）；创作页消费 query 后会回到 #/create
+  await page.waitForFunction(
+    () => location.hash === '#/create' || location.hash.startsWith('#/create?reuse='),
+    { timeout: 5_000 },
+  );
   await page.waitForFunction(
     (expected) => {
-      const box = document.querySelector('.wb-main textarea');
-      return box !== null && box.value === expected;
+      const box = document.querySelector('.cr-input-rich');
+      return box !== null && (box.textContent ?? '').includes(expected);
     },
     drawerPrompt,
     { timeout: 5_000 },
   );
-  assert(true, '详情抽屉「复用参数」把提示词完整回填到工作台（hash 参数通道）');
+  assert(true, '详情抽屉「复用参数」把提示词完整回填到创作页（hash 参数通道）');
 
   await page.screenshot({ path: path.join(SHOT_DIR, 'library.png'), fullPage: false });
   note('视频库截图留档：artifacts/ui-smoke/library.png');
