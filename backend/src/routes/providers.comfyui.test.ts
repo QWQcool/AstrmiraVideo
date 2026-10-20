@@ -52,7 +52,7 @@ describe('providers/status · comfyui 段', () => {
     process.env.COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
     const status = buildProviderStatus();
     expect(status.comfyui.available).toBe(true);
-    expect(status.comfyui.reason).toContain('提交时判定');
+    expect(status.comfyui.reason).toContain('最近一次自检');
   });
 
   it('内网地址同样可用（ComfyUI 装在另一台机器上是常见形态）', () => {

@@ -1683,6 +1683,16 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · S4-R3b：本地 ComfyUI 模式能力缓存（CONTRACT V2.51；云端跳过）
+
+- **【范围】** 用户明确云端先跳过；本片只做 **本地 ComfyUI + HTTP**，云端不进入能力目录、保持原行为。
+- **【后端】** `ComfyUiProvider.capabilityModes()` 读取自检后的 inventory；`/selfcheck` 每条结果返回 `modes` 并写入**进程内缓存（30 分钟）**；`/status.comfyui.servers[]` 附带 `modes` / `modesCheckedAt`，只读缓存、**不再发探测请求**；未自检不带字段（不是“不支持”）。
+- **【服务端】** 已自检的 ComfyUI，`POST /api/generate` 在创建任务前按缓存拒绝未声明的 `mode` → 400 `INVALID_REQUEST`，不产生上游任务；没缓存则不拦，交 provider 提交时判定。
+- **【前端】** 首页/画布共用 `modes`：图片态只保留支持 t2i 的引擎，视频态按实际草稿模式检查；图片态不再显示云端选项；未自检（无 modes）不据此禁用；自检后 `LeftPanel` 刷新 `/status`，首页/画布即时更新。
+- **【真机验证】** `/selfcheck` 返回 `t2v / i2v / t2i`；`/status` 带同一组 modes 与 `modesCheckedAt`；未自检的 `v2v` 提交被 400 拦下（未产生任务）；UI **7/7 PASS**：首页图片态无云端、有本地；视频态保留云端 + 本地；画布图片节点无云端、有本地；控制台零 error。
+- **【测试】** 前端 **538 passed**（+2 发动机/节点模式判定）；后端 **677 passed**（+1 自检缓存/status）；契约 11/11；`type`/`lint`/视觉自检通过。
+- **【未做】** 云端能力目录（等服务器）；完整的 `ModelCapability` 参考模式/分辨率/时长矩阵；缓存跨进程持久化（当前进程重启即清空，符合“自检是刚才通不通”的语义）。
+
 ### 2026-10-20 · S4-R3a：图片尺寸与“数量固定 1”（CONTRACT V2.50）
 
 - **【问题】** 后端 ComfyUI 的 t2i 分支以 1024 系为基准（`planComfyDimensions`），但前端图片态仍使用视频的 480p 档并把它写进请求 —— 界面显示 480、实际模板按 480 收到；同一条请求的分辨率语义不一致。

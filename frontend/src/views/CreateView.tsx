@@ -12,6 +12,7 @@ import {
   ApiError,
   fetchAssets,
   fetchHistory,
+  fetchSelfCheck,
   fetchTask,
   resolveMediaUrl,
   submitGenerate,
@@ -153,7 +154,7 @@ function refFromAsset(asset: RefAsset, t: Translate): MentionRef {
 }
 
 export function CreateView() {
-  const { byok, providerStatus, openByok, projectId } = useShell();
+  const { byok, providerStatus, refreshProviderStatus, openByok, projectId } = useShell();
   const t = useTranslate();
 
   // ── 意图与素材 ──
@@ -200,21 +201,20 @@ export function CreateView() {
   /** V2.47：配置型 HTTP 任务服务（§22）；没配时为空数组，不造假的“远程服务”档 */
   const httpEngines = useMemo(() => httpServiceEngineOptions(providerStatus), [providerStatus]);
   const engines = useMemo(() => [...comfyEngines, ...httpEngines], [comfyEngines, httpEngines]);
-  /** 图片：ComfyUI 或声明了 t2i 的 HTTP 服务；视频：ComfyUI 或声明了任一视频模式的 HTTP 服务 */
+  /**
+   * V2.51：同一条能力判定 —— `modes` 缺省 = 还没自检，不能据此禁用；
+   * 有值时按真实声明过滤。ComfyUI 与 HTTP 用同一口径。
+   */
+  const engineSupportsT2i = (engine: { modes?: readonly string[] }): boolean =>
+    engine.modes === undefined || engine.modes.includes('t2i');
+  const engineSupportsVideo = (engine: { modes?: readonly string[] }): boolean =>
+    engine.modes === undefined || engine.modes.some((mode) => mode !== 't2i');
   const imageEngines = useMemo(
-    () =>
-      engines.filter(
-        (engine) => !isHttpServiceEngine(engine.id) || engine.modes?.includes('t2i') === true,
-      ),
+    () => engines.filter((engine) => engineSupportsT2i(engine)),
     [engines],
   );
   const videoEngines = useMemo(
-    () =>
-      engines.filter(
-        (engine) =>
-          !isHttpServiceEngine(engine.id) ||
-          engine.modes?.some((mode) => mode !== 't2i') === true,
-      ),
+    () => engines.filter((engine) => engineSupportsVideo(engine)),
     [engines],
   );
 
@@ -227,7 +227,7 @@ export function CreateView() {
       if (fallback !== undefined) setProvider(fallback.id);
       return;
     }
-    if (!isHttpServiceEngine(provider)) return;
+    if (provider === CLOUD_PROVIDER) return;
     if (videoEngines.some((engine) => engine.id === provider)) return;
     const fallback = videoEngines.find((engine) => engine.configured) ?? videoEngines[0];
     if (fallback !== undefined) setProvider(fallback.id);
@@ -254,6 +254,8 @@ export function CreateView() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** V2.51：显式自检才刷新本地模式；不在渲染路径上自动探测 */
+  const [checkingLocal, setCheckingLocal] = useState(false);
   const [lightbox, setLightbox] = useState<{
     kind: 'image' | 'video';
     url: string;
@@ -319,16 +321,50 @@ export function CreateView() {
    * 真正能不能出图（模板/节点齐不齐）由服务端在提交时判定并如实报错 —— 与 §19-2 同一口径，
    * 不在这里假装"已就绪"。
    */
+  const selectedComfyStatus = providerStatus?.comfyui.servers.find(
+    (server) => server.id === provider,
+  );
   const imageReady =
     kind === 'image' &&
     (isHttpServiceEngine(provider)
       ? (httpEngines.find((engine) => engine.id === provider)?.configured === true &&
         httpEngines.find((engine) => engine.id === provider)?.modes?.includes('t2i') === true)
-      : providerStatus?.comfyui.available === true);
+      : providerStatus?.comfyui.available === true &&
+        (selectedComfyStatus?.modes === undefined ||
+          selectedComfyStatus.modes.includes('t2i')));
+
+  const selectedMode = kind === 'image' ? 't2i' : selection.mode;
+  const selectedEngineModes = (kind === 'image' ? imageEngines : videoEngines).find(
+    (engine) => engine.id === provider,
+  )?.modes;
+  const modeReady =
+    provider === CLOUD_PROVIDER ||
+    selectedEngineModes === undefined ||
+    selectedEngineModes.includes(selectedMode);
+
+  /** V2.51：图片不可用时给一个“真的去连一次”的入口；成功后会刷新 status 的 modes */
+  const runLocalSelfCheck = useCallback(async (): Promise<void> => {
+    if (checkingLocal) return;
+    setCheckingLocal(true);
+    setNotice(null);
+    try {
+      await fetchSelfCheck();
+      refreshProviderStatus();
+    } catch (caught) {
+      setNotice(describeError(caught));
+    } finally {
+      setCheckingLocal(false);
+    }
+  }, [checkingLocal, refreshProviderStatus]);
 
   // 图片态：本地 ComfyUI 未配置时才禁用（配置了就走既有提交链路，失败由服务端如实报）
   const submitDisabled =
-    submitting || prompt.trim() === '' || pending || needsKey || (kind === 'image' && !imageReady);
+    submitting ||
+    prompt.trim() === '' ||
+    pending ||
+    needsKey ||
+    !modeReady ||
+    (kind === 'image' && !imageReady);
 
   /**
    * V2.12（台账 B48）：**提交前预估**（用户点"生成"之前就该看到要花多少钱 —— 这是 D44 改口的落点）。
@@ -742,6 +778,7 @@ export function CreateView() {
 
           <ComposerBar
             kind={kind}
+            allowCloud={kind === 'video'}
             aspectRatio={aspectRatio}
             resolutionTier={resolutionTier}
             durationSec={durationSec}
@@ -776,11 +813,24 @@ export function CreateView() {
             </span>
             {ignoredHint === null ? null : <span className="wb-note">{ignoredHint}</span>}
             {pending ? <span className="wb-note">{t('create.modeLine.pending')}</span> : null}
+            {modeReady ? null : <span className="wb-note">{t('create.modeUnsupported')}</span>}
           </div>
         )}
 
         {kind === 'image' ? (
-          imageReady ? null : <p className="wb-note">{t('create.type.imagePendingHint')}</p>
+          imageReady ? null : (
+            <p className="wb-note">
+              {t('create.type.imagePendingHint')}{' '}
+              <button
+                type="button"
+                className="cr-link"
+                disabled={checkingLocal}
+                onClick={() => void runLocalSelfCheck()}
+              >
+                {checkingLocal ? t('workbench.selfcheck.checking') : t('workbench.selfcheck.run')}
+              </button>
+            </p>
+          )
         ) : needsKey ? (
           <p className="wb-note">
             {t('create.needsKey')}{' '}

@@ -139,25 +139,25 @@ export default function App() {
     [storage],
   );
 
-  // 服务状态探针
+  // 服务状态探针（V2.51：自检后可由 LeftPanel 主动刷新，把 modes 带进引擎列表）
+  const loadProviderStatus = useCallback(async (signal?: AbortSignal): Promise<void> => {
+    try {
+      const status = await fetchProviderStatus(signal);
+      if (signal?.aborted === true) return;
+      setProviderStatus(status);
+      setServiceError(null);
+    } catch (caught) {
+      // StrictMode 双挂载 / 组件卸载都会 abort，那不是"后端挂了"——
+      if (signal?.aborted === true) return;
+      setServiceError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
-
-    fetchProviderStatus(controller.signal)
-      .then((status) => {
-        if (controller.signal.aborted) return;
-        setProviderStatus(status);
-        setServiceError(null);
-      })
-      .catch((caught: unknown) => {
-        // StrictMode 双挂载 / 组件卸载都会 abort，那不是"后端挂了"——
-        // 早期版本没判这一条，界面会稳定显示"后端未连通"而后端其实是好的。
-        if (controller.signal.aborted) return;
-        setServiceError(caught instanceof Error ? caught.message : String(caught));
-      });
-
+    void loadProviderStatus(controller.signal);
     return () => controller.abort();
-  }, []);
+  }, [loadProviderStatus]);
 
   // 首次落地无 hash → 落到默认视图（replace 不产生"无 hash → workbench"的历史条目）
   useEffect(() => {
@@ -286,6 +286,7 @@ export default function App() {
       byok,
       byokPersist,
       providerStatus,
+      refreshProviderStatus: () => void loadProviderStatus(),
       openByok: () => setByokOpen(true),
       // V2.11（B47）：项目上下文 —— 视图只读这一个值（不再各自记一份）
       projectId,
@@ -299,6 +300,7 @@ export default function App() {
       byok,
       byokPersist,
       providerStatus,
+      loadProviderStatus,
       projectId,
       projects,
       handleSetActiveProject,

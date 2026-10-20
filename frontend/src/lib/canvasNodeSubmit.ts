@@ -45,6 +45,7 @@ export type CanvasSubmitIssue =
   | 'reference-unsupported'
   | 'image-needs-local'
   | 'image-unavailable'
+  | 'mode-unsupported'
   | 'cloud-key-missing'
   | 'provider-unavailable';
 
@@ -62,6 +63,7 @@ const ISSUE_KEYS: Record<CanvasSubmitIssue, MessageKey> = {
   'reference-unsupported': 'canvas.studio.issue.references',
   'image-needs-local': 'canvas.studio.issue.imageLocal',
   'image-unavailable': 'canvas.studio.issue.imageUnavailable',
+  'mode-unsupported': 'canvas.studio.issue.modeUnsupported',
   'cloud-key-missing': 'canvas.studio.issue.cloudKey',
   'provider-unavailable': 'canvas.studio.issue.provider',
 };
@@ -172,18 +174,25 @@ export function canvasDefaultProvider(node: CanvasDocNode, context: CanvasSubmit
   const stored = node.data.draft.settings.provider;
   if (stored !== undefined && stored !== '') return stored;
 
-  const local = comfyUiEngineOptions(context.providerStatus).find((item) => item.configured);
-  const http = httpServiceEngineOptions(context.providerStatus).filter((item) => item.configured);
+  // V2.51：按**当前草稿实际要用的模式**筛，不是“任一视频模式”；缺省 modes = 未自检，不据此禁用
+  const wantedMode = canvasDraftMode(node).mode;
+  const local = comfyUiEngineOptions(context.providerStatus).find(
+    (item) =>
+      item.configured &&
+      (item.modes === undefined || item.modes.includes(wantedMode)),
+  );
+  const http = httpServiceEngineOptions(context.providerStatus).find(
+    (item) => item.configured && item.modes?.includes(wantedMode) === true,
+  );
 
   if (node.type === 'image') {
-    const imageHttp = http.find((item) => item.modes?.includes('t2i') === true);
-    return local?.id ?? imageHttp?.id ?? DEFAULT_COMFY_ENGINE_ID;
+    return local?.id ?? http?.id ?? DEFAULT_COMFY_ENGINE_ID;
   }
 
   const cloudReady =
     context.hasCloudKey || context.providerStatus?.cloud.available === true;
   if (cloudReady) return 'cloud-volcano-seedance';
-  return local?.id ?? http[0]?.id ?? 'cloud-volcano-seedance';
+  return local?.id ?? http?.id ?? 'cloud-volcano-seedance';
 }
 
 export function canvasAspectRatio(node: CanvasDocNode): AspectRatio {
@@ -231,11 +240,20 @@ export function canvasSubmitIssue(
   );
   if (active) return 'active-task';
 
-  if (canvasDraftMode(node).unsupportedRoles.length > 0) return 'reference-unsupported';
+  const draft = canvasDraftMode(node);
+  if (draft.unsupportedRoles.length > 0) return 'reference-unsupported';
+  const wantedMode = draft.mode;
 
   if (node.type === 'image') {
     if (isComfyUiEngine(provider)) {
       if (context.providerStatus?.comfyui.available !== true) return 'image-unavailable';
+      const option = comfyUiEngineOptions(context.providerStatus).find(
+        (item) => item.id === provider,
+      );
+      if (option === undefined || !option.configured) return 'image-unavailable';
+      if (option.modes !== undefined && !option.modes.includes(wantedMode)) {
+        return 'mode-unsupported';
+      }
       return null;
     }
     if (isHttpServiceEngine(provider)) {
@@ -243,7 +261,7 @@ export function canvasSubmitIssue(
         (item) => item.id === provider,
       );
       if (option === undefined || !option.configured) return 'provider-unavailable';
-      if (option.modes?.includes('t2i') !== true) return 'provider-unavailable';
+      if (option.modes?.includes(wantedMode) !== true) return 'provider-unavailable';
       return null;
     }
     return 'image-needs-local';
@@ -259,6 +277,9 @@ export function canvasSubmitIssue(
   if (isComfyUiEngine(provider)) {
     const option = comfyUiEngineOptions(context.providerStatus).find((item) => item.id === provider);
     if (option === undefined || !option.configured) return 'provider-unavailable';
+    if (option.modes !== undefined && !option.modes.includes(wantedMode)) {
+      return 'mode-unsupported';
+    }
     return null;
   }
 
@@ -267,7 +288,7 @@ export function canvasSubmitIssue(
       (item) => item.id === provider,
     );
     if (option === undefined || !option.configured) return 'provider-unavailable';
-    if ((option.modes ?? []).every((mode) => mode === 't2i')) return 'provider-unavailable';
+    if (option.modes?.includes(wantedMode) !== true) return 'mode-unsupported';
     return null;
   }
 

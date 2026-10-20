@@ -65,6 +65,8 @@ export interface LeftPanelProps {
   provider: ProviderType;
   onProviderChange: (provider: ProviderType) => void;
   providerStatus: ProviderStatus | null;
+  /** V2.51：自检完成后刷新 `/status`，让 modes 进入引擎筛选 */
+  onRefreshProviderStatus?: () => void;
 
   /** 三槽参考资产（首帧 / 尾帧 / 参考视频，与 CONTRACT §1 的 `assets` 字段一一对应） */
   assets: AssetSlots;
@@ -182,6 +184,7 @@ export function LeftPanel(props: LeftPanelProps) {
     provider,
     onProviderChange,
     providerStatus,
+    onRefreshProviderStatus,
     assets,
     uploadingSlot,
     uploadError,
@@ -272,13 +275,15 @@ export function LeftPanel(props: LeftPanelProps) {
     setSelfCheckError(null);
     try {
       setSelfCheck(await fetchSelfCheck());
+      // V2.51：自检结果已写进服务端进程缓存；重新拉 status 才能让首页/画布看到 modes
+      onRefreshProviderStatus?.();
     } catch (caught) {
       // 端点本身几乎不会失败（逐项 try/catch → 总 200）；走到这里通常是服务断了
       setSelfCheckError(describeError(caught));
     } finally {
       setChecking(false);
     }
-  }, []);
+  }, [onRefreshProviderStatus]);
   const target = resolveTargetSize(aspectRatio, resolutionTier);
   const dialogue = dialogueLength(prompt);
 

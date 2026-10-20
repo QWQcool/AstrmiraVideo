@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { VideoProvider } from '@astrmira/shared';
 import { __clearProviderTestOverrides, __setProviderForTesting } from '../providers/registry.js';
-import { buildSelfCheck } from './providers.js';
+import {
+  buildProviderStatus,
+  buildSelfCheck,
+  clearComfyCapabilityCache,
+  getComfyCapability,
+} from './providers.js';
 
 /**
  * 本地引擎**运行时自检**（V2.34 / 台账 B4 / CONTRACT §20）。
@@ -16,6 +21,7 @@ const ORIGINAL_BASE = process.env.COMFYUI_BASE_URL;
 
 afterEach(() => {
   __clearProviderTestOverrides();
+  clearComfyCapabilityCache();
   if (ORIGINAL_EXPOSE === undefined) delete process.env.EXPOSE_HOST_LOCAL_TRACK;
   else process.env.EXPOSE_HOST_LOCAL_TRACK = ORIGINAL_EXPOSE;
   if (ORIGINAL_BASE === undefined) delete process.env.COMFYUI_BASE_URL;
@@ -78,6 +84,27 @@ describe('运行时自检 · 真去问一次', () => {
       available: true,
       reason: '模型：wan2.2_ti2v_5B_fp16.safetensors · 支持 t2v / i2v',
     });
+  });
+
+  it('V2.51：自检把 provider 判出的 modes 写进条目、进程缓存与 /status', async () => {
+    process.env.EXPOSE_HOST_LOCAL_TRACK = '1';
+    process.env.COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
+    const log: HealthLog = { calls: 0, refresh: [] };
+    const base = fakeProvider(async () => ({ available: true }), log);
+    const provider = Object.assign(base, {
+      capabilityModes: () => ['t2v', 't2i'],
+    });
+    __setProviderForTesting('host-comfyui', provider);
+
+    const response = await buildSelfCheck();
+    const entry = response.entries.find((item) => item.provider === 'host-comfyui');
+    expect(entry?.modes).toEqual(['t2v', 't2i']);
+    expect(getComfyCapability('host-comfyui')?.modes).toEqual(['t2v', 't2i']);
+    expect(getComfyCapability('host-comfyui')?.checkedAt).toBeTruthy();
+
+    const status = buildProviderStatus();
+    expect(status.comfyui.servers[0]?.modes).toEqual(['t2v', 't2i']);
+    expect(status.comfyui.servers[0]?.modesCheckedAt).toBeTruthy();
   });
 
   it('不可用的原因**原样透出**（provider 已经写好人话，聚合层不吞它）', async () => {

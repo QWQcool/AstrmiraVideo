@@ -347,6 +347,20 @@ export class ComfyUiProvider implements VideoProvider {
     }
   }
 
+  /**
+   * V2.51：最近一次探测（/selfcheck 或提交前健康检查）判出的**可用模式**。
+   *
+   * 只读内存里的 inventory，不发请求；没探测过返回空数组 ——
+   * 调用方必须把“空”当成“未检测”，不能当成“不支持”。
+   */
+  capabilityModes(): GenerationMode[] {
+    const modes = new Set<GenerationMode>();
+    for (const item of this.inventory?.runtimes ?? []) {
+      for (const mode of item.capabilities.modes) modes.add(mode);
+    }
+    return [...modes];
+  }
+
   // ── 提交 ───────────────────────────────────────────────────────────────────
 
   async submit(request: VideoGenerateRequest): Promise<{ taskId: string }> {

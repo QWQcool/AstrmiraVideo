@@ -1,6 +1,13 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.50 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.51 · 已冻结（变更需先改本文，再改代码）**
+> **V2.51 修订（2026-10-20）**：**本地 ComfyUI 的模式能力缓存（§2 / §20 / §5）** —— Step 11-S4-R3b（云端跳过）。
+>   ① `/selfcheck` 的每条结果新增可选 `modes`；ComfyUI provider 在自检时把实际可跑模式写入**进程内缓存**；
+>   ② `/status.comfyui.servers[]` 新增可选 `modes` / `modesCheckedAt`，只读最近一次自检（缓存 30 分钟），**`/status` 不发探测请求**；
+>   ③ 首页/画布用同一份 `modes` 过滤引擎；未自检（无 `modes`）不据此禁用，提交时仍由 provider 校验；
+>   ④ 已自检的 ComfyUI，`POST /api/generate` 在创建任务前按缓存拒绝未声明的 `mode`（400 `INVALID_REQUEST`，不产生上游任务）；
+>   ⑤ 云端不进入这份目录，保持原行为；**无新路由、无新错误码**。
+
 > **V2.50 修订（2026-10-20）**：**图片尺寸与数量（§21-13）** —— Step 11-S4-R3a。
 >   ① `t2i` 的 `resolution` 固定使用**图片尺寸档**（1:1=1024×1024、16:9=1024×576、9:16=576×1024），
 >   不跟随视频的 480p/720p/1080p 档；界面在图片态显示实际尺寸而不是视频清晰度下拉；
@@ -596,9 +603,8 @@ export interface ProviderStatus {
   comfyui: {
     // V2.31（台账 A1 片 C）：用户**自备的 ComfyUI**（§19）——**与 local 同一套门控语义**：
     // available 说的是"本服务配没配这个后端 + 有没有向访客开放本地轨"，**不是**对访问者设备的判断。
-    // ⚠️ 这里**不报"能跑哪些模式"**：那要真的连用户的 ComfyUI（GET /object_info），
-    //    而本端点是"配置事实陈述"——把远端探测塞进来会让它变成"慢几秒、ComfyUI 没启动就超时"的接口。
-    //    模式能力在**提交时**由 provider 判定并如实报错（§19-2）。
+    // ⚠️ 这里**不发探测请求**：模式能力只读**最近一次 /selfcheck 的进程缓存**；
+    //    没有缓存 = 未检测，不是“不支持”。提交时仍由 provider 按真实模板判定（§19-2）。
     available: boolean;
     provider: 'comfyui';
     /**
@@ -611,6 +617,8 @@ export interface ProviderStatus {
       label: string;       // 显示名（缺省 = name；供界面直接展示）
       available: boolean;  // 这一台：地址合规 + 本地轨已开放
       reason?: string;     // 不合规的原因（人话；**不回显地址明文**，同 §2 的脱敏纪律）
+      modes?: GenerationMode[];   // V2.51：最近一次自检的可用模式；缺省 = 未检测
+      modesCheckedAt?: string;    // V2.51：该次自检时刻（ISO）
     }>;
     reason?: string; // 例：「本服务未向访客开放本地轨」/「缺 COMFYUI_BASE_URL」/「仅允许回环或内网地址」
   };
@@ -2142,6 +2150,7 @@ interface SelfCheckEntry {
   provider: ProviderType;
   available: boolean;
   reason?: string;   // 人话；**通过时也可能有**（例如"能跑 t2v / i2v，不支持 fl2v"）
+  modes?: GenerationMode[]; // V2.51：本次实际判出的可用模式；不支持该能力的实现可省略
 }
 
 interface SelfCheckResponse {

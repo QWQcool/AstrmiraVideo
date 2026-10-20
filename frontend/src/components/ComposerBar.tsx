@@ -12,6 +12,8 @@ export interface EngineOption {
 export interface ComposerBarProps {
   /** 图片态不显示"时长"与"模型名"：t2i 没有时长，模型由本地模板决定 */
   kind: 'video' | 'image';
+  /** V2.51：图片态不提供云端（云端没有 t2i），避免"选了才知道不行" */
+  allowCloud?: boolean;
   aspectRatio: AspectRatio;
   resolutionTier: ResolutionTier;
   durationSec: number;
@@ -41,6 +43,7 @@ export interface ComposerBarProps {
  */
 export function ComposerBar({
   kind,
+  allowCloud = true,
   aspectRatio,
   resolutionTier,
   durationSec,
@@ -125,7 +128,9 @@ export function ComposerBar({
             value={provider}
             onChange={(event) => onProviderChange(event.target.value)}
           >
-            <option value="cloud-volcano-seedance">{t('common.engine.cloud')}</option>
+            {allowCloud ? (
+              <option value="cloud-volcano-seedance">{t('common.engine.cloud')}</option>
+            ) : null}
             {engines.map((engine) => (
               <option key={engine.id} value={engine.id}>
                 {engine.label}

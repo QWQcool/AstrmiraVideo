@@ -74,6 +74,15 @@ describe('comfyUiEngineOptions（多实例）', () => {
     expect(options[0]?.hint).toContain('地址合规');
   });
 
+  it('V2.51：自检过的实例带 modes；未自检不填（调用方不得据此禁用）', () => {
+    const checked = comfyUiEngineOptions(
+      status([server({ modes: ['t2v', 't2i'], modesCheckedAt: '2026-10-20T00:00:00.000Z' })]),
+    );
+    expect(checked[0]?.modes).toEqual(['t2v', 't2i']);
+    const unchecked = comfyUiEngineOptions(status([server()]));
+    expect(unchecked[0]?.modes).toBeUndefined();
+  });
+
   it('多台 → 逐台一项、顺序保持、**各自带实例名**（否则分不清是哪一台）', () => {
     const options = comfyUiEngineOptions(
       status([

@@ -65,6 +65,8 @@ export function comfyUiEngineOptions(status: ProviderStatus | null): EngineOptio
       (server.available
         ? translate(lang, 'common.engine.configured')
         : translate(lang, 'common.engine.unavailable')),
+    // V2.51：最近一次自检的模式；缺省 = 未检测，调用方不得据此禁用
+    ...(server.modes === undefined ? {} : { modes: server.modes }),
   }));
 }
 

@@ -143,10 +143,16 @@ export function StudioNode({ id, selected }: NodeProps) {
             : t('common.cost.estimated', { amount: formatYuan(estimate.yuan) })
           : t('canvas.studio.priceLocal');
 
-  const comfyEngines = comfyUiEngineOptions(providerStatus).map((option) => ({
-    id: option.id,
-    label: option.label,
-  }));
+  // V2.51：ComfyUI 与 HTTP 用同一份 modes 判定；缺省 = 未自检，不据此过滤
+  const comfyEngines = comfyUiEngineOptions(providerStatus)
+    .filter((option) =>
+      option.modes === undefined
+        ? true
+        : node.type === 'image'
+          ? option.modes.includes('t2i')
+          : option.modes.some((mode) => mode !== 't2i'),
+    )
+    .map((option) => ({ id: option.id, label: option.label }));
   const httpEngines = httpServiceEngineOptions(providerStatus)
     .filter((option) =>
       node.type === 'image'

@@ -18,6 +18,7 @@ import type { CooldownStore, PlanRunRegistry } from '../security/rateLimit.js';
 import { rateLimitKey, resolveClientIp } from '../security/rateLimit.js';
 import type { ProjectStore } from '../store/projects.js';
 import type { TaskStore, TrackId } from '../store/taskStore.js';
+import { getComfyCapability } from './providers.js';
 
 /**
  * `POST /api/generate`（CONTRACT §5）。
@@ -191,6 +192,22 @@ export const createGenerateRoutes =
         const existing = deps.store.findTaskIdByIdempotencyKey(idempotencyKey);
         if (existing !== null) {
           return { taskId: existing };
+        }
+
+        /**
+         * V2.51：如果这台 ComfyUI **已经自检过**，提交前按缓存模式拦截明显不支持的组合；
+         * 没自检过（无缓存）不拦 —— 交给 provider 在提交时如实报错，不能凭“没数据”禁用。
+         */
+        if (providerBaseType(body.provider) === 'host-comfyui') {
+          const cached = getComfyCapability(body.provider);
+          if (cached !== undefined && !cached.modes.includes(body.mode)) {
+            return reply.code(400).send(
+              createErrorResponse(
+                'INVALID_REQUEST',
+                `这台 ComfyUI 最近一次自检未声明支持 ${body.mode}（支持：${cached.modes.join('、') || '无'}）；请换引擎或重新自检`,
+              ),
+            );
+          }
         }
 
         // 凭据（B 方案）：先解析出来 —— 限流键与 vault 必须用**同一份**，

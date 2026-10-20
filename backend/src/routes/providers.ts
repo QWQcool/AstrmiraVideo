@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { ProviderStatusSchema, SelfCheckResponseSchema } from '@astrmira/shared';
 import type {
   ComfyUiServerStatus,
+  GenerationMode,
   HttpServiceServerStatus,
   ProviderStatus,
   SelfCheckEntry,
@@ -10,6 +11,35 @@ import type {
 import { getProvider } from '../providers/registry.js';
 import { DEFAULT_COMFY_SERVER_ID, resolveComfyServers } from '../providers/comfyui/comfyuiServers.js';
 import { resolveHttpServices } from '../providers/httpService/httpServiceProfile.js';
+
+/**
+ * V2.51：最近一次 `/selfcheck` 判出的 ComfyUI 模式（进程内）。
+ *
+ * 只有用户显式点“检测本地引擎”才刷新；`/status` 只读这份缓存，**不发探测请求**。
+ * 没有条目 = 未检测，不是“不支持”。进程重启即清空（不落盘）。
+ */
+interface ComfyCapabilityEntry {
+  modes: GenerationMode[];
+  checkedAt: string;
+}
+const comfyCapabilityCache = new Map<string, ComfyCapabilityEntry>();
+/** 自检模式缓存的有效期：模型可能在 ComfyUI 里被换掉，过久不刷新就是陈旧结论 */
+const COMFY_CAPABILITY_TTL_MS = 30 * 60 * 1000;
+
+export function getComfyCapability(id: string): ComfyCapabilityEntry | undefined {
+  const entry = comfyCapabilityCache.get(id);
+  if (entry === undefined) return undefined;
+  if (Date.now() - Date.parse(entry.checkedAt) > COMFY_CAPABILITY_TTL_MS) {
+    comfyCapabilityCache.delete(id);
+    return undefined;
+  }
+  return entry;
+}
+
+/** 测试用：清掉进程缓存，避免用例互相污染 */
+export function clearComfyCapabilityCache(): void {
+  comfyCapabilityCache.clear();
+}
 
 /** 部署者是否向访客开放 host 本地轨（CONTRACT §2：`EXPOSE_HOST_LOCAL_TRACK`，默认 0） */
 function isHostLocalTrackExposed(): boolean {
@@ -83,16 +113,21 @@ function resolveComfyUiStatus(): ProviderStatus['comfyui'] {
   const notExposed = '本服务未向访客开放本地轨';
 
   // **不下发地址**：只给 id / label / available / reason（脱敏，§2）
-  const described: ComfyUiServerStatus[] = servers.map((server) =>
-    exposed
-      ? {
-          id: server.id,
-          label: server.label,
-          available: server.available,
-          ...(server.reason === undefined ? {} : { reason: server.reason }),
-        }
-      : { id: server.id, label: server.label, available: false, reason: notExposed },
-  );
+  const described: ComfyUiServerStatus[] = servers.map((server) => {
+    if (!exposed) {
+      return { id: server.id, label: server.label, available: false, reason: notExposed };
+    }
+    const cached = getComfyCapability(server.id);
+    return {
+      id: server.id,
+      label: server.label,
+      available: server.available,
+      ...(server.reason === undefined ? {} : { reason: server.reason }),
+      ...(cached === undefined
+        ? {}
+        : { modes: cached.modes, modesCheckedAt: cached.checkedAt }),
+    };
+  });
 
   // 文件级问题（读不出来 / 结构不对）**排在最前**：它比"某一台不合规"更该被看到
   const head = problems.length === 0 ? '' : `${problems.join('；')}；`;
@@ -123,7 +158,7 @@ function resolveComfyUiStatus(): ProviderStatus['comfyui'] {
     servers: described,
     reason:
       usable > 0
-        ? `${head}本服务已配置 ${servers.length} 台 ComfyUI（合规 ${usable} 台；能跑哪些模式在提交时判定）`
+        ? `${head}本服务已配置 ${servers.length} 台 ComfyUI（合规 ${usable} 台；模式能力来自最近一次自检，未自检不臆测）`
         : allBad,
   };
 }
@@ -288,12 +323,25 @@ async function selfCheckOne(id: string, timeoutMs: number): Promise<SelfCheckEnt
       timeoutMs,
       '本地引擎自检',
     );
+    /**
+     * V2.51：ComfyUI provider 在 checkHealth 里已经建好 inventory；这里只读它。
+     * 不支持 capabilityModes 的实现（例如旧 provider/测试替身）不写缓存。
+     */
+    const probe = provider as typeof provider & { capabilityModes?: () => GenerationMode[] };
+    const modes = probe.capabilityModes?.();
+    if (!health.available) {
+      comfyCapabilityCache.delete(id);
+    } else if (modes !== undefined) {
+      comfyCapabilityCache.set(id, { modes, checkedAt: new Date().toISOString() });
+    }
     return {
       provider: id,
       available: health.available,
       ...(health.reason === undefined ? {} : { reason: health.reason }),
+      ...(modes === undefined ? {} : { modes }),
     };
   } catch (error) {
+    comfyCapabilityCache.delete(id);
     return {
       provider: id,
       available: false,

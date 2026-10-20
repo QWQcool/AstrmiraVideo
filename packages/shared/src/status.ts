@@ -80,6 +80,13 @@ export const ComfyUiServerStatusSchema = z.object({
   available: z.boolean(),
   /** 不合规的原因（人话；**不回显地址明文**，同 §2 的脱敏纪律） */
   reason: z.string().optional(),
+  /**
+   * V2.51：**最近一次** `/selfcheck` 判出的可用模式（进程内缓存）。
+   * 缺省 = 还没自检过，不是“不支持”；界面必须显示“未检测”，不能据此禁用。
+   */
+  modes: z.array(GenerationModeSchema).optional(),
+  /** 上述 modes 的检测时刻（ISO）；与 modes 同时出现 */
+  modesCheckedAt: z.string().optional(),
 });
 export type ComfyUiServerStatus = z.infer<typeof ComfyUiServerStatusSchema>;
 
@@ -152,6 +159,8 @@ export const SelfCheckEntrySchema = z.object({
   available: z.boolean(),
   /** 人话原因；**通过时也可能有**（例如"能跑 t2v / i2v，不支持 fl2v"） */
   reason: z.string().optional(),
+  /** V2.51：本次实际判出的可用模式；不支持的实现可省略 */
+  modes: z.array(GenerationModeSchema).optional(),
 });
 
 export const SelfCheckResponseSchema = z.object({

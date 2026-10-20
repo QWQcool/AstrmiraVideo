@@ -76,7 +76,8 @@ const SLOT_KEYS = ['firstFrame', 'lastFrame', 'referenceVideo'] as const satisfi
  */
 export function WorkbenchView() {
   // V2.11（B47）：出片与上传都归属当前项目（相册 / 剪辑候选也按它过滤）
-  const { byok, byokPersist, providerStatus, openByok, projectId } = useShell();
+  const { byok, byokPersist, providerStatus, refreshProviderStatus, openByok, projectId } =
+    useShell();
   const t = useTranslate();
   const storage = useMemo(() => browserStorage(), []);
   /**
@@ -706,6 +707,7 @@ export function WorkbenchView() {
           provider={provider}
           onProviderChange={setProvider}
           providerStatus={providerStatus}
+          onRefreshProviderStatus={refreshProviderStatus}
           assets={assets}
           uploadingSlot={uploadingSlot}
           uploadError={uploadError}

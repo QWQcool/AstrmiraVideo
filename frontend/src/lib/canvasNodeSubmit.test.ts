@@ -164,6 +164,26 @@ describe('提交前判定：先报最有用的问题（B3）', () => {
     expect(canvasSubmitIssue(image, 'host-comfyui', ready)).toBeNull();
   });
 
+  it('V2.51：自检声明不支持当前模式 → mode-unsupported（未自检不据此禁用）', () => {
+    const image = node('image');
+    image.data.draft.prompt = '一只猫';
+    const video = node('video');
+    video.data.draft.prompt = '镜头';
+
+    const imageOnly = status({ cloud: true, comfy: true });
+    imageOnly.comfyui.servers[0]!.modes = ['t2i'];
+    expect(canvasSubmitIssue(image, 'host-comfyui', { providerStatus: imageOnly, hasCloudKey: true })).toBeNull();
+    expect(canvasSubmitIssue(video, 'host-comfyui', { providerStatus: imageOnly, hasCloudKey: true })).toBe(
+      'mode-unsupported',
+    );
+
+    const videoOnly = status({ cloud: true, comfy: true });
+    videoOnly.comfyui.servers[0]!.modes = ['t2v'];
+    expect(canvasSubmitIssue(image, 'host-comfyui', { providerStatus: videoOnly, hasCloudKey: true })).toBe(
+      'mode-unsupported',
+    );
+  });
+
   it('云端没有 Key 也不能提交；本地实例不可用同样拦下', () => {
     const video = node('video');
     video.data.draft.prompt = '镜头';

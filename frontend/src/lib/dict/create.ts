@@ -28,6 +28,7 @@ export const CREATE_ZH = {
   'create.type.image': '图片',
   'create.type.pending': '待接入',
   'create.type.imagePendingHint': '图像模型待配置：接入后即可在这里出图，当前不会提交任务。',
+  'create.modeUnsupported': '这个引擎最近一次自检没有声明支持当前模式 —— 换引擎或重新自检',
   // （"上传中…" 提升到 `common.uploading`：素材槽与创作入口都要用同一句）
   'create.chip.remove': '移除素材',
   'create.chip.imageShort': '图',
@@ -118,6 +119,7 @@ export const CREATE_EN = {
   'create.type.image': 'Image',
   'create.type.pending': 'Not ready',
   'create.type.imagePendingHint': 'Image model is not configured yet. Nothing will be submitted until it is connected.',
+  'create.modeUnsupported': 'The engine has not declared support for the current mode — switch engines or run the self-check again',
   'create.chip.remove': 'Remove reference',
   'create.chip.imageShort': 'img',
   'create.realperson':

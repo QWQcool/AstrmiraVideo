@@ -14,6 +14,8 @@ export interface ShellServices {
   byok: ByokConfig;
   byokPersist: boolean;
   providerStatus: ProviderStatus | null;
+  /** V2.51：自检后重新拉 `/status`，让最近一次自检的 modes 进入引擎列表 */
+  refreshProviderStatus(): void;
   /** 打开凭据抽屉（侧栏底部"凭据设置"与工作台里的入口共用同一个抽屉） */
   openByok(): void;
 
