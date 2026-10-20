@@ -221,7 +221,10 @@ export function canvasSubmitIssue(
   if (node.data.draft.prompt.trim() === '') return 'empty-prompt';
 
   const active = node.data.batches.some(
-    (batch) => (batch.status === 'queued' || batch.status === 'running') && batch.taskId !== undefined,
+    (batch) =>
+      batch.status === 'running' ||
+      (batch.status === 'queued' &&
+        (batch.taskId !== undefined || batch.request !== undefined)),
   );
   if (active) return 'active-task';
 

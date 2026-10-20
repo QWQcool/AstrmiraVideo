@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { AspectRatioSchema, DurationSecSchema, GenerationModeSchema } from './request.js';
+import {
+  AspectRatioSchema,
+  DurationSecSchema,
+  GenerationModeSchema,
+  VideoGenerateRequestSchema,
+} from './request.js';
 
 /**
  * 创作画布文档 `astrmira.canvas-doc/v1`（CONTRACT §21 / 台账 B78 / 决策 D60-D62）。
@@ -125,6 +130,14 @@ export const CanvasNodeBatchSchema = z.object({
       message: z.string(),
     })
     .optional(),
+  /**
+   * V2.49（§21-12）：这次提交的**原始请求快照**。
+   *
+   * `id` 同时是这次提交的幂等键；刷新后如果只有 `queued` 而没有 `taskId`，
+   * 界面用 `request + id` 重放来核对结果（服务端幂等重放 / 同键新建），
+   * 不得换一个新键直接再提交。旧批次没有该字段 → 只能如实提示“无法核对”。
+   */
+  request: VideoGenerateRequestSchema.optional(),
 });
 
 export const CanvasDocNodeSchema = z.object({

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clearCanvasResultHandoff,
   parseCanvasResultHandoff,
   peekCanvasResultHandoff,
   resultHandoffAsset,
@@ -24,10 +25,12 @@ function memoryStorage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> & 
 describe('画布结果交接（S4）', () => {
   it('写入 → 读取 → 消费一次', () => {
     const storage = memoryStorage();
-    setCanvasResultHandoff(
-      { taskId: 't1', kind: 'video', url: '/media/t1.mp4', title: '一条视频' },
-      storage,
-    );
+    expect(
+      setCanvasResultHandoff(
+        { taskId: 't1', kind: 'video', url: '/media/t1.mp4', title: '一条视频' },
+        storage,
+      ),
+    ).toBe(true);
     expect(peekCanvasResultHandoff(storage)).toEqual({
       taskId: 't1',
       kind: 'video',
@@ -71,11 +74,26 @@ describe('画布结果交接（S4）', () => {
         throw new Error('blocked');
       },
     };
-    expect(() =>
-      setCanvasResultHandoff({ taskId: 't1', kind: 'image', url: '/media/a.png', title: 'a' }, broken),
-    ).not.toThrow();
+    expect(
+      setCanvasResultHandoff(
+        { taskId: 't1', kind: 'image', url: '/media/a.png', title: 'a' },
+        broken,
+      ),
+    ).toBe(false);
     expect(peekCanvasResultHandoff(broken)).toBeNull();
     expect(takeCanvasResultHandoff(broken)).toBeNull();
+    expect(() => clearCanvasResultHandoff(broken)).not.toThrow();
+  });
+
+  it('保存成功后才清除交接；清除后不会重复放入', () => {
+    const storage = memoryStorage();
+    setCanvasResultHandoff(
+      { taskId: 't1', kind: 'image', url: '/media/t1.png', title: '图' },
+      storage,
+    );
+    clearCanvasResultHandoff(storage);
+    expect(peekCanvasResultHandoff(storage)).toBeNull();
+    clearCanvasResultHandoff(storage);
   });
 
   it('交接 → assetId 是 task:<taskId>（不复制文件）', () => {

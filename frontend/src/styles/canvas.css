@@ -1041,6 +1041,18 @@ audio.cs-card-media {
   color: var(--danger);
 }
 
+/* V2.49：提交结果未知时的“核对”入口（贴在节点脚部，不抢拖动） */
+.cs-card-recover {
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--gold);
+  font-size: var(--fs-micro);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* ── 锚定浮动创作框（NodeToolbar） ─────────────────────────────────── */
 .cs-toolbar-inner {
   display: flex;

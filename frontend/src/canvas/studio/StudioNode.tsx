@@ -107,7 +107,11 @@ export function StudioNode({ id, selected }: NodeProps) {
   const preview = latestCanvasOutput(node);
   const latest = latestCanvasBatch(node);
   const active = node.data.batches.find(
-    (batch) => (batch.status === 'queued' || batch.status === 'running') && batch.taskId !== undefined,
+    (batch) => batch.status === 'queued' || batch.status === 'running',
+  );
+  /** V2.49：queued 但没有 taskId = 提交结果未知；有 request 才能核对 */
+  const unknown = node.data.batches.find(
+    (batch) => batch.status === 'queued' && batch.taskId === undefined,
   );
   const live = active?.taskId === undefined ? undefined : studio.live[active.taskId];
   const submitting = studio.submitting.has(id);
@@ -197,6 +201,15 @@ export function StudioNode({ id, selected }: NodeProps) {
           <span className="cs-card-error" title={latest.failure.message}>
             {latest.failure.code}
           </span>
+        ) : null}
+        {unknown !== undefined && unknown.request !== undefined ? (
+          <button
+            type="button"
+            className="cs-card-recover nodrag"
+            onClick={() => studio.onRecover(id, unknown.id)}
+          >
+            {t('canvas.studio.recoverSubmit')}
+          </button>
         ) : null}
       </footer>
 
@@ -336,6 +349,20 @@ export function StudioNode({ id, selected }: NodeProps) {
                   ) : null}
                 </p>
               )}
+
+              {issue === 'active-task' && unknown !== undefined ? (
+                unknown.request === undefined ? (
+                  <p className="cs-toolbar-issue">{t('canvas.studio.recoverNoRequest')}</p>
+                ) : (
+                  <button
+                    type="button"
+                    className="cs-toolbar-link"
+                    onClick={() => studio.onRecover(id, unknown.id)}
+                  >
+                    {t('canvas.studio.recoverSubmit')}
+                  </button>
+                )
+              ) : null}
 
               {latest?.failure === undefined ? null : (
                 <p className="cs-toolbar-error" title={latest.failure.message}>

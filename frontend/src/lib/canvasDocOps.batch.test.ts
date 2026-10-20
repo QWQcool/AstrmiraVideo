@@ -176,13 +176,40 @@ describe('批次写回（B3）', () => {
     expect(latestCanvasOutput(node)?.output.assetId).toBe('a1');
   });
 
-  it('在跑批次只算有 taskId 的（刷新后"结果未知"的批次不永久挡路）', () => {
+  it('在跑批次包含“结果未知”的 queued（V2.49：有 request 才挡住删除/撤销）', () => {
     const node = nodeOf('n1');
     node.data.batches = [
-      { id: 'b1', createdAt: 1, status: 'queued', outputs: [] },
+      {
+        id: 'b1',
+        createdAt: 1,
+        status: 'queued',
+        outputs: [],
+        request: {
+          prompt: 'p',
+          mode: 't2i',
+          aspectRatio: '1:1',
+          provider: 'host-comfyui',
+        },
+      },
       { id: 'b2', taskId: 't2', createdAt: 2, status: 'running', outputs: [] },
     ];
-    expect(canvasNodeActiveBatches(node).map((b) => b.id)).toEqual(['b2']);
+    expect(canvasNodeActiveBatches(node).map((b) => b.id)).toEqual(['b1', 'b2']);
+  });
+
+  it('旧版 queued 无 request 不永久锁死（允许显式重提/删除）', () => {
+    const node = nodeOf('n1');
+    node.data.batches = [{ id: 'legacy', createdAt: 1, status: 'queued', outputs: [] }];
+    expect(canvasNodeActiveBatches(node)).toEqual([]);
+  });
+
+  it('已完成/失败批次不挡路（不会因撤销重新执行）', () => {
+    const node = nodeOf('n1');
+    node.data.batches = [
+      { id: 'b1', taskId: 't1', createdAt: 1, status: 'succeeded', outputs: [] },
+      { id: 'b2', createdAt: 2, status: 'failed', outputs: [] },
+    ];
+    expect(canvasNodeActiveBatches(node)).toEqual([]);
+    expect(canvasActiveTaskNodeIds(docWith(node))).toEqual([]);
   });
 
   it('撤销守卫：只报"会被丢掉且还有任务在跑"的节点', () => {

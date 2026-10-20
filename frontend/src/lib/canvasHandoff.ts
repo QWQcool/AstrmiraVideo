@@ -43,11 +43,24 @@ export function parseCanvasResultHandoff(raw: string | null): CanvasResultHandof
 export function setCanvasResultHandoff(
   value: CanvasResultHandoff,
   storage: Pick<Storage, 'setItem'> = sessionStorage,
-): void {
+): boolean {
   try {
     storage.setItem(KEY, JSON.stringify(value));
+    return true;
   } catch {
-    // 隐私模式 / 配额满：动作退化为"不放入画布"，不抛错打断当前页面
+    // 隐私模式 / 配额满：调用方必须给提示并停在原页，不能假装交接成功
+    return false;
+  }
+}
+
+/** 交接**成功落盘到画布文档之后**才清除；保存失败时保留，下次还能再试 */
+export function clearCanvasResultHandoff(
+  storage: Pick<Storage, 'removeItem'> = sessionStorage,
+): void {
+  try {
+    storage.removeItem(KEY);
+  } catch {
+    // 清除失败不影响保存结果；下次读取按 assetId 去重
   }
 }
 

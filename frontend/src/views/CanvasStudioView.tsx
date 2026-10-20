@@ -74,9 +74,10 @@ import { resolveProviderKey } from '../lib/byok';
 import { createCanvasSaveQueue, type CanvasSaveState } from '../lib/canvasSaveQueue';
 import { navigate } from '../lib/router';
 import {
+  clearCanvasResultHandoff,
   peekCanvasResultHandoff,
   resultHandoffAsset,
-  takeCanvasResultHandoff,
+  type CanvasResultHandoff,
 } from '../lib/canvasHandoff';
 import { newIdempotencyKey } from '../lib/idempotency';
 import {
@@ -138,6 +139,26 @@ interface CanvasAssetInput {
   kind: 'image' | 'video' | 'audio';
   url: string;
   name?: string;
+}
+
+/** V2.49：提交/核对失败的归类；只有 terminal 才能把批次判死并显式换新键 */
+function describeSubmitFailure(caught: unknown): {
+  code: string;
+  message: string;
+  definitive: boolean;
+} {
+  if (caught instanceof ApiError) {
+    return {
+      code: caught.failure.code ?? 'UPSTREAM_ERROR',
+      message: caught.failure.message,
+      definitive: caught.failure.disposition === 'terminal',
+    };
+  }
+  return {
+    code: 'UPSTREAM_ERROR',
+    message: caught instanceof Error ? caught.message : String(caught),
+    definitive: false,
+  };
 }
 
 const LINEAGE_PROBLEM_KEYS: Record<CanvasLineageProblem, MessageKey> = {
@@ -215,6 +236,10 @@ export function CanvasStudioView() {
   const submittingRef = useRef<Set<string>>(new Set());
   /** 新节点/副本插入后，等文档 → RF 同步时选中它 */
   const pendingSelect = useRef<string | null>(null);
+  /** V2.49：结果交接在**保存成功之前**不消费，失败/刷新后还能再试 */
+  const pendingHandoffRef = useRef<CanvasResultHandoff | null>(null);
+  /** 空索引自动建画布只允许一次；失败不自动重试（交给用户） */
+  const autoCreateRef = useRef(false);
   const rfRef = useRef<ReactFlowInstance<StudioRfNode, Edge> | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -234,7 +259,14 @@ export function CanvasStudioView() {
         if (!mountedRef.current) return;
         if (docRef.current?.projectId !== projectId) return;
         if (state === 'saving') setError(null);
-        if (state === 'saved') setConflict(false);
+        if (state === 'saved') {
+          setConflict(false);
+          // V2.49：交接节点已经随文档落盘，这时才清除一次性交接
+          if (pendingHandoffRef.current !== null) {
+            clearCanvasResultHandoff();
+            pendingHandoffRef.current = null;
+          }
+        }
         setSaveState(state);
       },
       onError: (caught) => {
@@ -286,6 +318,10 @@ export function CanvasStudioView() {
   const openProject = useCallback(
     async (project: { projectId: string; name: string }): Promise<void> => {
       if (switchingRef.current) return;
+      if (submittingRef.current.size > 0) {
+        setNotice(t('canvas.studio.guard.submitting'));
+        return;
+      }
       const current = docRef.current;
       if (current !== null && current.projectId !== project.projectId) {
         // 切换前先把当前文档落盘；失败就**留在原画布**，不丢草稿
@@ -397,8 +433,10 @@ export function CanvasStudioView() {
         const initial = pickInitialCanvasProject(loaded, readActiveCanvasProjectId());
         if (initial !== null) {
           await openProject(initial);
-        } else if (peekCanvasResultHandoff() !== null) {
-          // 「去画布编辑」但一块画布都没有：先建一块，交接由下面的 effect 消费
+        } else if (!autoCreateRef.current && peekCanvasResultHandoff() !== null) {
+          // 「去画布编辑」但一块画布都没有：先建一块，交接由下面的 effect 消费。
+          // 只自动建一次；保存失败就报错，不再循环创建。
+          autoCreateRef.current = true;
           const fresh = createEmptyCanvasDoc(newCanvasProjectId(), defaultCanvasName(loaded.projects));
           const saved = await saveCanvasDoc(fresh, { revision: 1 });
           if (!alive) return;
@@ -525,6 +563,12 @@ export function CanvasStudioView() {
     const onHashChange = (): void => {
       const hash = window.location.hash;
       if (hash.startsWith('#/canvas')) return;
+      if (submittingRef.current.size > 0) {
+        // 提交响应还没回来：留在画布，等写回 taskId 再离开
+        navigate('#/canvas');
+        setNotice(t('canvas.studio.guard.submitting'));
+        return;
+      }
       const queue = saveQueueRef.current;
       if (queue === null || !queue.isDirty()) return;
       if (leaveTargetRef.current === hash) return;
@@ -825,9 +869,10 @@ export function CanvasStudioView() {
    * 只选中已有节点并如实告诉用户"已经在画布中"。
    */
   useEffect(() => {
-    if (doc === null) return;
-    const handoff = takeCanvasResultHandoff();
+    if (doc === null || pendingHandoffRef.current !== null) return;
+    const handoff = peekCanvasResultHandoff();
     if (handoff === null) return;
+    pendingHandoffRef.current = handoff;
     const assetId = `task:${handoff.taskId}`;
     const existing = doc.nodes.find((node) =>
       node.data.batches.some((batch) =>
@@ -835,6 +880,9 @@ export function CanvasStudioView() {
       ),
     );
     if (existing !== undefined) {
+      // 已经在文档里 = 上一次其实已经保存成功；这时可以安全消费
+      clearCanvasResultHandoff();
+      pendingHandoffRef.current = null;
       pendingSelect.current = existing.id;
       setSelectedIds([existing.id]);
       setNodes((prev) =>
@@ -843,6 +891,7 @@ export function CanvasStudioView() {
       setNotice(t('common.resultInCanvas'));
       return;
     }
+    // 只在保存队列报 saved 时才清除（见 onState）；保存失败/刷新后还会保留
     addAssets([resultHandoffAsset(handoff)], 'from_asset');
     setNotice(t('common.resultToCanvas'));
   }, [doc?.projectId, addAssets, setNodes, t]);
@@ -885,7 +934,7 @@ export function CanvasStudioView() {
   const submitNode = useCallback(
     async (nodeId: string): Promise<void> => {
       const current = docRef.current;
-      if (current === null) return;
+      if (current === null || switchingRef.current) return;
       const node = findCanvasNode(current, nodeId);
       if (node === null || submittingRef.current.has(nodeId)) return;
 
@@ -897,6 +946,21 @@ export function CanvasStudioView() {
       const issue = canvasSubmitIssue(node, provider, context);
       if (issue !== null) {
         setNotice(canvasSubmitIssueText(issue));
+        return;
+      }
+
+      let request: ReturnType<typeof buildCanvasGenerateRequest>;
+      try {
+        request = buildCanvasGenerateRequest({
+          node,
+          provider,
+          projectId,
+          canvasProjectId: current.projectId,
+          ...(byok.baseUrl.trim() === '' ? {} : { baseUrl: byok.baseUrl }),
+          ...(byok.model.trim() === '' ? {} : { model: byok.model }),
+        });
+      } catch (caught) {
+        setNotice(describeError(caught));
         return;
       }
 
@@ -912,7 +976,8 @@ export function CanvasStudioView() {
         if (docRef.current?.projectId !== projectAtSubmit) return;
         applyDoc(mutator, { record: false });
       };
-      // 批次先落文档（queued）：用户立刻看到"提交中"；拿到 taskId 后由轮询接手
+      // 批次先落文档（queued）：用户立刻看到"提交中"；拿到 taskId 后由轮询接手。
+      // V2.49：request 是原始提交快照，`batchId` 同时是幂等键 —— 刷新/响应丢失后靠它核对。
       applyDoc(
         (d) =>
           addCanvasBatch(d, nodeId, {
@@ -920,6 +985,7 @@ export function CanvasStudioView() {
             createdAt: now,
             status: 'queued',
             outputs: [],
+            request,
           }),
         { record: false },
       );
@@ -935,44 +1001,131 @@ export function CanvasStudioView() {
         { record: false },
       );
 
+      // **先落盘再发请求**：否则提交后立刻刷新会丢掉唯一能核对的依据
+      const saved = (await saveQueueRef.current?.flush()) ?? true;
+      if (!saved) {
+        applyToSubmittedProject((d) =>
+          patchCanvasBatch(
+            d,
+            nodeId,
+            batchId,
+            {
+              status: 'failed',
+              failure: { code: 'SAVE_FAILED', message: t('canvas.studio.submitNotSent') },
+            },
+            Date.now(),
+          ),
+        );
+        setNotice(t('canvas.studio.submitNotSent'));
+        submittingRef.current.delete(nodeId);
+        setSubmitting(new Set(submittingRef.current));
+        return;
+      }
+
       try {
-        const request = buildCanvasGenerateRequest({
-          node,
-          provider,
-          projectId,
-          canvasProjectId: current.projectId,
-          ...(byok.baseUrl.trim() === '' ? {} : { baseUrl: byok.baseUrl }),
-          ...(byok.model.trim() === '' ? {} : { model: byok.model }),
-        });
         const providerKey = resolveProviderKey(byok);
         const created = await submitGenerate(request, {
-          idempotencyKey: newIdempotencyKey(),
+          // 同一个批次 = 同一个幂等键；重放不会新建第二个任务
+          idempotencyKey: batchId,
           ...(providerKey === undefined ? {} : { providerKey }),
         });
         applyToSubmittedProject((d) =>
           patchCanvasBatch(d, nodeId, batchId, { taskId: created.taskId }, Date.now()),
         );
       } catch (caught) {
-        const failure =
-          caught instanceof ApiError
-            ? {
-                code: caught.failure.code ?? 'UPSTREAM_ERROR',
-                message: caught.failure.message,
-              }
-            : {
-                code: 'UPSTREAM_ERROR',
-                message: caught instanceof Error ? caught.message : String(caught),
-              };
-        applyToSubmittedProject((d) =>
-          patchCanvasBatch(d, nodeId, batchId, { status: 'failed', failure }, Date.now()),
-        );
-        setNotice(t('canvas.studio.submitFailed', { reason: failure.message }));
+        const failure = describeSubmitFailure(caught);
+        if (failure.definitive) {
+          // 明确失败（参数/凭据/上游拒绝）：可以显式重提，重提会换新批次/新键
+          applyToSubmittedProject((d) =>
+            patchCanvasBatch(
+              d,
+              nodeId,
+              batchId,
+              { status: 'failed', failure: { code: failure.code, message: failure.message } },
+              Date.now(),
+            ),
+          );
+          setNotice(t('canvas.studio.submitFailed', { reason: failure.message }));
+        } else {
+          // 网络/5xx/超时：结果未知，保留 queued + request，等待核对，不直接判死
+          setNotice(t('canvas.studio.submitUnknownNotice'));
+        }
       } finally {
         submittingRef.current.delete(nodeId);
         setSubmitting(new Set(submittingRef.current));
       }
     },
     [applyDoc, byok, projectId, providerStatus, t],
+  );
+
+  /**
+   * V2.49：核对“提交结果未知”的批次。
+   *
+   * 用**原请求 + 原批次 id（幂等键）**重放：服务端先按幂等键查已有任务，
+   * 查到就返回同一个 taskId，不会产生第二个上游任务；没查到才按同一个键创建。
+   * 因此这里绝不换新键，也不在前端“猜”成功/失败。
+   */
+  const recoverSubmit = useCallback(
+    async (nodeId: string, batchId: string): Promise<void> => {
+      const current = docRef.current;
+      if (current === null || switchingRef.current || submittingRef.current.has(nodeId)) return;
+      const node = findCanvasNode(current, nodeId);
+      const batch = node?.data.batches.find((item) => item.id === batchId);
+      if (
+        node === null ||
+        batch === undefined ||
+        batch.status !== 'queued' ||
+        batch.taskId !== undefined
+      ) {
+        return;
+      }
+      if (batch.request === undefined) {
+        setNotice(t('canvas.studio.recoverNoRequest'));
+        return;
+      }
+
+      submittingRef.current.add(nodeId);
+      setSubmitting(new Set(submittingRef.current));
+      setNotice(null);
+      const projectAtSubmit = current.projectId;
+      const applyToSubmittedProject = (mutator: (d: CanvasDoc) => CanvasDoc): void => {
+        if (docRef.current?.projectId !== projectAtSubmit) return;
+        applyDoc(mutator, { record: false });
+      };
+
+      try {
+        const providerKey = resolveProviderKey(byok);
+        const created = await submitGenerate(batch.request, {
+          idempotencyKey: batch.id,
+          ...(providerKey === undefined ? {} : { providerKey }),
+        });
+        applyToSubmittedProject((d) =>
+          patchCanvasBatch(d, nodeId, batchId, { taskId: created.taskId }, Date.now()),
+        );
+        setNotice(t('canvas.studio.recoverDone'));
+      } catch (caught) {
+        const failure = describeSubmitFailure(caught);
+        if (failure.definitive) {
+          applyToSubmittedProject((d) =>
+            patchCanvasBatch(
+              d,
+              nodeId,
+              batchId,
+              { status: 'failed', failure: { code: failure.code, message: failure.message } },
+              Date.now(),
+            ),
+          );
+          setNotice(t('canvas.studio.submitFailed', { reason: failure.message }));
+        } else {
+          // 仍然未知：保留 queued + request，允许稍后再核对
+          setNotice(t('canvas.studio.recoverUnknown'));
+        }
+      } finally {
+        submittingRef.current.delete(nodeId);
+        setSubmitting(new Set(submittingRef.current));
+      }
+    },
+    [applyDoc, byok, t],
   );
 
   const handleDraftChange = useCallback(
@@ -1127,6 +1280,10 @@ export function CanvasStudioView() {
   // ── 项目动作 ───────────────────────────────────────────────────────────
   const handleCreate = async (): Promise<void> => {
     if (index === null || switchingRef.current) return;
+    if (submittingRef.current.size > 0) {
+      setNotice(t('canvas.studio.guard.submitting'));
+      return;
+    }
     if (docRef.current !== null) {
       const ok = (await saveQueueRef.current?.flush()) ?? true;
       if (!ok) {
@@ -1173,6 +1330,15 @@ export function CanvasStudioView() {
 
   const handleDelete = async (): Promise<void> => {
     if (doc === null || switchingRef.current) return;
+    if (submittingRef.current.size > 0) {
+      setNotice(t('canvas.studio.guard.submitting'));
+      return;
+    }
+    if (doc.nodes.some((node) => canvasNodeActiveBatches(node).length > 0)) {
+      // 运行中或结果未知的批次都可能是唯一线索；整块画布删除前必须先收口
+      setNotice(t('canvas.studio.guard.canvasActive'));
+      return;
+    }
     switchingRef.current = true;
     setBusy(true);
     setPickerOpen(false);
@@ -1394,7 +1560,14 @@ export function CanvasStudioView() {
         </div>
       ) : (
         <StudioProvider
-          value={{ doc, live, submitting, onDraftChange: handleDraftChange, onSubmit: (id) => void submitNode(id) }}
+          value={{
+            doc,
+            live,
+            submitting,
+            onDraftChange: handleDraftChange,
+            onSubmit: (id) => void submitNode(id),
+            onRecover: (id, batchId) => void recoverSubmit(id, batchId),
+          }}
         >
           <div className="cs-workspace">
             <nav className="cs-rail" aria-label={t('canvas.studio.add')}>

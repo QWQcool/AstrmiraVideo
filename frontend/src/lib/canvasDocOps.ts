@@ -371,8 +371,14 @@ export function latestCanvasOutput(
  * 界面会把这种批次如实显示成"提交中断"，由用户决定要不要再提交一次。
  */
 export function canvasNodeActiveBatches(node: CanvasDocNode): CanvasNodeBatch[] {
+  // V2.49：`queued` 但没有 taskId = 提交结果未知（可能已建任务）。
+  // 有 request 才能核对，所以它要挡住删除/撤销/再次提交；
+  // 旧批次没有 request（V2.45 之前），无法核对，不能永久锁死，允许用户显式重提/删除。
   return node.data.batches.filter(
-    (batch) => (batch.status === 'queued' || batch.status === 'running') && batch.taskId !== undefined,
+    (batch) =>
+      batch.status === 'running' ||
+      (batch.status === 'queued' &&
+        (batch.taskId !== undefined || batch.request !== undefined)),
   );
 }
 

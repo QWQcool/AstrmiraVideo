@@ -901,12 +901,17 @@ export function CreateView() {
                         setNotice(t('common.resultNotReady'));
                         return;
                       }
-                      setCanvasResultHandoff({
-                        taskId: task.taskId,
-                        kind: output.kind,
-                        url: output.url,
-                        title: task.requestSnapshot.prompt.slice(0, 40),
-                      });
+                      if (
+                        !setCanvasResultHandoff({
+                          taskId: task.taskId,
+                          kind: output.kind,
+                          url: output.url,
+                          title: task.requestSnapshot.prompt.slice(0, 40),
+                        })
+                      ) {
+                        setNotice(t('common.resultStorageOff'));
+                        return;
+                      }
                       navigate('#/canvas');
                     }}
                   >

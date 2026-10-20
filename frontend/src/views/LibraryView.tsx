@@ -770,12 +770,17 @@ export function LibraryView() {
                       type="button"
                       className="wb-btn"
                       onClick={() => {
-                        setCanvasResultHandoff({
-                          taskId: selected.taskId,
-                          kind: selectedOutput.kind,
-                          url: selectedOutput.url,
-                          title: selected.requestSnapshot.prompt.slice(0, 40),
-                        });
+                        if (
+                          !setCanvasResultHandoff({
+                            taskId: selected.taskId,
+                            kind: selectedOutput.kind,
+                            url: selectedOutput.url,
+                            title: selected.requestSnapshot.prompt.slice(0, 40),
+                          })
+                        ) {
+                          setNotice(t('common.resultStorageOff'));
+                          return;
+                        }
                         navigate('#/canvas');
                       }}
                     >

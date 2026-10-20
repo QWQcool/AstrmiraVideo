@@ -18,6 +18,8 @@ export interface StudioServices {
   submitting: ReadonlySet<string>;
   onDraftChange(nodeId: string, patch: CanvasDraftPatch): void;
   onSubmit(nodeId: string): void;
+  /** V2.49：核对“提交结果未知”的批次（用原请求 + 原幂等键重放） */
+  onRecover(nodeId: string, batchId: string): void;
 }
 
 const StudioContext = createContext<StudioServices | null>(null);

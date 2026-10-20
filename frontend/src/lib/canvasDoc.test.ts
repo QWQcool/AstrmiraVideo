@@ -124,4 +124,31 @@ describe('CanvasDoc v1', () => {
     const index = createEmptyCanvasProjectIndex();
     expect(index).toEqual({ version: CANVAS_DOC_VERSION, projects: [] });
   });
+
+  it('V2.49：批次可带原始 request；旧批次/旧文档仍能读（revision 缺省 1）', () => {
+    const doc = makeDoc();
+    const legacy = { ...doc, revision: undefined };
+    const parsedLegacy = CanvasDocSchema.parse(legacy);
+    expect(parsedLegacy.revision).toBe(1);
+
+    const batch = {
+      id: 'b-recover',
+      createdAt: 1,
+      status: 'queued' as const,
+      outputs: [],
+      request: {
+        prompt: '一只猫',
+        mode: 't2i' as const,
+        aspectRatio: '1:1' as const,
+        provider: 'host-comfyui',
+        origin: 'canvas' as const,
+        canvasProjectId: 'proj-1',
+      },
+    };
+    const parsed = CanvasDocSchema.parse({
+      ...doc,
+      nodes: [{ ...doc.nodes[0], data: { ...doc.nodes[0].data, batches: [batch] } }],
+    });
+    expect(parsed.nodes[0]?.data.batches[0]?.request?.prompt).toBe('一只猫');
+  });
 });

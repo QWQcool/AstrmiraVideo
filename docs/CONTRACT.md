@@ -1,6 +1,13 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.48 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.49 · 已冻结（变更需先改本文，再改代码）**
+> **V2.49 修订（2026-10-20）**：**画布提交意图与结果核对（§21-4 / §21-12）** —— Step 11-S4-R2（B86）。
+>   ① `CanvasNodeBatch.request` 新增可选字段：提交的**原始请求快照**；`batch.id` 同时作为幂等键；
+>   ② 提交前先把批次/请求落盘；网络/5xx/超时等**未知结果**保留 `queued` + request，界面用原请求 + 原键核对，不换新键；
+>   ③ 明确失败才判 `failed`，之后显式重提才换新批次/新键；在飞提交时禁止切换/新建/整画布删除；
+>   ④ 结果交接只在画布**保存成功**后消费；存储禁用明确提示；空索引自动建画布最多一次。
+>   **无新路由、无新错误码、不升 `CanvasDoc.version`**；`request` 对旧文档可选。
+
 > **V2.48 修订（2026-10-20）**：**画布文档修订号与并发保护（§21-8 / §6）** —— Step 11-S4-R1b（D70）。
 >   ① `CanvasDoc` 新增独立 `revision`（正整数；旧文档读作 1；`version` 仍是格式版本）；
 >   ② `PUT /api/canvas/docs/:projectId` 必须带 `X-Canvas-Revision`（新建文档可缺省）；不匹配/缺失/已删除 → **409 `DOC_CONFLICT`**；
@@ -2264,6 +2271,11 @@ interface CanvasNodeBatch {
     width?: number; height?: number; durationSec?: number;
   }>;
   failure?: { code: string; message: string }; // 失败批次保留，原位重试才说得清
+  /**
+   * V2.49：提交时的原始请求快照（`id` 同时是幂等键）。
+   * 只用于刷新/响应丢失后的核对；不含凭据。旧批次没有该字段。
+   */
+  request?: VideoGenerateRequest;
 }
 ```
 
@@ -2444,6 +2456,36 @@ interface ModelCapability {
 - 删除边：在边上右键 →「删除来源边」；删除后同步移除下游对应的参考。
 
 **无新路由、无新错误码、无新字段**：边与参考都写在既有 `CanvasDoc` v1 里。
+
+### 21-12 提交意图、未知结果与交接（V2.49 落地；Step 11-S4-R2）
+
+**提交顺序（先落盘，再发请求）**
+1. 生成 `batch.id`（同时作为 `Idempotency-Key`），把 `{ status:'queued', request }` 写入节点批次；
+2. **等画布保存成功**（保存队列 `flush`）后才 `POST /api/generate`；
+   保存失败 → 批次标 `failed`（`SAVE_FAILED`），**请求不发出**，界面提示先恢复保存；
+3. 响应 `taskId` → 写回批次并交给轮询；
+4. **明确失败**（`ErrorDisposition='terminal'`，如密钥/参数/供应商不可用）→ 批次 `failed`；
+   之后用户显式重提 = **新批次/新键**；
+5. **未知结果**（网络中断、超时、5xx、429 等）→ 保留 `queued` 且**没有 taskId**，
+   同时保留 `request`；界面如实显示「提交中断（结果未知）」，**不直接判死、不换键重提**。
+
+**核对（reconcile）**
+- 节点上的「核对提交结果」用 **原 `request` + 原 `batch.id`** 再发 `POST /api/generate`；
+- 服务端先按幂等键查已有任务：查到返回同一 `taskId`，查不到才用同一键创建（不产生第二个上游任务）；
+- 仍是未知 → 继续保留 `queued`，提示稍后再核对；明确失败 → 才标 `failed`。
+
+**守卫**
+- 提交请求在飞（`submitting`）时：禁止切换画布、新建画布、离开画布、删除整块画布；
+- 有 `running`，或 `queued` 且**带 `request`/`taskId`** 的批次时：禁止删除整块画布 / 删除或撤销该节点；
+- 旧版 `queued` 且**没有 `request`** 的批次无法核对，不永久锁死：允许用户显式重提（新键）或删除，界面仍显示「提交中断（结果未知）」；
+- `succeeded` / `failed` / `cancelled` 批次不参与轮询、不因撤销重新执行。
+
+**结果交接**
+- 「去画布」写 sessionStorage 一次性交接；存储禁用时**提示并留在原页**，不跳转；
+- 画布消费为 `task:<taskId>` 资产节点，按 assetId 去重；**保存成功后才清除交接**，
+  保存失败/刷新后保留并可重试；空索引自动建画布最多一次。
+
+**无新路由、无新错误码、不升 `CanvasDoc.version`**：只加可选 `request`，其余是行为约定。
 
 ## 22. 配置型 HTTP 任务服务 `http-service:<name>`（V2.47 新增；D67 / D71）
 
