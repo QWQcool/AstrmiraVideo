@@ -2357,10 +2357,10 @@ try {
   assert(true, '移除 chip 后模式回落到「文生视频」');
 
   // 更多设置默认收起（D39：控件分层），展开后出现高级项
-  assert((await page.locator('.cr-more').count()) === 0, '「更多设置」默认收起（首页不是第二个工作台）');
+  assert((await page.locator('.cr-advanced').count()) === 0, '「更多设置」默认收起（首页不是第二个工作台）');
   await page.getByRole('button', { name: /更多设置/ }).click();
-  await page.waitForSelector('.cr-more', { timeout: 5_000 });
-  assert(true, '展开后出现高级设置（画幅 / 时长 / 清晰度 / 引擎 / seed）');
+  await page.waitForSelector('.cr-advanced', { timeout: 5_000 });
+  assert(true, '展开后出现高级设置（seed 等）');
 
   // 空提示词 → 提交按钮置灰（防线 6 的前端半边）
   assert(await page.locator('.cr-submit').isDisabled(), '空提示词时提交按钮置灰');
