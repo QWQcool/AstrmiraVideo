@@ -300,6 +300,15 @@
   white-space: nowrap;
 }
 
+.cr-mention-source {
+  margin-right: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background-color: var(--gold-soft);
+  color: var(--gold);
+  font-size: var(--fs-micro);
+}
+
 .cr-mention-empty {
   margin: 6px 4px;
 }

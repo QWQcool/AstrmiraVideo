@@ -160,6 +160,7 @@ export const COMMON_ZH = {
   'common.toCanvas': '去画布编辑',
   'common.refAdded': '已作为参考加入',
   'common.resultToCanvas': '已放入画布',
+  'common.retry': '重试',
   'common.resultNotReady': '这条结果还没有可用的产物',
   'common.resultStorageOff': '浏览器存储不可用，无法把结果交接到画布；请允许站点存储后重试',
   'common.resultInCanvas': '这条结果已经在画布中',
@@ -279,6 +280,7 @@ export const COMMON_EN = {
   'common.toCanvas': 'Open in canvas',
   'common.refAdded': 'Added as a reference',
   'common.resultToCanvas': 'Added to the canvas',
+  'common.retry': 'Retry',
   'common.resultNotReady': 'This result has no playable output yet',
   'common.resultStorageOff':
     'Browser storage is unavailable, so the result cannot be handed to the canvas; allow site storage and try again',

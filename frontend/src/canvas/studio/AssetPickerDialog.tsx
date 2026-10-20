@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { AssetListEntry } from '@astrmira/shared';
-import { fetchAssets } from '../../lib/api';
+import { fetchAssets, fetchHistory } from '../../lib/api';
 import { useTranslate } from '../../lib/i18n';
+import {
+  filterReferenceSources,
+  referenceSourceLabelKey,
+  referenceSourcesFromAssets,
+  referenceSourcesFromTasks,
+  type ReferenceKind,
+  type ReferenceSourceItem,
+} from '../../lib/referenceSources';
 
 /**
  * 资产库多选（Step 11-S3 片 B3；CONTRACT §21-10）。
@@ -11,33 +18,50 @@ import { useTranslate } from '../../lib/i18n';
  * 两种来源在节点上用 `source` 区分（`from_asset` / `uploaded`）。
  */
 
-type KindFilter = 'all' | 'image' | 'video' | 'audio';
+type KindFilter = 'all' | ReferenceKind;
 
 export interface AssetPickerDialogProps {
   /** 资产项目（不是画布项目；见 CONTRACT §12） */
   projectId: string;
+  /** 只允许这些 kind；缺省 = 图/视频/音频（文本产物没有文件，不入选择器） */
+  allowedKinds?: readonly ReferenceKind[];
   onClose(): void;
-  onConfirm(assets: AssetListEntry[]): void;
+  onConfirm(sources: ReferenceSourceItem[]): void;
 }
 
 const KIND_FILTERS: readonly KindFilter[] = ['all', 'image', 'video', 'audio'];
 
-export function AssetPickerDialog({ projectId, onClose, onConfirm }: AssetPickerDialogProps) {
+export function AssetPickerDialog({
+  projectId,
+  allowedKinds = ['image', 'video', 'audio'],
+  onClose,
+  onConfirm,
+}: AssetPickerDialogProps) {
   const t = useTranslate();
-  const [assets, setAssets] = useState<AssetListEntry[]>([]);
+  const [sources, setSources] = useState<ReferenceSourceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<KindFilter>('all');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   useEffect(() => {
     let alive = true;
     void (async () => {
       try {
-        const result = await fetchAssets(projectId);
+        // S5-Ab：同一适配层列出上传素材、首页产物、画布产物，来源各不相同
+        const [assetList, home, canvas] = await Promise.all([
+          fetchAssets(projectId),
+          fetchHistory({ project: projectId, limit: 200 }),
+          fetchHistory({ project: projectId, origin: 'canvas', limit: 200 }),
+        ]);
         if (alive) {
-          setAssets(result.assets);
+          setSources([
+            ...referenceSourcesFromAssets(assetList.assets),
+            ...referenceSourcesFromTasks(home.items, 'home'),
+            ...referenceSourcesFromTasks(canvas.items, 'canvas'),
+          ]);
           setError(null);
         }
       } catch (caught) {
@@ -49,7 +73,7 @@ export function AssetPickerDialog({ projectId, onClose, onConfirm }: AssetPicker
     return () => {
       alive = false;
     };
-  }, [projectId]);
+  }, [projectId, reloadNonce]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -59,34 +83,37 @@ export function AssetPickerDialog({ projectId, onClose, onConfirm }: AssetPicker
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const visible = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase();
-    return assets.filter((asset) => {
-      if (filter !== 'all' && asset.kind !== filter) return false;
-      if (needle === '') return true;
-      const name = asset.name?.toLocaleLowerCase() ?? '';
-      return name.includes(needle) || asset.assetId.toLocaleLowerCase().includes(needle);
-    });
-  }, [assets, filter, query]);
+  const visible = useMemo(
+    () =>
+      filterReferenceSources(
+        sources,
+        query,
+        filter === 'all' ? allowedKinds : [filter],
+      ),
+    [sources, filter, query, allowedKinds],
+  );
 
-  const kindLabel = (kind: AssetListEntry['kind']): string =>
+  const kindLabel = (kind: ReferenceKind): string =>
     kind === 'image'
       ? t('common.kind.image')
       : kind === 'video'
         ? t('common.kind.video')
         : t('common.kind.audio');
+  const kindFilters = KIND_FILTERS.filter(
+    (key) => key === 'all' || allowedKinds.includes(key),
+  );
 
-  const toggle = (assetId: string): void => {
+  const toggle = (ref: string): void => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(assetId)) next.delete(assetId);
-      else next.add(assetId);
+      if (next.has(ref)) next.delete(ref);
+      else next.add(ref);
       return next;
     });
   };
 
   const confirm = (): void => {
-    const picked = assets.filter((asset) => selected.has(asset.assetId));
+    const picked = sources.filter((source) => selected.has(source.ref));
     onConfirm(picked);
   };
 
@@ -113,6 +140,8 @@ export function AssetPickerDialog({ projectId, onClose, onConfirm }: AssetPicker
           </button>
         </header>
 
+        <p className="cs-modal-note">{t('canvas.studio.pickerNodeNote')}</p>
+
         <div className="cs-modal-tools">
           <input
             className="cs-modal-search"
@@ -122,7 +151,7 @@ export function AssetPickerDialog({ projectId, onClose, onConfirm }: AssetPicker
             onChange={(event) => setQuery(event.target.value)}
           />
           <div className="cs-modal-filters" role="group">
-            {KIND_FILTERS.map((item) => (
+            {kindFilters.map((item) => (
               <button
                 key={item}
                 type="button"
@@ -141,6 +170,16 @@ export function AssetPickerDialog({ projectId, onClose, onConfirm }: AssetPicker
           {error !== null ? (
             <p className="cs-modal-note cs-modal-error">
               {t('canvas.studio.pickerError', { reason: error })}
+              <button
+                type="button"
+                className="cs-toolbar-link"
+                onClick={() => {
+                  setLoading(true);
+                  setReloadNonce((value) => value + 1);
+                }}
+              >
+                {t('common.retry')}
+              </button>
             </p>
           ) : null}
           {!loading && error === null && visible.length === 0 ? (
@@ -148,27 +187,31 @@ export function AssetPickerDialog({ projectId, onClose, onConfirm }: AssetPicker
           ) : null}
 
           <div className="cs-asset-grid">
-            {visible.map((asset) => {
-              const picked = selected.has(asset.assetId);
+            {visible.map((source) => {
+              const picked = selected.has(source.ref);
               return (
                 <button
-                  key={asset.assetId}
+                  key={source.key}
                   type="button"
                   className={picked ? 'cs-asset is-picked' : 'cs-asset'}
                   aria-pressed={picked}
-                  onClick={() => toggle(asset.assetId)}
+                  onClick={() => toggle(source.ref)}
                 >
                   <span className="cs-asset-thumb">
-                    {asset.kind === 'image' ? (
-                      <img src={asset.url} alt="" loading="lazy" draggable={false} />
+                    {source.kind === 'image' && source.previewUrl !== undefined ? (
+                      <img src={source.previewUrl} alt="" loading="lazy" draggable={false} />
                     ) : (
-                      <span className="cs-asset-glyph">{asset.kind === 'video' ? '▶' : '♪'}</span>
+                      <span className="cs-asset-glyph">
+                        {source.kind === 'video' ? '▶' : source.kind === 'audio' ? '♪' : 'T'}
+                      </span>
                     )}
                   </span>
-                  <span className="cs-asset-name" title={asset.name ?? asset.assetId}>
-                    {asset.name ?? asset.assetId.slice(0, 10)}
+                  <span className="cs-asset-name" title={source.label}>
+                    {source.label}
                   </span>
-                  <span className="cs-asset-meta">{kindLabel(asset.kind)}</span>
+                  <span className="cs-asset-meta">
+                    {t(referenceSourceLabelKey(source.source))} · {kindLabel(source.kind)}
+                  </span>
                 </button>
               );
             })}

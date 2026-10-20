@@ -51,6 +51,9 @@ export const CREATE_ZH = {
   // （"✂ 剪辑产物 · " / "成片 · " 这两个行内前缀提升到 `common.origin.*Badge`：
   //   左栏的成片下拉也要用同一对）
   'create.mention.assetLine': '资产 · {kind} · {name}',
+  'create.source.upload': '上传素材',
+  'create.source.home': '首页产物',
+  'create.source.canvas': '画布产物',
 
   // ── 配方 / 模板 ──
   'create.recipes.aria': '配方快捷',
@@ -150,6 +153,9 @@ export const CREATE_EN = {
   'create.mention.empty':
     'No matching assets. You can drag images/videos in to upload, or generate a render in the Workbench first.',
   'create.mention.assetLine': 'Asset · {kind} · {name}',
+  'create.source.upload': 'Uploaded asset',
+  'create.source.home': 'Home output',
+  'create.source.canvas': 'Canvas output',
 
   'create.recipes.aria': 'Recipe shortcuts',
   'create.recipes.all': 'All recipes →',

@@ -29,12 +29,10 @@ import {
   type ResolutionTier,
 } from '../lib/format';
 import { newIdempotencyKey } from '../lib/idempotency';
-import { useTranslate, type MessageKey, type Translate } from '../lib/i18n';
+import { useTranslate, type MessageKey } from '../lib/i18n';
 import {
   assetsForRefs,
   canvasReferencesForMentionRefs,
-  filterAssetCandidates,
-  filterTaskCandidates,
   hasMissingRef,
   hasPendingRef,
   ignoredMentionHint,
@@ -44,6 +42,13 @@ import {
   swapFirstLast,
   type MentionRef,
 } from '../lib/mentions';
+import {
+  filterReferenceSources,
+  referenceSourceLabelKey,
+  referenceSourcesFromAssets,
+  referenceSourcesFromTasks,
+  type ReferenceSourceItem,
+} from '../lib/referenceSources';
 import {
   comfyUiEngineOptions,
   httpServiceEngineOptions,
@@ -148,27 +153,14 @@ function isRefAsset(asset: AssetListEntry): asset is RefAsset {
   return asset.kind === 'image' || asset.kind === 'video';
 }
 
-/**
- * 资产 → chip 引用（只接受 RefAsset；音频在池入口就被过滤掉）。
- *
- * `t` 当参数传进来而不是在函数里取：这是**纯函数**，不该 import React 去要 hook。
- */
-function refFromAsset(asset: RefAsset, t: Translate): MentionRef {
-  // V2.9（B43）：有原始文件名就用它当 chip 标签（人认得名字，认不出编号）；
-  // 没有（抽帧产物 / 老资产）就退回"图/视频·编号"，**不编造名字**
-  const label =
-    asset.name === undefined
-      ? `${t(asset.kind === 'image' ? 'create.chip.imageShort' : 'common.kind.video')}·${asset.assetId.slice(0, 6)}`
-      : asset.name.length > 16
-        ? `${asset.name.slice(0, 16)}…`
-        : asset.name;
-
+/** S5-Ab：统一来源条目 → chip 引用（上传/首页产物走同一条路） */
+function refFromSource(source: ReferenceSourceItem): MentionRef {
   return {
     id: newIdempotencyKey(),
-    ref: asset.assetId,
-    kind: asset.kind,
-    previewUrl: asset.kind === 'image' ? asset.url : null,
-    label,
+    ref: source.ref,
+    kind: source.kind === 'video' ? 'video' : 'image',
+    previewUrl: source.previewUrl ?? null,
+    label: source.label,
   };
 }
 
@@ -206,6 +198,14 @@ export function CreateView() {
   const [assetPool, setAssetPool] = useState<RefAsset[]>([]);
   const [taskPool, setTaskPool] = useState<TaskProgress[]>([]);
   const [poolError, setPoolError] = useState<string | null>(null);
+  /** S5-Ab：上传素材 + 首页产物共用同一适配层；画布产物由服务端默认历史挡在外面 */
+  const mentionSources = useMemo(
+    () => [
+      ...referenceSourcesFromTasks(taskPool, 'home'),
+      ...referenceSourcesFromAssets(assetPool),
+    ],
+    [taskPool, assetPool],
+  );
   /** 只有成功拉过素材池，才能判断草稿引用“确实不存在”；拉失败不误判 */
   const [poolsLoaded, setPoolsLoaded] = useState(false);
 
@@ -705,15 +705,10 @@ export function CreateView() {
     void reloadPools();
   };
 
-  const filteredTasks = useMemo(
-    () => filterTaskCandidates(taskPool, mentionFilter),
-    [taskPool, mentionFilter],
-  );
-
-  // V2.9（B43）：按**名字**过滤（有名字时），assetId 仍可搜（老习惯与老资产兜底）——纯函数在 lib/mentions
-  const filteredAssets = useMemo(
-    () => filterAssetCandidates(assetPool, mentionFilter),
-    [assetPool, mentionFilter],
+  // S5-Ab：上传素材 + 首页产物同一条搜索/渲染路径；来源由条目自己携带
+  const filteredSources = useMemo(
+    () => filterReferenceSources(mentionSources, mentionFilter),
+    [mentionSources, mentionFilter],
   );
 
   // ── 提交 ──
@@ -768,17 +763,12 @@ export function CreateView() {
     }
   };
 
-  const mentionCandidateCount = filteredTasks.length + filteredAssets.length;
+  const mentionCandidateCount = filteredSources.length;
   const mentionIndex = Math.min(mentionActive, Math.max(0, mentionCandidateCount - 1));
 
   const pickMentionAt = (index: number): void => {
-    const taskCandidate = filteredTasks[index];
-    if (taskCandidate !== undefined) {
-      addRef(refFromTask(taskCandidate));
-      return;
-    }
-    const assetCandidate = filteredAssets[index - filteredTasks.length];
-    if (assetCandidate !== undefined) addRef(refFromAsset(assetCandidate, t));
+    const candidate = filteredSources[index];
+    if (candidate !== undefined) addRef(refFromSource(candidate));
   };
 
   const pickFirstMatch = (): void => pickMentionAt(mentionIndex);
@@ -958,63 +948,34 @@ export function CreateView() {
                 }}
               />
               <div className="cr-mention-list">
-                {filteredTasks.length === 0 && filteredAssets.length === 0 ? (
+                {filteredSources.length === 0 ? (
                   <p className="wb-note cr-mention-empty">{t('create.mention.empty')}</p>
                 ) : null}
-                {filteredTasks.map((item, index) => (
+                {filteredSources.map((source, index) => (
                   <button
-                    key={item.taskId}
+                    key={source.key}
                     type="button"
                     className={
                       index === mentionIndex ? 'cr-mention-item is-active' : 'cr-mention-item'
                     }
                     onMouseEnter={() => setMentionActive(index)}
-                    onClick={() => addRef(refFromTask(item))}
+                    onClick={() => addRef(refFromSource(source))}
                   >
-                    {item.thumbnailUrl === undefined ? (
-                      <span className="cr-mention-glyph">🎬</span>
+                    {source.kind === 'image' && source.previewUrl !== undefined ? (
+                      <img className="cr-mention-thumb" src={source.previewUrl} alt="" />
                     ) : (
-                      <img className="cr-mention-thumb" src={item.thumbnailUrl} alt="" />
+                      <span className="cr-mention-glyph">
+                        {source.kind === 'video' ? '🎬' : source.kind === 'audio' ? '♪' : '🖼'}
+                      </span>
                     )}
                     <span className="cr-mention-label">
-                      {item.origin?.kind === 'edit'
-                        ? t('common.origin.editBadge')
-                        : t('common.origin.renderBadge')}
-                      {item.requestSnapshot.prompt.slice(0, 18)}
+                      <span className="cr-mention-source">
+                        {t(referenceSourceLabelKey(source.source))}
+                      </span>
+                      {source.label}
                     </span>
                   </button>
                 ))}
-                {filteredAssets.map((item, index) => {
-                  const candidateIndex = filteredTasks.length + index;
-                  return (
-                    <button
-                      key={item.assetId}
-                      type="button"
-                      className={
-                        candidateIndex === mentionIndex
-                          ? 'cr-mention-item is-active'
-                          : 'cr-mention-item'
-                      }
-                      onMouseEnter={() => setMentionActive(candidateIndex)}
-                      onClick={() => addRef(refFromAsset(item, t))}
-                    >
-                      {item.kind === 'image' ? (
-                        <img className="cr-mention-thumb" src={item.url} alt="" />
-                      ) : (
-                        <span className="cr-mention-glyph">🎬</span>
-                      )}
-                      <span className="cr-mention-label">
-                        {/* V2.9（B43）：有原始文件名就显示名字（人认名字，不认编号） */}
-                        {t('create.mention.assetLine', {
-                          kind: t(
-                            item.kind === 'image' ? 'common.kind.image' : 'common.kind.video',
-                          ),
-                          name: item.name ?? item.assetId.slice(0, 8),
-                        })}
-                      </span>
-                    </button>
-                  );
-                })}
               </div>
             </div>
           ) : null}
@@ -1109,6 +1070,9 @@ export function CreateView() {
           <div className="wb-uncertain cr-alert">
             <span className="wb-uncertain-title">{t('create.alert.poolFailed')}</span>
             <span className="wb-uncertain-body">{poolError}</span>
+            <button type="button" className="wb-btn" onClick={() => void reloadPools()}>
+              {t('common.retry')}
+            </button>
           </div>
         )}
         {submitError === null ? null : (

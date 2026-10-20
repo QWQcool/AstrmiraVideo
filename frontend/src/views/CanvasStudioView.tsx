@@ -1682,8 +1682,16 @@ export function CanvasStudioView() {
         <AssetPickerDialog
           projectId={projectId}
           onClose={() => setPickerOpen(false)}
-          onConfirm={(assets) => {
-            addAssets(assets, 'from_asset');
+          onConfirm={(sources) => {
+            addAssets(
+              sources.map((source) => ({
+                assetId: source.ref,
+                kind: source.kind,
+                url: source.url,
+                name: source.label,
+              })),
+              'from_asset',
+            );
             setPickerOpen(false);
           }}
         />
