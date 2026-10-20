@@ -824,7 +824,7 @@ try {
     '时长可以切到 10s 且选中态正确',
   );
 
-  console.log('\n[5] 主题（V8.3 批次 2：默认跟随系统 + 可覆盖，日间为"现代简洁·蔚蓝"）');
+  console.log('\n[5] 主题（V8.3 批次 2：默认跟随系统 + 可覆盖，日间为"现代简洁·中性灰 + 深青"）');
   const themeAttr = () =>
     page.evaluate(() => document.documentElement.getAttribute('data-theme'));
 
@@ -846,10 +846,10 @@ try {
   await page.waitForFunction(
     () =>
       getComputedStyle(document.querySelector('.wb-shell')).backgroundColor ===
-      'rgb(244, 247, 251)',
-    { timeout: 5_000 },
-  );
-  assert(true, '日间底色生效（.wb-shell 计算样式 = rgb(244,247,251)，等过渡完成后读）');
+      'rgb(244, 245, 246)',
+      { timeout: 5_000 },
+      );
+      assert(true, '日间底色生效（.wb-shell 计算样式 = rgb(244,245,246)，等过渡完成后读）');
 
   // 放映区在**两套主题下都是深色**，所以区内的文字必须用 `--canvas-*` 那一组。
   // 2026-09-23 用户在日间模式截图报障："放映区里的提示文字看不见"——
