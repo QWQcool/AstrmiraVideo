@@ -157,6 +157,51 @@
   color: var(--danger);
 }
 
+/* S5-B1：用途标签 / 失效 / 上传失败重试 / 首尾交换 */
+.cr-chip.is-missing,
+.cr-chip.is-failed {
+  border-color: var(--danger);
+}
+
+.cr-chip-role {
+  padding: 0 4px;
+  border-radius: 4px;
+  background-color: var(--gold-soft);
+  color: var(--gold);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
+.cr-chip-role--missing {
+  background-color: transparent;
+  color: var(--danger);
+}
+
+.cr-chip-retry,
+.cr-chip-swap {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--gold);
+  font-size: var(--fs-micro);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cr-chip-retry:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.cr-chip-swap {
+  align-self: center;
+  padding: 4px 6px;
+}
+
+.cr-shortcut {
+  margin-left: auto;
+}
+
 /* ── @ 提及弹层 ── */
 .cr-mention {
   border: 1px solid var(--line);
@@ -195,7 +240,8 @@
   cursor: pointer;
 }
 
-.cr-mention-item:hover {
+.cr-mention-item:hover,
+.cr-mention-item.is-active {
   background-color: var(--gold-soft);
 }
 

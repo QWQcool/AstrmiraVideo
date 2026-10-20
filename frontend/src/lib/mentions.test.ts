@@ -3,13 +3,18 @@ import type { AssetListEntry, TaskProgress } from '@astrmira/shared';
 import type { MentionRef } from './mentions';
 import {
   assetsForRefs,
+  canvasReferencesForMentionRefs,
   filterAssetCandidates,
   filterTaskCandidates,
+  hasMissingRef,
   hasPendingRef,
   ignoredMentionHint,
+  mentionRefsFromCanvasReferences,
+  mentionRole,
   MENTION_LIST_LIMIT,
   modeForRefs,
   selectMentions,
+  swapFirstLast,
 } from './mentions';
 
 /**
@@ -186,5 +191,60 @@ describe('弹层候选过滤（V2.9 / 台账 B43）', () => {
     const pool = [task('aaaa-bbbb', '雨夜街头'), task('cccc-dddd', '海边')];
     expect(filterTaskCandidates(pool, '雨夜')).toHaveLength(1);
     expect(filterTaskCandidates(pool, 'cccc')[0]?.taskId).toBe('cccc-dddd');
+  });
+});
+
+describe('S5-B1 · 首尾交换、用途与草稿引用', () => {
+  it('交换前两张图片，其它 chip 原位不动', () => {
+    const first = image('a-1');
+    const other = image('a-2');
+    const third = image('a-3');
+    const swapped = swapFirstLast([first, other, third]);
+    expect(swapped.map((item) => item.ref)).toEqual(['a-2', 'a-1', 'a-3']);
+    expect(swapped[0]!.id).toBe(other.id);
+    expect(swapped[1]!.id).toBe(first.id);
+  });
+
+  it('一张图不交换；视频参考不参与首尾交换', () => {
+    const only = image('a-1');
+    expect(swapFirstLast([only])).toEqual([only]);
+    const videoRef = video('task:v');
+    expect(swapFirstLast([only, videoRef])).toEqual([only, videoRef]);
+  });
+
+  it('用途按当前模式标注：首帧/尾帧/参考视频/被忽略', () => {
+    const first = image('a-1');
+    const last = image('a-2');
+    const extra = image('a-3');
+    const refs = [first, last, extra];
+    expect(mentionRole(first, refs)).toBe('first-frame');
+    expect(mentionRole(last, refs)).toBe('last-frame');
+    expect(mentionRole(extra, refs)).toBeNull();
+    const videoRef = video('task:v');
+    expect(mentionRole(videoRef, [videoRef])).toBe('reference-video');
+  });
+
+  it('草稿引用只写实际参与项，不写预览/占位/被忽略项', () => {
+    const refs = [image('a-1'), image('a-2'), image('a-3'), image('')];
+    expect(canvasReferencesForMentionRefs(refs)).toEqual([
+      { assetId: 'a-1', role: 'first-frame', order: 0 },
+      { assetId: 'a-2', role: 'last-frame', order: 1 },
+    ]);
+    expect(canvasReferencesForMentionRefs([video('task:v')])).toEqual([
+      { assetId: 'task:v', role: 'reference-video', order: 0 },
+    ]);
+  });
+
+  it('从草稿恢复 ID/顺序/类型；音频引用跳过；missing 可阻塞提交', () => {
+    const restored = mentionRefsFromCanvasReferences([
+      { assetId: 'task:v', role: 'reference-video', order: 1 },
+      { assetId: 'a-1', role: 'first-frame', order: 0 },
+      { assetId: 'audio-1', role: 'reference-audio', order: 2 },
+    ]);
+    expect(restored.map((item) => item.ref)).toEqual(['a-1', 'task:v']);
+    expect(restored.map((item) => item.kind)).toEqual(['image', 'video']);
+    expect(restored.every((item) => item.restored === true)).toBe(true);
+    expect(hasMissingRef(restored)).toBe(false);
+    expect(hasMissingRef([{ ...restored[0]!, missing: true }])).toBe(true);
   });
 });

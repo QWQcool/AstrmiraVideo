@@ -1,5 +1,7 @@
 import type {
   AssetListEntry,
+  CanvasReference,
+  CanvasReferenceRole,
   GenerationMode,
   TaskProgress,
   VideoGenerateRequest,
@@ -35,6 +37,16 @@ export interface MentionRef {
   previewUrl?: string | null;
   /** 展示标签（prompt 截断 / 文件名），仅界面用，不参与请求 */
   label?: string;
+  /** 上传失败（可原位重试）；与 `ref === ''` 同时出现 */
+  failed?: boolean;
+  /** 上传失败的具体原因（界面 tooltip） */
+  failure?: string;
+  /** 原文件仅用于本次会话的重试，**不持久化** */
+  file?: File;
+  /** 从草稿恢复、尚未解析到预览（不代表引用本身失效） */
+  restored?: boolean;
+  /** 已确认资产/任务不存在（保留 chip 供用户移除/修正，不允许静默提交） */
+  missing?: boolean;
 }
 
 export interface MentionSelection {
@@ -104,6 +116,78 @@ export function assetsForRefs(refs: MentionRef[]): VideoGenerateRequest['assets'
 /** 是否存在上传中的 chip（界面把它接进提交禁用态，与三槽的 `uploadingSlot !== null` 同语义） */
 export function hasPendingRef(refs: MentionRef[]): boolean {
   return refs.some((item) => item.ref === '');
+}
+
+/** 已确认失效的引用：不能静默提交（保留 chip 让用户移除/换素材） */
+export function hasMissingRef(refs: MentionRef[]): boolean {
+  return refs.some((item) => item.missing === true);
+}
+
+/**
+ * 首尾帧互换：只交换**前两张图片**在数组里的位置。
+ *
+ * `selectMentions` 按图片在数组中的顺序取前两张（先=首帧、后=尾帧），
+ * 所以交换位置就是交换用途；视频参考存在时不影响其它 chip。
+ */
+export function swapFirstLast(refs: MentionRef[]): MentionRef[] {
+  const imageIndexes = refs
+    .map((item, index) => (item.kind === 'image' ? index : -1))
+    .filter((index) => index >= 0)
+    .slice(0, 2);
+  if (imageIndexes.length < 2) return refs;
+  const [first, second] = imageIndexes as [number, number];
+  const next = [...refs];
+  [next[first], next[second]] = [next[second]!, next[first]!];
+  return next;
+}
+
+/** 这条引用在当前选择下实际扮演的用途；被忽略的返回 null */
+export function mentionRole(
+  ref: MentionRef,
+  refs: MentionRef[],
+): CanvasReferenceRole | null {
+  const selection = selectMentions(refs);
+  const usedIndex = selection.used.findIndex((item) => item.id === ref.id);
+  if (usedIndex < 0) return null;
+  if (selection.mode === 'v2v') return 'reference-video';
+  if (selection.mode === 'i2v') return 'first-frame';
+  if (selection.mode === 'fl2v') return usedIndex === 0 ? 'first-frame' : 'last-frame';
+  return null;
+}
+
+/**
+ * 把界面 chips 投影成草稿里的稳定引用。
+ *
+ * 只写**实际参与提交**的引用（被忽略的素材不伪装成 request 的一部分），
+ * 不写 `previewUrl` / `File` / 上传中的占位 —— 这些跨会话都会失效。
+ */
+export function canvasReferencesForMentionRefs(refs: MentionRef[]): CanvasReference[] {
+  const selection = selectMentions(refs);
+  // 有上传中的引用时不写半份草稿：否则“首帧还在上传、尾帧已上传”会被持久化成
+  // 一个 role=last-frame 但 order=0 的引用，刷新后用途与顺序自相矛盾。
+  if (selection.used.some((item) => item.ref === '')) return [];
+  return selection.used.map((item, index) => ({
+    assetId: item.ref,
+    role: mentionRole(item, refs) ?? 'reference-image',
+    order: index,
+  }));
+}
+
+/** 从草稿恢复 chips：先保留 ID/用途/顺序，预览由界面按 assetId/taskId 重新解析 */
+export function mentionRefsFromCanvasReferences(
+  references: readonly CanvasReference[],
+): MentionRef[] {
+  return [...references]
+    .sort((a, b) => a.order - b.order)
+    .filter((item) => item.role !== 'reference-audio')
+    .map((item, index) => ({
+      id: `draft-${index}-${item.assetId}`,
+      ref: item.assetId,
+      kind: item.role === 'reference-video' ? ('video' as const) : ('image' as const),
+      previewUrl: null,
+      label: undefined,
+      restored: true,
+    }));
 }
 
 /**

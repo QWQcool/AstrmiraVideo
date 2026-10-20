@@ -1152,6 +1152,12 @@ audio.cs-card-media {
   font-size: var(--fs-micro);
 }
 
+.cs-toolbar-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-micro);
+}
+
 .cs-toolbar-issue {
   display: flex;
   flex-wrap: wrap;

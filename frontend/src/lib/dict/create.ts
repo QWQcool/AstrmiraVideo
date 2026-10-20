@@ -22,6 +22,7 @@ export const CREATE_ZH = {
   'create.input.placeholder': '例如：雨夜街头，女孩撑伞回头微笑着说：我们终于成功了。电影感光影',
   'create.hint.mention': '＠ 引用素材 / 成片',
   'create.hint.mentionNote': '或在框里直接输入 @；也可以把图 / 视频拖进来、直接粘贴',
+  'create.hint.submit': 'Enter 换行 · Ctrl/⌘ + Enter 生成',
   'create.type.aria': '创作类型',
   'create.type.label': '创作类型',
   'create.type.video': '视频',
@@ -32,6 +33,15 @@ export const CREATE_ZH = {
   // （"上传中…" 提升到 `common.uploading`：素材槽与创作入口都要用同一句）
   'create.chip.remove': '移除素材',
   'create.chip.imageShort': '图',
+  'create.chip.firstFrame': '首帧',
+  'create.chip.lastFrame': '尾帧',
+  'create.chip.referenceImage': '参考图',
+  'create.chip.referenceVideo': '参考视频',
+  'create.chip.referenceAudio': '参考音频',
+  'create.chip.swap': '交换首尾',
+  'create.chip.retry': '重试上传',
+  'create.chip.uploadFailed': '上传失败',
+  'create.chip.missing': '素材已失效',
   'create.realperson': '提示：含真人 / 拟真人脸的图做首帧·尾帧会被上游隐私检测拒绝 —— 可换非人物素材（风景 / 物体 / 动漫风格），或改用文字描述人物（T2V）。',
 
   // ── 引用弹层 ──
@@ -113,6 +123,7 @@ export const CREATE_EN = {
     'e.g. Rainy street at night; a girl turns with an umbrella and smiles: "we finally made it." Cinematic light',
   'create.hint.mention': '＠ Reference assets / renders',
   'create.hint.mentionNote': 'Or type @ in the box; you can also drag images / videos in, or paste them',
+  'create.hint.submit': 'Enter for a new line · Ctrl/⌘ + Enter to generate',
   'create.type.aria': 'Creation type',
   'create.type.label': 'Type',
   'create.type.video': 'Video',
@@ -122,6 +133,15 @@ export const CREATE_EN = {
   'create.modeUnsupported': 'The engine has not declared support for the current mode — switch engines or run the self-check again',
   'create.chip.remove': 'Remove reference',
   'create.chip.imageShort': 'img',
+  'create.chip.firstFrame': 'First frame',
+  'create.chip.lastFrame': 'Last frame',
+  'create.chip.referenceImage': 'Reference image',
+  'create.chip.referenceVideo': 'Reference video',
+  'create.chip.referenceAudio': 'Reference audio',
+  'create.chip.swap': 'Swap first/last',
+  'create.chip.retry': 'Retry upload',
+  'create.chip.uploadFailed': 'Upload failed',
+  'create.chip.missing': 'Asset missing',
   'create.realperson':
     'Heads-up: images with real or realistic human faces are rejected by upstream privacy checks when used as first/last frames — pick non-human material (landscape / objects / anime) or describe the person in words (T2V).',
 

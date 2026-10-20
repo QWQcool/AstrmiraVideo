@@ -24,6 +24,7 @@ import {
   type ResolutionTier,
 } from '../../lib/format';
 import { useTranslate, type Translate } from '../../lib/i18n';
+import { composerKeyAction } from '../../lib/composerKeys';
 import { useShell } from '../../lib/shell';
 import { useStudio } from './StudioContext';
 
@@ -246,7 +247,17 @@ export function StudioNode({ id, selected }: NodeProps) {
                 : t('canvas.studio.promptPlaceholder')
             }
             onChange={(event) => studio.onDraftChange(id, { prompt: event.target.value })}
+            onKeyDown={(event) => {
+              if (node.type === 'text') return;
+              if (composerKeyAction(event, { mentionOpen: false }) === 'submit') {
+                event.preventDefault();
+                studio.onSubmit(id);
+              }
+            }}
           />
+          {node.type === 'text' ? null : (
+            <p className="cs-toolbar-hint">{t('create.hint.submit')}</p>
+          )}
 
           {node.type === 'text' ? (
             <p className="cs-toolbar-issue">{t('canvas.studio.textNodeHint')}</p>

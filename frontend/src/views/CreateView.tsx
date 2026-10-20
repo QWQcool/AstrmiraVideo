@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AspectRatio,
   AssetListEntry,
+  CanvasReferenceRole,
   GenerationMode,
   ProviderType,
   TaskProgress,
@@ -31,13 +32,19 @@ import { newIdempotencyKey } from '../lib/idempotency';
 import { useTranslate, type MessageKey, type Translate } from '../lib/i18n';
 import {
   assetsForRefs,
+  canvasReferencesForMentionRefs,
   filterAssetCandidates,
   filterTaskCandidates,
+  hasMissingRef,
   hasPendingRef,
   ignoredMentionHint,
+  mentionRefsFromCanvasReferences,
+  mentionRole,
   selectMentions,
+  swapFirstLast,
   type MentionRef,
 } from '../lib/mentions';
+import { composerKeyAction } from '../lib/composerKeys';
 import {
   comfyUiEngineOptions,
   httpServiceEngineOptions,
@@ -75,6 +82,14 @@ const CLOUD_PROVIDER: ProviderType = 'cloud-volcano-seedance';
  * 为什么是键表而不是文案表：这两组词在多个视图里出现（工作台 / 视频库 / 画布 / 成本台账），
  * 各写一份中文必然漂移。键表放在模块层（键是常量），渲染时 `t(MODE_KEYS[mode])`。
  */
+const REF_ROLE_KEYS: Record<CanvasReferenceRole, MessageKey> = {
+  'first-frame': 'create.chip.firstFrame',
+  'last-frame': 'create.chip.lastFrame',
+  'reference-image': 'create.chip.referenceImage',
+  'reference-video': 'create.chip.referenceVideo',
+  'reference-audio': 'create.chip.referenceAudio',
+};
+
 const MODE_KEYS: Record<GenerationMode, MessageKey> = {
   t2v: 'common.mode.t2v',
   i2v: 'common.mode.i2v',
@@ -158,8 +173,8 @@ export function CreateView() {
   const t = useTranslate();
 
   // ── 意图与素材 ──
-  // S2（设计基准 §7.2）：创作类型驱动输入区。草稿在刷新后接上（类型 + 提示词 + 参数）；
-  // 素材不进草稿（chip 带临时预览 URL，跨会话恢复要按 assetId 重新解析，见 useCreationDraft）。
+  // S2/S5-B1：创作类型驱动输入区。草稿在刷新后接上（类型 + 提示词 + 参数 + 稳定引用）；
+  // 预览 URL 与上传中占位不进草稿，恢复时按 assetId/taskId 重新解析（见 useCreationDraft）。
   const {
     kind: draftKind,
     setKind,
@@ -170,15 +185,21 @@ export function CreateView() {
   // —— S2 自测时确实出现过 kind=video 但 settings.mode=t2i 的脏草稿。
   const kind: ComposerKind = draftKind === 'image' ? 'image' : 'video';
   const [prompt, setPrompt] = useState(draftInitial.prompt);
-  const [refs, setRefs] = useState<MentionRef[]>([]);
+  // S5-B1：草稿里的引用先按稳定 ID/用途/顺序恢复；预览等素材池回来后再解析
+  const [refs, setRefs] = useState<MentionRef[]>(() =>
+    mentionRefsFromCanvasReferences(draftInitial.references),
+  );
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
+  const [mentionActive, setMentionActive] = useState(0);
 
   // ── 素材池（`@` 弹层的候选：资产库 + 成片/剪辑产物）──
   // V2.10：池子里**只放可作为生成参考的资产**（音频素材挡在池外，见 `isRefAsset`）
   const [assetPool, setAssetPool] = useState<RefAsset[]>([]);
   const [taskPool, setTaskPool] = useState<TaskProgress[]>([]);
   const [poolError, setPoolError] = useState<string | null>(null);
+  /** 只有成功拉过素材池，才能判断草稿引用“确实不存在”；拉失败不误判 */
+  const [poolsLoaded, setPoolsLoaded] = useState(false);
 
   const [uploadingCount, setUploadingCount] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -246,8 +267,9 @@ export function CreateView() {
             : resolveTargetSize(aspectRatio, resolutionTier),
         ...(kind === 'image' ? { mode: 't2i' as const } : {}),
       },
+      references: canvasReferencesForMentionRefs(refs),
     });
-  }, [persistDraft, prompt, aspectRatio, durationSec, resolutionTier, kind]);
+  }, [persistDraft, prompt, aspectRatio, durationSec, resolutionTier, kind, refs]);
 
   // ── 提交与内联任务卡 ──
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -282,6 +304,7 @@ export function CreateView() {
           .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)),
       );
       setPoolError(null);
+      setPoolsLoaded(true);
     } catch (caught) {
       setPoolError(describeError(caught));
     }
@@ -290,6 +313,62 @@ export function CreateView() {
   useEffect(() => {
     void reloadPools();
   }, [reloadPools]);
+
+  /**
+   * S5-B1：草稿引用恢复预览。
+   *
+   * 只解析 `restored` 的 chip；不持久化 blob URL，也不把“素材池还没回来”误判成失效。
+   * 池子成功加载后仍找不到 → `missing`，保留 chip 让用户移除/换素材，提交被挡住。
+   */
+  useEffect(() => {
+    if (refs.length === 0) return;
+    const assets = new Map(assetPool.map((item) => [item.assetId, item] as const));
+    const tasks = new Map(taskPool.map((item) => [item.taskId, item] as const));
+    setRefs((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        if (item.restored !== true || item.ref === '') return item;
+        if (item.ref.startsWith('task:')) {
+          const task = tasks.get(item.ref.slice('task:'.length));
+          if (task === undefined) {
+            if (!poolsLoaded) return item;
+            changed = true;
+            return { ...item, restored: false, missing: true };
+          }
+          const output = taskOutput(task);
+          changed = true;
+          return {
+            ...item,
+            restored: false,
+            missing: false,
+            kind: output.kind === 'video' ? ('video' as const) : ('image' as const),
+            previewUrl:
+              task.thumbnailUrl ??
+              (output.kind === 'video' || output.kind === 'image'
+                ? resolveMediaUrl(output.url)
+                : null),
+            label: task.requestSnapshot.prompt.slice(0, 18),
+          };
+        }
+        const asset = assets.get(item.ref);
+        if (asset === undefined) {
+          if (!poolsLoaded) return item;
+          changed = true;
+          return { ...item, restored: false, missing: true };
+        }
+        changed = true;
+        return {
+          ...item,
+          restored: false,
+          missing: false,
+          kind: asset.kind,
+          previewUrl: asset.url,
+          label: asset.name ?? asset.assetId.slice(0, 10),
+        };
+      });
+      return changed ? next : prev;
+    });
+  }, [assetPool, taskPool, poolsLoaded]);
 
   // 预览用的 objectURL 在卸载时统一 revoke（与工作台同纪律：不泄漏到会话结束）
   useEffect(
@@ -364,6 +443,7 @@ export function CreateView() {
     pending ||
     needsKey ||
     !modeReady ||
+    hasMissingRef(refs) ||
     (kind === 'image' && !imageReady);
 
   /**
@@ -407,6 +487,7 @@ export function CreateView() {
     setRefs((prev) => (prev.some((item) => item.ref === ref.ref) ? prev : [...prev, ref]));
     setMentionOpen(false);
     setMentionFilter('');
+    setMentionActive(0);
   };
 
   /**
@@ -455,6 +536,52 @@ export function CreateView() {
     setRefs((prev) => prev.filter((item) => item.id !== id));
   };
 
+  /** 单条上传（首次与失败重试共用）；失败保留 chip + 原文件，不再直接删掉 */
+  const uploadRef = useCallback(
+    (id: string, file: File): void => {
+      setUploadingCount((count) => count + 1);
+      uploadAssets([file], projectId)
+        .then((result) => {
+          const asset = result.assets[0];
+          if (asset === undefined) throw new Error(t('create.upload.noAsset'));
+          // V2.10：拖进来的"视频"其实是纯音频容器（服务端 ffprobe 复核的结论）→ 如实报错，
+          // 不把它伪装成可用的画面参考；chip 保留供重试/移除。
+          if (asset.kind === 'audio') {
+            throw new Error(t('create.upload.noVisual'));
+          }
+          const kind = asset.kind;
+          setRefs((prev) =>
+            prev.map((item) =>
+              item.id === id
+                ? {
+                    ...item,
+                    ref: asset.assetId,
+                    kind,
+                    failed: false,
+                    failure: undefined,
+                    file: undefined,
+                    missing: false,
+                  }
+                : item,
+            ),
+          );
+          setUploadError(null);
+          void reloadPools();
+        })
+        .catch((caught: unknown) => {
+          const message = describeError(caught);
+          setUploadError(message);
+          setRefs((prev) =>
+            prev.map((item) =>
+              item.id === id ? { ...item, failed: true, failure: message, file } : item,
+            ),
+          );
+        })
+        .finally(() => setUploadingCount((count) => count - 1));
+    },
+    [projectId, reloadPools, t],
+  );
+
   /** 拖入 / 粘贴 / 选择文件 → 逐个上传为资产，chip 先以"上传中"占位（ref = ''） */
   const handleFiles = useCallback(
     (files: File[]): void => {
@@ -477,32 +604,28 @@ export function CreateView() {
         const kind = file.type.startsWith('video/') ? ('video' as const) : ('image' as const);
         const objectUrl = URL.createObjectURL(file);
         objectUrls.current.push(objectUrl);
-        setRefs((prev) => [...prev, { id, ref: '', kind, previewUrl: objectUrl, label: file.name }]);
-        setUploadingCount((count) => count + 1);
-
-        uploadAssets([file], projectId)
-          .then((result) => {
-            const asset = result.assets[0];
-            if (asset === undefined) throw new Error(t('create.upload.noAsset'));
-            // V2.10：拖进来的"视频"其实是纯音频容器（服务端 ffprobe 复核的结论）→ 如实报错，
-            // 不把它伪装成可用的画面参考（catch 分支会把占位 chip 撤掉）
-            if (asset.kind === 'audio') {
-              throw new Error(t('create.upload.noVisual'));
-            }
-            const kind = asset.kind;
-            setRefs((prev) =>
-              prev.map((item) => (item.id === id ? { ...item, ref: asset.assetId, kind } : item)),
-            );
-            void reloadPools();
-          })
-          .catch((caught: unknown) => {
-            setUploadError(describeError(caught));
-            setRefs((prev) => prev.filter((item) => item.id !== id));
-          })
-          .finally(() => setUploadingCount((count) => count - 1));
+        setRefs((prev) => [
+          ...prev,
+          { id, ref: '', kind, previewUrl: objectUrl, label: file.name, file },
+        ]);
+        uploadRef(id, file);
       }
     },
-    [reloadPools, projectId],
+    [t, uploadRef],
+  );
+
+  const retryRef = useCallback(
+    (id: string): void => {
+      const item = refs.find((ref) => ref.id === id);
+      if (item?.file === undefined) return;
+      setRefs((prev) =>
+        prev.map((ref) =>
+          ref.id === id ? { ...ref, failed: false, failure: undefined } : ref,
+        ),
+      );
+      uploadRef(id, item.file);
+    },
+    [refs, uploadRef],
   );
 
   /** 打开提及弹层（顺手刷新素材池：刚生成/刚剪完的成片应当立刻可 @ —— 常驻视图不重挂载） */
@@ -585,15 +708,20 @@ export function CreateView() {
     }
   };
 
-  const pickFirstMatch = (): void => {
-    const firstTask = filteredTasks[0];
-    if (firstTask !== undefined) {
-      addRef(refFromTask(firstTask));
+  const mentionCandidateCount = filteredTasks.length + filteredAssets.length;
+  const mentionIndex = Math.min(mentionActive, Math.max(0, mentionCandidateCount - 1));
+
+  const pickMentionAt = (index: number): void => {
+    const taskCandidate = filteredTasks[index];
+    if (taskCandidate !== undefined) {
+      addRef(refFromTask(taskCandidate));
       return;
     }
-    const firstAsset = filteredAssets[0];
-    if (firstAsset !== undefined) addRef(refFromAsset(firstAsset, t));
+    const assetCandidate = filteredAssets[index - filteredTasks.length];
+    if (assetCandidate !== undefined) addRef(refFromAsset(assetCandidate, t));
   };
+
+  const pickFirstMatch = (): void => pickMentionAt(mentionIndex);
 
   // V2.40：产物可能是视频或图片（`t2i`）—— 用 shared 的 `taskOutput()` 收口
   const output = task === null ? { kind: 'none' as const } : taskOutput(task);
@@ -649,11 +777,22 @@ export function CreateView() {
             value={prompt}
             onChange={(event) => handlePromptChange(event.target.value, prompt)}
             onKeyDown={(event) => {
-              if (event.key === 'Escape') setMentionOpen(false);
-              if (event.key === 'Enter' && !event.shiftKey) {
+              const action = composerKeyAction(event, { mentionOpen });
+              if (action === 'close-mention') {
+                event.preventDefault();
+                setMentionOpen(false);
+                return;
+              }
+              if (action === 'select-mention') {
+                event.preventDefault();
+                pickMentionAt(mentionIndex);
+                return;
+              }
+              if (action === 'submit') {
                 event.preventDefault();
                 void handleSubmit();
               }
+              // newline：不拦截，交给 textarea 原生换行
             }}
           />
 
@@ -662,30 +801,70 @@ export function CreateView() {
               {t('create.hint.mention')}
             </button>
             <span className="wb-note">{t('create.hint.mentionNote')}</span>
+            <span className="wb-note cr-shortcut">{t('create.hint.submit')}</span>
           </div>
 
           {refs.length > 0 ? (
             <div className="cr-chips">
-              {refs.map((item) => (
-                <span key={item.id} className="cr-chip">
-                  {item.previewUrl ? (
-                    <img className="cr-chip-thumb" src={item.previewUrl} alt="" />
-                  ) : (
-                    <span className="cr-chip-glyph">{item.kind === 'video' ? '🎬' : '🖼'}</span>
-                  )}
-                  <span className="cr-chip-label">
-                    {item.ref === '' ? t('common.uploading') : (item.label ?? item.ref.slice(0, 10))}
-                  </span>
-                  <button
-                    type="button"
-                    className="cr-chip-remove"
-                    aria-label={t('create.chip.remove')}
-                    onClick={() => removeRef(item.id)}
+              {refs.map((item) => {
+                const role = mentionRole(item, refs);
+                return (
+                  <span
+                    key={item.id}
+                    className={`cr-chip${item.missing ? ' is-missing' : ''}${
+                      item.failed ? ' is-failed' : ''
+                    }`}
                   >
-                    ×
-                  </button>
-                </span>
-              ))}
+                    {item.previewUrl ? (
+                      <img className="cr-chip-thumb" src={item.previewUrl} alt="" />
+                    ) : (
+                      <span className="cr-chip-glyph">{item.kind === 'video' ? '🎬' : '🖼'}</span>
+                    )}
+                    <span className="cr-chip-label">
+                      {item.ref === ''
+                        ? item.failed
+                          ? t('create.chip.uploadFailed')
+                          : t('common.uploading')
+                        : (item.label ?? item.ref.slice(0, 10))}
+                    </span>
+                    {role === null ? null : (
+                      <span className="cr-chip-role">{t(REF_ROLE_KEYS[role])}</span>
+                    )}
+                    {item.missing === true ? (
+                      <span className="cr-chip-role cr-chip-role--missing">
+                        {t('create.chip.missing')}
+                      </span>
+                    ) : null}
+                    {item.failed === true ? (
+                      <button
+                        type="button"
+                        className="cr-chip-retry"
+                        disabled={item.file === undefined}
+                        onClick={() => retryRef(item.id)}
+                      >
+                        {t('create.chip.retry')}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="cr-chip-remove"
+                      aria-label={t('create.chip.remove')}
+                      onClick={() => removeRef(item.id)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+              {selection.mode === 'fl2v' ? (
+                <button
+                  type="button"
+                  className="cr-chip-swap"
+                  onClick={() => setRefs((prev) => swapFirstLast(prev))}
+                >
+                  {t('create.chip.swap')}
+                </button>
+              ) : null}
             </div>
           ) : null}
 
@@ -702,9 +881,28 @@ export function CreateView() {
                 placeholder={t('create.mention.search')}
                 value={mentionFilter}
                 autoFocus
-                onChange={(event) => setMentionFilter(event.target.value)}
+                onChange={(event) => {
+                  setMentionFilter(event.target.value);
+                  setMentionActive(0);
+                }}
                 onKeyDown={(event) => {
-                  if (event.key === 'Escape') setMentionOpen(false);
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    setMentionOpen(false);
+                    return;
+                  }
+                  if (event.key === 'ArrowDown') {
+                    event.preventDefault();
+                    if (mentionCandidateCount > 0) {
+                      setMentionActive((index) => Math.min(index + 1, mentionCandidateCount - 1));
+                    }
+                    return;
+                  }
+                  if (event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    setMentionActive((index) => Math.max(index - 1, 0));
+                    return;
+                  }
                   if (event.key === 'Enter') {
                     event.preventDefault();
                     pickFirstMatch();
@@ -715,11 +913,14 @@ export function CreateView() {
                 {filteredTasks.length === 0 && filteredAssets.length === 0 ? (
                   <p className="wb-note cr-mention-empty">{t('create.mention.empty')}</p>
                 ) : null}
-                {filteredTasks.map((item) => (
+                {filteredTasks.map((item, index) => (
                   <button
                     key={item.taskId}
                     type="button"
-                    className="cr-mention-item"
+                    className={
+                      index === mentionIndex ? 'cr-mention-item is-active' : 'cr-mention-item'
+                    }
+                    onMouseEnter={() => setMentionActive(index)}
                     onClick={() => addRef(refFromTask(item))}
                   >
                     {item.thumbnailUrl === undefined ? (
@@ -735,27 +936,37 @@ export function CreateView() {
                     </span>
                   </button>
                 ))}
-                {filteredAssets.map((item) => (
-                  <button
-                    key={item.assetId}
-                    type="button"
-                    className="cr-mention-item"
-                    onClick={() => addRef(refFromAsset(item, t))}
-                  >
-                    {item.kind === 'image' ? (
-                      <img className="cr-mention-thumb" src={item.url} alt="" />
-                    ) : (
-                      <span className="cr-mention-glyph">🎬</span>
-                    )}
-                    <span className="cr-mention-label">
-                      {/* V2.9（B43）：有原始文件名就显示名字（人认名字，不认编号） */}
-                      {t('create.mention.assetLine', {
-                        kind: t(item.kind === 'image' ? 'common.kind.image' : 'common.kind.video'),
-                        name: item.name ?? item.assetId.slice(0, 8),
-                      })}
-                    </span>
-                  </button>
-                ))}
+                {filteredAssets.map((item, index) => {
+                  const candidateIndex = filteredTasks.length + index;
+                  return (
+                    <button
+                      key={item.assetId}
+                      type="button"
+                      className={
+                        candidateIndex === mentionIndex
+                          ? 'cr-mention-item is-active'
+                          : 'cr-mention-item'
+                      }
+                      onMouseEnter={() => setMentionActive(candidateIndex)}
+                      onClick={() => addRef(refFromAsset(item, t))}
+                    >
+                      {item.kind === 'image' ? (
+                        <img className="cr-mention-thumb" src={item.url} alt="" />
+                      ) : (
+                        <span className="cr-mention-glyph">🎬</span>
+                      )}
+                      <span className="cr-mention-label">
+                        {/* V2.9（B43）：有原始文件名就显示名字（人认名字，不认编号） */}
+                        {t('create.mention.assetLine', {
+                          kind: t(
+                            item.kind === 'image' ? 'common.kind.image' : 'common.kind.video',
+                          ),
+                          name: item.name ?? item.assetId.slice(0, 8),
+                        })}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : null}

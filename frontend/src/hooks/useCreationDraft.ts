@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import type { CanvasNodeSettings } from '@astrmira/shared';
+import type { CanvasNodeSettings, CanvasReference } from '@astrmira/shared';
 import { browserStorage } from '../lib/storage';
 import {
   createCreationDraft,
@@ -13,8 +13,8 @@ import {
  * 创作输入区的草稿钩子（Step 11-S2）。
  *
  * 只做三件事：**首次读**、**切类型**、**变更后落盘**。
- * 提示词与参数的局部状态仍留在 `CreateView`（它们是受控输入，搬进 hook 只会多一层同步）；
- * 这里负责把"用户上次停在哪"记住，刷新后能接上。
+ * 提示词、参数与稳定引用都由 `CreateView` 提供；这里只负责把“用户上次停在哪”记住。
+ * 预览 URL / File / 上传中占位**不落盘**，刷新后按 assetId / `task:` 重新解析。
  *
  * S2 只开放 `video` / `image` 两态；`agent` 留给 S6（草稿模型本身已支持）。
  */
@@ -24,7 +24,11 @@ export interface CreationDraftHandle {
   /** 首次进入时的草稿快照（用于初始化受控输入，不随后续变更刷新） */
   initial: CreationDraft;
   /** 把当前输入写回草稿（调用方在变更时触发） */
-  persist(input: { prompt: string; settings: CanvasNodeSettings }): void;
+  persist(input: {
+    prompt: string;
+    settings: CanvasNodeSettings;
+    references?: readonly CanvasReference[];
+  }): void;
 }
 
 export function useCreationDraft(defaultKind: CreationKind = 'video'): CreationDraftHandle {
@@ -41,14 +45,22 @@ export function useCreationDraft(defaultKind: CreationKind = 'video'): CreationD
   const [kind, setKind] = useState<CreationKind>(initial.kind);
 
   const persist = useCallback(
-    ({ prompt, settings }: { prompt: string; settings: CanvasNodeSettings }) => {
+    ({
+      prompt,
+      settings,
+      references,
+    }: {
+      prompt: string;
+      settings: CanvasNodeSettings;
+      references?: readonly CanvasReference[];
+    }) => {
       if (!store) return;
       writeCreationDraft(store, {
         kind,
         prompt,
-        // 素材暂不持久化：chip 里有临时预览 URL 与上传中占位，跨会话恢复需要重新按 assetId 解析。
-        // 这里显式写空数组，避免旧草稿里的失效引用被当成"还在"。
-        references: [],
+        // S5-B1：只持久化稳定的 assetId / task 引用与用途/顺序；
+        // 预览 URL、File、上传中占位都不进草稿（跨会话会失效）。
+        references: [...(references ?? [])],
         settings,
         updatedAt: Date.now(),
       });
