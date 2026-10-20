@@ -97,6 +97,7 @@ function StudioToolbar({
   children: ReactNode;
 }) {
   const [placement, setPlacement] = useState<Position>(Position.Right);
+  const [align, setAlign] = useState<'start' | 'center' | 'end'>('center');
   const viewport = useViewport();
 
   useLayoutEffect(() => {
@@ -106,15 +107,28 @@ function StudioToolbar({
     const canvasRect = canvas.getBoundingClientRect();
     const cardRect = card.getBoundingClientRect();
     const needed = 316; // 创作框 300 + 间距 16
-    if (canvasRect.right - cardRect.right >= needed) setPlacement(Position.Right);
-    else if (cardRect.left - canvasRect.left >= needed) setPlacement(Position.Left);
-    else if (cardRect.top - canvasRect.top >= 260) setPlacement(Position.Top);
-    else if (canvasRect.bottom - cardRect.bottom >= 260) setPlacement(Position.Bottom);
-    else setPlacement(Position.Top);
+    const topSpace = cardRect.top - canvasRect.top;
+    const bottomSpace = canvasRect.bottom - cardRect.bottom;
+    // S5-B2b：左右放置时按节点在画布中的上下位置对齐（start/center/end），
+    // 让长面板贴顶/贴底而不是以节点为中心向上/向下溢出。
+    const verticalAlign = topSpace < 220 ? 'start' : bottomSpace < 220 ? 'end' : 'center';
+    if (canvasRect.right - cardRect.right >= needed) {
+      setPlacement(Position.Right);
+      setAlign(verticalAlign);
+    } else if (cardRect.left - canvasRect.left >= needed) {
+      setPlacement(Position.Left);
+      setAlign(verticalAlign);
+    } else if (bottomSpace >= 260) {
+      setPlacement(Position.Bottom);
+      setAlign('center');
+    } else {
+      setPlacement(Position.Top);
+      setAlign('center');
+    }
   }, [cardRef, viewport.x, viewport.y, viewport.zoom]);
 
   return (
-    <NodeToolbar className="cs-toolbar" position={placement} offset={12}>
+    <NodeToolbar className="cs-toolbar" position={placement} align={align} offset={12}>
       {children}
     </NodeToolbar>
   );
