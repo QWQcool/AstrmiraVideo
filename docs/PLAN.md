@@ -1683,6 +1683,12 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-20 · B4-0g：UI 冒烟移除已下线的行业模板 UI 断言
+
+- **【暴露】** B4-0f 之后，冒烟进入 `[7d]` 行业模板段：等 `.cr-templates` / 点 `cr-template-lighting-midcentury` / 读 `textarea.cr-input`。S5 创作页改版后这三样当前都不存在（数据与 `lib/templates.test.ts` 仍在，UI 不在）。
+- **【处理】** 不把旧 UI 断言改成“通过”：改为断言 `.cr-templates` **当前不存在**，并把“是否随 S6-A 技能库恢复”留给后续决策。没有恢复 UI、没有改生产代码。
+- **【测试】** 仅冒烟脚本改动。
+
 ### 2026-10-20 · B4-0f：UI 冒烟「更多设置」类名对齐
 
 - **【暴露】** B4-0e 之后，冒烟展开「更多设置」后等 `.cr-more`；S2 参数平铺后高级面板的类名是 `.cr-advanced`（`.cr-more` 已不存在），5s 超时。
