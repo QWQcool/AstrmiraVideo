@@ -126,7 +126,8 @@ jobs:
     if: vars.ENABLE_DEPLOY == '1' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # 2026-10-20：主机不可达时 scp 曾挂 14+ 分钟；给整个部署一个上限，别让一次 push 卡住一整天
-    timeout-minutes: 12
+    # 2026-10-21：端口 29598 已确认可达；19MB 包跨境上传在 90s 内没传完（exit 124），放宽到 20 分钟总上限
+    timeout-minutes: 20
 
     concurrency:
       group: deploy-production
@@ -178,7 +179,7 @@ jobs:
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: 上传代码包
-        timeout-minutes: 3
+        timeout-minutes: 7
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
@@ -186,7 +187,8 @@ jobs:
         run: |
           # -f：从文件读密码，因此密码**不会出现在进程命令行**里
           # 外层 timeout 是硬上限：主机能建 TCP 但不回包时，ssh 选项仍可能等很久
-          timeout 90s sshpass -f /tmp/deploy-pass scp -P "$DEPLOY_PORT" \
+          # 2026-10-21：19MB 包跨境上传 90s 不够（exit 124），放宽到 420s；SFTP 本身已实测可用
+          timeout 420s sshpass -f /tmp/deploy-pass scp -P "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
             -o ConnectTimeout=15 \
             -o ServerAliveInterval=15 \
@@ -194,13 +196,13 @@ jobs:
             /tmp/deploy.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/root/astrmira/deploy.tar.gz"
 
       - name: 远程解压并部署
-        timeout-minutes: 5
+        timeout-minutes: 8
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          timeout 240s sshpass -f /tmp/deploy-pass ssh -p "$DEPLOY_PORT" \
+          timeout 420s sshpass -f /tmp/deploy-pass ssh -p "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
             -o ConnectTimeout=15 \
             -o ServerAliveInterval=15 \
@@ -209,7 +211,7 @@ jobs:
             'cd /root/astrmira && tar -xzf deploy.tar.gz && rm -f deploy.tar.gz && node scripts/deploy.mjs'
 
       - name: 健康检查（容器状态）
-        timeout-minutes: 2
+        timeout-minutes: 3
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}

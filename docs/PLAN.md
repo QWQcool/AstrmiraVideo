@@ -1694,6 +1694,13 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · CD 恢复：SSH 29598 可达，上传超时放宽
+
+- **【SSH 事实】** 用户提供 `43.228.79.210:29598`、`root`；本机 `ssh` 握手返回 `Permission denied (publickey,password)`（端口真实），Node `ssh2` 用密码登录成功：`hostname=ldclouda31761`、`/root/astrmira` 存在、`.env.deploy` 存在、`astrmiravideo-app-1` healthy、`astrmiravideo-caddy-1` up、Node 22、SFTP 可用。
+- **【Secrets】** 更新 `DEPLOY_HOST/PORT/USER/SSH_PASSWORD` 为当前值，`ENABLE_DEPLOY=1`；重跑 C5 的 deploy。
+- **【第一次失败】** deploy 在「上传代码包」90s 超时（exit 124）；打包 **19MB**，不是密码/端口错误（密码文件长度 15、SSH 可达）。历史上传约 20s，当前跨境链路更慢。
+- **【修复】** 上传 `timeout 420s` + step 7min；远程部署 `timeout 420s` + step 8min；job 20min；健康检查 3min。仅 CI 配置改动，生产代码零改动。
+
 ### 2026-10-21 · S5-C5：J1–J5、三视口与 S5 收口
 
 - **【三视口】** 1366×768 / 1920×1080 / 375×812 的创作 / 视频库 / 画布共 9 个组合：`scrollWidth == clientWidth` 全部成立，控制台 **0 error**。截图在 `.tmp/s5c/c5-*.png`（过程证据，不入库）。
