@@ -1694,6 +1694,14 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · CD 成功：线上已更新到 S5-C5
+
+- **【run】** `39547441545`：`verify` 4m47s 通过，`deploy` **2m25s 成功**；`上传代码包` / `远程解压并部署` / `健康检查` 全绿。
+- **【线上核对】** `https://43.228.79.210/` 带 Basic Auth 返回 200；首页脚本 `assets/index-D8qQgfgr.js` 与本地 `frontend/dist/index.html` **完全一致**；`/api/health` 200。
+- **【服务器】** `astrmiravideo-app-1` healthy、`astrmiravideo-caddy-1` up；旧 `frontend/src/components/LogPanel.tsx` 已不存在；`.env.deploy`、`data/`、`outputs/` 均保留。
+- **【根因链】** 19MB 包（docs 18.94MB）→ 上传 90s/420s 超时；服务器覆盖解压保留 9 月旧 `LogPanel.tsx` → Docker 构建找不到 `logActionLabel`；staging 放在目标目录内 → rsync exit 24。最终：排除 docs + rsync 外置 staging + `--delete` 同步，三步一起才通。
+- **【状态】** `ENABLE_DEPLOY=1`，`DEPLOY_PORT=29598`；后续 push 自动部署。密码只在 GitHub Secrets，不写入仓库/文档。
+
 ### 2026-10-21 · CD 修复：干净同步代替覆盖解压
 
 - **【第一次 rsync 失败】** staging 目录原放在 `/root/astrmira/.deploy-next`，`rsync --delete .deploy-next/ ./` 会把 staging 自己当作目标里的多余目录删掉，导致 `file has vanished`、exit 24。改为 `/root/astrmira.deploy-next`（目标之外）后重试。
