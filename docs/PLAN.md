@@ -1694,6 +1694,14 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · S5-C3：本地 ComfyUI 真实图片全流程
+
+- **【真实任务】** 走本服务 `POST /api/generate`（`mode=t2i`、`provider=host-comfyui`、16:9）：`queued` → `running` → **33s succeeded**；产物 `bcc89a1f-3445-46b0-82de-eba6cd782c75.png`，**1024×576 / 895,902 B**，`executedBy=host-local`；`GET /media/...` 200 `image/png`。未调用云端，未使用 mock。
+- **【视频库】** `#/library` 8 张卡；详情抽屉显示提示词 / `t2i` / `host-comfyui` / 创建时间 / 875 KB / 已完成；预览 `img` 实际 `naturalWidth=1024, naturalHeight=576`；下载链接 `href=/media/...png`、`download=<taskId>.png`；控制台 0 error。
+- **【作为参考】** 详情「作为参考」→ `#/create`，生成 `@...·39e977` 首帧 chip，界面显示「已作为参考加入」与「将按图生视频生成」；**没有发出任何 `/api/generate` 请求**（`submissions=[]`），符合“引用/套用参数不生成”。
+- **【画布】** 临时画布 `s5c-c3-canvas` 中放同一真实产物：预览 `src=/media/...png`、`1024×576`；节点工具条显示「1 轮 / 下载 / 作为参考继续 / 复用本轮参数」；控制台 0 error。
+- **【清理】** 真实任务与 `s5c-c3-canvas` 暂留到 C4（视频 i2v 需要这张图），C5 统一用 `DELETE /api/history/:taskId` + 画布删除清理；不删用户 B2。
+
 ### 2026-10-21 · S5-C2：可见预览、解码边界与轮询并发上限
 
 - **【代码】** `CanvasStudioView` 的 `<ReactFlow>` 开 `onlyRenderVisibleElements`；`StudioNode` 图片加 `loading="lazy"` / `decoding="async"`，视频/音频改 `preload="none"`；轮询从全量 `Promise.all` 改为 `mapWithConcurrency(..., 4, ...)`（新增 `lib/concurrency.ts` + 3 条单测）。
