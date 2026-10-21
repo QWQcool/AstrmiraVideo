@@ -643,6 +643,7 @@ if (leftPanelText !== undefined) {
     'App.tsx',
     'main.tsx',
     'components/Sidebar.tsx',
+    'components/AgentPlanPanel.tsx',
     'components/AssetDropZone.tsx',
     'components/ByokDrawer.tsx',
     'components/CenterPanel.tsx',

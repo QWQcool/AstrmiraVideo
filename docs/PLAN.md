@@ -1694,6 +1694,15 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · S6-B2：Agent 计划卡与“应用到草稿”
+
+- **【入口】** 创作页提示行新增「让 Agent 规划」；有文本 Key 才发请求，没 Key 直接提示并打开凭据抽屉（**0 次 `/api/agent/plan` 请求**）。按钮不替代提交，Agent 只产出计划。
+- **【计划卡】** `AgentPlanPanel` 显示模型、摘要、逐步 kind（应用技能/添加引用/设置参数/备注）、技能名/引用/参数、assumptions/warnings；token 用量只显示数量，价格写「待核算」；按钮为「修改意图 / 拒绝 / 应用到草稿」。
+- **【应用】** 先解析全部 `add-reference`（当前项目 `asset:` 走素材池，`task:` 走 `fetchTask`），任一失败则**不备份、不改草稿**；然后一次性备份草稿，追加技能 prompt（可选 step.prompt）、写参数、按技能 modes 切图片/视频、追加引用，最后提示已应用。**0 次 `POST /api/generate`**。
+- **【拒绝/修改】** 拒绝清空计划并提示；修改意图清空计划、回焦输入框，让用户改完重新规划；不在计划卡里偷偷改草稿。
+- **【证据】** 用受控 `/api/agent/plan` 响应（无真实 Key）在 1366/375 实测：计划卡显示、应用到草稿后 prompt 逐字包含技能骨架、`agent-plan` 消失、0 次生成、0 console error；375 无横向溢出；拒绝后计划消失且有提示；无 Key 时打开凭据抽屉且 planner 请求数 0。前端 **596 passed**；type/lint/build/visual-selfcheck 通过。
+- **【边界】** 计划卡只支持“修改意图后重规划”，不做 step 级编辑；引用角色按当前素材顺序推导（与创作页现有 mention 规则一致），不是按 step.role 强行改 chip；真实 DeepSeek 仍未调用（无 Key），B3 再接成本/幂等/真实受控响应。
+
 ### 2026-10-21 · S6-B1：Agent 计划 schema、技能检索与校验
 
 - **【契约先行】** CONTRACT 从 V2.53 升 **V2.54**：新增 §23（AgentPlanRequest / AgentPlan / AgentPlanResponse / 四种 step / 校验顺序 / 错误映射）；§5 新增 `POST /api/agent/plan`。**不新增错误码**：结构/能力失败复用 **400 `INVALID_REQUEST`**，无 Key 501，凭据 401，上游 502。

@@ -1,3 +1,4 @@
+import { AGENT_EN, AGENT_ZH } from './agent';
 import { BYOK_EN, BYOK_ZH } from './byok';
 import { CANVAS_EN, CANVAS_ZH } from './canvas';
 import { COMMON_EN, COMMON_ZH } from './common';
@@ -75,6 +76,7 @@ export const I18N_MIGRATION_COMPLETE = true;
 /** 中文（基准）。各域字典在这里展开 */
 export const ZH = {
   ...COMMON_ZH,
+  ...AGENT_ZH,
   ...SHELL_ZH,
   ...CREATE_ZH,
   ...WORKBENCH_ZH,
@@ -101,6 +103,7 @@ export type MessageKey = keyof typeof ZH;
  */
 export const EN: Record<MessageKey, string> = {
   ...COMMON_EN,
+  ...AGENT_EN,
   ...SHELL_EN,
   ...CREATE_EN,
   ...WORKBENCH_EN,

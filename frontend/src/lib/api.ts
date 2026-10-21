@@ -1,4 +1,5 @@
 import {
+  AgentPlanResponseSchema,
   AssetListResponseSchema,
   CanvasDocSaveResponseSchema,
   CanvasDocSchema,
@@ -23,6 +24,8 @@ import {
   UploadResponseSchema,
 } from '@astrmira/shared';
 import type {
+  AgentPlanRequest,
+  AgentPlanResponse,
   AssetListResponse,
   CanvasDoc,
   CanvasDocSaveResponse,
@@ -297,6 +300,21 @@ export function enhancePrompt(
   options: { llmKey?: string } = {},
 ): Promise<PromptEnhanceResponse> {
   return request('/api/prompt/enhance', PromptEnhanceResponseSchema, {
+    method: 'POST',
+    body,
+    ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),
+  });
+}
+
+/**
+ * Agent 规划（CONTRACT §23 / S6-B1）：只返回计划，不提交生成。
+ * Key 仍只走 `X-LLM-Key`；调用方必须把 `LLM_NOT_CONFIGURED` 与 `KEY_INVALID` 分开讲。
+ */
+export function planAgent(
+  body: AgentPlanRequest,
+  options: { llmKey?: string } = {},
+): Promise<AgentPlanResponse> {
+  return request('/api/agent/plan', AgentPlanResponseSchema, {
     method: 'POST',
     body,
     ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),

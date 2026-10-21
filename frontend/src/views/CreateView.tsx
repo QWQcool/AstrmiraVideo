@@ -1,26 +1,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  AgentPlan,
+  AgentPlanUsage,
   AspectRatio,
   AssetListEntry,
   CanvasReferenceRole,
   GenerationMode,
   ProviderType,
   SkillManifest,
+  SkillParams,
   TaskProgress,
   VideoGenerateRequest,
 } from '@astrmira/shared';
-import { estimateCostFromRequest, formatYuan, taskOutput } from '@astrmira/shared';
+import {
+  BUILTIN_SKILLS,
+  estimateCostFromRequest,
+  formatYuan,
+  taskOutput,
+} from '@astrmira/shared';
 import {
   ApiError,
   fetchAssets,
   fetchHistory,
   fetchSelfCheck,
   fetchTask,
+  planAgent,
   resolveMediaUrl,
   submitGenerate,
   uploadAssets,
 } from '../lib/api';
-import { resolveProviderKey } from '../lib/byok';
+import { resolveLlmConfig, resolveLlmKey, resolveProviderKey } from '../lib/byok';
 import { setCanvasResultHandoff } from '../lib/canvasHandoff';
 import {
   DEFAULT_DURATION_SEC,
@@ -71,6 +80,7 @@ import {
   type InlinePromptToken,
   type StructuredPromptHandle,
 } from '../components/StructuredPromptInput';
+import { AgentPlanPanel } from '../components/AgentPlanPanel';
 import { MediaLightbox } from '../components/MediaLightbox';
 
 /**
@@ -202,6 +212,15 @@ export function CreateView() {
   const promptEditorRef = useRef<StructuredPromptHandle | null>(null);
   /** 引用目录：删除后原生撤销恢复 token 时，从这里找回引用 */
   const refCatalog = useRef<Map<string, MentionRef>>(new Map());
+  /** S6-B2：Agent 计划只存在于当前页面；应用/拒绝后清空，不落 localStorage。 */
+  const [agentPlan, setAgentPlan] = useState<{
+    plan: AgentPlan;
+    model: string;
+    usage?: AgentPlanUsage;
+  } | null>(null);
+  const [agentLoading, setAgentLoading] = useState(false);
+  const [agentApplying, setAgentApplying] = useState(false);
+  const [agentError, setAgentError] = useState<string | null>(null);
 
   // ── 素材池（`@` 弹层的候选：资产库 + 成片/剪辑产物）──
   // V2.10：池子里**只放可作为生成参考的资产**（音频素材挡在池外，见 `isRefAsset`）
@@ -686,6 +705,150 @@ export function CreateView() {
     ],
   );
 
+  /** S6-B2：请求 Agent 计划；只填计划卡，不动草稿。 */
+  const requestAgentPlan = async (): Promise<void> => {
+    const apiKey = resolveLlmKey(byok);
+    if (apiKey === undefined) {
+      setAgentError(t('agent.plan.noKey'));
+      openByok();
+      return;
+    }
+    const intent = prompt.trim();
+    if (intent === '') {
+      setAgentError(t('agent.plan.emptyIntent'));
+      return;
+    }
+
+    setAgentLoading(true);
+    setAgentError(null);
+    setAgentPlan(null);
+    try {
+      const result = await planAgent(
+        {
+          intent,
+          skills: loadSkillLibrary().library.custom,
+          llm: resolveLlmConfig(byok),
+        },
+        { llmKey: apiKey },
+      );
+      setAgentPlan({
+        plan: result.plan,
+        model: result.model,
+        ...(result.usage === undefined ? {} : { usage: result.usage }),
+      });
+    } catch (caught) {
+      setAgentError(describeError(caught));
+    } finally {
+      setAgentLoading(false);
+    }
+  };
+
+  /** S6-B2：应用计划 = 落草稿；**不调用 submitGenerate**。 */
+  const applyAgentPlan = async (): Promise<void> => {
+    if (agentPlan === null || agentApplying) return;
+    setAgentApplying(true);
+    setAgentError(null);
+
+    try {
+      const library = loadSkillLibrary().library;
+      const resolvedRefs: MentionRef[] = [];
+      const seenRefs = new Set<string>();
+
+      // 先把全部引用解析出来：任何一个失败都不备份/不改草稿，避免“半份方案”落盘。
+      for (const step of agentPlan.plan.steps) {
+        if (step.kind !== 'add-reference') continue;
+        let nextRef: MentionRef;
+        if (step.ref.startsWith('asset:')) {
+          const asset = assetPool.find((item) => item.assetId === step.ref.slice('asset:'.length));
+          const source = asset === undefined ? undefined : referenceSourcesFromAssets([asset])[0];
+          if (source === undefined) {
+            throw new Error(t('agent.plan.missingRef', { ref: step.ref }));
+          }
+          nextRef = refFromSource(source);
+        } else {
+          const task = await fetchTask(step.ref.slice('task:'.length));
+          if (task.status !== 'succeeded' || taskOutput(task).kind === 'none') {
+            throw new Error(t('agent.plan.taskNotReady', { ref: step.ref }));
+          }
+          nextRef = refFromTask(task);
+        }
+        if (!seenRefs.has(nextRef.ref)) {
+          seenRefs.add(nextRef.ref);
+          resolvedRefs.push(nextRef);
+        }
+      }
+
+      const skillSteps = agentPlan.plan.steps.filter(
+        (step): step is Extract<typeof step, { kind: 'apply-skill' }> =>
+          step.kind === 'apply-skill',
+      );
+      const plannedSkills = skillSteps.map((step) => {
+        const skill = findSkillInLibrary(library, step.skillId);
+        if (skill === undefined) {
+          throw new Error(t('agent.plan.missingSkill', { id: step.skillId }));
+        }
+        return { step, skill };
+      });
+
+      let nextPrompt = prompt;
+      let nextAspect = aspectRatio;
+      let nextResolution = resolutionTier;
+      let nextDuration = durationSec;
+      let nextKind: ComposerKind = kind;
+      const applyParams = (params: SkillParams | undefined): void => {
+        if (params === undefined) return;
+        if (params.aspectRatio !== undefined) nextAspect = params.aspectRatio;
+        if (params.resolutionTier !== undefined) nextResolution = params.resolutionTier;
+        if (params.durationSec !== undefined) nextDuration = clampDurationSec(params.durationSec);
+      };
+
+      for (const { step, skill } of plannedSkills) {
+        nextPrompt = appendSkeleton(nextPrompt, skill.prompt);
+        if (step.prompt !== undefined) nextPrompt = appendSkeleton(nextPrompt, step.prompt);
+        applyParams(skill.params);
+        applyParams(step.params);
+        const image = skill.modes.includes('t2i');
+        const video = skill.modes.some((mode) => mode !== 't2i');
+        if (image && !video) nextKind = 'image';
+        else if (video && !image) nextKind = 'video';
+      }
+      for (const step of agentPlan.plan.steps) {
+        if (step.kind === 'set-params') applyParams(step.params);
+      }
+
+      // 覆盖前只备份一次（与“复用参数”同一纪律）；用户可用“恢复上一草稿”回退。
+      backupDraft({
+        prompt,
+        settings: {
+          aspectRatio,
+          ...(kind === 'image'
+            ? { mode: 't2i' as const, resolution: resolveImageSize(aspectRatio) }
+            : {
+                durationSec,
+                resolution: resolveTargetSize(aspectRatio, resolutionTier),
+              }),
+        },
+        references: canvasReferencesForMentionRefs(refs),
+      });
+      setBackupAvailable(true);
+
+      setKind(nextKind);
+      setPrompt(nextPrompt);
+      promptEditorRef.current?.replaceText(nextPrompt);
+      setAspectRatio(nextAspect);
+      setResolutionTier(nextResolution);
+      setDurationSec(nextDuration);
+      for (const ref of resolvedRefs) addRef(ref);
+      setSubmitError(null);
+      setNotice(t('agent.plan.applied'));
+      setAgentPlan(null);
+    } catch (caught) {
+      setAgentError(t('agent.plan.failed', { reason: describeError(caught) }));
+    } finally {
+      setAgentApplying(false);
+    }
+  };
+
   /** S5-B3e：恢复覆盖前的草稿（prompt/参数/引用；token 正文按引用重建） */
   const restoreDraft = useCallback((): void => {
     const draft = readDraftBackup();
@@ -963,6 +1126,10 @@ export function CreateView() {
   const pickFirstMatch = (): void => pickMentionAt(mentionIndex);
 
   // V2.40：产物可能是视频或图片（`t2i`）—— 用 shared 的 `taskOutput()` 收口
+  const agentSkills = useMemo(
+    () => [...BUILTIN_SKILLS, ...loadSkillLibrary().library.custom],
+    [],
+  );
   const output = task === null ? { kind: 'none' as const } : taskOutput(task);
   const outputUrl =
     output.kind === 'video' || output.kind === 'image' ? resolveMediaUrl(output.url) : null;
@@ -1029,6 +1196,15 @@ export function CreateView() {
               {t('create.hint.mention')}
             </button>
             <span className="wb-note">{t('create.hint.mentionNote')}</span>
+            <button
+              type="button"
+              className="cr-agent-trigger"
+              data-testid="agent-plan-button"
+              disabled={agentLoading || agentApplying}
+              onClick={() => void requestAgentPlan()}
+            >
+              {agentLoading ? t('agent.plan.loading') : t('agent.plan.button')}
+            </button>
             <span className="wb-note cr-shortcut">{t('create.hint.submit')}</span>
             {backupAvailable ? (
               <button type="button" className="cr-link" onClick={restoreDraft}>
@@ -1036,6 +1212,33 @@ export function CreateView() {
               </button>
             ) : null}
           </div>
+
+          {agentError === null ? null : (
+            <p className="wb-alert" role="alert">
+              {agentError}
+            </p>
+          )}
+
+          {agentPlan === null ? null : (
+            <AgentPlanPanel
+              plan={agentPlan.plan}
+              model={agentPlan.model}
+              {...(agentPlan.usage === undefined ? {} : { usage: agentPlan.usage })}
+              skills={agentSkills}
+              applying={agentApplying}
+              onApply={() => void applyAgentPlan()}
+              onReject={() => {
+                setAgentPlan(null);
+                setAgentError(null);
+                setNotice(t('agent.plan.rejected'));
+              }}
+              onModify={() => {
+                setAgentPlan(null);
+                setAgentError(null);
+                promptEditorRef.current?.focus();
+              }}
+            />
+          )}
 
           {refs.length > 0 ? (
             <div className="cr-chips">
