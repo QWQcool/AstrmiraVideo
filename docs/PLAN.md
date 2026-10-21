@@ -1694,6 +1694,14 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · 修复英文侧栏语言/主题分段被裁
+
+- **【用户实测】** 切英文后侧栏「Interface language」的 English、主题的 Starlight/Daylight 被裁掉、点不到（截图见用户消息）。
+- **【根因】** `.side-row` 固定 `height:34px` 且 `white-space:nowrap`；`.seg` 可被 flex 压缩、又 `overflow:hidden`。240px 侧栏内 English 按钮右边界到 254px、Daylight 到 273px，直接被侧栏裁掉。
+- **【修复】** 只改 CSS：`.side-row--lang/.side-row--theme` 允许 `flex-wrap`、`height:auto`/`min-height:34px`；`.seg` 设 `flex:0 0 auto; max-width:100%`。放不下时整段换行，不再压缩裁切；中文仍保持单行紧凑。
+- **【实测】** 375/768 英文：5 个按钮右边界最大 218px < 侧栏 240px，全部可点；中/英切换、System/Starlight/Daylight 三态切换均生效。截图 `.tmp/s5c/sidebar-en-fixed.png`。
+- **【边界】** 这是布局缺陷，不改 IA/文案；桌面展开态同样受益。CI 冒烟暂无“分段按钮不越界”断言，本轮用独立 Playwright 实测。
+
 ### 2026-10-21 · CD 成功：线上已更新到 S5-C5
 
 - **【run】** `39547441545`：`verify` 4m47s 通过，`deploy` **2m25s 成功**；`上传代码包` / `远程解压并部署` / `健康检查` 全绿。

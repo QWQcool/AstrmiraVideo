@@ -1628,6 +1628,23 @@
   color: var(--text);
 }
 
+/* 语言/主题分段在 240px 侧栏里放不下英文长标签时，整段换到下一行；
+   不能让它压缩（.seg 有 overflow:hidden，压缩后最后一个选项会被裁掉、点不到）。 */
+.side-row--lang,
+.side-row--theme {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 34px;
+  padding-block: 5px;
+  row-gap: 4px;
+}
+
+.side-row--lang .seg,
+.side-row--theme .seg {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
 .seg {
   display: inline-flex;
   border: 1px solid var(--line);
