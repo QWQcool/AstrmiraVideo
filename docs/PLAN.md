@@ -1694,6 +1694,16 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · S6-A2：单一技能库 UI（`#/skills`）
+
+- **【入口】** 侧栏「配方库」改为「技能库」，主路由 `#/skills`；旧 `#/recipes` 保留为**隐藏别名**（旧书签不断），`RecipesView` 不再被注册表引用（死文件保留一版）。
+- **【列表】** 54 张内置技能卡，7 个类别（运镜/光线/氛围/节奏/角度/焦点/行业）；搜索覆盖名称/摘要/提示词/触发词；卡片显示来源（配方/模板）、适用模式、启停状态。
+- **【详情】** 选中卡打开独立详情面板：提示词骨架、推荐参数、适用模式、使用要点、启停；关闭回列表。**没有“应用”按钮**——应用是 S6-A3，不制造假动作。
+- **【启停】** 本地 `astrmira.skills.v1` 只存 `disabledIds`（和 custom 空列表）；默认全启用；坏 JSON 显示“已临时按默认启用”，不静默覆盖。自建技能的保存/编辑留给 A3。
+- **【证据】** 1366/375 实机：54 卡、运镜 10、搜索「雨夜」1、详情可开/关、启停 aria-pressed 翻转并写回 localStorage；两视口 `scrollWidth == clientWidth`，0 console error。375 详情单列，`skills-detail` 无横向溢出。
+- **【门禁】** 前端 **595 passed**（49 文件，含 14 条技能 schema/启停测试）；`pnpm type` / `pnpm lint` / `pnpm build` / `visual-selfcheck` 通过；本地 UI 冒烟新增 `[6d]` 技能库段并通过（54 卡/筛选/搜索/详情/启停）。
+- **【边界】** 自建技能、应用技能到草稿、Agent 均未做；A3 再接。旧 `#/recipes` 隐藏别名没有独立 nav 高亮（旧链接仍可看页面），属可接受的过渡。
+
 ### 2026-10-21 · S6-A1：技能 manifest 与内置迁移
 
 - **【数据模型】** 新增 `packages/shared/src/skills.ts`：`SkillManifestSchema`（id/name/summary/category/origin/triggers/prompt/params/modes/requiresImage/notes/source/industry/durationHint）与 `SkillLibrarySchema`（本地 custom + disabledIds）。`prompt` 保留原文、只校验非空白；`summary` 是卡片/检索短句，不替代 prompt。

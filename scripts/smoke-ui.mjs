@@ -383,10 +383,10 @@ try {
   const bootRail = await page.locator('.sidebar').getAttribute('data-rail');
   assert(bootRail === '1', `工作台默认收起侧栏（data-rail=${bootRail}，期望 1）`);
   // D62（2026-10-19）：工作台 / 成本台账从侧栏移除；侧栏只剩六个一级入口。
-  const NAV_HASHES = ['#/create', '#/overview', '#/library', '#/canvas', '#/recipes', '#/logs'];
+  const NAV_HASHES = ['#/create', '#/overview', '#/library', '#/canvas', '#/skills', '#/logs'];
   assert(
     (await page.locator('.sidebar .nav-item').count()) === NAV_HASHES.length,
-    `侧栏有六个一级视图入口（创作/总览/视频库/画布/配方库/日志；工作台与成本台账已退场；实际 ${await page.locator('.sidebar .nav-item').count()}）`,
+    `侧栏有六个一级视图入口（创作/总览/视频库/画布/技能库/日志；工作台与成本台账已退场；实际 ${await page.locator('.sidebar .nav-item').count()}）`,
   );
 
   // 六个一级视图可切换，且侧栏 aria-current 跟随（剪辑台是 hidden 视图，单独验）
@@ -1160,40 +1160,47 @@ try {
   await page.screenshot({ path: path.join(SHOT_DIR, 'library.png'), fullPage: false });
   note('视频库截图留档：artifacts/ui-smoke/library.png');
 
-  console.log('\n[6d] 配方库（V9 · B8：≥20 张 + 插入骨架逐字 + 分类筛选）');
-  await page.evaluate(() => { location.hash = '#/recipes'; });
-  await page.locator('.recipe-card').first().waitFor({ timeout: 10_000 });
-  const recipeCount = await page.locator('.recipe-card').count();
-  assert(recipeCount >= 20, `配方卡 ≥20 张（实际 ${recipeCount}）`);
+  console.log('\n[6d] 技能库（S6-A：单一入口 + 搜索/分类/详情/启停）');
+  await page.evaluate(() => { location.hash = '#/skills'; });
+  await page.waitForSelector('[data-testid^="skill-card-"]', { timeout: 10_000 });
+  const skillCount = await page.locator('[data-testid^="skill-card-"]').count();
+  assert(skillCount >= 50, `技能卡 ≥50 张（实际 ${skillCount}）`);
 
-  await page.getByRole('button', { name: '运镜', exact: true }).click();
-  const cameraCount = await page.locator('.recipe-card').count();
+  await page.getByTestId('skills-category-camera').click();
+  const cameraSkillCount = await page.locator('[data-testid^="skill-card-"]').count();
   assert(
-    cameraCount >= 5 && cameraCount < recipeCount,
-    `分类筛选生效（运镜 ${cameraCount} 张 / 全部 ${recipeCount} 张）`,
+    cameraSkillCount >= 5 && cameraSkillCount < skillCount,
+    `类别筛选生效（运镜 ${cameraSkillCount} 张 / 全部 ${skillCount} 张）`,
   );
-  await page.getByRole('button', { name: '全部', exact: true }).click();
+  await page.getByTestId('skills-category-all').click();
 
-  // AC5 的硬断言：插入的骨架必须**逐字**出现在提示词框里
-  const firstSkeleton = await page.locator('.recipe-card-skeleton').first().innerText();
-  await page
-    .locator('.recipe-card')
-    .first()
-    .getByRole('button', { name: '插入骨架到提示词' })
-    .click();
-  // ⚠️ hash 变化是同步的、React 的重渲染是异步的 —— 这里必须**等条件成立**，
-  // 而不是"改完 hash 立刻读 textarea"（那样拿到的是旧值，实测踩到过一次）。
-  await page.waitForFunction(
-    (expected) => (document.querySelector('.wb-main textarea')?.value ?? '').includes(expected),
-    firstSkeleton,
-    { timeout: 10_000 },
-  );
-  const promptAfterInsert = await page.evaluate(
-    () => document.querySelector('.wb-main textarea')?.value ?? '',
-  );
+  await page.getByTestId('skills-search').fill('雨夜');
+  const searchedSkillCount = await page.locator('[data-testid^="skill-card-"]').count();
+  assert(searchedSkillCount > 0 && searchedSkillCount < skillCount, '技能搜索生效（雨夜）');
+  await page.getByTestId('skills-search').fill('');
+
+  const firstSkill = page.locator('[data-testid^="skill-card-"]').first();
+  const firstSkillTestId = await firstSkill.getAttribute('data-testid');
+  const firstSkillId = firstSkillTestId?.replace('skill-card-', '') ?? '';
+  await firstSkill.getByRole('button', { name: '查看详情' }).click();
+  await page.waitForSelector('[data-testid="skill-detail"]', { timeout: 5_000 });
   assert(
-    promptAfterInsert.includes(firstSkeleton),
-    `插入骨架：配方文本**逐字**出现在提示词框里（框长 ${promptAfterInsert.length} 字）`,
+    (await page.getByTestId('skill-detail').innerText()).includes('提示词骨架'),
+    '技能详情显示提示词骨架（不自动应用/提交）',
+  );
+
+  const skillToggle = page.getByTestId(`skill-toggle-${firstSkillId}`);
+  const beforeToggle = await skillToggle.getAttribute('aria-pressed');
+  await skillToggle.click();
+  assert(
+    (await skillToggle.getAttribute('aria-pressed')) !== beforeToggle,
+    '技能启停按钮改变状态（可逆）',
+  );
+  await skillToggle.click();
+  await page.getByRole('button', { name: '关闭技能详情' }).click();
+  assert(
+    (await page.locator('[data-testid="skill-detail"]').count()) === 0,
+    '技能详情可关闭，回到列表',
   );
 
   console.log('\n[6e] 剪辑台（B34 · P1：Remotion 时间轴 UI + ffmpeg 链路 API 级证据）');
@@ -2602,7 +2609,7 @@ console.log('\n[7g] 语言防线（V2.38 上线：首访跟随浏览器 · 显�
    */
   for (const [hash, selector, title] of [
     ['#/costs', 'h1.wb-page-title', ['Cost ledger']],
-    ['#/recipes', 'h1.wb-page-title', ['Prompt recipe library']],
+    ['#/skills', 'h1.wb-page-title', ['Skill library']],
     ['#/logs', 'h1.wb-page-title', ['Activity log']],
     ['#/overview', 'h1.wb-page-title', ['Overview']],
   ]) {

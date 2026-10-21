@@ -8,7 +8,7 @@ import { EditView } from './EditView';
 import { LibraryView } from './LibraryView';
 import { LogsView } from './LogsView';
 import { OverviewView } from './OverviewView';
-import { RecipesView } from './RecipesView';
+import { SkillsView } from './SkillsView';
 import { WorkbenchView } from './WorkbenchView';
 
 /**
@@ -75,7 +75,9 @@ export const VIEW_REGISTRY: readonly ViewDef[] = [
   // V2.12（台账 B48）：成本台账 —— D62（2026-10-19）**下线**：不做支付/积分，成本只保留"估算"，
   // 入口从侧栏移除；路由保留一个版本周期（旧链接不直接 404）。
   { path: '#/costs', titleKey: 'shell.nav.costs', eyebrow: 'Cost Ledger', icon: 'coins', component: CostsView, hidden: true },
-  { path: '#/recipes', titleKey: 'shell.nav.recipes', eyebrow: 'Recipe Library', icon: 'cards', component: RecipesView },
+  // S6-A2：配方/模板收敛为单一「技能」入口。旧 `#/recipes` 保留为隐藏别名，旧书签不断。
+  { path: '#/skills', titleKey: 'shell.nav.skills', eyebrow: 'Skills', icon: 'cards', component: SkillsView },
+  { path: '#/recipes', titleKey: 'shell.nav.skills', eyebrow: 'Skills', icon: 'cards', component: SkillsView, hidden: true },
   { path: '#/logs', titleKey: 'shell.nav.logs', eyebrow: 'Logs', icon: 'list', component: LogsView },
   { path: '#/edit', titleKey: 'shell.nav.edit', eyebrow: 'Editing Desk', icon: 'scissors', component: EditView, hidden: true, preferRail: true },
 ];

@@ -2160,6 +2160,93 @@
   gap: 6px;
 }
 
+/* ── S6-A2 技能库：详情面板（不抢卡片的“内容为主”）── */
+.skills-detail {
+  margin: 0 0 14px;
+  padding: 16px;
+  border: 1px solid var(--line-gold);
+  border-radius: var(--radius-surface);
+  background: var(--panel);
+}
+
+.skills-detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.skills-detail-title {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.skills-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.skills-detail-head > .wb-btn {
+  margin-left: auto;
+  flex: none;
+}
+
+.skills-detail-summary {
+  margin: 12px 0;
+  color: var(--muted);
+  font-size: var(--fs-note);
+  line-height: 1.7;
+}
+
+.skills-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.skills-detail-label {
+  margin: 12px 0 6px;
+  color: var(--faint);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.skills-detail-prompt {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--line-gold);
+  border-radius: 4px;
+  background: var(--gold-tint);
+  color: var(--muted);
+  font-size: var(--fs-note);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.skills-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+@media (max-width: 768px) {
+  .skills-detail {
+    padding: 12px;
+  }
+
+  .skills-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}
+
 /* ── V9 视频库（B4）── */
 /* S5-A：生成历史 / 画布两个主 tab（画布是一等资产，不是生成历史的附属） */
 .lib-tabs {

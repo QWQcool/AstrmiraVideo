@@ -10,6 +10,13 @@ import {
   skillFromRecipe,
   skillFromTemplate,
 } from '@astrmira/shared';
+import {
+  SKILL_STORAGE_KEY,
+  isSkillEnabled,
+  loadSkillLibrary,
+  saveSkillLibrary,
+  setSkillEnabled,
+} from './skills';
 
 /**
  * S6-A1：技能 manifest 的结构校验与内置迁移。
@@ -135,5 +142,63 @@ describe('S6-A1 · 本地技能库 schema', () => {
     expect(() => customSkill({ id: 'Bad_ID' })).toThrow();
     expect(() => customSkill({ prompt: '   ' })).toThrow();
     expect(() => customSkill({ triggers: [] })).toThrow();
+  });
+});
+
+describe('S6-A2 · 本地启停与读取', () => {
+  function memoryStorage(initial: Record<string, string> = {}): Storage {
+    const data = new Map(Object.entries(initial));
+    return {
+      get length() {
+        return data.size;
+      },
+      clear: () => data.clear(),
+      getItem: (key: string) => data.get(key) ?? null,
+      key: (index: number) => [...data.keys()][index] ?? null,
+      removeItem: (key: string) => data.delete(key),
+      setItem: (key: string, value: string) => data.set(key, value),
+    };
+  }
+
+  it('默认启用；setSkillEnabled 只改 disabledIds，可反复启停', () => {
+    let library = emptySkillLibrary();
+    expect(isSkillEnabled(library, 'camera-push-in-slow')).toBe(true);
+    library = setSkillEnabled(library, 'camera-push-in-slow', false);
+    expect(isSkillEnabled(library, 'camera-push-in-slow')).toBe(false);
+    library = setSkillEnabled(library, 'camera-push-in-slow', true);
+    expect(isSkillEnabled(library, 'camera-push-in-slow')).toBe(true);
+    expect(library.custom).toEqual([]);
+  });
+
+  it('空存储 = 默认库；合法 JSON = 原样恢复；坏 JSON = 空库 + corrupt', () => {
+    const empty = loadSkillLibrary(memoryStorage());
+    expect(empty.corrupt).toBe(false);
+    expect(empty.library.disabledIds).toEqual([]);
+
+    const valid = loadSkillLibrary(
+      memoryStorage({
+        [SKILL_STORAGE_KEY]: JSON.stringify({
+          version: 1,
+          custom: [],
+          disabledIds: ['camera-push-in-slow'],
+        }),
+      }),
+    );
+    expect(valid.corrupt).toBe(false);
+    expect(valid.library.disabledIds).toEqual(['camera-push-in-slow']);
+
+    const broken = loadSkillLibrary(memoryStorage({ [SKILL_STORAGE_KEY]: '{not json' }));
+    expect(broken.corrupt).toBe(true);
+    expect(broken.library.disabledIds).toEqual([]);
+  });
+
+  it('saveSkillLibrary 写回同一份 schema 数据', () => {
+    const storage = memoryStorage();
+    const library = setSkillEnabled(emptySkillLibrary(), 'camera-push-in-slow', false);
+    expect(saveSkillLibrary(library, storage)).toBe(true);
+    expect(JSON.parse(storage.getItem(SKILL_STORAGE_KEY) ?? '{}')).toMatchObject({
+      version: 1,
+      disabledIds: ['camera-push-in-slow'],
+    });
   });
 });

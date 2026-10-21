@@ -673,6 +673,7 @@ if (leftPanelText !== undefined) {
     'lib/costView.ts',
     'views/CostsView.tsx',
     'views/RecipesView.tsx',
+  'views/SkillsView.tsx',
     'views/LogsView.tsx',
     'views/OverviewView.tsx',
     'lib/api.ts',
