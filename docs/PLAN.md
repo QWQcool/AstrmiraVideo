@@ -1696,6 +1696,10 @@
 
 ### 2026-10-21 · CD 恢复：SSH 29598 可达，上传超时放宽
 
+- **【第二次失败】** 420s 仍未传完 19MB（step timeout 7min，exit 124）；本机 ssh2 登录与 SFTP 正常，说明不是端口/密码，而是 GitHub Runner → 该主机的跨境上行极慢。
+- **【根因】** 仓库 tracked 文件里 `docs/` 占 **18.94MB**（参考图/设计稿），整个部署包 19MB；`docs` 不参与 Docker 运行时，只用于文档与证据。
+- **【修复】** 部署 tar 增加 `--exclude=./docs`，包体预计降到 ~2–4MB；根目录 `NOTICE`/`LICENSE` 仍保留，不影响镜像许可登记。
+
 - **【SSH 事实】** 用户提供 `43.228.79.210:29598`、`root`；本机 `ssh` 握手返回 `Permission denied (publickey,password)`（端口真实），Node `ssh2` 用密码登录成功：`hostname=ldclouda31761`、`/root/astrmira` 存在、`.env.deploy` 存在、`astrmiravideo-app-1` healthy、`astrmiravideo-caddy-1` up、Node 22、SFTP 可用。
 - **【Secrets】** 更新 `DEPLOY_HOST/PORT/USER/SSH_PASSWORD` 为当前值，`ENABLE_DEPLOY=1`；重跑 C5 的 deploy。
 - **【第一次失败】** deploy 在「上传代码包」90s 超时（exit 124）；打包 **19MB**，不是密码/端口错误（密码文件长度 15、SSH 可达）。历史上传约 20s，当前跨境链路更慢。

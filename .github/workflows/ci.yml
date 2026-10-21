@@ -154,7 +154,8 @@ jobs:
             --exclude=./packages/shared/dist \
             --exclude=./data \
             --exclude=./outputs \
-            --exclude=./tests/fixtures/clips .
+            --exclude=./tests/fixtures/clips \
+            --exclude=./docs .
           ls -lh /tmp/deploy.tar.gz
 
       - name: 安装 sshpass（密码认证的最小依赖）
