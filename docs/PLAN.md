@@ -1696,6 +1696,8 @@
 
 ### 2026-10-21 · 修复英文侧栏语言/主题分段被裁
 
+- **【回归守卫】** `scripts/smoke-ui.mjs` 的 `[7c]` 390 抽屉里切英文，逐个检查语言/主题分段按钮右边界 ≤ 侧栏右边界（越界即失败），再切回中文，避免影响后续中文断言。
+
 - **【用户实测】** 切英文后侧栏「Interface language」的 English、主题的 Starlight/Daylight 被裁掉、点不到（截图见用户消息）。
 - **【根因】** `.side-row` 固定 `height:34px` 且 `white-space:nowrap`；`.seg` 可被 flex 压缩、又 `overflow:hidden`。240px 侧栏内 English 按钮右边界到 254px、Daylight 到 273px，直接被侧栏裁掉。
 - **【修复】** 只改 CSS：`.side-row--lang/.side-row--theme` 允许 `flex-wrap`、`height:auto`/`min-height:34px`；`.seg` 设 `flex:0 0 auto; max-width:100%`。放不下时整段换行，不再压缩裁切；中文仍保持单行紧凑。

@@ -2168,6 +2168,23 @@ try {
   assert(true, '点汉堡后侧栏滑入视口（overlay 抽屉形态）');
   assert(await mobile.locator('.sidebar-scrim').isVisible(), '抽屉展开时有遮罩层');
 
+  // 2026-10-21：英文标签更长，语言/主题分段曾被 .seg 压缩裁掉最后一个选项。
+  // 在真实 390 抽屉里切英文，逐个按钮核对右边界；点回中文避免影响后面的中文断言。
+  await mobile.getByTestId('lang-en').click();
+  await mobile.waitForFunction(() => document.documentElement.lang === 'en', { timeout: 5_000 });
+  const clippedSegments = await mobile.evaluate(() => {
+    const sidebarRight = document.querySelector('.sidebar')?.getBoundingClientRect().right ?? 0;
+    return [...document.querySelectorAll('.side-row--lang .seg button, .side-row--theme .seg button')]
+      .filter((button) => button.getBoundingClientRect().right > sidebarRight + 1)
+      .map((button) => button.textContent);
+  });
+  assert(
+    clippedSegments.length === 0,
+    `英文侧栏分段全部在抽屉内，没有被裁（越界：${clippedSegments.join(' / ') || '无'}）`,
+  );
+  await mobile.getByTestId('lang-zh').click();
+  await mobile.waitForFunction(() => document.documentElement.lang === 'zh-CN', { timeout: 5_000 });
+
   // 点导航项 → 抽屉收起（否则内容被挡着）
   await mobile.getByRole('link', { name: '视频库' }).click();
   await mobile.waitForFunction(
