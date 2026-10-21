@@ -1,0 +1,11 @@
+{
+  "modes": ["t2i"],
+  "modelMatch": {
+    "unet": "moss_image_sft",
+    "clip": "qwen3.5_9b",
+    "vae": "flux2-vae",
+    "clipType": "moss_image"
+  },
+  "label": "MOSS-Image SFT 8-step DMD（int8/w4a8 · 可选）",
+  "notes": "需要 ComfyUI >= 0.42 的 MOSS 原生节点；diffusion_models 放 moss_image_sft_int8_convrot，text_encoders 放 qwen3.5_9b_w4a8_gptq，vae 放 flux2-vae_small，loras 放 moss_image_sft_8steps_dmd。8 步 / CFG 1；低显存建议 --lowvram。此模板不自动启用，也不是默认 t2i。"
+}

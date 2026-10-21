@@ -1694,6 +1694,14 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · MOSS-Image 8-step DMD/量化评估（可选 t2i）
+
+- **【实测】** RTX 3080 10GB + 隔离的最新 ComfyUI 0.42.0（旧 v0.36 未动，端口 8189，`--lowvram`）跑通 `moss_image_sft_int8_convrot` + `qwen3.5_9b_w4a8_gptq` + `flux2-vae_small` + 社区 8-step DMD LoRA。512 首次 151s（含加载/编译）；1024 纯画面暖跑 **6s**、1.29MB；1024 中文海报暖跑 **56s**；观察显存 **9.55/10.24GB**，余量约 1.1GB。
+- **【质量】** 同提示词中文海报：MOSS 主标题「雨夜霓虹」、副标题「2026 城市影像展」基本正确（装饰小字仍有错字）；FLUX.2 Klein 4B 主标题已出现近形错字。MOSS 在中文文字/版式场景明显更强，纯画面仍可用；不是“全面替换”。
+- **【交付】** 评估文档 `docs/MOSS-IMAGE-EVALUATION.md` + 证据图；可选模板 `deploy/comfyui-templates/moss-image-t2i.api.json` / `.meta.json` / README。模板要求 ComfyUI>=0.42、独立实例、`COMFYUI_TEMPLATE_DIR`；**不自动启用、不替换默认 FLUX.2**。模型文件下载在 D:\ComfyUI\ComfyUI_moss（约 13.2GB，保留供后续算力服务器部署）。
+- **【恢复】** 测试结束已停止 8189 的 MOSS 实例，旧 ComfyUI 8188 已恢复；应用 `/api/providers/selfcheck` 仍显示 t2i 可用。旧安装未被升级/改依赖。
+- **【未验】** layout JSON/bbox 未测；无 FID/CLIP/人工偏好定量对比；只测一张中文海报；8-step DMD 为社区版本，换权重需重测。10GB 卡首次加载慢、余量小，不推荐作为默认高并发 t2i。
+
 ### 2026-10-21 · S6-B3：Agent 执行意图与幂等键
 
 - **【指纹】** 新增 `lib/agentExecution.ts`：计划指纹只含真正改变请求的 step（`note`/`reason` 不进指纹），草稿指纹含 prompt/kind/画幅/清晰度/时长/seed/provider/model/稳定引用；不把文本摘要当执行依据。
