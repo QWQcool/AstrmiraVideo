@@ -1694,6 +1694,24 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · S6-B3：Agent 执行意图与幂等键
+
+- **【指纹】** 新增 `lib/agentExecution.ts`：计划指纹只含真正改变请求的 step（`note`/`reason` 不进指纹），草稿指纹含 prompt/kind/画幅/清晰度/时长/seed/provider/model/稳定引用；不把文本摘要当执行依据。
+- **【复用】** `reuseAgentExecution`：同一方案 + 同一草稿复用原 `Idempotency-Key`；改方案/改提示词/改参数/改引用换新键。`idempotencyKeyForSubmit` 在生成时再用**当前草稿**复核，避免用户改完提示词却误用旧键。
+- **【显式新执行】** 任务卡「再来一次」清空 `agentExecutionRef`；复用参数/恢复草稿/新方案也会自然换键。`applyAgentPlan` 在落草稿前一次性计算意图，引用全部解析成功才写。
+- **【证据】** 受控 UI 实测：同一方案连续两次生成捕获的 `idempotency-key` **相同**；把提示词改成“再加霓虹反光”后第三次 **不同**。单测 3 条（同方案同草稿复用、note 不改指纹、改草稿/方案换键）；前端 **599 passed**；type/lint/build/visual-selfcheck 通过。
+- **【成本】** 计划卡继续显示 token 用量 + 「价格待核算」，未编造金额；应用阶段 0 生成，生成阶段才使用幂等键。
+
+### 2026-10-21 · S6-B4：受控响应与 S6-B 收口
+
+- **【受控文本】** 后端新增 provider 测试：超 8 步、旧 `plan.version` → 502，不执行半份计划；此前已有未知技能/无可用模式/缺参考图 → 400、401、非 JSON 502。
+- **【重复应用】** `agentExecution` 单测覆盖同方案/改方案/改草稿；UI 证据同 B3。
+- **【应用阶段零生成】** B2 UI 证据：应用计划后 `POST /api/generate` 计数 0；B3 的生成证据只发生在用户显式点击提交后，且带幂等键。
+- **【能力缺失/旧方案】** 计划 schema strict、catalog 校验、旧 version 拒绝；不返回“半份计划”；计划卡不把失败步骤伪装成已执行。
+- **【S6-B AC】** 无 Key 明确提示（B2）、结构/能力校验（B1）、计划卡引用/参数（B2）、修改/拒绝/应用（B2）、应用只落草稿（B2）、幂等键复用/变更（B3）、禁止脚本（B1）、规划不提交媒体（B1/B2）、文本成本待核算（B2/B3）。
+- **【门禁】** 前端 **599 passed**；后端 Agent provider/route 共 **11 passed**（B1 10 + B4 1）；type/lint/build/visual-selfcheck 通过；真实 DeepSeek 仍未调用（无 Key），不产生云端费用。
+- **【边界】** 计划卡不做 step 级编辑；引用角色按现有 mention 顺序推导；S6-B 只覆盖 Create 草稿，不创建画布节点。MOSS 评估另行进行。
+
 ### 2026-10-21 · S6-B2：Agent 计划卡与“应用到草稿”
 
 - **【入口】** 创作页提示行新增「让 Agent 规划」；有文本 Key 才发请求，没 Key 直接提示并打开凭据抽屉（**0 次 `/api/agent/plan` 请求**）。按钮不替代提交，Agent 只产出计划。

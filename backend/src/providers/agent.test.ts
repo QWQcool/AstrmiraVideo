@@ -163,4 +163,40 @@ describe('S6-B1 · planWithLlm', () => {
       }),
     ).rejects.toMatchObject({ code: 'KEY_INVALID' });
   });
+
+  it('超 8 步 / 旧 plan version → 502，不执行半份计划', async () => {
+    const tooMany = (async () =>
+      jsonResponse({
+        choices: [
+          {
+            message: {
+              content: planContent({
+                steps: Array.from({ length: 9 }, () => ({ kind: 'note', text: 'x' })),
+              }),
+            },
+          },
+        ],
+      })) as typeof fetch;
+    await expect(
+      planWithLlm({
+        apiKey: 'sk-test',
+        intent: '测试',
+        skills: BUILTIN_SKILLS,
+        fetchImpl: tooMany,
+      }),
+    ).rejects.toMatchObject({ code: 'UPSTREAM_ERROR' });
+
+    const oldVersion = (async () =>
+      jsonResponse({
+        choices: [{ message: { content: planContent({ version: 2 }) } }],
+      })) as typeof fetch;
+    await expect(
+      planWithLlm({
+        apiKey: 'sk-test',
+        intent: '测试',
+        skills: BUILTIN_SKILLS,
+        fetchImpl: oldVersion,
+      }),
+    ).rejects.toMatchObject({ code: 'UPSTREAM_ERROR' });
+  });
 });

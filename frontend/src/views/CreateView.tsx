@@ -41,6 +41,11 @@ import {
   type ResolutionTier,
 } from '../lib/format';
 import { newIdempotencyKey } from '../lib/idempotency';
+import {
+  idempotencyKeyForSubmit,
+  reuseAgentExecution,
+  type AgentExecutionIntent,
+} from '../lib/agentExecution';
 import { appendSkeleton } from '../lib/recipeInsert';
 import { findSkillInLibrary, loadSkillLibrary } from '../lib/skills';
 import { useTranslate, type MessageKey } from '../lib/i18n';
@@ -221,6 +226,8 @@ export function CreateView() {
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentApplying, setAgentApplying] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
+  /** S6-B3：最近一次 Agent 执行意图（方案 + 草稿指纹 + 幂等键），只在内存。 */
+  const agentExecutionRef = useRef<AgentExecutionIntent | null>(null);
 
   // ── 素材池（`@` 弹层的候选：资产库 + 成片/剪辑产物）──
   // V2.10：池子里**只放可作为生成参考的资产**（音频素材挡在池外，见 `isRefAsset`）
@@ -816,6 +823,27 @@ export function CreateView() {
         if (step.kind === 'set-params') applyParams(step.params);
       }
 
+      // S6-B3：同一方案 + 同一草稿 → 复用幂等键；改方案/改草稿 → 新键。
+      const nextRefs = [...refs];
+      for (const ref of resolvedRefs) {
+        if (!nextRefs.some((item) => item.ref === ref.ref)) nextRefs.push(ref);
+      }
+      agentExecutionRef.current = reuseAgentExecution(
+        agentExecutionRef.current,
+        agentPlan.plan,
+        {
+          prompt: nextPrompt,
+          kind: nextKind,
+          aspectRatio: nextAspect,
+          resolutionTier: nextResolution,
+          durationSec: nextDuration,
+          seed,
+          provider,
+          model: byok.model,
+          refs: nextRefs.map((item) => ({ ref: item.ref, kind: item.kind })),
+        },
+      );
+
       // 覆盖前只备份一次（与“复用参数”同一纪律）；用户可用“恢复上一草稿”回退。
       backupDraft({
         prompt,
@@ -1102,8 +1130,19 @@ export function CreateView() {
           };
 
     try {
+      const idempotencyKey = idempotencyKeyForSubmit(agentExecutionRef.current, {
+        prompt: prompt.trim(),
+        kind,
+        aspectRatio,
+        resolutionTier,
+        durationSec,
+        seed,
+        provider,
+        model: byok.model,
+        refs: refs.map((item) => ({ ref: item.ref, kind: item.kind })),
+      });
       const result = await submitGenerate(request, {
-        idempotencyKey: newIdempotencyKey(),
+        idempotencyKey,
         ...(providerKey === undefined ? {} : { providerKey }),
       });
       setTaskId(result.taskId);
@@ -1631,6 +1670,8 @@ export function CreateView() {
                     type="button"
                     className="cr-link"
                     onClick={() => {
+                      // 显式“再来一次”= 新执行：不能复用上一方案的幂等键。
+                      agentExecutionRef.current = null;
                       setTaskId(null);
                       setPrompt('');
                       setRefs([]);
