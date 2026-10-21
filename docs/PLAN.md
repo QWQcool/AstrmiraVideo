@@ -1694,6 +1694,15 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · S6-A1：技能 manifest 与内置迁移
+
+- **【数据模型】** 新增 `packages/shared/src/skills.ts`：`SkillManifestSchema`（id/name/summary/category/origin/triggers/prompt/params/modes/requiresImage/notes/source/industry/durationHint）与 `SkillLibrarySchema`（本地 custom + disabledIds）。`prompt` 保留原文、只校验非空白；`summary` 是卡片/检索短句，不替代 prompt。
+- **【内置迁移】** `BUILTIN_SKILLS` = **54** 条：50 张配方卡 + 4 个行业模板；配方/模板的 `skeleton` 逐字成为 `prompt`，模板的推荐参数迁入 `params`，配方坑/模板 notes 迁入 `notes`。不复制提示词、不改现有两份数据。
+- **【自建约束】** 自建技能 `origin` 必须是 `user`，id 走小写连字符，不能与 54 条内置 id 冲突，不能重复；启停状态与 custom 列表同放本地 schema。
+- **【零契约】** 纯共享数据层，零新路由/零新表/零 API；S6-A2 才接 UI 与 localStorage。旧 `#/recipes` 与工作台深链保持原样。
+- **【测试】** 新增 `frontend/src/lib/skills.test.ts` 11 条：覆盖全部配方/模板、prompt 逐字、schema 可重解析、未知 id、空库、自建合法/冲突/重复/非法 id/空 prompt。前端 **592 passed**（49 文件）；`pnpm type` / `pnpm lint` / shared build 通过。
+- **【边界】** 这次只证明“数据能安全交给技能库/Agent”，未做技能库 UI、应用、Agent；不要把 54 条内置数据当成已接线。
+
 ### 2026-10-21 · 修复英文侧栏语言/主题分段被裁
 
 - **【回归守卫】** `scripts/smoke-ui.mjs` 的 `[7c]` 390 抽屉里切英文，逐个检查语言/主题分段按钮右边界 ≤ 侧栏右边界（越界即失败），再切回中文，避免影响后续中文断言。

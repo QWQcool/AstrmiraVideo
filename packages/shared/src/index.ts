@@ -27,6 +27,7 @@ export * from './videoModels.js';
 export * from './logs.js';
 export * from './recipes.js';
 export * from './templates.js';
+export * from './skills.js';
 export * from './editProject.js';
 export * from './edit.js';
 export * from './projects.js';
