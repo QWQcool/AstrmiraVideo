@@ -1694,6 +1694,14 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · S6-A3：应用技能到草稿（含自建技能）
+
+- **【应用】** 技能详情新增「应用到创作草稿」→ `#/create?skill=<id>`；CreateView 消费 query：先备份当前草稿，再追加提示词、写推荐画幅/清晰度/时长、按模式切 image/video，最后 `replaceState` 清 query。**不调用 `/api/generate`**。
+- **【不静默】** 未知技能提示「找不到这个技能」；技能模式不在 `t2i/t2v/i2v` 白名单时提示不支持并拒绝应用；`requiresImage` 且当前无可用图片时仍然填入，但明确提示先上传参考图。
+- **【自建技能】** 技能库「新建技能」表单：名称/摘要/提示词/类别/模式/画幅/清晰度/时长/触发词/要点/需要参考图；用 `SkillManifestSchema.safeParse` 校验后写入 `astrmira.skills.v1.custom`。自建 id `user-…`，不能与内置冲突；自建技能可启停、可应用（CreateView 用 `findSkillInLibrary` 查本地 custom）。
+- **【证据】** 1366 实机：内置技能应用后 `.cr-input-rich` 逐字出现提示词，0 次 POST `/api/generate`；未知技能提示出现；自建技能保存后 54→55，详情/应用成功。源码单测 **596 passed**；`pnpm type`/`lint`/`visual-selfcheck`/UI 冒烟 `[6d]` 全过。
+- **【边界】** 目前只应用 CreateView（画布节点内应用留给后续）；自建技能暂不支持编辑/删除；技能是提示词+参数，不执行多步工具链（那是 S6-B Agent 范围）。A4 再做 375/空态/坏存储/中英证据。
+
 ### 2026-10-21 · S6-A2：单一技能库 UI（`#/skills`）
 
 - **【入口】** 侧栏「配方库」改为「技能库」，主路由 `#/skills`；旧 `#/recipes` 保留为**隐藏别名**（旧书签不断），`RecipesView` 不再被注册表引用（死文件保留一版）。

@@ -12,6 +12,7 @@ import {
 } from '@astrmira/shared';
 import {
   SKILL_STORAGE_KEY,
+  findSkillInLibrary,
   isSkillEnabled,
   loadSkillLibrary,
   saveSkillLibrary,
@@ -200,5 +201,13 @@ describe('S6-A2 · 本地启停与读取', () => {
       version: 1,
       disabledIds: ['camera-push-in-slow'],
     });
+  });
+
+  it('findSkillInLibrary 同时找内置与自建；未知返回 undefined', () => {
+    const custom = customSkill();
+    const library = SkillLibrarySchema.parse({ version: 1, custom: [custom] });
+    expect(findSkillInLibrary(library, 'camera-push-in-slow')?.origin).toBe('recipe');
+    expect(findSkillInLibrary(library, custom.id)?.name).toBe('我的风格');
+    expect(findSkillInLibrary(library, 'no-such-skill')).toBeUndefined();
   });
 });

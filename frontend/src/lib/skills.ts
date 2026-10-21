@@ -1,8 +1,11 @@
 import {
+  BUILTIN_SKILLS,
   emptySkillLibrary,
   SkillLibrarySchema,
+  type GenerationMode,
   type SkillCategory,
   type SkillLibrary,
+  type SkillManifest,
 } from '@astrmira/shared';
 import type { MessageKey } from './i18n';
 import { RECIPE_CATEGORY_KEYS } from './recipes';
@@ -14,6 +17,14 @@ export const SKILL_STORAGE_KEY = 'astrmira.skills.v1';
 export const SKILL_CATEGORY_KEYS: Record<SkillCategory, MessageKey> = {
   ...RECIPE_CATEGORY_KEYS,
   industry: 'skills.category.industry',
+};
+
+export const SKILL_MODE_KEYS: Record<GenerationMode, MessageKey> = {
+  t2v: 'common.mode.t2v',
+  i2v: 'common.mode.i2v',
+  fl2v: 'common.mode.fl2v',
+  v2v: 'common.mode.v2v',
+  t2i: 'common.mode.t2i',
 };
 
 export interface LoadedSkillLibrary {
@@ -66,4 +77,13 @@ export function setSkillEnabled(
 
 export function isSkillEnabled(library: SkillLibrary, id: string): boolean {
   return !library.disabledIds.includes(id);
+}
+
+/** 内置 + 自建；CreateView 从 hash 应用技能时也要能找到自建技能。 */
+export function findSkillInLibrary(
+  library: SkillLibrary,
+  id: string,
+): SkillManifest | undefined {
+  return BUILTIN_SKILLS.find((skill) => skill.id === id) ??
+    library.custom.find((skill) => skill.id === id);
 }

@@ -1197,11 +1197,17 @@ try {
     '技能启停按钮改变状态（可逆）',
   );
   await skillToggle.click();
-  await page.getByRole('button', { name: '关闭技能详情' }).click();
-  assert(
-    (await page.locator('[data-testid="skill-detail"]').count()) === 0,
-    '技能详情可关闭，回到列表',
+
+  const appliedPrompt = await page.locator('.skills-detail-prompt').innerText();
+  await page.getByTestId('skill-apply').click();
+  await page.waitForFunction(() => location.hash.startsWith('#/create'), { timeout: 10_000 });
+  await page.waitForFunction(
+    (expected) =>
+      (document.querySelector('.cr-input-rich')?.textContent ?? '').includes(expected),
+    appliedPrompt,
+    { timeout: 10_000 },
   );
+  assert(true, '应用技能：提示词落到创作草稿（没有提交生成）');
 
   console.log('\n[6e] 剪辑台（B34 · P1：Remotion 时间轴 UI + ffmpeg 链路 API 级证据）');
   await page.evaluate(() => { location.hash = '#/edit'; });

@@ -5,6 +5,7 @@ import type {
   CanvasReferenceRole,
   GenerationMode,
   ProviderType,
+  SkillManifest,
   TaskProgress,
   VideoGenerateRequest,
 } from '@astrmira/shared';
@@ -31,6 +32,8 @@ import {
   type ResolutionTier,
 } from '../lib/format';
 import { newIdempotencyKey } from '../lib/idempotency';
+import { appendSkeleton } from '../lib/recipeInsert';
+import { findSkillInLibrary, loadSkillLibrary } from '../lib/skills';
 import { useTranslate, type MessageKey } from '../lib/i18n';
 import {
   assetsForRefs,
@@ -611,6 +614,78 @@ export function CreateView() {
     ],
   );
 
+  /** S6-A3：把技能填入当前创作草稿；只填提示词/参数，不提交。 */
+  const applySkill = useCallback(
+    (skill: SkillManifest): void => {
+      const supportedModes = new Set(['t2i', 't2v', 'i2v']);
+      if (!skill.modes.some((mode) => supportedModes.has(mode))) {
+        setNotice(
+          t('skills.apply.unsupported', {
+            modes: skill.modes.join(' / '),
+          }),
+        );
+        return;
+      }
+
+      // 覆盖前留一份当前草稿；技能应用与“复用参数”同一纪律，不能吃掉用户刚写的内容。
+      backupDraft({
+        prompt,
+        settings: {
+          aspectRatio,
+          ...(kind === 'image'
+            ? { mode: 't2i' as const, resolution: resolveImageSize(aspectRatio) }
+            : {
+                durationSec,
+                resolution: resolveTargetSize(aspectRatio, resolutionTier),
+              }),
+        },
+        references: canvasReferencesForMentionRefs(refs),
+      });
+      setBackupAvailable(true);
+
+      const supportsImage = skill.modes.includes('t2i');
+      const supportsVideo = skill.modes.some((mode) => mode !== 't2i');
+      const nextKind: typeof kind =
+        supportsImage && !supportsVideo ? 'image' : supportsVideo && !supportsImage ? 'video' : kind;
+      if (nextKind !== kind) setKind(nextKind);
+
+      const nextPrompt = appendSkeleton(prompt, skill.prompt);
+      setPrompt(nextPrompt);
+      promptEditorRef.current?.replaceText(nextPrompt);
+      if (skill.params.aspectRatio !== undefined) setAspectRatio(skill.params.aspectRatio);
+      if (skill.params.resolutionTier !== undefined) {
+        setResolutionTier(skill.params.resolutionTier);
+      }
+      if (skill.params.durationSec !== undefined) {
+        setDurationSec(clampDurationSec(skill.params.durationSec));
+      }
+      setSubmitError(null);
+
+      const needsImage =
+        skill.requiresImage &&
+        !refs.some(
+          (item) => item.kind === 'image' && item.missing !== true && item.failed !== true,
+        );
+      setNotice(
+        t(needsImage ? 'skills.appliedNeedsImage' : 'skills.applied', {
+          name: skill.name,
+        }),
+      );
+    },
+    [
+      aspectRatio,
+      backupDraft,
+      durationSec,
+      kind,
+      prompt,
+      promptEditorRef,
+      refs,
+      resolutionTier,
+      setKind,
+      t,
+    ],
+  );
+
   /** S5-B3e：恢复覆盖前的草稿（prompt/参数/引用；token 正文按引用重建） */
   const restoreDraft = useCallback((): void => {
     const draft = readDraftBackup();
@@ -655,7 +730,8 @@ export function CreateView() {
       const query = parseHash(hash).query;
       const refTask = query.get('refTask');
       const reuseTask = query.get('reuse');
-      if (refTask === null && reuseTask === null) return;
+      const skillId = query.get('skill');
+      if (refTask === null && reuseTask === null && skillId === null) return;
       lastHandledHash.current = hash;
       void (async () => {
         try {
@@ -670,6 +746,13 @@ export function CreateView() {
             }
             addRef(refFromTask(fetched));
             setNotice(t('common.refAdded'));
+          } else if (skillId !== null) {
+            const skill = findSkillInLibrary(loadSkillLibrary().library, skillId);
+            if (skill === undefined) {
+              setNotice(t('skills.apply.missing'));
+            } else {
+              applySkill(skill);
+            }
           }
           window.history.replaceState(
             null,
@@ -684,7 +767,7 @@ export function CreateView() {
     window.addEventListener('hashchange', consume);
     consume();
     return () => window.removeEventListener('hashchange', consume);
-  }, [applyReuse, t]);
+  }, [applyReuse, applySkill, t]);
 
   const removeRef = (id: string): void => {
     setRefs((prev) => prev.filter((item) => item.id !== id));
