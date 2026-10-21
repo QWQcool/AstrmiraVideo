@@ -111,6 +111,7 @@ function StudioToolbar({
 }) {
   const [placement, setPlacement] = useState<Position>(Position.Right);
   const [align, setAlign] = useState<'start' | 'center' | 'end'>('center');
+  const [maxHeight, setMaxHeight] = useState<number | undefined>(undefined);
   const [narrow, setNarrow] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches,
   );
@@ -130,27 +131,52 @@ function StudioToolbar({
     const card = cardRef.current;
     const canvas = card?.closest('.react-flow');
     if (card === null || !(canvas instanceof HTMLElement)) return;
-    const canvasRect = canvas.getBoundingClientRect();
-    const cardRect = card.getBoundingClientRect();
-    const needed = 316; // 创作框 300 + 间距 16
-    const topSpace = cardRect.top - canvasRect.top;
-    const bottomSpace = canvasRect.bottom - cardRect.bottom;
-    // S5-B2b：左右放置时按节点在画布中的上下位置对齐（start/center/end），
-    // 让长面板贴顶/贴底而不是以节点为中心向上/向下溢出。
-    const verticalAlign = topSpace < 220 ? 'start' : bottomSpace < 220 ? 'end' : 'center';
-    if (canvasRect.right - cardRect.right >= needed) {
-      setPlacement(Position.Right);
-      setAlign(verticalAlign);
-    } else if (cardRect.left - canvasRect.left >= needed) {
-      setPlacement(Position.Left);
-      setAlign(verticalAlign);
-    } else if (bottomSpace >= 260) {
-      setPlacement(Position.Bottom);
-      setAlign('center');
-    } else {
-      setPlacement(Position.Top);
-      setAlign('center');
-    }
+
+    const update = (): void => {
+      const canvasRect = canvas.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      const needed = 316; // 创作框 300 + 间距 16
+      const topSpace = cardRect.top - canvasRect.top;
+      const bottomSpace = canvasRect.bottom - cardRect.bottom;
+      // S5-B2b：左右放置时按节点在画布中的上下位置对齐（start/center/end），
+      // 让长面板贴顶/贴底而不是以节点为中心向上/向下溢出。
+      const verticalAlign = topSpace < 220 ? 'start' : bottomSpace < 220 ? 'end' : 'center';
+      if (canvasRect.right - cardRect.right >= needed) {
+        setPlacement(Position.Right);
+        setAlign(verticalAlign);
+        setMaxHeight(undefined);
+      } else if (cardRect.left - canvasRect.left >= needed) {
+        setPlacement(Position.Left);
+        setAlign(verticalAlign);
+        setMaxHeight(undefined);
+      } else if (bottomSpace >= 260) {
+        setPlacement(Position.Bottom);
+        setAlign('center');
+        setMaxHeight(bottomSpace - 12 < 300 ? Math.max(100, bottomSpace - 12) : undefined);
+      } else {
+        setPlacement(Position.Top);
+        setAlign('center');
+        // 上下都不够 312px 时（窄画布 + 节点居中），面板改为可滚动而不是被视口裁掉。
+        setMaxHeight(topSpace - 12 < 300 ? Math.max(100, topSpace - 12) : undefined);
+      }
+    };
+
+    // 首帧 effect 跑时节点可能还没完成布局；ResizeObserver 让“节点移动/缩放/侧栏变化”
+    // 都重新算一次，避免把 312px 的面板放到视口上方（Playwright 的 outside viewport 就是这么撞到的）。
+    update();
+    const raf = requestAnimationFrame(update);
+    const late = window.setTimeout(update, 120);
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => update());
+    observer?.observe(card);
+    observer?.observe(canvas);
+    window.addEventListener('resize', update);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(late);
+      observer?.disconnect();
+      window.removeEventListener('resize', update);
+    };
   }, [cardRef, viewport.x, viewport.y, viewport.zoom]);
 
   if (narrow) {
@@ -177,7 +203,13 @@ function StudioToolbar({
   }
 
   return (
-    <NodeToolbar className="cs-toolbar" position={placement} align={align} offset={12}>
+    <NodeToolbar
+      className="cs-toolbar"
+      position={placement}
+      align={align}
+      offset={12}
+      style={maxHeight === undefined ? undefined : { maxHeight, overflowY: 'auto' }}
+    >
       {children}
     </NodeToolbar>
   );

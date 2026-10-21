@@ -1694,6 +1694,15 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · S5-C4：本地 ComfyUI 真实视频（t2v/i2v）全流程
+
+- **【真实 t2v】** `mode=t2v`、5s、16:9、`host-comfyui`：`succeeded`；产物 `0377f017-...mp4`，**832×480 / h264 / 5.04s / 524,515 B**；`GET /media` 200 `video/mp4`。
+- **【真实 i2v】** 把 C3 的 1024×576 图上传为参考资产（清洗后 JPEG 94,991 B），`mode=i2v`、`assets.firstFrameImage=54ee2dbb-…`：`succeeded`；产物 `27afe662-...mp4`，**832×480 / 5.04s / 1,042,955 B**；`Range: bytes=0-1023` 返回 **206**，`Content-Range: bytes 0-1023/1042955`。任务快照确认 `mode=i2v` + 首帧资产 id，`executedBy=host-local`。
+- **【视频库】** 10 张卡；最新 i2v 详情显示提示词 / `i2v` / `host-comfyui` / 1019 KB / 已完成；`video src=/media/27afe...mp4`；下载链接 `download=<taskId>.mp4`；0 error。
+- **【画布版本】** 临时 `s5c-c4-canvas-4`：同一视频节点两个成功批次 `v1=t2v`、`v2=i2v`；工具条显示「2 轮」，列表 `v2 当前 / v1`；点 `v1` 后可见 `video src` 从 `/media/27afe...` 切到 `/media/0377...`，`selectedBatchId` 也写回 `batch-t2v`。
+- **【顺手修一个真缺陷】** 节点居中、画布只有 1002px 宽时，左右各 291px < 316px，原算法只能选 Top；312px 面板 top=-69 被视口裁掉（Playwright 报 outside viewport）。改为 `ResizeObserver + rAF` 重算，并在上下不足时给 `NodeToolbar` 设 `max-height/overflow-y:auto`；复测工具条 top=127、height=116、版本开关可见可点。这是 S5-B2/B4 “浮层按实际尺寸避让”的补口，不是 C4 造假。
+- **【清理】** 真实任务、上传资产、`s5c-c4-canvas-4` 暂留到 C5 统一清理；未触碰用户 B2。
+
 ### 2026-10-21 · S5-C3：本地 ComfyUI 真实图片全流程
 
 - **【真实任务】** 走本服务 `POST /api/generate`（`mode=t2i`、`provider=host-comfyui`、16:9）：`queued` → `running` → **33s succeeded**；产物 `bcc89a1f-3445-46b0-82de-eba6cd782c75.png`，**1024×576 / 895,902 B**，`executedBy=host-local`；`GET /media/...` 200 `image/png`。未调用云端，未使用 mock。
