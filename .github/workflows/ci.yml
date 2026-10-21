@@ -120,7 +120,10 @@ jobs:
   # 想改回密钥时，只需替换下面两步的连接方式，其余逻辑不用动。
   deploy:
     needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # 2026-10-21：线上主机已下线，自动部署暂停。
+    # 恢复方式：新服务器就绪后，重新配置 DEPLOY_HOST/PORT/USER/SSH_PASSWORD，
+    # 并在仓库 Variables 里设置 ENABLE_DEPLOY=1；否则本 job 永远跳过，main 的 CI 只跑 verify。
+    if: vars.ENABLE_DEPLOY == '1' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # 2026-10-20：主机不可达时 scp 曾挂 14+ 分钟；给整个部署一个上限，别让一次 push 卡住一整天
     timeout-minutes: 12

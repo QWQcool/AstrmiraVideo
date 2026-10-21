@@ -1694,6 +1694,13 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · 暂停线上自动部署（服务器下线）
+
+- **【事实】** 用户实测线上 `https://43.228.79.210/...` 已不可达；该主机不再续用，后续重新租服务器再做 CD。最近一次 deploy 的失败点是 `scp` 90s 超时（exit 124），不是代码/测试。
+- **【处理】** `deploy` job 的 `if` 改为 `vars.ENABLE_DEPLOY == '1' && push main`；仓库变量未设置时 job 跳过，`main` 只跑 `verify`。部署代码与 `.env.deploy.example` 保留，未来恢复只需：新服务器就绪 → 配置 `DEPLOY_HOST`/`DEPLOY_PORT`/`DEPLOY_USER`/`SSH_PASSWORD` → 设 `ENABLE_DEPLOY=1`。
+- **【Secrets】** 删除 4 个在用 secret：`DEPLOY_HOST`、`DEPLOY_PORT`、`DEPLOY_USER`、`SSH_PASSWORD`。历史遗留的 `SSH_PRIVATE_KEY` 未删（当前 workflow 未使用），待用户确认是否一并清理。
+- **【边界】** 这不是“部署成功”，只是停止自动发布；线上站点仍不可用，直到新服务器恢复。
+
 ### 2026-10-20 · S5-B4g：三视口证据、路由清单与 B4 收口
 
 - **【三视口截图（真实运行应用）】** 1366×768：创作 / 视频库 / 画布（选中节点 + 版本列表）/ 工作台说明条 / 成本说明条；1920×1080：创作（主区 1100）/ 画布（适应后）；375×812：创作 / 视频库 / 画布（底部抽屉）。另有 375×812 浅色 + 英文创作页。全部页面 `scrollWidth == clientWidth`（1366/1920/375 逐页实测）。截图存本地 `.tmp/b4g/`（过程证据，不入库）。
