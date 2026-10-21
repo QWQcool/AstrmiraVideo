@@ -1694,6 +1694,14 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · S6-A4：技能库证据与 S6-A 收口
+
+- **【375 英文】** `#/skills` 标题 `Skill library`；新建技能表单单列、可取消；空搜索显示 `No matching skills`；两态 `scrollWidth == clientWidth`，0 console error。截图 `.tmp/s5c/a4-375-editor.png` / `a4-375-empty.png`。
+- **【坏存储】** `astrmira.skills.v1` 写入 `{not-json` 后打开页面：显示「本地技能设置无法读取」；点一次启停后提示消失，localStorage 变为合法 `{version:1,custom:[],disabledIds:[…]}`。没有静默覆盖用户数据。
+- **【S6-A AC 对齐】** 配方/模板统一到技能入口；54 条内置 + 本地自建；保存/启停/应用均实机验证；应用只填提示词/参数，0 次 POST `/api/generate`；不支持模式明确拒绝，缺参考图明确提示；不扩社区/市场。
+- **【门禁】** 前端 **596 passed**；`pnpm type` / `pnpm lint` / `pnpm build` / `visual-selfcheck` / 本地 UI 冒烟全过。
+- **【边界】** `RecipesView.tsx` 已不再注册但文件保留一版；`#/recipes` 隐藏别名可用但无独立 nav 高亮；自建技能暂不支持编辑/删除；技能应用只在 CreateView，画布节点内应用留给后续；Agent 未做。
+
 ### 2026-10-21 · S6-A3：应用技能到草稿（含自建技能）
 
 - **【应用】** 技能详情新增「应用到创作草稿」→ `#/create?skill=<id>`；CreateView 消费 query：先备份当前草稿，再追加提示词、写推荐画幅/清晰度/时长、按模式切 image/video，最后 `replaceState` 清 query。**不调用 `/api/generate`**。
