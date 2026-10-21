@@ -7,6 +7,7 @@
  * - progress.ts → §4 任务进度与统一 Provider 接口、§6 错误码字典
  * - health.ts   → §8 辅助响应类型
  * - enhance.ts  → §3 提示词扩写接口契约
+ * - agent.ts    → §23 Agent 计划契约（V2.54）
  * - verify.ts   → §9 凭据与模型校验接口
  * - videoModels.ts → 视频轨模型档位预设（非契约，但前后端共用一份清单）
  * - editProject.ts → §11-2 剪辑台多轨工程（B34 改版；P4 契约迁移时自前端提升至此）
@@ -28,6 +29,7 @@ export * from './logs.js';
 export * from './recipes.js';
 export * from './templates.js';
 export * from './skills.js';
+export * from './agent.js';
 export * from './editProject.js';
 export * from './edit.js';
 export * from './projects.js';

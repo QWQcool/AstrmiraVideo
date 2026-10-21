@@ -19,6 +19,7 @@ import { SqliteJobQueue } from './queue/SqliteJobQueue.js';
 import { createEditRoutes } from './routes/edits.js';
 import { createEditRenderRoutes } from './routes/editRenders.js';
 import { createAssetRoutes } from './routes/assets.js';
+import { createAgentRoutes } from './routes/agent.js';
 import { createEnhanceRoutes } from './routes/enhance.js';
 import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
@@ -410,6 +411,8 @@ export async function buildApp() {
   // V2.7（B41）：资产库清单（只读；`@` 提及素材弹层用）
   await app.register(createAssetRoutes());
   await app.register(createEnhanceRoutes());
+  // S6-B1：Agent 规划（只返回计划，不创建任务/不生成）
+  await app.register(createAgentRoutes());
   // V9 · B9：基础剪辑 EDL（本地 ffmpeg；与生成任务共用队列与轮询）—— B34 后 UI 不再暴露，API 保留
   await app.register(createEditRoutes({ store, queue }));
   // V2.5（B34 · P4）：浏览器端渲染产物入库（同步归档，服务端不渲染）

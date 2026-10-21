@@ -81,7 +81,10 @@ const MODE_HINTS: Record<GenerationMode, string> = {
  * `custom` 预设**没有默认值**：用户必须自己填 `baseUrl` 与 `model` ——
  * 与其随便挑一个地址再报一个看不懂的上游错误，不如在这里直接说清没配全。
  */
-export function resolveLlmEndpoint(llm?: LlmConfig): { baseUrl: string; model: string } {
+export function resolveLlmEndpoint(
+  llm?: LlmConfig,
+  purpose = '扩写',
+): { baseUrl: string; model: string } {
   // 「自定义」**没有**可回落的预设：它若回落到 `LLM_PRESETS[0]`，用户选了自定义却留空，
   // 请求就会悄悄打到 OpenAI 的地址、用 OpenAI 的模型名，并带着他填的 Key
   // —— 这是最不该发生的一类"静默替用户做决定"（与铁律 4 同源）。
@@ -94,7 +97,7 @@ export function resolveLlmEndpoint(llm?: LlmConfig): { baseUrl: string; model: s
   if (baseUrl === '' || model === '') {
     throw new ProviderFailureError(
       'LLM_NOT_CONFIGURED',
-      '扩写端点未配置完整：请填写 baseUrl 与模型名（自定义预设不提供默认值）',
+      `${purpose}端点未配置完整：请填写 baseUrl 与模型名（自定义预设不提供默认值）`,
     );
   }
 
@@ -104,13 +107,13 @@ export function resolveLlmEndpoint(llm?: LlmConfig): { baseUrl: string; model: s
   } catch {
     throw new ProviderFailureError(
       'LLM_NOT_CONFIGURED',
-      `扩写端点地址无效：${baseUrl}（需形如 https://host/v1）`,
+      `${purpose}端点地址无效：${baseUrl}（需形如 https://host/v1）`,
     );
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     throw new ProviderFailureError(
       'LLM_NOT_CONFIGURED',
-      `扩写端点协议不受支持：${parsed.protocol}（仅支持 http/https）`,
+      `${purpose}端点协议不受支持：${parsed.protocol}（仅支持 http/https）`,
     );
   }
 
@@ -142,7 +145,7 @@ export function extractJsonObject(text: string): Record<string, unknown> | null 
 }
 
 /** `AbortSignal.timeout` 的两种抛出形态（Node 的 undici 与 DOM 规范名不一致） */
-function isTimeoutError(err: unknown): boolean {
+export function isTimeoutError(err: unknown): boolean {
   const name = (err as { name?: string } | null)?.name ?? '';
   const message = err instanceof Error ? err.message : '';
   return name === 'TimeoutError' || name === 'AbortError' || /aborted due to timeout/i.test(message);

@@ -46,6 +46,7 @@ export function describeAction(method: string, path: string): string | undefined
     if (clean === '/api/edits/renders') return 'edit.render';
     if (clean === '/api/upload') return 'upload';
     if (clean === '/api/prompt/enhance') return 'enhance';
+  if (clean === '/api/agent/plan') return 'agent';
     if (clean === '/api/providers/keys/verify') return 'keys.verify';
     if (/^\/api\/tasks\/[^/]+\/cancel$/.test(clean)) return 'task.cancel';
   }

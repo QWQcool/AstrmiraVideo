@@ -1694,6 +1694,14 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · S6-B1：Agent 计划 schema、技能检索与校验
+
+- **【契约先行】** CONTRACT 从 V2.53 升 **V2.54**：新增 §23（AgentPlanRequest / AgentPlan / AgentPlanResponse / 四种 step / 校验顺序 / 错误映射）；§5 新增 `POST /api/agent/plan`。**不新增错误码**：结构/能力失败复用 **400 `INVALID_REQUEST`**，无 Key 501，凭据 401，上游 502。
+- **【共享层】** `packages/shared/src/agent.ts`：`version:1`、1–8 步、`apply-skill` / `add-reference` / `set-params` / `note`；step 全部 `strict()`，`exec`/`script`/任意 URL 直接被 schema 拒绝；引用只接受 `asset:` / `task:`。`retrieveSkillsForIntent` 按触发词/名称/摘要打分（无向量库、结果可复现）；`validateAgentPlan` 检查未知技能、无可用模式（仅 t2i/t2v/i2v）、`requiresImage` 缺图片引用，并列出全部问题。
+- **【后端】** 新增 `providers/agent.ts` 复用现有 OpenAI 兼容文本轨与 `X-LLM-Key`（纯 BYOK，不新建 provider/兜底 Key）：只输出 JSON 计划，解析失败/非 JSON → 502，能力失败 → 400；不调用 `/api/generate`、不建任务、不写 outputs。路由 `POST /api/agent/plan` 合并内置 + 请求中的自建技能，id 冲突显式 400；`requestLog` 记为 `agent`。
+- **【证据】** 契约 **11/11**；后端 **691 passed（74 文件）**，新增 provider 5 + route 5 测试：BYOK 501、成功 engine/model/usage、id 冲突 400、能力失败 400、请求脚本字段 400、未知技能/缺参考图 400、401、非 JSON 502。未调用真实 DeepSeek（无 Key），未产生生成/费用；真实文本推理留到 B2/B3 有明确配置时。
+- **【边界】** B1 只有共享 schema + API，无前端 Agent UI；计划应用、幂等键、生成提交属 B2/B3。计划步骤暂不建画布节点，只面向创作草稿；AC6-B 的“拟新增节点”在 B2 按实际落点决定，不先造假的节点步骤。
+
 ### 2026-10-21 · S6-A4：技能库证据与 S6-A 收口
 
 - **【375 英文】** `#/skills` 标题 `Skill library`；新建技能表单单列、可取消；空搜索显示 `No matching skills`；两态 `scrollWidth == clientWidth`，0 console error。截图 `.tmp/s5c/a4-375-editor.png` / `a4-375-empty.png`。
