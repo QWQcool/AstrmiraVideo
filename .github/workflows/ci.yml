@@ -126,8 +126,8 @@ jobs:
     if: vars.ENABLE_DEPLOY == '1' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # 2026-10-20：主机不可达时 scp 曾挂 14+ 分钟；给整个部署一个上限，别让一次 push 卡住一整天
-    # 2026-10-21：端口 29598 已确认可达；19MB 包跨境上传在 90s 内没传完（exit 124），放宽到 20 分钟总上限
-    timeout-minutes: 20
+    # 2026-10-21：端口 29598 已确认可达；19MB 包跨境上传在 90s 内没传完（exit 124），放宽到 30 分钟总上限
+    timeout-minutes: 30
 
     concurrency:
       group: deploy-production
@@ -197,13 +197,13 @@ jobs:
             /tmp/deploy.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/root/astrmira/deploy.tar.gz"
 
       - name: 远程解压并部署
-        timeout-minutes: 8
+        timeout-minutes: 12
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          timeout 420s sshpass -f /tmp/deploy-pass ssh -p "$DEPLOY_PORT" \
+          timeout 600s sshpass -f /tmp/deploy-pass ssh -p "$DEPLOY_PORT" \
             -o StrictHostKeyChecking=accept-new \
             -o ConnectTimeout=15 \
             -o ServerAliveInterval=15 \

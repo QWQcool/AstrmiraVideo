@@ -1702,7 +1702,8 @@
 - **【根因】** `.side-row` 固定 `height:34px` 且 `white-space:nowrap`；`.seg` 可被 flex 压缩、又 `overflow:hidden`。240px 侧栏内 English 按钮右边界到 254px、Daylight 到 273px，直接被侧栏裁掉。
 - **【修复】** 只改 CSS：`.side-row--lang/.side-row--theme` 允许 `flex-wrap`、`height:auto`/`min-height:34px`；`.seg` 设 `flex:0 0 auto; max-width:100%`。放不下时整段换行，不再压缩裁切；中文仍保持单行紧凑。
 - **【实测】** 375/768 英文：5 个按钮右边界最大 218px < 侧栏 240px，全部可点；中/英切换、System/Starlight/Daylight 三态切换均生效。截图 `.tmp/s5c/sidebar-en-fixed.png`。
-- **【边界】** 这是布局缺陷，不改 IA/文案；桌面展开态同样受益。CI 冒烟暂无“分段按钮不越界”断言，本轮用独立 Playwright 实测。
+- **【CD】** `ed1f298` 的 deploy 在远程 Docker 构建 420s 处超时（第一次冷构建 8m44）；`b56e200` 重跑 deploy **6m1s 成功**。线上 375 英文实测：5 个按钮右边界最大 218 < 侧栏 240，全部可点；截图 `.tmp/s5c/live-sidebar-en-fixed.png`。远程构建内层超时同步放宽到 600s / step 12min / job 30min，避免冷构建偶发红。
+- **【边界】** 这是布局缺陷，不改 IA/文案；桌面展开态同样受益。CI 冒烟已加“英文分段按钮不越界”守卫（390 抽屉），本轮另用独立 Playwright 复测。
 
 ### 2026-10-21 · CD 成功：线上已更新到 S5-C5
 
