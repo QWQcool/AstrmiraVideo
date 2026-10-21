@@ -1696,6 +1696,8 @@
 
 ### 2026-10-21 · CD 修复：干净同步代替覆盖解压
 
+- **【第一次 rsync 失败】** staging 目录原放在 `/root/astrmira/.deploy-next`，`rsync --delete .deploy-next/ ./` 会把 staging 自己当作目标里的多余目录删掉，导致 `file has vanished`、exit 24。改为 `/root/astrmira.deploy-next`（目标之外）后重试。
+
 - **【上传已通】** 排除 `docs/` 后部署包从 19MB 降到可上传范围，`上传代码包` 成功。
 - **【真实失败】** 远程 Docker 构建报 `frontend/src/components/LogPanel.tsx` 找不到 `@astrmira/shared` 的 `logActionLabel`。HEAD 没有这个文件；服务器 `/root/astrmira/frontend/src/components/LogPanel.tsx` 是 **9 月 23 日的残留文件**，旧 `tar -xzf` 覆盖解压不会删除已从仓库移除的文件。
 - **【修复】** 远程改为：解压到 `.deploy-next` → `rsync -a --delete` 同步到 `/root/astrmira`，排除 `.git/`、`.env.deploy*`、`data/`、`outputs/`、`generated-images/`、`node_modules/`。这样服务器源码与 tar 一致，运行数据与凭据不受影响。

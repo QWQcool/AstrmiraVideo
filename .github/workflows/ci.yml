@@ -209,7 +209,7 @@ jobs:
             -o ServerAliveInterval=15 \
             -o ServerAliveCountMax=2 \
             "$DEPLOY_USER@$DEPLOY_HOST" \
-            'set -e; cd /root/astrmira; rm -rf .deploy-next; mkdir .deploy-next; tar -xzf deploy.tar.gz -C .deploy-next; rsync -a --delete --exclude=.git/ --exclude=.env.deploy --exclude=".env.deploy.bak-*" --exclude=data/ --exclude=outputs/ --exclude=generated-images/ --exclude=node_modules/ .deploy-next/ ./; rm -rf .deploy-next; rm -f deploy.tar.gz; node scripts/deploy.mjs'
+            'set -e; cd /root/astrmira; rm -rf /root/astrmira.deploy-next; mkdir /root/astrmira.deploy-next; tar -xzf deploy.tar.gz -C /root/astrmira.deploy-next; rsync -a --delete --exclude=.git/ --exclude=.env.deploy --exclude=".env.deploy.bak-*" --exclude=data/ --exclude=outputs/ --exclude=generated-images/ --exclude=node_modules/ --exclude=.deploy-next/ /root/astrmira.deploy-next/ ./; rm -rf /root/astrmira.deploy-next; rm -f deploy.tar.gz; node scripts/deploy.mjs'
 
       - name: 健康检查（容器状态）
         timeout-minutes: 3
