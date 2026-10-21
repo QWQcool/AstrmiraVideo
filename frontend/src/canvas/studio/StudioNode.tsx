@@ -370,13 +370,26 @@ export function StudioNode({ id, selected }: NodeProps) {
 
       <div className="cs-card-body">
         {mediaUrl !== null && previewKind === 'image' ? (
-          <img className="cs-card-media" src={mediaUrl} alt={node.data.title ?? ''} draggable={false} />
+          <img
+            className="cs-card-media"
+            src={mediaUrl}
+            alt={node.data.title ?? ''}
+            draggable={false}
+            loading="lazy"
+            decoding="async"
+          />
         ) : null}
         {mediaUrl !== null && previewKind === 'video' ? (
-          <video className="cs-card-media nodrag" src={mediaUrl} controls preload="metadata" />
+          <video
+            className="cs-card-media nodrag"
+            src={mediaUrl}
+            controls
+            playsInline
+            preload="none"
+          />
         ) : null}
         {mediaUrl !== null && previewKind === 'audio' ? (
-          <audio className="cs-card-media nodrag" src={mediaUrl} controls preload="metadata" />
+          <audio className="cs-card-media nodrag" src={mediaUrl} controls preload="none" />
         ) : null}
         {(mediaUrl === null || previewKind === 'text') && node.type === 'text' ? (
           <p className="cs-card-text">{draft.prompt || t('canvas.studio.textPlaceholder')}</p>

@@ -44,6 +44,7 @@ import {
   uploadAssets,
 } from '../lib/api';
 import { isModalLayerOpen } from '../lib/modalLayer';
+import { mapWithConcurrency } from '../lib/concurrency';
 import {
   addCanvasBatch,
   addCanvasNode,
@@ -144,6 +145,8 @@ const ADDABLE: readonly CanvasNodeType[] = ['text', 'image', 'video', 'audio'];
 
 /** 稳定的空边数组（避免 `edges={[]}` 被推断成 never[]） */
 const NO_EDGES: Edge[] = [];
+/** 画布轮询并发上限：任务多时不要每 2s 同时打出几十个 /api/tasks 请求 */
+const CANVAS_TASK_POLL_CONCURRENCY = 4;
 
 const ROLE_KEYS: Record<CanvasReferenceRole, MessageKey> = {
   'first-frame': 'canvas.studio.role.firstFrame',
@@ -680,8 +683,10 @@ export function CanvasStudioView() {
         return;
       }
 
-      const results = await Promise.all(
-        tasks.map(async (task) => {
+      const results = await mapWithConcurrency(
+        tasks,
+        CANVAS_TASK_POLL_CONCURRENCY,
+        async (task) => {
           try {
             return { task, progress: await fetchTask(task.taskId), failure: null };
           } catch (caught) {
@@ -694,7 +699,7 @@ export function CanvasStudioView() {
                 : null;
             return { task, progress: null, failure };
           }
-        }),
+        },
       );
       if (disposed) return;
 
@@ -1926,6 +1931,7 @@ export function CanvasStudioView() {
                 maxZoom={2}
                 zoomOnDoubleClick={false}
                 proOptions={{ hideAttribution: true }}
+                onlyRenderVisibleElements
               >
                 <Background gap={16} />
                 <Controls />

@@ -446,28 +446,38 @@ if (!hasTapHighlight) {
   failures.push('没有任何 CSS 关掉 -webkit-tap-highlight-color（B60：触屏点击高亮与主题不符）');
 }
 
-// ── ⑬ 画布规模的两个抓手（V2.25 / 台账 B44）──
+// ── ⑬ 画布规模抓手（V2.25 / B44 → S5-C2）──
 //
-// 与 ⑪⑫ 同一条理由：这两件事在**小数据下完全看不出差别**（一页 50 条以内、节点都在视口里），
-// 被摘掉不会有任何症状 —— 直到真有几百条任务、画布卡住时才发现"开关早就被删了"。
-// 行为断言在冒烟 [7e] 段（注入 120 条后验分页与裁剪），这里钉住**代码事实**（开关与调用形态）。
-const CANVAS_VIEW = path.join(SRC, 'views', 'CanvasView.tsx');
-const canvasText = contents.get(CANVAS_VIEW);
+// 与 ⑪⑫ 同一条理由：这几件事在**小数据下完全看不出差别**（节点都在视口里），
+// 被摘掉不会有任何症状 —— 直到真有 300 个节点、画布卡住时才发现"开关早就被删了"。
+// 行为断言在 S5-C 的 100/300 夹具基线（`.tmp/s5c`），这里钉住**代码事实**。
+const CANVAS_STUDIO = path.join(SRC, 'views', 'CanvasStudioView.tsx');
+const canvasText = contents.get(CANVAS_STUDIO);
 
 if (canvasText === undefined) {
-  failures.push('找不到 views/CanvasView.tsx（B44 的分页与视口裁剪都在这里）');
+  failures.push('找不到 views/CanvasStudioView.tsx（S5-C 的视口裁剪与轮询上限都在这里）');
 } else {
   if (!canvasText.includes('onlyRenderVisibleElements')) {
     failures.push(
-      'CanvasView 未开 `onlyRenderVisibleElements`（B44：一百多个节点一列排开时，' +
-        'fitView 被 minZoom 钳住 —— 大多数节点在视口外，全量建 DOM 是纯浪费）',
+      'CanvasStudioView 未开 `onlyRenderVisibleElements`（S5-C：300 个节点全量建 DOM/' +
+        '全量解码，视口外预览也抢带宽）',
     );
   }
-  for (const needle of ['limit: CANVAS_PAGE_SIZE', 'before: page.before']) {
-    if (!canvasText.includes(needle)) {
-      failures.push(
-        `CanvasView 的分页调用缺 \`${needle}\`（B44：没有游标时「加载更早」会反复取回同一页）`,
-      );
+  if (!canvasText.includes('mapWithConcurrency') || !canvasText.includes('CANVAS_TASK_POLL_CONCURRENCY')) {
+    failures.push(
+      'CanvasStudioView 的任务轮询没有并发上限（S5-C：几十个 running 任务会每 2s 全量并发打 /api/tasks）',
+    );
+  }
+}
+
+const STUDIO_NODE = path.join(SRC, 'canvas', 'studio', 'StudioNode.tsx');
+const studioNodeText = contents.get(STUDIO_NODE);
+if (studioNodeText === undefined) {
+  failures.push('找不到 canvas/studio/StudioNode.tsx（S5-C 的预览懒加载在这里）');
+} else {
+  for (const needle of ['loading="lazy"', 'decoding="async"']) {
+    if (!studioNodeText.includes(needle)) {
+      failures.push(`StudioNode 的图片预览缺 \`${needle}\`（S5-C：300 张图会同时解码）`);
     }
   }
 }

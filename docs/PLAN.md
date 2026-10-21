@@ -1694,6 +1694,16 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · S5-C2：可见预览、解码边界与轮询并发上限
+
+- **【代码】** `CanvasStudioView` 的 `<ReactFlow>` 开 `onlyRenderVisibleElements`；`StudioNode` 图片加 `loading="lazy"` / `decoding="async"`，视频/音频改 `preload="none"`；轮询从全量 `Promise.all` 改为 `mapWithConcurrency(..., 4, ...)`（新增 `lib/concurrency.ts` + 3 条单测）。
+- **【300 前后】** 生产静态服务同一夹具：DOM/图片从 **300/300** 降到 **80/80**（视口 + ReactFlow 缓冲；不是精确可见数，fit-all 时仍应全部可见）；JSHeapUsed **21.7 MB → 10.8 MB**；解码失败 0；长任务 53ms → 120ms（2 条，单次样本有波动，不宣称性能全面提升）。
+- **【100 前后】** DOM/图片 100/100 → 80/80；heap 14.9 MB 基本不变；说明收益主要在“大量视口外节点”，不是把可见节点也砍掉。
+- **【轮询】** 12 个 running 批次 + 拦截 `/api/tasks/s5c-poll-*`（每次延迟 300ms）：3 个 tick 共 36 次请求，**最大并发 4**；单测覆盖顺序/上限/非法 limit。
+- **【交互】** 300 节点下点节点能开浮动面板；300→100→300 切换后仍是 80 个 DOM/80 张图，控制台 0 error。`onlyRenderVisibleElements` 不会把选中/工具栏弄丢。
+- **【环境】** Vite dev server 在 300 图并发下仍会崩溃，因此规模证据统一用生产静态服务；这是开发服务器问题，不记成产品通过/失败。
+- **【静态抓手】** `visual-selfcheck` 的第 ⑬ 条从旧 `CanvasView` 改到 `CanvasStudioView`，钉住 `onlyRenderVisibleElements` / 轮询上限 / `loading="lazy"` / `decoding="async"`。
+
 ### 2026-10-21 · S5-C1：画布规模夹具与基线
 
 - **【缺口】** 仓库此前没有 100/300 节点夹具或运行时规模证据；B44 只有静态断言与一次手工注入。新增 `scripts/canvas-scale-fixture.mjs`：走真实 `/api/canvas/docs`，生成唯一媒体目录 + 节点文档 + manifest，支持 `--cleanup` / `--cleanup-all`，并拒绝操作 B2 的 `f096506a-…`。
