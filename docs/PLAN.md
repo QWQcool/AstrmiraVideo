@@ -1694,6 +1694,19 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · S5-C5：J1–J5、三视口与 S5 收口
+
+- **【三视口】** 1366×768 / 1920×1080 / 375×812 的创作 / 视频库 / 画布共 9 个组合：`scrollWidth == clientWidth` 全部成立，控制台 **0 error**。截图在 `.tmp/s5c/c5-*.png`（过程证据，不入库）。
+- **【J1】** 首页拖入两张图 → 自动成「首帧 / 尾帧」，交换按钮把顺序对调；刷新后两张引用与角色都恢复；**0 次 `/api/generate`**。IME 候选确认未在本轮重跑（沿用 S5-B1/B4 记录），不写成“本轮通过”。
+- **【J2/J3】** C4 画布选 `v1`（t2v）后「作为参考继续」：节点 1→2，新节点 `draft.references=[{assetId:'task:5bed9f45…', role:'reference-video', order:0}]`、**batches=0**、**0 次 `/api/generate`**；原节点仍保留 2 个批次。
+- **【J4】** 文本节点先编辑，再平移/缩放；节点数保持 1，平移后点节点仍能打开工具条；A→B→A 两块画布各 1 节点，无删除、无生成、0 error。
+- **【J5】** `selectedBatchId` 指向不存在批次时显示「所选版本已失效（批次不存在 / 非成功 / 无产物）—— 请选择其他成功版本」；375 下节点底部抽屉可开、Esc 可关；375 视频库全屏预览 Esc 后回到详情抽屉，`scrollWidth=375`。上传失败 / 未配置模型 / 保存失败沿用 B1/B3/B4 记录，本轮未重跑。
+- **【窄屏真缺陷】** 桌面保存的视口会把节点推到 375 视口外，加上 C2 的 `onlyRenderVisibleElements` 后表现为“画布完全空白”。已在 `CanvasStudioView` 增加 **≤768 首次进入 fitView 一次**；375 复测节点可见（fit 后 0.49 缩放），之后用户平移/缩放不再被重置。这是对 B4 窄屏 AC 的补口。
+- **【清理】** 所有 `s5c-*` 画布已删除；C3/C4 真实任务已 `DELETE /api/history`，三个产物文件（`bcc89a1f…png`、`0377f017…mp4`、`27afe662…mp4`）已不在磁盘；J1 上传的两个资产（`j1-first/last.png`）文件与 sidecar 已删除；`backend/outputs` 只剩 `assets/` 与 `thumbs/`；用户 B2「未命名画布」仍 **2 个节点**，索引只剩它。
+- **【门禁】** 前端 **581 passed**（48 文件）；后端 **681 passed**（72 文件）；契约 **11/11**；`pnpm type` / `pnpm lint` 通过；`pnpm build` 成功；`visual-selfcheck` 通过（含新的 `onlyRenderVisibleElements` / 轮询上限 / 图片 lazy 静态抓手）。
+- **【CI/部署】** `deploy` 因 SSH 端口 22 被拒仍为暂停（`ENABLE_DEPLOY=0`）；本次推送只应跑 `verify`。**待服务器方提供真实 SSH 端口**后改 `DEPLOY_PORT` 并置 `ENABLE_DEPLOY=1`。
+- **【未验】** IME、触控板/触屏、Firefox/WebKit 真机、节点级草稿备份、云模型、300 节点在 375 的规模表现；S5-C 不把这些写成通过。
+
 ### 2026-10-21 · S5-C4：本地 ComfyUI 真实视频（t2v/i2v）全流程
 
 - **【真实 t2v】** `mode=t2v`、5s、16:9、`host-comfyui`：`succeeded`；产物 `0377f017-...mp4`，**832×480 / h264 / 5.04s / 524,515 B**；`GET /media` 200 `video/mp4`。

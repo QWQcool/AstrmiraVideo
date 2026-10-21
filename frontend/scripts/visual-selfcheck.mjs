@@ -452,23 +452,30 @@ if (!hasTapHighlight) {
 // 被摘掉不会有任何症状 —— 直到真有 300 个节点、画布卡住时才发现"开关早就被删了"。
 // 行为断言在 S5-C 的 100/300 夹具基线（`.tmp/s5c`），这里钉住**代码事实**。
 const CANVAS_STUDIO = path.join(SRC, 'views', 'CanvasStudioView.tsx');
-const canvasText = contents.get(CANVAS_STUDIO);
+const canvasStudioText = contents.get(CANVAS_STUDIO);
 
-if (canvasText === undefined) {
+if (canvasStudioText === undefined) {
   failures.push('找不到 views/CanvasStudioView.tsx（S5-C 的视口裁剪与轮询上限都在这里）');
 } else {
-  if (!canvasText.includes('onlyRenderVisibleElements')) {
+  if (!canvasStudioText.includes('onlyRenderVisibleElements')) {
     failures.push(
       'CanvasStudioView 未开 `onlyRenderVisibleElements`（S5-C：300 个节点全量建 DOM/' +
         '全量解码，视口外预览也抢带宽）',
     );
   }
-  if (!canvasText.includes('mapWithConcurrency') || !canvasText.includes('CANVAS_TASK_POLL_CONCURRENCY')) {
+  if (
+    !canvasStudioText.includes('mapWithConcurrency') ||
+    !canvasStudioText.includes('CANVAS_TASK_POLL_CONCURRENCY')
+  ) {
     failures.push(
       'CanvasStudioView 的任务轮询没有并发上限（S5-C：几十个 running 任务会每 2s 全量并发打 /api/tasks）',
     );
   }
 }
+
+// 后续 ⑭ 起的编排检查仍针对旧 CanvasView（D63 保留一版），不要误用上面的新画布文本。
+const CANVAS_VIEW = path.join(SRC, 'views', 'CanvasView.tsx');
+const canvasText = contents.get(CANVAS_VIEW);
 
 const STUDIO_NODE = path.join(SRC, 'canvas', 'studio', 'StudioNode.tsx');
 const studioNodeText = contents.get(STUDIO_NODE);

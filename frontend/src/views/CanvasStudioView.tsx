@@ -763,6 +763,17 @@ export function CanvasStudioView() {
     };
   }, [activeKey, applyDoc]);
 
+  // 窄屏没有“桌面视口”可恢复：桌面保存的 x/y 会把节点推到 375 视口外，
+  // 用户打开画布只看到空白。首次进入窄屏时 fit 一次；之后用户自己的平移/缩放不再被重置。
+  useEffect(() => {
+    if (doc === null || typeof window === 'undefined') return;
+    if (!window.matchMedia('(max-width: 768px)').matches) return;
+    const timer = window.setTimeout(() => {
+      rfRef.current?.fitView({ padding: 0.2, duration: 0 });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [doc?.projectId]);
+
   // ── 编辑动作 ───────────────────────────────────────────────────────────
   const addNode = useCallback(
     (type: CanvasNodeType, at?: { x: number; y: number }): void => {
