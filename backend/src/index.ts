@@ -140,8 +140,10 @@ export async function buildApp() {
    */
   app.setErrorHandler((error, _request, reply) => {
     // 这个 Fastify 版本把 error 标成 unknown（它可能是任意抛出的东西）—— 显式窄化，不用 as any
-    const shaped = error as { validation?: unknown; message?: string };
-    if (shaped.validation !== undefined) {
+    const shaped = error as { validation?: unknown; statusCode?: number; message?: string };
+    // JSON body 解析失败也是 4xx；如果不在这里归一化成 ErrorResponse，
+    // Fastify 默认的 {statusCode,error,message} 会撞上路由的 400 response schema，最终变成 500。
+    if (shaped.validation !== undefined || shaped.statusCode === 400) {
       return reply
         .code(400)
         .send(createErrorResponse('INVALID_REQUEST', `请求不符合契约：${shaped.message ?? '校验失败'}`));

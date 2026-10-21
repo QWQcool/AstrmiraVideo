@@ -35,6 +35,19 @@ afterAll(async () => {
   await app.close();
 });
 
+describe('POST /api/agent/plan（CONTRACT §23 / S6-B1）', () => {
+  it('非法 JSON body → 400 ErrorResponse，而不是 500 序列化错误', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/agent/plan',
+      headers: { 'content-type': 'application/json' },
+      payload: '{bad',
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: 'INVALID_REQUEST', disposition: 'terminal' });
+  });
+});
+
 describe('GET /api/health（CONTRACT §5 路由表 / §8 响应形状）', () => {
   it('返回 200，且响应体通过 HealthResponseSchema 校验', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/health' });

@@ -1700,6 +1700,7 @@
 - **【共享层】** `packages/shared/src/agent.ts`：`version:1`、1–8 步、`apply-skill` / `add-reference` / `set-params` / `note`；step 全部 `strict()`，`exec`/`script`/任意 URL 直接被 schema 拒绝；引用只接受 `asset:` / `task:`。`retrieveSkillsForIntent` 按触发词/名称/摘要打分（无向量库、结果可复现）；`validateAgentPlan` 检查未知技能、无可用模式（仅 t2i/t2v/i2v）、`requiresImage` 缺图片引用，并列出全部问题。
 - **【后端】** 新增 `providers/agent.ts` 复用现有 OpenAI 兼容文本轨与 `X-LLM-Key`（纯 BYOK，不新建 provider/兜底 Key）：只输出 JSON 计划，解析失败/非 JSON → 502，能力失败 → 400；不调用 `/api/generate`、不建任务、不写 outputs。路由 `POST /api/agent/plan` 合并内置 + 请求中的自建技能，id 冲突显式 400；`requestLog` 记为 `agent`。
 - **【证据】** 契约 **11/11**；后端 **691 passed（74 文件）**，新增 provider 5 + route 5 测试：BYOK 501、成功 engine/model/usage、id 冲突 400、能力失败 400、请求脚本字段 400、未知技能/缺参考图 400、401、非 JSON 502。未调用真实 DeepSeek（无 Key），未产生生成/费用；真实文本推理留到 B2/B3 有明确配置时。
+- **【线上实测顺手修】** 合法 JSON 无 Key → **501 `LLM_NOT_CONFIGURED`**；但**非法 JSON** 原先经 Fastify 默认错误体撞上路由 400 schema，返回 **500 `FST_ERR_FAILED_ERROR_SERIALIZATION`**。已把 body 解析失败（`statusCode===400`）统一归一化为 **400 `INVALID_REQUEST`**，并在 `index.test.ts` 钉住。这是全局错误处理缺口，不只 Agent 路由。
 - **【边界】** B1 只有共享 schema + API，无前端 Agent UI；计划应用、幂等键、生成提交属 B2/B3。计划步骤暂不建画布节点，只面向创作草稿；AC6-B 的“拟新增节点”在 B2 按实际落点决定，不先造假的节点步骤。
 
 ### 2026-10-21 · S6-A4：技能库证据与 S6-A 收口
