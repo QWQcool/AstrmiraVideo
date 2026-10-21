@@ -1694,6 +1694,13 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-21 · CD 修复：干净同步代替覆盖解压
+
+- **【上传已通】** 排除 `docs/` 后部署包从 19MB 降到可上传范围，`上传代码包` 成功。
+- **【真实失败】** 远程 Docker 构建报 `frontend/src/components/LogPanel.tsx` 找不到 `@astrmira/shared` 的 `logActionLabel`。HEAD 没有这个文件；服务器 `/root/astrmira/frontend/src/components/LogPanel.tsx` 是 **9 月 23 日的残留文件**，旧 `tar -xzf` 覆盖解压不会删除已从仓库移除的文件。
+- **【修复】** 远程改为：解压到 `.deploy-next` → `rsync -a --delete` 同步到 `/root/astrmira`，排除 `.git/`、`.env.deploy*`、`data/`、`outputs/`、`generated-images/`、`node_modules/`。这样服务器源码与 tar 一致，运行数据与凭据不受影响。
+- **【边界】** 这是 CD 脚本缺陷，不是应用代码；CI 干净 checkout 构建一直能过，所以本地/CI 没暴露。
+
 ### 2026-10-21 · CD 恢复：SSH 29598 可达，上传超时放宽
 
 - **【第二次失败】** 420s 仍未传完 19MB（step timeout 7min，exit 124）；本机 ssh2 登录与 SFTP 正常，说明不是端口/密码，而是 GitHub Runner → 该主机的跨境上行极慢。
