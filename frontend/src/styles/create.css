@@ -9,7 +9,10 @@
 .cr-wrap {
   max-width: 880px;
   margin: 0 auto;
-  padding: 34px 20px 56px;
+  /* S7-B：底部避让 Home Indicator；左右避让横屏刘海 */
+  padding:
+    34px calc(20px + var(--safe-right)) calc(56px + var(--safe-bottom))
+    calc(20px + var(--safe-left));
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -344,6 +347,7 @@
 }
 
 .cr-chip-label {
+  min-width: 0;
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -606,6 +610,15 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  min-width: 0;
+}
+
+.cr-task-head > * {
+  min-width: 0;
+}
+
+.cr-task {
+  overflow-wrap: anywhere;
 }
 
 .cr-task-error {
@@ -659,7 +672,9 @@
 
 @media (max-width: 768px) {
   .cr-wrap {
-    padding: 20px 12px 40px;
+    padding:
+      20px calc(12px + var(--safe-right)) calc(40px + var(--safe-bottom))
+      calc(12px + var(--safe-left));
   }
 
   .cr-actions {

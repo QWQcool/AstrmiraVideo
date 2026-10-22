@@ -241,12 +241,14 @@
 /* ── 详情抽屉 ── */
 .cv-drawer {
   position: fixed;
-  top: 64px;
-  right: 16px;
+  top: calc(64px + var(--safe-top));
+  right: calc(16px + var(--safe-right));
   /* B62 起内容变多（提示词 / 成本 / 留痕 / 血缘）：340px 是"信息摆得下、又不遮住画布"的折中 */
-  width: 340px;
+  width: min(340px, calc(100vw - var(--safe-left) - var(--safe-right) - 32px));
   max-height: 76vh;
+  max-height: calc(76dvh - var(--safe-bottom));
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1134,12 +1136,14 @@ audio.cs-card-media {
    保留节点标题/参数/输入，右上角有明确关闭；Esc 由 dialogFocus 接管。 */
 .cs-toolbar-sheet {
   position: fixed;
-  right: 12px;
-  bottom: 12px;
-  left: 12px;
+  right: calc(12px + var(--safe-right));
+  bottom: calc(12px + var(--safe-bottom));
+  left: calc(12px + var(--safe-left));
   z-index: 60;
   max-height: 68vh;
+  max-height: calc(68dvh - var(--safe-bottom));
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 14px 12px 12px;
   border: 1px solid var(--line-gold);
   border-radius: 16px;
@@ -1478,15 +1482,19 @@ audio.cs-card-media {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding:
+    20px calc(20px + var(--safe-right)) calc(20px + var(--safe-bottom))
+    calc(20px + var(--safe-left));
   background: var(--canvas-veil);
+  overscroll-behavior: contain;
 }
 
 .cs-modal-panel {
   display: flex;
   flex-direction: column;
-  width: min(760px, 100%);
+  width: min(760px, calc(100% - var(--safe-left) - var(--safe-right)));
   max-height: min(620px, 86vh);
+  max-height: min(620px, calc(86dvh - var(--safe-bottom)));
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -1569,6 +1577,7 @@ audio.cs-card-media {
   min-height: 0;
   padding: 12px 16px;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .cs-modal-note {

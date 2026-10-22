@@ -1696,6 +1696,14 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-22 · S7-B：移动端安全区、长文本与弹层滚动收口
+
+- **【安全区】** `tokens.css` 新增 `--safe-top/right/bottom/left`（`env(safe-area-inset-*)`，缺失回落 0）。创作页 `.cr-wrap`、`.wb-page`、`.wb-drawer`/footer、移动侧栏、画布底部抽屉、画布检查器、资产选择器、灯箱、全屏预览关闭按钮全部按安全区避让；桌面 1366 的 `--safe-bottom=0`，原 56/32px 间距不变。
+- **【长文本】** `.cr-task*` 加 `min-width:0` + `overflow-wrap:anywhere`；chip 标签、侧栏库抽屉标题、页面标题补 `min-width:0`/断行。用 180 字无空格串 + 160 字 URL 注入 `.cr-task`，`scrollWidth == clientWidth`（287）。
+- **【弹层】** 底部节点面板 `max-height: calc(68dvh - safe-bottom)` + `overscroll-behavior:contain`；资产选择器 `86dvh`；画布检查器 `76dvh`；灯箱/资产/节点抽屉均不把滚动传给背景。
+- **【实测】** Chromium CDP `Emulation.setSafeAreaInsetsOverride(bottom=34)`：创作页 `.cr-wrap` 底 padding 74px（40+34）、抽屉 foot 50px（16+34）、侧栏 44px（10+34）、节点底部面板 bottom 46px、画布检查器 max-height 583px；375 无横向溢出、0 console error；1366 桌面仍为 56/32px。前端 **599 passed**；`pnpm type`/`lint`/`build`/`visual-selfcheck` 通过。
+- **【边界】** 使用 CDP 安全区模拟，不是 iPhone 真机；未做底部四 tab（IA 另开片）；顶栏刘海安全区不在本次范围，避免改 64px 全局栅格。
+
 ### 2026-10-22 · S7-A：DeepSeek 计划 prompt 收紧与满血 MOSS 部署口径
 
 - **【S7-A】** 真实 DeepSeek 首轮实测发现海报 502：模型输出 `aspectRatio:"3:4"`、`note` 用 `prompt/reason`。已在 `backend/src/providers/agent.ts` 的 system prompt 中写死四种 step 的精确字段、`params` 三键与枚举（`16:9/9:16/1:1`、`480p/720p/1080p`），并明确“静态海报但无 t2i 技能时用 note + warnings，不硬套视频技能”。
