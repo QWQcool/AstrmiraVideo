@@ -1,0 +1,14 @@
+[
+  {
+    "name": "h3",
+    "label": "MiniMax H3 32GB",
+    "url": "http://10.0.0.12:8188",
+    "template": "minimax-h3-ref2va"
+  },
+  {
+    "name": "moss",
+    "label": "MOSS-Image 8-step DMD",
+    "url": "http://10.0.0.12:8189",
+    "template": "moss-image-t2i"
+  }
+]

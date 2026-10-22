@@ -1546,6 +1546,8 @@
 
 **交付分层**：① R1/R2 通过才称“画布编辑与结果恢复可靠”；② R3 + S5 通过才称“本地创作体验收口”；③ 未配置图片模型、暂停云端测试、图像编辑未接线分别保留状态，不阻塞不依赖它们的片段，也不计作通过；④ S6 单独交付，不拖住前面的本地可用版本。
 
+**租算力服务器后（不占用 S1–S6）**：所有 GPU 依赖项集中在 **[DEPLOYMENT-RUNBOOK](DEPLOYMENT-RUNBOOK.md) §2**（G1–G14：H3 权重/模板、MOSS 可选 t2i、双实例、模板挂载、能力声明、单卡并发、音频、`executedBy`、验收与回滚）。租卡前不假装已做；站点继续留在现有服务器。
+
 **交互验收场景（S5-C；操作规则详见设计 §8.3）**：
 
 | 场景 | 必须验证的用户行为 | 通过条件 |
@@ -1693,6 +1695,15 @@
 
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
+
+### 2026-10-22 · 部署手册、租卡后计划与 DeepSeek 实测
+
+- **【部署留档】** 新增 `docs/DEPLOYMENT-RUNBOOK.md`：已成功的站点部署（app+caddy / 数据卷 / `.env.deploy` / GitHub Actions / 验收 / 回滚）与**租算力服务器后全部 GPU 依赖项**（H3、MOSS、双实例、模板挂载、能力声明、单卡并发、音频、executedBy、验收）合并成一份施工手册；新增 `deploy/comfyui-servers.example.json`。
+- **【租卡后计划】** 所有需要 GPU 的项目集中在 runbook §2：G1–G14。租卡前不假装已做；站点继续保持现有部署，不因算力机未到而改动。
+- **【DeepSeek 实测】** 本机 `DEEPSEEK_API_KEY` 存在（未回显/未提交）。通过本地 `POST /api/agent/plan` 真实调用 `deepseek-chat`：
+  - 雨夜慢推：**200**，1094 prompt + 396 completion tokens；正确选 `mood-rainy-night` + `camera-push-in-slow`。
+  - 中文海报：**502**；模型输出 `aspectRatio:"3:4"`（契约只允许 16:9/9:16/1:1），且 `note` 用了 `prompt/reason` 而非 `text`。真实链路是通的，但系统提示词需补全每种 step 的精确字段/枚举；修复与重测列为 S7-A，不依赖 GPU。
+- **【下一步】** 非 GPU 优先：S7-A 收紧 DeepSeek 计划 prompt + 重测海报；S7-B 移动端 safe-area/长文本；GPU 项等租卡后按 runbook 一次执行。
 
 ### 2026-10-21 · MOSS-Image 8-step DMD/量化评估（可选 t2i）
 

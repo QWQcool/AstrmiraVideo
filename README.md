@@ -144,6 +144,8 @@ AstrmiraVideo/
 | [docs/CREATION-EXPERIENCE-DESIGN.md](docs/CREATION-EXPERIENCE-DESIGN.md) | 创作体验设计基准 | 新版交互规则、视觉图、可点击稿、模型未配置状态、即梦观察证据；实施与进度仍见 PLAN |
 | [docs/CONTRACT.md](docs/CONTRACT.md) | 接口唯一权威 | TS 类型、**路由表**、错误码字典、存储与资产生命周期、备份与恢复契约 |
 | [docs/GUIDE.md](docs/GUIDE.md) | 上手指南与运维手册 | Tier 0~3 算力矩阵、双轨引擎接入、四种工作流、FAQ、**运维巡检与备份恢复 SOP** |
+| [docs/DEPLOYMENT-RUNBOOK.md](docs/DEPLOYMENT-RUNBOOK.md) | **部署与租卡施工手册** | 已成功站点部署的复刻步骤、GitHub Actions/回滚、**租算力服务器后的全部 GPU 依赖项（G1–G14）** |
+| [docs/MOSS-IMAGE-EVALUATION.md](docs/MOSS-IMAGE-EVALUATION.md) | MOSS 评估记录 | 8-step DMD/量化版本机实测、与 FLUX.2 的中文海报对照、可选模板边界 |
 | [docs/FRONTEND-REVIEW.md](docs/FRONTEND-REVIEW.md) | **前端框架与适配性复盘** | 技术选型逐层点名、"要不要换框架"的判据、移动端适配体检（含复现命令） |
 | [docs/N8N-REFERENCE.md](docs/N8N-REFERENCE.md) | **n8n 设计借鉴清单** | 逐条借鉴项（画布交互 / 产品语义 / 工程交付）→ 台账编号映射、落地顺序、**明确不借鉴的**、参考方式与许可证边界 |
 | [docs/PENDING-DECISIONS.md](docs/PENDING-DECISIONS.md) | **待拍板清单** | 只有产品负责人能定的开放项（选项 / 推荐 / 卡住了什么）+ 需追认的已定项 + 按条件排期的技术债 |
