@@ -1,0 +1,66 @@
+import { z } from 'zod';
+import { LlmConfigSchema } from './enhance.js';
+import { AgentPlanUsageSchema } from './agent.js';
+
+/**
+ * 只读画布 Agent（S7-D1 / CONTRACT §24）。
+ *
+ * 这层只接收**快照**并返回文本回答：
+ * - 没有 tools、没有 apply、没有 canvas mutation 字段；
+ * - 请求里不能带任意 URL、脚本或节点写操作；
+ * - 画布上下文由前端从 `CanvasDoc` 派生，服务端不直接读画布数据库。
+ */
+export const CanvasAgentNodeContextSchema = z
+  .object({
+    id: z.string().min(1).max(160),
+    type: z.enum(['text', 'image', 'video', 'audio']),
+    title: z.string().max(200),
+    prompt: z.string().max(4000),
+    batchCount: z.number().int().nonnegative(),
+    outputKinds: z.array(z.enum(['image', 'video', 'audio', 'text'])).max(4),
+    referenceCount: z.number().int().nonnegative(),
+  })
+  .strict();
+export type CanvasAgentNodeContext = z.infer<typeof CanvasAgentNodeContextSchema>;
+
+export const CanvasAgentEdgeContextSchema = z
+  .object({
+    from: z.string().min(1).max(160),
+    to: z.string().min(1).max(160),
+    kind: z.enum(['lineage', 'dependency']),
+    role: z.string().max(40).optional(),
+  })
+  .strict();
+export type CanvasAgentEdgeContext = z.infer<typeof CanvasAgentEdgeContextSchema>;
+
+export const CanvasAgentContextSchema = z
+  .object({
+    projectId: z.string().min(1).max(160),
+    name: z.string().max(200),
+    nodes: z.array(CanvasAgentNodeContextSchema).max(200),
+    edges: z.array(CanvasAgentEdgeContextSchema).max(500),
+    selectedNodeId: z.string().min(1).max(160).optional(),
+    /** 节点/边超过上限时由前端截断；回答必须如实说明“快照不完整”。 */
+    truncated: z.boolean().default(false),
+  })
+  .strict();
+export type CanvasAgentContext = z.infer<typeof CanvasAgentContextSchema>;
+
+export const CanvasAgentRequestSchema = z
+  .object({
+    question: z.string().trim().min(1).max(2000),
+    canvas: CanvasAgentContextSchema,
+    llm: LlmConfigSchema.optional(),
+  })
+  .strict();
+export type CanvasAgentRequest = z.infer<typeof CanvasAgentRequestSchema>;
+
+export const CanvasAgentResponseSchema = z
+  .object({
+    answer: z.string().trim().min(1).max(8000),
+    engine: z.literal('llm'),
+    model: z.string().min(1),
+    usage: AgentPlanUsageSchema.optional(),
+  })
+  .strict();
+export type CanvasAgentResponse = z.infer<typeof CanvasAgentResponseSchema>;

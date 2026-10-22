@@ -860,6 +860,131 @@
   min-height: 520px;
 }
 
+/* S7-D1：只读画布助手。桌面是第三栏，窄屏变右侧覆盖层；
+   不改变画布文档，只缩小/覆盖可视区域。 */
+.cs-agent-panel {
+  display: flex;
+  flex: 0 0 340px;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.cs-agent-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cs-agent-title {
+  margin: 0 0 4px;
+  font-family: var(--sans);
+  font-size: var(--fs-title);
+}
+
+.cs-agent-context,
+.cs-agent-readonly {
+  margin: 0;
+}
+
+.cs-agent-readonly {
+  padding: 8px 12px;
+  color: var(--gold);
+  border-bottom: 1px solid var(--line);
+}
+
+.cs-agent-log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.cs-agent-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+  overflow-wrap: anywhere;
+}
+
+.cs-agent-msg--user {
+  border-color: var(--line-gold);
+}
+
+.cs-agent-msg p {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: var(--fs-note);
+  line-height: 1.65;
+}
+
+.cs-agent-role {
+  color: var(--gold);
+  font-size: var(--fs-micro);
+}
+
+.cs-agent-meta {
+  font-size: var(--fs-micro);
+}
+
+.cs-agent-error {
+  margin: 0 12px 8px;
+}
+
+.cs-agent-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px calc(12px + var(--safe-bottom));
+  border-top: 1px solid var(--line);
+}
+
+.cs-agent-input {
+  width: 100%;
+  min-height: 58px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-note);
+}
+
+.cs-agent-input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+@media (max-width: 768px) {
+  .cs-agent-panel {
+    position: fixed;
+    top: calc(64px + var(--safe-top));
+    right: var(--safe-right);
+    bottom: var(--safe-bottom);
+    z-index: 60;
+    width: min(360px, calc(100vw - var(--safe-left) - 12px));
+    border-radius: 12px 0 0 12px;
+    box-shadow: var(--shadow-pop);
+  }
+}
+
 .cs-rail {
   display: flex;
   flex-direction: column;

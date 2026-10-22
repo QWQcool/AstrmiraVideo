@@ -1,6 +1,7 @@
 import {
   AgentPlanResponseSchema,
   AssetListResponseSchema,
+  CanvasAgentResponseSchema,
   CanvasDocSaveResponseSchema,
   CanvasDocSchema,
   CanvasProjectIndexSchema,
@@ -27,6 +28,8 @@ import type {
   AgentPlanRequest,
   AgentPlanResponse,
   AssetListResponse,
+  CanvasAgentRequest,
+  CanvasAgentResponse,
   CanvasDoc,
   CanvasDocSaveResponse,
   CanvasProjectIndex,
@@ -315,6 +318,21 @@ export function planAgent(
   options: { llmKey?: string } = {},
 ): Promise<AgentPlanResponse> {
   return request('/api/agent/plan', AgentPlanResponseSchema, {
+    method: 'POST',
+    body,
+    ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),
+  });
+}
+
+/**
+ * 只读画布助手（CONTRACT §24 / S7-D1）：请求是快照，响应是文本。
+ * 这个端点没有写画布的能力；UI 也不在请求后调用任何 CanvasDoc 变更。
+ */
+export function askCanvasAgent(
+  body: CanvasAgentRequest,
+  options: { llmKey?: string } = {},
+): Promise<CanvasAgentResponse> {
+  return request('/api/agent/canvas', CanvasAgentResponseSchema, {
     method: 'POST',
     body,
     ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),

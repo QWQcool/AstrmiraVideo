@@ -644,6 +644,7 @@ if (leftPanelText !== undefined) {
     'main.tsx',
     'components/Sidebar.tsx',
     'components/AgentPlanPanel.tsx',
+    'components/CanvasAgentPanel.tsx',
     'components/AssetDropZone.tsx',
     'components/ByokDrawer.tsx',
     'components/CenterPanel.tsx',

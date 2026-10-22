@@ -20,6 +20,7 @@ import { createEditRoutes } from './routes/edits.js';
 import { createEditRenderRoutes } from './routes/editRenders.js';
 import { createAssetRoutes } from './routes/assets.js';
 import { createAgentRoutes } from './routes/agent.js';
+import { createAgentCanvasRoutes } from './routes/agentCanvas.js';
 import { createEnhanceRoutes } from './routes/enhance.js';
 import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
@@ -415,6 +416,8 @@ export async function buildApp() {
   await app.register(createEnhanceRoutes());
   // S6-B1：Agent 规划（只返回计划，不创建任务/不生成）
   await app.register(createAgentRoutes());
+  // S7-D1：只读画布助手（快照问答，不能写画布/不能生成）
+  await app.register(createAgentCanvasRoutes());
   // V9 · B9：基础剪辑 EDL（本地 ffmpeg；与生成任务共用队列与轮询）—— B34 后 UI 不再暴露，API 保留
   await app.register(createEditRoutes({ store, queue }));
   // V2.5（B34 · P4）：浏览器端渲染产物入库（同步归档，服务端不渲染）

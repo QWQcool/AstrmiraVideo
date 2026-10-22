@@ -1709,6 +1709,14 @@
 - **【计划调整】** 保留我们更明确的「计划卡 + 显式创建画布草稿」，不改成自动落节点。新增 **S7-D1 Canvas Agent 只读侧栏**（list nodes/edges/outputs/selected node，禁止改节点/生成，文本成本单列）；再开 **S7-D2 写工具**：第一版只开放“创建文本节点”，必须先展示计划卡并确认；**默认不开放删除**，更新/连线逐项另开；成功判定必须读回 `CanvasDoc`，不信模型文案。首页与画布两个入口不强行合并会话，仍用 `agentCanvasHandoff` 传已确认计划。
 - **【不照搬】** 不把即梦纯聊天回复当唯一计划形态；不把“0 积分”写进我们 UI；不在写工具验证前宣称画布 Agent 能自动建节点。GPU/满血 MOSS 计划不变。
 
+### 2026-10-22 · S7-D1：只读画布 Agent 侧栏
+
+- **【契约】** CONTRACT 升 **V2.55** 新增 §24：`CanvasAgentContext` / `CanvasAgentRequest` / `CanvasAgentResponse`；`POST /api/agent/canvas` 接收前端从 `CanvasDoc` 派生的只读快照，只返回文本。**无 tools、无 operations、无 nodes 响应字段**，服务端不读画布数据库、不写 outputs、不调用生成。
+- **【前端】** CanvasStudioView 新增「与 AI 对话」侧栏：显示快照摘要（节点/连线/有产物节点）、只读提示、问答记录、token 用量 + 价格待核算；窄屏为右侧覆盖层。快照由 `buildCanvasAgentContext` 纯函数生成，节点/边超限截断并标记 `truncated`。
+- **【只读保证】** 请求 schema strict；`operation`/`tool`/`nodesToDelete` 等字段直接 400；UI 收到回答后不调用任何 `applyDoc`/节点函数。Home Agent 仍不碰画布；不动已有计划卡和交接链路。
+- **【证据】** 受控 `/api/agent/canvas` 响应 + 画布 mock：2 节点/1 连线快照正确显示；回答显示；保存稳定后 **0 次 PUT `/api/canvas/docs`、0 次 `/api/generate`、1 次助手请求**；375 下侧栏 `x=15..375`、页面 `scrollWidth=clientWidth=375`、无横向溢出。前端 **608 passed**；后端 **700 passed（76 文件）**；契约 **11/11**；type/lint/build/visual-selfcheck 通过。
+- **【边界】** 只读侧栏不做工具循环、不做聊天持久化、不创建/删除/连线节点；写工具另开 S7-D2，必须先计划卡确认且默认无删除。真实 DeepSeek 画布问答未调用；MOSS/H3 计划不变。
+
 ### 2026-10-22 · S7-C2：Agent 计划创建画布草稿节点
 
 - **【交接】** 计划卡新增「在画布中创建草稿」：`sessionStorage` 一次性交接（`AgentPlanSchema` 解析），跳 `#/canvas`；画布优先用当前项目，一块画布都没有时按既有交接纪律自动建一块。消费后立即清除，不塞 URL、不跨视图共享全局状态。

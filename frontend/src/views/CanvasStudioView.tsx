@@ -131,6 +131,7 @@ import {
 import { reuseFromBatch } from '../lib/canvasNodeReuse';
 import type { ReferenceSourceItem } from '../lib/referenceSources';
 import { CanvasContextMenu, type CanvasMenuItem } from '../canvas/studio/CanvasContextMenu';
+import { CanvasAgentPanel } from '../components/CanvasAgentPanel';
 import { StudioNode } from '../canvas/studio/StudioNode';
 import { StudioProvider } from '../canvas/studio/StudioContext';
 
@@ -245,6 +246,8 @@ export function CanvasStudioView() {
   const { byok, providerStatus, projectId } = useShell();
 
   const [index, setIndex] = useState<CanvasProjectIndex | null>(null);
+  /** S7-D1：只读画布侧栏；它不参与文档状态，也不会在打开时写盘。 */
+  const [agentOpen, setAgentOpen] = useState(false);
   const [doc, setDoc] = useState<CanvasDoc | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<StudioRfNode>([]);
   const [saveState, setSaveState] = useState<CanvasSaveState>('saved');
@@ -1809,6 +1812,16 @@ export function CanvasStudioView() {
         <div className="cs-top-right">
           <button
             type="button"
+            className="wb-btn"
+            data-testid="canvas-agent-toggle"
+            aria-expanded={agentOpen}
+            disabled={doc === null}
+            onClick={() => setAgentOpen((value) => !value)}
+          >
+            {t('canvas.agent.open')}
+          </button>
+          <button
+            type="button"
             className="wb-btn cs-icon-btn"
             aria-label={t('canvas.studio.undo')}
             title={t('canvas.studio.undo')}
@@ -2008,6 +2021,13 @@ export function CanvasStudioView() {
                 />
               )}
             </div>
+            {agentOpen ? (
+              <CanvasAgentPanel
+                doc={doc}
+                {...(selectedIds[0] === undefined ? {} : { selectedNodeId: selectedIds[0] })}
+                onClose={() => setAgentOpen(false)}
+              />
+            ) : null}
           </div>
         </StudioProvider>
       )}
