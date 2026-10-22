@@ -48,6 +48,7 @@ export function describeAction(method: string, path: string): string | undefined
     if (clean === '/api/prompt/enhance') return 'enhance';
   if (clean === '/api/agent/plan') return 'agent';
   if (clean === '/api/agent/canvas') return 'agent-canvas';
+  if (clean === '/api/agent/canvas/node-plan') return 'agent-canvas-node-plan';
     if (clean === '/api/providers/keys/verify') return 'keys.verify';
     if (/^\/api\/tasks\/[^/]+\/cancel$/.test(clean)) return 'task.cancel';
   }

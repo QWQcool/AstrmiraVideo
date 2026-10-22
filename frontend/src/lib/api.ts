@@ -2,6 +2,7 @@ import {
   AgentPlanResponseSchema,
   AssetListResponseSchema,
   CanvasAgentResponseSchema,
+  CanvasNodeProposalResponseSchema,
   CanvasDocSaveResponseSchema,
   CanvasDocSchema,
   CanvasProjectIndexSchema,
@@ -31,6 +32,8 @@ import type {
   CanvasAgentRequest,
   CanvasAgentResponse,
   CanvasDoc,
+  CanvasNodeProposalRequest,
+  CanvasNodeProposalResponse,
   CanvasDocSaveResponse,
   CanvasProjectIndex,
   CostSummaryResponse,
@@ -333,6 +336,21 @@ export function askCanvasAgent(
   options: { llmKey?: string } = {},
 ): Promise<CanvasAgentResponse> {
   return request('/api/agent/canvas', CanvasAgentResponseSchema, {
+    method: 'POST',
+    body,
+    ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),
+  });
+}
+
+/**
+ * 只生成一张待确认的文本节点方案（CONTRACT §25 / S7-D2）。
+ * 服务端不写 canvas；用户确认后由画布页落节点。
+ */
+export function proposeCanvasTextNode(
+  body: CanvasNodeProposalRequest,
+  options: { llmKey?: string } = {},
+): Promise<CanvasNodeProposalResponse> {
+  return request('/api/agent/canvas/node-plan', CanvasNodeProposalResponseSchema, {
     method: 'POST',
     body,
     ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),

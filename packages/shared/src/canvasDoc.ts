@@ -50,6 +50,7 @@ export const CanvasNodeCreatedFromSchema = z.enum([
   'double_click',
   'toolbar',
   'skill',
+  'agent',
   'import',
 ]);
 

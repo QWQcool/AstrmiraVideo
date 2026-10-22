@@ -1709,6 +1709,13 @@
 - **【计划调整】** 保留我们更明确的「计划卡 + 显式创建画布草稿」，不改成自动落节点。新增 **S7-D1 Canvas Agent 只读侧栏**（list nodes/edges/outputs/selected node，禁止改节点/生成，文本成本单列）；再开 **S7-D2 写工具**：第一版只开放“创建文本节点”，必须先展示计划卡并确认；**默认不开放删除**，更新/连线逐项另开；成功判定必须读回 `CanvasDoc`，不信模型文案。首页与画布两个入口不强行合并会话，仍用 `agentCanvasHandoff` 传已确认计划。
 - **【不照搬】** 不把即梦纯聊天回复当唯一计划形态；不把“0 积分”写进我们 UI；不在写工具验证前宣称画布 Agent 能自动建节点。GPU/满血 MOSS 计划不变。
 
+### 2026-10-22 · S7-D2：待确认的文本节点方案
+
+- **【契约】** CONTRACT 升 **V2.56** 新增 §25：`CanvasNodeProposal` / `CanvasNodeProposalRequest` / `CanvasNodeProposalResponse`；`POST /api/agent/canvas/node-plan` 只生成一张 `action: 'create-text-node'` 的方案，**服务端不写 CanvasDoc**。`CanvasNodeCreatedFrom` 新增 `agent`，与手动/技能节点区分。
+- **【前端】** 画布助手增加「问答 / 新建文本节点」模式；创建模式只生成方案卡（标题/正文/理由/警告），用户点击「创建节点」后才由 `CanvasStudioView` 调用 `createCanvasNode` 写入；取消只丢方案。默认没有删除/更新/连线入口。
+- **【证据】** 受控方案 + 画布 mock：确认前 2 节点、**0 次画布 PUT**；确认后 3 节点、PUT 节点正文为方案内容；0 次 `/api/generate`；0 console error。前端 **608 passed**；后端 **707 passed（78 文件）**；契约 **11/11**；type/lint/build/visual-selfcheck 通过。
+- **【边界】** 只允许单个文本节点；不开放删除/更新/连线；不自动提交生成；不做真实 DeepSeek 画布方案调用；不把方案文案当已执行。MOSS/H3 不变。
+
 ### 2026-10-22 · S7-D1：只读画布 Agent 侧栏
 
 - **【契约】** CONTRACT 升 **V2.55** 新增 §24：`CanvasAgentContext` / `CanvasAgentRequest` / `CanvasAgentResponse`；`POST /api/agent/canvas` 接收前端从 `CanvasDoc` 派生的只读快照，只返回文本。**无 tools、无 operations、无 nodes 响应字段**，服务端不读画布数据库、不写 outputs、不调用生成。

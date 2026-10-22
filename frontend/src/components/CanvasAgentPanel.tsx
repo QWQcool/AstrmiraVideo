@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import type { AgentPlanUsage, CanvasDoc } from '@astrmira/shared';
-import { askCanvasAgent } from '../lib/api';
+import type { AgentPlanUsage, CanvasDoc, CanvasNodeProposal } from '@astrmira/shared';
+import { askCanvasAgent, proposeCanvasTextNode } from '../lib/api';
 import { resolveLlmConfig, resolveLlmKey } from '../lib/byok';
 import {
   buildCanvasAgentContext,
@@ -19,6 +19,8 @@ interface CanvasAgentMessage {
 export interface CanvasAgentPanelProps {
   doc: CanvasDoc;
   selectedNodeId?: string;
+  /** 用户点击“创建节点”后才调用；返回 false 表示当前文档不可写。 */
+  onCreateText(proposal: CanvasNodeProposal): boolean;
   onClose(): void;
 }
 
@@ -33,12 +35,23 @@ function errorText(caught: unknown): string {
  * 这里**没有任何 apply / create / delete** 路径。写操作不是“提示词要求模型不要做”，
  * 而是根本没有对应函数可调用。
  */
-export function CanvasAgentPanel({ doc, selectedNodeId, onClose }: CanvasAgentPanelProps) {
+export function CanvasAgentPanel({
+  doc,
+  selectedNodeId,
+  onCreateText,
+  onClose,
+}: CanvasAgentPanelProps) {
   const t = useTranslate();
   const { byok, openByok } = useShell();
+  const [mode, setMode] = useState<'ask' | 'create'>('ask');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [proposal, setProposal] = useState<CanvasNodeProposal | null>(null);
+  const [proposalMeta, setProposalMeta] = useState<{
+    model: string;
+    usage?: AgentPlanUsage;
+  } | null>(null);
   const [history, setHistory] = useState<CanvasAgentMessage[]>([]);
 
   const context = useMemo(
@@ -59,30 +72,63 @@ export function CanvasAgentPanel({ doc, selectedNodeId, onClose }: CanvasAgentPa
     setMessage('');
     setError(null);
     setBusy(true);
+    setProposal(null);
+    setProposalMeta(null);
     setHistory((prev) => [...prev, { role: 'user', text: question }]);
     try {
-      const result = await askCanvasAgent(
-        {
-          question,
-          canvas: context,
-          llm: resolveLlmConfig(byok),
-        },
-        { llmKey: apiKey },
-      );
-      setHistory((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          text: result.answer,
+      if (mode === 'create') {
+        const result = await proposeCanvasTextNode(
+          {
+            instruction: question,
+            canvas: context,
+            llm: resolveLlmConfig(byok),
+          },
+          { llmKey: apiKey },
+        );
+        setProposal(result.proposal);
+        setProposalMeta({
           model: result.model,
           ...(result.usage === undefined ? {} : { usage: result.usage }),
-        },
-      ]);
+        });
+      } else {
+        const result = await askCanvasAgent(
+          {
+            question,
+            canvas: context,
+            llm: resolveLlmConfig(byok),
+          },
+          { llmKey: apiKey },
+        );
+        setHistory((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            text: result.answer,
+            model: result.model,
+            ...(result.usage === undefined ? {} : { usage: result.usage }),
+          },
+        ]);
+      }
     } catch (caught) {
       setError(t('canvas.agent.failed', { reason: errorText(caught) }));
     } finally {
       setBusy(false);
     }
+  };
+
+  const confirmProposal = (): void => {
+    if (proposal === null) return;
+    if (!onCreateText(proposal)) {
+      setError(t('canvas.agent.createFailed'));
+      return;
+    }
+    setHistory((prev) => [
+      ...prev,
+      { role: 'assistant', text: t('canvas.agent.created', { title: proposal.title }) },
+    ]);
+    setProposal(null);
+    setProposalMeta(null);
+    setError(null);
   };
 
   return (
@@ -111,7 +157,40 @@ export function CanvasAgentPanel({ doc, selectedNodeId, onClose }: CanvasAgentPa
         </button>
       </header>
 
-      <p className="wb-note cs-agent-readonly">{t('canvas.agent.readOnly')}</p>
+      <div className="cs-agent-modes" role="group" aria-label={t('canvas.agent.title')}>
+        <button
+          type="button"
+          className="cs-agent-mode"
+          data-testid="canvas-agent-mode-ask"
+          aria-pressed={mode === 'ask'}
+          onClick={() => {
+            setMode('ask');
+            setProposal(null);
+            setProposalMeta(null);
+            setError(null);
+          }}
+        >
+          {t('canvas.agent.modeAsk')}
+        </button>
+        <button
+          type="button"
+          className="cs-agent-mode"
+          data-testid="canvas-agent-mode-create"
+          aria-pressed={mode === 'create'}
+          onClick={() => {
+            setMode('create');
+            setProposal(null);
+            setProposalMeta(null);
+            setError(null);
+          }}
+        >
+          {t('canvas.agent.modeCreate')}
+        </button>
+      </div>
+
+      <p className="wb-note cs-agent-readonly">
+        {mode === 'create' ? t('canvas.agent.createHint') : t('canvas.agent.readOnly')}
+      </p>
 
       <div className="cs-agent-log" data-testid="canvas-agent-log" aria-live="polite">
         {history.length === 0 ? <p className="wb-note">{t('canvas.agent.empty')}</p> : null}
@@ -135,6 +214,54 @@ export function CanvasAgentPanel({ doc, selectedNodeId, onClose }: CanvasAgentPa
           </div>
         ))}
         {busy ? <p className="wb-note">{t('canvas.agent.thinking')}</p> : null}
+        {proposal === null ? null : (
+          <section className="cs-agent-proposal" data-testid="canvas-node-proposal">
+            <h4 className="cs-agent-proposal-title">{t('canvas.agent.proposalTitle')}</h4>
+            <strong>{proposal.title}</strong>
+            <p>{proposal.content}</p>
+            {proposal.reason === undefined ? null : (
+              <p className="wb-note">{proposal.reason}</p>
+            )}
+            {proposal.warnings.map((warning) => (
+              <p className="wb-note cs-agent-proposal-warning" key={warning}>
+                {warning}
+              </p>
+            ))}
+            <p className="wb-note">{t('canvas.agent.proposalNote')}</p>
+            {proposalMeta === null ? null : (
+              <span className="wb-note cs-agent-meta">
+                {proposalMeta.model}
+                {proposalMeta.usage === undefined
+                  ? ''
+                  : ` · ${t('canvas.agent.usage', {
+                      prompt: proposalMeta.usage.promptTokens,
+                      completion: proposalMeta.usage.completionTokens,
+                    })}`}
+              </span>
+            )}
+            <div className="cs-agent-proposal-actions">
+              <button
+                type="button"
+                className="wb-btn"
+                data-testid="canvas-node-proposal-cancel"
+                onClick={() => {
+                  setProposal(null);
+                  setProposalMeta(null);
+                }}
+              >
+                {t('canvas.agent.cancel')}
+              </button>
+              <button
+                type="button"
+                className="wb-btn wb-btn-primary"
+                data-testid="canvas-node-proposal-confirm"
+                onClick={confirmProposal}
+              >
+                {t('canvas.agent.confirmCreate')}
+              </button>
+            </div>
+          </section>
+        )}
       </div>
 
       {error === null ? null : (
@@ -153,8 +280,16 @@ export function CanvasAgentPanel({ doc, selectedNodeId, onClose }: CanvasAgentPa
         <textarea
           className="cs-agent-input"
           data-testid="canvas-agent-input"
-          aria-label={t('canvas.agent.placeholder')}
-          placeholder={t('canvas.agent.placeholder')}
+          aria-label={
+            mode === 'create'
+              ? t('canvas.agent.createPlaceholder')
+              : t('canvas.agent.placeholder')
+          }
+          placeholder={
+            mode === 'create'
+              ? t('canvas.agent.createPlaceholder')
+              : t('canvas.agent.placeholder')
+          }
           rows={3}
           value={message}
           maxLength={2000}
@@ -173,7 +308,7 @@ export function CanvasAgentPanel({ doc, selectedNodeId, onClose }: CanvasAgentPa
           data-testid="canvas-agent-send"
           disabled={busy || message.trim() === ''}
         >
-          {t('canvas.agent.send')}
+          {mode === 'create' ? t('canvas.agent.propose') : t('canvas.agent.send')}
         </button>
       </form>
     </aside>

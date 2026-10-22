@@ -28,6 +28,7 @@ import {
   type CanvasDocNode,
   type CanvasDoc,
   type CanvasNodeType,
+  type CanvasNodeProposal,
   type CanvasProjectIndex,
   type CanvasReferenceRole,
   type TaskProgress,
@@ -811,6 +812,35 @@ export function CanvasStudioView() {
       );
     },
     [applyDoc, labels],
+  );
+
+  /** S7-D2：只有用户在方案卡点击“创建节点”后才落节点；Agent 自己不写文档。 */
+  const createAgentTextNode = useCallback(
+    (proposal: CanvasNodeProposal): boolean => {
+      const current = docRef.current;
+      if (current === null) return false;
+      const position = nextCanvasNodePosition(current);
+      const id = newCanvasProjectId();
+      const node = createCanvasNode({
+        id,
+        type: 'text',
+        x: position.x,
+        y: position.y,
+        title: proposal.title,
+        createdFrom: 'agent',
+      });
+      node.data.draft.prompt = proposal.content;
+      node.data.draft.updatedAt = Date.now();
+      pendingSelect.current = id;
+      applyDoc((d) => ({
+        ...d,
+        nodes: [...d.nodes, node],
+        updatedAt: Date.now(),
+      }));
+      setNotice(t('canvas.agent.created', { title: proposal.title }));
+      return true;
+    },
+    [applyDoc, t],
   );
 
   const deleteNodes = useCallback(
@@ -2025,6 +2055,7 @@ export function CanvasStudioView() {
               <CanvasAgentPanel
                 doc={doc}
                 {...(selectedIds[0] === undefined ? {} : { selectedNodeId: selectedIds[0] })}
+                onCreateText={createAgentTextNode}
                 onClose={() => setAgentOpen(false)}
               />
             ) : null}

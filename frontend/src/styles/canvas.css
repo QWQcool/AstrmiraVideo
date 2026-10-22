@@ -900,6 +900,64 @@
   border-bottom: 1px solid var(--line);
 }
 
+.cs-agent-modes {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+}
+
+.cs-agent-mode {
+  flex: 1;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-note);
+  cursor: pointer;
+}
+
+.cs-agent-mode[aria-pressed='true'] {
+  border-color: var(--line-gold);
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.cs-agent-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line-gold);
+  border-radius: 8px;
+  background: var(--panel2);
+  overflow-wrap: anywhere;
+}
+
+.cs-agent-proposal-title {
+  margin: 0;
+  color: var(--gold);
+  font-family: var(--sans);
+  font-size: var(--fs-note);
+}
+
+.cs-agent-proposal p {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: var(--fs-note);
+  line-height: 1.65;
+}
+
+.cs-agent-proposal-warning {
+  color: var(--gold);
+}
+
+.cs-agent-proposal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .cs-agent-log {
   display: flex;
   flex: 1;
