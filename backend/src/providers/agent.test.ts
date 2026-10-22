@@ -69,7 +69,11 @@ describe('S6-B1 · planWithLlm', () => {
     expect(seenUrl).toBe('https://llm.example/v1/chat/completions');
     expect(seenAuth).toBe('Bearer sk-test');
     expect(seenBody).toMatchObject({ model: 'deepseek-chat', temperature: 0.2 });
-    expect(JSON.stringify(seenBody)).toContain('camera-push-in-slow');
+    const promptText = JSON.stringify(seenBody);
+    expect(promptText).toContain('camera-push-in-slow');
+    expect(promptText).toContain('16:9|9:16|1:1');
+    expect(promptText).toContain('note');
+    expect(promptText).toContain('text');
     expect(result.model).toBe('deepseek-chat');
     expect(result.usage).toEqual({ promptTokens: 100, completionTokens: 30 });
     expect(result.plan.steps[0]).toMatchObject({ kind: 'apply-skill' });

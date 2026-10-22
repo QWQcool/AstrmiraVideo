@@ -1696,6 +1696,13 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-22 · S7-A：DeepSeek 计划 prompt 收紧与满血 MOSS 部署口径
+
+- **【S7-A】** 真实 DeepSeek 首轮实测发现海报 502：模型输出 `aspectRatio:"3:4"`、`note` 用 `prompt/reason`。已在 `backend/src/providers/agent.ts` 的 system prompt 中写死四种 step 的精确字段、`params` 三键与枚举（`16:9/9:16/1:1`、`480p/720p/1080p`），并明确“静态海报但无 t2i 技能时用 note + warnings，不硬套视频技能”。
+- **【实测】** 修后同一组真实 DeepSeek 请求 **2/2 200**：雨夜慢推 1299 prompt + 280 completion tokens；中文海报 1290 + 232 tokens，返回 1 条 note 说明需要 MOSS/FLUX t2i，不再 502。未生成媒体、未产生图片/视频费用。
+- **【满血 MOSS】** 用户拍板：算力服务器部署 **MOSS-Image SFT BF16 满血版**，不是 int8/w4a8 量化版。权重约 27.8GB（DiT 9.47 + Qwen3.5-9B BF16 17.98 + VAE 0.31），建议 **48GB+ 显存**；H3 与满血 MOSS 不挤同一张 48GB 卡同时跑。新增 `moss-image-t2i-full.api.json` / `.meta.json`（官方 50 步 / CFG 3 基线）与 `deploy/comfyui-servers.example.json` 更新。
+- **【边界】** 满血 BF16 的 48GB+ 实测尚未做；50 步/CFG3、euler/simple 以现场官方模板复核为准；量化 8-step DMD 只留作本地评估/加速对照。
+
 ### 2026-10-22 · 部署手册、租卡后计划与 DeepSeek 实测
 
 - **【部署留档】** 新增 `docs/DEPLOYMENT-RUNBOOK.md`：已成功的站点部署（app+caddy / 数据卷 / `.env.deploy` / GitHub Actions / 验收 / 回滚）与**租算力服务器后全部 GPU 依赖项**（H3、MOSS、双实例、模板挂载、能力声明、单卡并发、音频、executedBy、验收）合并成一份施工手册；新增 `deploy/comfyui-servers.example.json`。

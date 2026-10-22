@@ -18,9 +18,9 @@
   │
   │ 私网 / VPN / 安全组白名单（不暴露公网）
   ▼
-租来的 GPU 算力服务器（目标 32GB 5090；24GB 为底线）
+租来的 GPU 算力服务器（满血 MOSS：48GB+；H3 单跑 24–32GB）
   ComfyUI :8188  ── MiniMax H3（视频 + 音频）
-  ComfyUI :8189  ── MOSS-Image（可选 t2i，8-step DMD）
+  ComfyUI :8189  ── MOSS-Image SFT BF16（可选 t2i；官方 50 步为基线）
 ```
 
 **站点不搬、不重启、不加 GPU。** 租来的机器只做推理，经 `COMFYUI_SERVERS_FILE` 接进来。
@@ -111,9 +111,10 @@ curl -k -H "Authorization: Bearer $PUBLIC_API_TOKEN" https://<host>/api/health/r
 
 | 项 | 目标 |
 |---|---|
-| GPU | **RTX 5090 32GB**（首选）；4090 24GB 为底线 |
-| 系统内存 | **64GB+**（H3 分层 offload 吃内存） |
-| 磁盘 | **≥100GB 空闲**（H3 42.5GB + MOSS 13.2GB + 缓存/输出） |
+| GPU | **满血 MOSS：48GB+（A6000 / L40S / 6000 Ada 级）**；只跑量化 MOSS 才考虑 32GB。H3 单跑可用 24–32GB（int8 + offload） |
+| 系统内存 | **96GB+**（满血 MOSS 的 BF16 文本编码器 + H3 分层 offload 都吃内存；64GB 是底线） |
+| 磁盘 | **≥200GB 空闲**（满血 MOSS 约 27.8GB + H3 约 42.5GB + 缓存/输出/临时文件） |
+| 并发 | H3 与满血 MOSS **不要挤同一张 48GB 卡同时跑**；要并发就 2 张卡，或严格串行 |
 | 系统 | Ubuntu 22.04/24.04，NVIDIA 驱动 + CUDA 可用 |
 | 网络 | 与站点服务器同 VPC/私网，或 WireGuard/SSH 隧道；**ComfyUI 绝不暴露公网** |
 
@@ -127,8 +128,8 @@ curl -k -H "Authorization: Bearer $PUBLIC_API_TOKEN" https://<host>/api/health/r
 | G2 | 下载 MiniMax H3 四个权重（`fl2va` 或 `ref2va` 二选一） | `diffusion_models` / `text_encoders` / `vae` 就位；42.5GB |
 | G3 | 用 ComfyUI 模板跑通 H3 5s 示例 | 出片成功，记录首片/暖跑耗时 |
 | G4 | 导出 H3 的 **API 格式**模板 + sidecar（声明 modes） | `<name>.api.json` / `<name>.meta.json` |
-| G5 | 安装 MOSS-Image 量化版 + 8-step DMD LoRA（可选） | 4 个文件约 13.2GB；见 `docs/MOSS-IMAGE-EVALUATION.md` |
-| G6 | 用 8189 独立实例跑通 MOSS 1024×1024 | 8 步 / CFG 1；记录显存/耗时 |
+| G5 | 安装 **满血 MOSS-Image SFT BF16**（部署目标，不是量化版） | `moss_image_sft_bf16` 9.47GB + `qwen3.5_9b_bf16` 17.98GB + `flux2-vae` 0.31GB，合计约 **27.8GB** |
+| G6 | 用 8189 独立实例跑通满血 MOSS 1024×1024 | 官方 50 步 / CFG 3 为质量基线（以官方模板为准）；记录显存/耗时；8-step DMD 只作可选加速对照 |
 | G7 | 站点 `.env.deploy` 增加 `COMFYUI_SERVERS_FILE`、`COMFYUI_TEMPLATE_DIR`、`EXPOSE_HOST_LOCAL_TRACK=1` | 自检能看到两个实例和各自 modes |
 | G8 | compose 增加模板/实例 JSON 的只读挂载 | 容器内路径存在，不是 Docker 自动建的空目录 |
 | G9 | 修 H3 能力声明：模板 sidecar 的 `modes` 优先，不再按文件名猜 | 自检如实显示 H3 的 t2v/i2v/首尾帧/参考/音频能力 |
@@ -146,8 +147,8 @@ curl -k -H "Authorization: Bearer $PUBLIC_API_TOKEN" https://<host>/api/health/r
 # H3（端口 8188）
 python main.py --listen 127.0.0.1 --port 8188
 
-# MOSS（端口 8189，需要 >=0.42；低显存加 --lowvram）
-python main.py --listen 127.0.0.1 --port 8189 --lowvram
+# MOSS（端口 8189，需要 >=0.42；满血 BF16 建议 48GB+，不要加 --lowvram）
+python main.py --listen 127.0.0.1 --port 8189
 ```
 
 > H3 与 MOSS 能否共用同一个 ComfyUI 版本，取决于 H3 模板在 0.42 上是否可用。  
@@ -161,8 +162,8 @@ python main.py --listen 127.0.0.1 --port 8189 --lowvram
 /root/astrmira/comfyui-templates/
   minimax-h3-ref2va.api.json
   minimax-h3-ref2va.meta.json
-  moss-image-t2i.api.json
-  moss-image-t2i.meta.json
+  moss-image-t2i-full.api.json
+  moss-image-t2i-full.meta.json
 ```
 
 `comfyui-servers.json`：
@@ -177,9 +178,9 @@ python main.py --listen 127.0.0.1 --port 8189 --lowvram
   },
   {
     "name": "moss",
-    "label": "MOSS-Image 8-step DMD",
+    "label": "MOSS-Image SFT BF16",
     "url": "http://10.0.0.12:8189",
-    "template": "moss-image-t2i"
+    "template": "moss-image-t2i-full"
   }
 ]
 ```
@@ -227,9 +228,11 @@ volumes:
    - 如果算力机是外挂服务器，界面应说明“本地”指“本部署的算力机”，而不是访问者电脑；避免把远程算力说成用户本机。
 
 5. **MOSS 的默认与回退**
-   - MOSS 是**可选 t2i**，不自动替代 FLUX.2 Klein；
-   - 技能/引擎选择要显式；模型缺失时如实不可用，不静默回落；
-   - 10GB 卡跑 MOSS 余量约 1.1GB，不建议作为默认高并发。
+   - **部署目标改为满血 BF16，不再用 int8/w4a8 量化版作为生产模型**；
+   - 满血 BF16 约 27.8GB 权重，48GB+ 才是舒适区；32GB 只能靠 offload，不能叫“满血体验”；
+   - 8-step DMD 是**可选加速 LoRA**，不是满血基线；默认先按官方 50 步 / CFG 3 验收，再决定是否提供“快速模式”；
+   - MOSS 仍是**可选 t2i**，不自动替代 FLUX.2 Klein；技能/引擎选择要显式；模型缺失时如实不可用，不静默回落；
+   - 10GB 3080 的量化实测只作为**评估证据**，不作为生产部署推荐。
 
 ### 2.6 验收命令
 

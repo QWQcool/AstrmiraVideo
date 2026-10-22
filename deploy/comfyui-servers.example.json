@@ -7,8 +7,8 @@
   },
   {
     "name": "moss",
-    "label": "MOSS-Image 8-step DMD",
+    "label": "MOSS-Image SFT BF16",
     "url": "http://10.0.0.12:8189",
-    "template": "moss-image-t2i"
+    "template": "moss-image-t2i-full"
   }
 ]

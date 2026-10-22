@@ -1,0 +1,11 @@
+{
+  "modes": ["t2i"],
+  "modelMatch": {
+    "unet": "moss_image_sft_bf16",
+    "clip": "qwen3.5_9b_bf16",
+    "vae": "flux2-vae",
+    "clipType": "moss_image"
+  },
+  "label": "MOSS-Image SFT BF16（满血 · 可选 t2i）",
+  "notes": "生产部署目标：diffusion_models/moss_image_sft_bf16 + text_encoders/qwen3.5_9b_bf16 + vae/flux2-vae；约 27.8GB 权重，建议 48GB+ 显存。官方 50 步 / CFG 3 为质量基线，euler/simple 需按现场官方模板复核；8-step DMD 只作可选加速对照，不是满血基线。"
+}
