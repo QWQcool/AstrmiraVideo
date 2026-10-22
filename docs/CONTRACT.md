@@ -1,6 +1,11 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.56 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.57 · 已冻结（变更需先改本文，再改代码）**
+> **V2.57 修订（2026-10-22）**：**选中文本节点更新方案（§26）** —— Step 11-S7-D5。
+>   ① 新增 `CanvasTextNodeUpdateProposal` / 请求 / 响应；`action` 固定为 `update-text-node`；
+>   ② 新增 `POST /api/agent/canvas/node-update-plan`；只返回方案，不写 CanvasDoc；
+>   ③ `targetNodeId` 必须在快照中存在且为 text；模型不得换目标；
+>   ④ 用户确认后前端更新 title/content；不改批次/产物/连线。复用既有错误码。
 > **V2.56 修订（2026-10-22）**：**待确认文本节点方案（§25）** —— Step 11-S7-D2。
 >   ① 新增 `CanvasNodeProposal` / 请求 / 响应；`action` 固定为 `create-text-node`；
 >   ② 新增 `POST /api/agent/canvas/node-plan`；只返回方案，**不写 CanvasDoc**；
@@ -838,6 +843,7 @@ export interface AssetListResponse {
 | `POST` | `/api/agent/plan` | **V2.54 新增（§23）**：Agent 规划器；只返回结构化计划，**不创建任务、不调用生成**。**200 → `AgentPlanResponse`（含必填 `engine: 'llm'`）**；无 Key → **501 `LLM_NOT_CONFIGURED`**；意图为空 / 计划结构或能力校验失败 → **400 `INVALID_REQUEST`**；上游拒绝凭据 → **401 `KEY_INVALID`**；其余上游故障（含超时/非 JSON）→ **502 `UPSTREAM_ERROR`**。凭据经 `X-LLM-Key`，服务端零留存 |
 | `POST` | `/api/agent/canvas` | **V2.55 新增（§24）**：**只读**画布助手；前端提交 `CanvasDoc` 派生快照，服务端只返回文本。**200 → `CanvasAgentResponse`（含必填 `engine: 'llm'`）**；无 Key → **501**；问题/快照非法或含写操作字段 → **400**；上游拒绝凭据 → **401**；其余上游故障 → **502**。不读画布数据库、不写画布、不调用生成 |
 | `POST` | `/api/agent/canvas/node-plan` | **V2.56 新增（§25）**：生成**待确认**的文本节点方案；服务端不写 CanvasDoc。**200 → `CanvasNodeProposalResponse`（`action: 'create-text-node'`，含 `engine: 'llm'`）**；无 Key → **501**；指令/快照非法或夹带写操作字段 → **400**；上游凭据 → **401**；其余上游故障 → **502**。确认与落节点由前端完成 |
+| `POST` | `/api/agent/canvas/node-update-plan` | **V2.57 新增（§26）**：为选中文本节点生成**待确认**更新方案；服务端不写 CanvasDoc。**200 → `CanvasTextNodeUpdateResponse`（`action: 'update-text-node'`）**；目标不存在/非 text → **400**；无 Key → **501**；上游凭据 → **401**；其余上游故障 → **502**。确认与更新由前端完成 |
 | `POST` | `/api/upload` | 上传参考图/视频/**音频**（multipart，**V2.6 起** ≤100MB × ≤4（**V2.10 起音频 ≤20MB**），**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目）。**V2.9**：落一份 sidecar `<assetId>.json`（`{ name?, uploadedAt }`）—— `name` = 用户原始文件名的 **sanitize 结果**（`basename` + 去控制字符 + 截断 120 字符），**只落本地**：不进上游请求、不进操作日志、不进任务快照；写失败不阻断上传（元数据是增强，不是事实源）。**V2.10（B57）**：白名单新增 **mp3 / wav / m4a**（`audio/mpeg` / `audio/wav` / 容器为 `video/mp4` 的纯音频文件），音频体积上限 **20MB**（`MAX_AUDIO_BYTES`，超限 413）、**原样落盘**（不走防线 4 图像清洗）；判 `audio` 的口径 = 容器嗅探 + **ffprobe 流类型复核**（见上「V2.10 修订」①，容器嗅探对 m4a 不可靠）；sidecar 增**可选** `kind`（`image`/`video`/`audio`，供 `/api/assets` 免探测复读）。**V2.11（B47）**：新增可选 multipart 字段 `projectId`（缺省 = 默认项目）→ 写进 sidecar 的项目归属；**显式给了不存在的项目 → 400 `INVALID_REQUEST` + 撤回本次已落盘的媒体文件**（不留孤儿）。⚠️ 字段可能在文件之后到达（multipart 顺序由客户端决定），因此 sidecar **统一在字段读完后写**（不支持"边收边写"会产生"资产在 A 项目、sidecar 写着默认项目"的错位） |
 | `GET` | `/api/assets` | **V2.7 新增**：**资产库清单（只读）**。**200 → `AssetListResponse`（§4 末尾）**（最近 200 个，新的在前；`mime` 为**魔数嗅探事实**，与 `/api/upload` 同口径；`url` 为同源 `/media/assets/<文件>` 直链；`createdAt` = 文件 mtime）。**V2.9**：条目新增可选 `name`（来自 sidecar；抽帧产物没有原始文件名 → 无该字段），弹层据此"按名字认素材"。**目录不存在**（从未上传过）→ 200 + 空数组，**不是 404**。用途：`@` 提及素材弹层（B41）与后续资产管理视图；不改变任何生命周期与清理规则（见 §7）。**V2.10（B57）**：`kind` 扩展为 `image|video|audio` —— **优先读 sidecar 的 `kind`**（上传时已由 ffprobe 算准，免去逐文件探测），sidecar 缺失 / 无该字段时按容器嗅探兜底（`audio/*` → audio、`video/*` → video；**不猜**——老资产与抽帧产物走这条，其中 `.m4a` 老资产会被兜底判为 video，属如实边界）。**V2.11（B47）**：条目新增**必填** `projectId`（sidecar 的 `projectId` 缺失即默认项目 —— 如实归属，不猜）；可选 `?project=<projectId>` 过滤，**省略 = 默认项目**（与 `/api/history` 同口径） |
 | `GET` | `/api/costs/summary` | **V2.12 新增（台账 B48）**：**成本台账汇总（只读）**。`?project=` —— **省略 = 默认项目**（与 `history` / `assets` 同口径）、字面量 **`all` = 跨项目汇总**（唯一刻意允许跨项目的读端点）；`?from=` / `?to=`（epoch ms，含端点）。**200 → `CostSummaryResponse`（§13）**：项目 / 按天 / 按模型三个维度的桶 + `uncertainCount`（`disposition='uncertain'` 的条数，**可能已产生费用**）+ `unsettledCount`（成功但无成本记录）+ `budget`（仅 `all` 档且配了 `MONTHLY_BUDGET_YUAN` 时非 null）+ `disclaimer`。**金额是预估**（公开价目 × 上游计费式），口径见 §13。扫描上界 20000 行，触界时 `truncated: true`（此时金额只是**部分之和**）；查询参数非法 → **400 `INVALID_REQUEST`**；无新错误码 |
@@ -2908,5 +2914,78 @@ interface CanvasNodeProposalResponse {
 - 不做服务端画布写入；没有 `POST /api/canvas/nodes` 新路由；
 - 不做删除/更新/连线工具；
 - 不做多节点批量方案；
+- 不自动提交生成；
+- 不把模型方案当已执行结果。
+
+## 26. 选中文本节点更新方案 `POST /api/agent/canvas/node-update-plan`（V2.57 新增；Step 11-S7-D5）
+
+> 目标：Agent 可以修改一个已存在的文本节点，但只生成 diff 方案；
+> 用户确认后由画布前端更新 `CanvasDoc`。服务端不写画布。
+
+### 26-1 请求 `CanvasTextNodeUpdateRequest`
+
+```ts
+interface CanvasTextNodeUpdateRequest {
+  instruction: string;              // 1–2000
+  canvas: CanvasAgentContext;       // 与 §24 相同；只读快照
+  targetNodeId: string;             // 必须在 canvas.nodes 中存在且 type=text
+  llm?: LlmConfig;
+}
+```
+
+- `targetNodeId` 不是 text 或不存在 → **400 `INVALID_REQUEST`**，不调用模型。
+- 请求体 strict；出现写操作/额外操作字段直接 400。
+- 服务端不读取画布数据库、不保存聊天历史。
+
+### 26-2 方案 `CanvasTextNodeUpdateProposal`
+
+```ts
+interface CanvasTextNodeUpdateProposal {
+  version: 1;
+  action: 'update-text-node';
+  targetNodeId: string;             // 必须等于请求的 targetNodeId
+  title: string;                    // 1–80
+  content: string;                  // 1–4000
+  reason?: string;                  // ≤300
+  warnings: string[];               // ≤5
+}
+```
+
+- 模型返回其他 `targetNodeId` → 上游方案被拒绝，不返回半份方案。
+- 只更新标题/正文；不改批次、产物、引用、连线、位置。
+
+### 26-3 响应 `CanvasTextNodeUpdateResponse`
+
+```ts
+interface CanvasTextNodeUpdateResponse {
+  proposal: CanvasTextNodeUpdateProposal;
+  engine: 'llm';
+  model: string;
+  usage?: { promptTokens: number; completionTokens: number };
+}
+```
+
+### 26-4 确认与写入（前端职责）
+
+1. 方案卡展示目标节点 + 旧/新标题/正文；
+2. 用户点击「确认修改」前，不得调用 `applyDoc` / 修改节点；
+3. 确认后只更新该节点的 `data.title` 与 `data.draft.prompt`，保留 batches/outputs/references/edges；
+4. 目标已不存在或不是 text → 拒绝写入并提示；
+5. 写入后读回文档作为成功判定；保存失败如实显示；
+6. 取消只丢方案。
+
+### 26-5 错误映射
+
+| 条件 | HTTP | 错误码 |
+|---|---:|---|
+| 无 `X-LLM-Key` / 端点未配全 | 501 | `LLM_NOT_CONFIGURED` |
+| 目标不存在/非 text、指令/快照非法、夹带写字段 | 400 | `INVALID_REQUEST` |
+| 上游 401/403 | 401 | `KEY_INVALID` |
+| 上游超时、非 JSON、方案结构非法或换目标 | 502 | `UPSTREAM_ERROR` |
+
+### 26-6 不做
+
+- 不做删除/移动/连线/批量更新；
+- 不做服务端画布写入；
 - 不自动提交生成；
 - 不把模型方案当已执行结果。

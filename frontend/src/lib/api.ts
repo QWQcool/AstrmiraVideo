@@ -3,6 +3,7 @@ import {
   AssetListResponseSchema,
   CanvasAgentResponseSchema,
   CanvasNodeProposalResponseSchema,
+  CanvasTextNodeUpdateResponseSchema,
   CanvasDocSaveResponseSchema,
   CanvasDocSchema,
   CanvasProjectIndexSchema,
@@ -34,6 +35,8 @@ import type {
   CanvasDoc,
   CanvasNodeProposalRequest,
   CanvasNodeProposalResponse,
+  CanvasTextNodeUpdateRequest,
+  CanvasTextNodeUpdateResponse,
   CanvasDocSaveResponse,
   CanvasProjectIndex,
   CostSummaryResponse,
@@ -351,6 +354,18 @@ export function proposeCanvasTextNode(
   options: { llmKey?: string } = {},
 ): Promise<CanvasNodeProposalResponse> {
   return request('/api/agent/canvas/node-plan', CanvasNodeProposalResponseSchema, {
+    method: 'POST',
+    body,
+    ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),
+  });
+}
+
+/** 只生成选中文本节点的待确认更新方案（CONTRACT §26 / S7-D5）。 */
+export function proposeCanvasTextNodeUpdate(
+  body: CanvasTextNodeUpdateRequest,
+  options: { llmKey?: string } = {},
+): Promise<CanvasTextNodeUpdateResponse> {
+  return request('/api/agent/canvas/node-update-plan', CanvasTextNodeUpdateResponseSchema, {
     method: 'POST',
     body,
     ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),

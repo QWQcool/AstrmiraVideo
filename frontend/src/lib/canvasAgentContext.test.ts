@@ -8,6 +8,7 @@ import {
   CANVAS_AGENT_NODE_LIMIT,
   buildCanvasAgentContext,
   canvasAgentContextSummary,
+  canvasAgentSelectedSummary,
 } from './canvasAgentContext';
 
 function docWithNodes(): ReturnType<typeof createEmptyCanvasDoc> {
@@ -86,5 +87,20 @@ describe('S7-D1 canvas agent context', () => {
   it('摘要统计节点/边/有产物的节点', () => {
     const summary = canvasAgentContextSummary(buildCanvasAgentContext(docWithNodes()));
     expect(summary).toEqual({ nodes: 2, edges: 1, outputs: 1, selected: null, truncated: false });
+  });
+
+  it('S7-D6 选中节点摘要包含批次/产物/引用/上下游', () => {
+    const summary = canvasAgentSelectedSummary(docWithNodes(), 'n2');
+    expect(summary).toMatchObject({
+      id: 'n2',
+      type: 'video',
+      title: 'n2',
+      batchCount: 1,
+      outputKinds: [],
+      referenceCount: 0,
+      upstream: [{ id: 'n1', title: '首帧', kind: 'lineage' }],
+      downstream: [],
+    });
+    expect(canvasAgentSelectedSummary(docWithNodes(), 'missing')).toBeNull();
   });
 });

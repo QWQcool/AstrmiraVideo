@@ -1,10 +1,20 @@
 import { useMemo, useState } from 'react';
-import type { AgentPlanUsage, CanvasDoc, CanvasNodeProposal } from '@astrmira/shared';
-import { askCanvasAgent, proposeCanvasTextNode } from '../lib/api';
+import type {
+  AgentPlanUsage,
+  CanvasDoc,
+  CanvasNodeProposal,
+  CanvasTextNodeUpdateProposal,
+} from '@astrmira/shared';
+import {
+  askCanvasAgent,
+  proposeCanvasTextNode,
+  proposeCanvasTextNodeUpdate,
+} from '../lib/api';
 import { resolveLlmConfig, resolveLlmKey } from '../lib/byok';
 import {
   buildCanvasAgentContext,
   canvasAgentContextSummary,
+  canvasAgentSelectedSummary,
 } from '../lib/canvasAgentContext';
 import { useTranslate } from '../lib/i18n';
 import { useShell } from '../lib/shell';
@@ -23,6 +33,8 @@ export interface CanvasAgentPanelProps {
   selectedNodeId?: string;
   /** 用户点击“创建节点”后才调用；返回 false 表示当前文档不可写。 */
   onCreateText(proposal: CanvasNodeProposal): boolean;
+  /** 用户点击“确认修改”后才调用；目标失效时返回 false。 */
+  onUpdateText(proposal: CanvasTextNodeUpdateProposal): boolean;
   onClose(): void;
 }
 
@@ -41,17 +53,21 @@ export function CanvasAgentPanel({
   doc,
   selectedNodeId,
   onCreateText,
+  onUpdateText,
   onClose,
 }: CanvasAgentPanelProps) {
   const t = useTranslate();
   const { byok, openByok } = useShell();
-  const [mode, setMode] = useState<'ask' | 'create'>('ask');
+  const [mode, setMode] = useState<'ask' | 'create' | 'update'>('ask');
   /** 创建模式默认走严格 schema；关闭后只拿自由文本建议，不能直接落节点。 */
   const [structured, setStructured] = useState(true);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [proposal, setProposal] = useState<CanvasNodeProposal | null>(null);
+  const [updateProposal, setUpdateProposal] = useState<CanvasTextNodeUpdateProposal | null>(
+    null,
+  );
   const [proposalMeta, setProposalMeta] = useState<{
     model: string;
     usage?: AgentPlanUsage;
@@ -63,10 +79,27 @@ export function CanvasAgentPanel({
     [doc, selectedNodeId],
   );
   const summary = useMemo(() => canvasAgentContextSummary(context), [context]);
+  const selected = useMemo(
+    () => canvasAgentSelectedSummary(doc, selectedNodeId),
+    [doc, selectedNodeId],
+  );
+  const canUpdate = selected !== null && selected.type === 'text';
+  const selectedUpstream =
+    selected === null || selected.upstream.length === 0
+      ? t('canvas.agent.none')
+      : selected.upstream.map((item) => item.title).join('、');
+  const selectedDownstream =
+    selected === null || selected.downstream.length === 0
+      ? t('canvas.agent.none')
+      : selected.downstream.map((item) => item.title).join('、');
 
   const submit = async (): Promise<void> => {
     const question = message.trim();
     if (question === '' || busy) return;
+    if (mode === 'update' && (selected === null || !canUpdate)) {
+      setError(t('canvas.agent.selectTextHint'));
+      return;
+    }
     const apiKey = resolveLlmKey(byok);
     if (apiKey === undefined) {
       setError(t('canvas.agent.noKey'));
@@ -77,10 +110,26 @@ export function CanvasAgentPanel({
     setError(null);
     setBusy(true);
     setProposal(null);
+    setUpdateProposal(null);
     setProposalMeta(null);
     setHistory((prev) => [...prev, { role: 'user', text: question }]);
     try {
-      if (mode === 'create' && structured) {
+      if (mode === 'update' && selected !== null) {
+        const result = await proposeCanvasTextNodeUpdate(
+          {
+            instruction: question,
+            canvas: context,
+            targetNodeId: selected.id,
+            llm: resolveLlmConfig(byok),
+          },
+          { llmKey: apiKey },
+        );
+        setUpdateProposal(result.proposal);
+        setProposalMeta({
+          model: result.model,
+          ...(result.usage === undefined ? {} : { usage: result.usage }),
+        });
+      } else if (mode === 'create' && structured) {
         const result = await proposeCanvasTextNode(
           {
             instruction: question,
@@ -137,6 +186,7 @@ export function CanvasAgentPanel({
     setBusy(true);
     setError(null);
     setProposal(null);
+    setUpdateProposal(null);
     setProposalMeta(null);
     try {
       const result = await proposeCanvasTextNode(
@@ -176,6 +226,24 @@ export function CanvasAgentPanel({
     setError(null);
   };
 
+  const confirmUpdate = (): void => {
+    if (updateProposal === null) return;
+    if (!onUpdateText(updateProposal)) {
+      setError(t('canvas.agent.updateFailed'));
+      return;
+    }
+    setHistory((prev) => [
+      ...prev,
+      {
+        role: 'assistant',
+        text: t('canvas.agent.updated', { title: updateProposal.title }),
+      },
+    ]);
+    setUpdateProposal(null);
+    setProposalMeta(null);
+    setError(null);
+  };
+
   return (
     <aside className="cs-agent-panel" data-testid="canvas-agent-panel" aria-label={t('canvas.agent.title')}>
       <header className="cs-agent-head">
@@ -211,6 +279,7 @@ export function CanvasAgentPanel({
           onClick={() => {
             setMode('ask');
             setProposal(null);
+            setUpdateProposal(null);
             setProposalMeta(null);
             setError(null);
           }}
@@ -225,13 +294,56 @@ export function CanvasAgentPanel({
           onClick={() => {
             setMode('create');
             setProposal(null);
+            setUpdateProposal(null);
             setProposalMeta(null);
             setError(null);
           }}
         >
           {t('canvas.agent.modeCreate')}
         </button>
+        <button
+          type="button"
+          className="cs-agent-mode"
+          data-testid="canvas-agent-mode-update"
+          aria-pressed={mode === 'update'}
+          disabled={!canUpdate}
+          title={canUpdate ? t('canvas.agent.modeUpdate') : t('canvas.agent.selectTextHint')}
+          onClick={() => {
+            setMode('update');
+            setProposal(null);
+            setUpdateProposal(null);
+            setProposalMeta(null);
+            setError(null);
+          }}
+        >
+          {t('canvas.agent.modeUpdate')}
+        </button>
       </div>
+
+      <section className="cs-agent-selection" data-testid="canvas-agent-selection">
+        <span className="cs-agent-selection-title">{t('canvas.agent.selectionTitle')}</span>
+        {selected === null ? (
+          <p className="wb-note">{t('canvas.agent.selectionEmpty')}</p>
+        ) : (
+          <>
+            <strong>{selected.title}</strong>
+            <p className="wb-note">
+              {t('canvas.agent.selectionMeta', {
+                type: selected.type,
+                batches: selected.batchCount,
+                outputs: selected.outputKinds.length,
+                references: selected.referenceCount,
+              })}
+            </p>
+            <p className="wb-note">
+              {t('canvas.agent.selectionUpstream', { titles: selectedUpstream })}
+            </p>
+            <p className="wb-note">
+              {t('canvas.agent.selectionDownstream', { titles: selectedDownstream })}
+            </p>
+          </>
+        )}
+      </section>
 
       {mode === 'create' ? (
         <label className="cs-agent-structure-toggle">
@@ -242,6 +354,7 @@ export function CanvasAgentPanel({
             onChange={(event) => {
               setStructured(event.target.checked);
               setProposal(null);
+              setUpdateProposal(null);
               setProposalMeta(null);
               setError(null);
             }}
@@ -252,11 +365,15 @@ export function CanvasAgentPanel({
       ) : null}
 
       <p className="wb-note cs-agent-readonly">
-        {mode === 'create'
-          ? structured
-            ? t('canvas.agent.createHint')
-            : t('canvas.agent.freeformHint')
-          : t('canvas.agent.readOnly')}
+        {mode === 'update'
+          ? canUpdate
+            ? t('canvas.agent.updateHint')
+            : t('canvas.agent.selectTextHint')
+          : mode === 'create'
+            ? structured
+              ? t('canvas.agent.createHint')
+              : t('canvas.agent.freeformHint')
+            : t('canvas.agent.readOnly')}
       </p>
 
       <div className="cs-agent-log" data-testid="canvas-agent-log" aria-live="polite">
@@ -340,6 +457,67 @@ export function CanvasAgentPanel({
             </div>
           </section>
         )}
+        {updateProposal === null ? null : (
+          <section className="cs-agent-proposal" data-testid="canvas-node-update-proposal">
+            <h4 className="cs-agent-proposal-title">{t('canvas.agent.updateProposalTitle')}</h4>
+            <p className="wb-note">
+              {t('canvas.agent.updateTarget', {
+                title: selected?.title ?? updateProposal.targetNodeId,
+              })}
+            </p>
+            <div className="cs-agent-diff">
+              <span className="wb-note">{t('canvas.agent.oldTitle')}</span>
+              <p>{selected?.title ?? t('canvas.agent.none')}</p>
+              <span className="wb-note">{t('canvas.agent.newTitle')}</span>
+              <p>{updateProposal.title}</p>
+              <span className="wb-note">{t('canvas.agent.oldContent')}</span>
+              <p>{selected?.prompt ?? t('canvas.agent.none')}</p>
+              <span className="wb-note">{t('canvas.agent.newContent')}</span>
+              <p>{updateProposal.content}</p>
+            </div>
+            {updateProposal.reason === undefined ? null : (
+              <p className="wb-note">{updateProposal.reason}</p>
+            )}
+            {updateProposal.warnings.map((warning) => (
+              <p className="wb-note cs-agent-proposal-warning" key={warning}>
+                {warning}
+              </p>
+            ))}
+            <p className="wb-note">{t('canvas.agent.updateProposalNote')}</p>
+            {proposalMeta === null ? null : (
+              <span className="wb-note cs-agent-meta">
+                {proposalMeta.model}
+                {proposalMeta.usage === undefined
+                  ? ''
+                  : ` · ${t('canvas.agent.usage', {
+                      prompt: proposalMeta.usage.promptTokens,
+                      completion: proposalMeta.usage.completionTokens,
+                    })}`}
+              </span>
+            )}
+            <div className="cs-agent-proposal-actions">
+              <button
+                type="button"
+                className="wb-btn"
+                data-testid="canvas-node-update-cancel"
+                onClick={() => {
+                  setUpdateProposal(null);
+                  setProposalMeta(null);
+                }}
+              >
+                {t('canvas.agent.cancel')}
+              </button>
+              <button
+                type="button"
+                className="wb-btn wb-btn-primary"
+                data-testid="canvas-node-update-confirm"
+                onClick={confirmUpdate}
+              >
+                {t('canvas.agent.confirmUpdate')}
+              </button>
+            </div>
+          </section>
+        )}
       </div>
 
       {error === null ? null : (
@@ -359,14 +537,18 @@ export function CanvasAgentPanel({
           className="cs-agent-input"
           data-testid="canvas-agent-input"
           aria-label={
-            mode === 'create'
-              ? t('canvas.agent.createPlaceholder')
-              : t('canvas.agent.placeholder')
+            mode === 'update'
+              ? t('canvas.agent.updatePlaceholder')
+              : mode === 'create'
+                ? t('canvas.agent.createPlaceholder')
+                : t('canvas.agent.placeholder')
           }
           placeholder={
-            mode === 'create'
-              ? t('canvas.agent.createPlaceholder')
-              : t('canvas.agent.placeholder')
+            mode === 'update'
+              ? t('canvas.agent.updatePlaceholder')
+              : mode === 'create'
+                ? t('canvas.agent.createPlaceholder')
+                : t('canvas.agent.placeholder')
           }
           rows={3}
           value={message}
@@ -384,13 +566,15 @@ export function CanvasAgentPanel({
           type="submit"
           className="wb-btn wb-btn-primary"
           data-testid="canvas-agent-send"
-          disabled={busy || message.trim() === ''}
+          disabled={busy || message.trim() === '' || (mode === 'update' && !canUpdate)}
         >
-          {mode === 'create'
-            ? structured
-              ? t('canvas.agent.propose')
-              : t('canvas.agent.freeform')
-            : t('canvas.agent.send')}
+          {mode === 'update'
+            ? t('canvas.agent.updatePropose')
+            : mode === 'create'
+              ? structured
+                ? t('canvas.agent.propose')
+                : t('canvas.agent.freeform')
+              : t('canvas.agent.send')}
         </button>
       </form>
     </aside>

@@ -933,6 +933,43 @@
   cursor: pointer;
 }
 
+.cs-agent-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 8px 12px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+  overflow-wrap: anywhere;
+}
+
+.cs-agent-selection-title {
+  color: var(--gold);
+  font-size: var(--fs-micro);
+}
+
+.cs-agent-selection strong {
+  font-size: var(--fs-note);
+}
+
+.cs-agent-selection p {
+  margin: 0;
+}
+
+.cs-agent-diff {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 8px;
+  align-items: start;
+}
+
+.cs-agent-diff p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .cs-agent-structure-toggle input {
   flex: none;
 }

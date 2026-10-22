@@ -29,6 +29,7 @@ import {
   type CanvasDoc,
   type CanvasNodeType,
   type CanvasNodeProposal,
+  type CanvasTextNodeUpdateProposal,
   type CanvasProjectIndex,
   type CanvasReferenceRole,
   type TaskProgress,
@@ -838,6 +839,40 @@ export function CanvasStudioView() {
         updatedAt: Date.now(),
       }));
       setNotice(t('canvas.agent.created', { title: proposal.title }));
+      return true;
+    },
+    [applyDoc, t],
+  );
+
+  /** S7-D5：只更新确认过的目标文本节点，不动批次/产物/连线。 */
+  const updateAgentTextNode = useCallback(
+    (proposal: CanvasTextNodeUpdateProposal): boolean => {
+      const current = docRef.current;
+      if (current === null) return false;
+      const node = findCanvasNode(current, proposal.targetNodeId);
+      if (node === null || node.type !== 'text') return false;
+      applyDoc((d) => ({
+        ...d,
+        nodes: d.nodes.map((item) =>
+          item.id === proposal.targetNodeId
+            ? {
+                ...item,
+                data: {
+                  ...item.data,
+                  title: proposal.title,
+                  draft: {
+                    ...item.data.draft,
+                    prompt: proposal.content,
+                    updatedAt: Date.now(),
+                  },
+                },
+              }
+            : item,
+        ),
+        updatedAt: Date.now(),
+      }));
+      pendingSelect.current = proposal.targetNodeId;
+      setNotice(t('canvas.agent.updated', { title: proposal.title }));
       return true;
     },
     [applyDoc, t],
@@ -2056,6 +2091,7 @@ export function CanvasStudioView() {
                 doc={doc}
                 {...(selectedIds[0] === undefined ? {} : { selectedNodeId: selectedIds[0] })}
                 onCreateText={createAgentTextNode}
+                onUpdateText={updateAgentTextNode}
                 onClose={() => setAgentOpen(false)}
               />
             ) : null}

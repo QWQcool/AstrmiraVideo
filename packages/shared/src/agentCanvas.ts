@@ -101,3 +101,48 @@ export const CanvasNodeProposalResponseSchema = z
   })
   .strict();
 export type CanvasNodeProposalResponse = z.infer<typeof CanvasNodeProposalResponseSchema>;
+
+/**
+ * S7-D5：更新**已存在的文本节点**，同样只返回待确认方案。
+ *
+ * targetNodeId 由前端选中节点提供，服务端校验目标存在且是 text；
+ * 模型不得改目标，写入仍由前端在用户确认后完成。
+ */
+export const CanvasTextNodeUpdateProposalSchema = z
+  .object({
+    version: z.literal(1),
+    action: z.literal('update-text-node'),
+    targetNodeId: z.string().min(1).max(160),
+    title: z.string().trim().min(1).max(80),
+    content: z.string().trim().min(1).max(4000),
+    reason: z.string().trim().max(300).optional(),
+    warnings: z.array(z.string().trim().min(1).max(300)).max(5).default([]),
+  })
+  .strict();
+export type CanvasTextNodeUpdateProposal = z.infer<
+  typeof CanvasTextNodeUpdateProposalSchema
+>;
+
+export const CanvasTextNodeUpdateRequestSchema = z
+  .object({
+    instruction: z.string().trim().min(1).max(2000),
+    canvas: CanvasAgentContextSchema,
+    targetNodeId: z.string().min(1).max(160),
+    llm: LlmConfigSchema.optional(),
+  })
+  .strict();
+export type CanvasTextNodeUpdateRequest = z.infer<
+  typeof CanvasTextNodeUpdateRequestSchema
+>;
+
+export const CanvasTextNodeUpdateResponseSchema = z
+  .object({
+    proposal: CanvasTextNodeUpdateProposalSchema,
+    engine: z.literal('llm'),
+    model: z.string().min(1),
+    usage: AgentPlanUsageSchema.optional(),
+  })
+  .strict();
+export type CanvasTextNodeUpdateResponse = z.infer<
+  typeof CanvasTextNodeUpdateResponseSchema
+>;

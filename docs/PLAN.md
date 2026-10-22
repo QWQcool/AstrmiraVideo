@@ -1718,6 +1718,15 @@
 - **【门禁】** 本次不做真实 CI 运行；用 Python YAML 解析 + 静态 grep 验收。推送后确认没有新增 run；首次真实手动运行推迟到额度允许时。
 - **【边界】** 不改测试逻辑、依赖版本、部署步骤；不恢复 schedule；`ENABLE_DEPLOY` 不动。
 
+### 2026-10-22 · S7-D5/D6：更新选中文本节点与节点上下文
+
+- **【契约】** CONTRACT 升 **V2.57** 新增 §26：`CanvasTextNodeUpdateProposal` / 请求 / 响应；`POST /api/agent/canvas/node-update-plan`。`targetNodeId` 必须存在于快照且为 text；模型不得换目标；服务端只返回方案，不写 CanvasDoc。
+- **【D5】** 画布助手新增「修改选中节点」模式：只在选中文本节点时可用；方案卡展示目标 + 旧/新标题/正文 + reason/warnings；确认后只更新 `data.title` / `data.draft.prompt`，保留批次、产物、引用、连线；取消不写。
+- **【D6】** 侧栏新增选中节点上下文卡：类型、批次数、产物类别、引用数、直接上游/下游标题。`canvasAgentSelectedSummary` 纯派生，不新增后端字段/请求。
+- **【证据】** 受控 UI：选中文本节点 → 更新方案出现时 2 节点、0 次 PUT；确认后仍 2 节点，PUT 中 title/content 已更新、batches/edges 未动；`/api/generate` 0 次；0 console error。真实 DeepSeek 更新请求 200（446 prompt + 86 completion tokens），返回正确 target/标题/正文 + 1 条 warning，未生成媒体。
+- **【门禁】** 前端 **609 passed**；后端 **714 passed（80 文件）**；契约 **11/11**；type/lint/build/visual-selfcheck 通过。**未运行 GitHub Actions**（自动触发已暂停）。
+- **【边界】** 不更新非文本节点、不改批次/产物/连线、不删除、不批量更新、不自动生成。
+
 ### 2026-10-22 · S7-D4：自由发挥显式转结构化方案
 
 - **【入口】** 创建模式下的自由发挥回答新增「整理成可创建方案」；只有用户点击才发起第二次 `/api/agent/canvas/node-plan` 请求，不自动解析自由文本、不自动落节点。

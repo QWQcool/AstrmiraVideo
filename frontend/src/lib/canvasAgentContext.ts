@@ -64,6 +64,48 @@ export function buildCanvasAgentContext(
   };
 }
 
+export interface CanvasAgentSelectedSummary {
+  id: string;
+  type: CanvasDoc['nodes'][number]['type'];
+  title: string;
+  prompt: string;
+  batchCount: number;
+  outputKinds: OutputKind[];
+  referenceCount: number;
+  upstream: Array<{ id: string; title: string; kind: string }>;
+  downstream: Array<{ id: string; title: string; kind: string }>;
+}
+
+/**
+ * S7-D6：给侧栏用的选中节点上下文（纯派生，不写文档）。
+ * 只取直接相邻节点；没有选中或 id 失效时返回 null。
+ */
+export function canvasAgentSelectedSummary(
+  doc: CanvasDoc,
+  selectedNodeId?: string,
+): CanvasAgentSelectedSummary | null {
+  if (selectedNodeId === undefined) return null;
+  const node = doc.nodes.find((item) => item.id === selectedNodeId);
+  if (node === undefined) return null;
+  const titleOf = (id: string): string =>
+    doc.nodes.find((item) => item.id === id)?.data.title ?? id;
+  return {
+    id: node.id,
+    type: node.type,
+    title: node.data.title ?? node.id,
+    prompt: node.data.draft.prompt,
+    batchCount: node.data.batches.length,
+    outputKinds: outputKindsOf(node),
+    referenceCount: node.data.draft.references.length,
+    upstream: doc.edges
+      .filter((edge) => edge.to === node.id)
+      .map((edge) => ({ id: edge.from, title: titleOf(edge.from), kind: edge.kind })),
+    downstream: doc.edges
+      .filter((edge) => edge.from === node.id)
+      .map((edge) => ({ id: edge.to, title: titleOf(edge.to), kind: edge.kind })),
+  };
+}
+
 export function canvasAgentContextSummary(context: CanvasAgentContext): {
   nodes: number;
   edges: number;
