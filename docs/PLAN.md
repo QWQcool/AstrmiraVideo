@@ -1713,7 +1713,7 @@
 
 - **【入口】** 创建模式下的自由发挥回答新增「整理成可创建方案」；只有用户点击才发起第二次 `/api/agent/canvas/node-plan` 请求，不自动解析自由文本、不自动落节点。
 - **【规则】** 转换指令走字典文案，自由文本截断到 1800 字以遵守 2000 字请求上限；转换后的方案仍走严格 schema + 方案卡 + 用户确认；取消只丢方案。
-- **【证据】** 自由发挥阶段 `proposal` 调用 0 次、节点仍 2；点击转换后 `node-plan` 调用 1 次、方案卡出现时仍 2 节点/0 次画布 PUT；确认后 3 节点，正文写入正确；`/api/generate` 0 次、0 console error。
+- **【证据】** 自由发挥阶段 `proposal` 调用 0 次、节点仍 2；点击转换后 `node-plan` 调用 1 次、方案卡出现时仍 2 节点/0 次画布 PUT；确认后 3 节点，正文写入正确；`/api/generate` 0 次、0 console error。另用真实 DeepSeek 跑转换：200，403 prompt + 251 completion tokens，返回合法 `create-text-node` 方案 + 2 条 warning；未生成媒体。
 - **【门禁】** 前端 **608 passed**；后端 **707 passed**；契约 **11/11**；type/lint/build/visual-selfcheck 通过。
 - **【边界】** 不做自动解析/自动转换；不做 TTS/音乐/音效；不开放删除/更新/连线。
 
