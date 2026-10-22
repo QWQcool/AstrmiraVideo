@@ -1696,6 +1696,14 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-22 · S7-C2：Agent 计划创建画布草稿节点
+
+- **【交接】** 计划卡新增「在画布中创建草稿」：`sessionStorage` 一次性交接（`AgentPlanSchema` 解析），跳 `#/canvas`；画布优先用当前项目，一块画布都没有时按既有交接纪律自动建一块。消费后立即清除，不塞 URL、不跨视图共享全局状态。
+- **【映射】** 新增 `lib/agentCanvas.ts`：`apply-skill` → 一个图片/视频草稿节点；`add-reference` → 稳定引用（`asset:` 去前缀、`task:` 保留），角色映射到 `CanvasReferenceRole`；`set-params` 作为全局参数；只有 note 时创建一个文本节点；多个节点按计划顺序连 `dependency` 边。**节点 `batches` 为空，不提交生成**。
+- **【不静默】** 未知技能返回 `missingSkillIds`，不创建对应节点，画布如实提示；计划结构/能力在 CreateView 交接前再校验一次。
+- **【证据】** 受控计划 + 画布 API mock：计划卡交接 → `#/canvas` 创建 2 个节点、1 条依赖边并落盘；`POST /api/generate` 计数 **0**；handoff 被消费后为 null；0 console error。前端 **604 passed**（51 文件，含 5 条 Agent→画布/handoff 测试）；type/lint/build/visual-selfcheck 通过。
+- **【边界】** 不新增 `create-node` plan step（避免为 UI 按钮造第二套计划协议）；不把 note/参数自动改写成节点内容；节点不自动执行；画布新建仅沿用既有一次性交接规则。**未使用 REA 逆向即梦内部**：其公开 UI 只能看到“计划 → 画布”的结果，不能证明内部数据契约；本实现以我们已有的 `CanvasDoc` / `CanvasDocNode` 为准，避免把观察当接口。
+
 ### 2026-10-22 · S7-C1：Agent 计划卡 step 级结构编辑
 
 - **【编辑】** 计划卡每个 step 增加上移/下移/删除；至少保留 1 步，最后一步的删除按钮禁用。编辑只改步骤结构，提示词/参数内容仍走「修改意图」重规划，不在计划卡里做隐形提示词改写。

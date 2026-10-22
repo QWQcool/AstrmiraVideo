@@ -32,6 +32,7 @@ import {
   uploadAssets,
 } from '../lib/api';
 import { resolveLlmConfig, resolveLlmKey, resolveProviderKey } from '../lib/byok';
+import { setAgentCanvasHandoff } from '../lib/agentCanvasHandoff';
 import { setCanvasResultHandoff } from '../lib/canvasHandoff';
 import {
   DEFAULT_DURATION_SEC,
@@ -780,6 +781,23 @@ export function CreateView() {
     setAgentError(null);
   };
 
+  /** S7-C2：把计划交给画布建草稿节点；不在此页提交生成。 */
+  const createCanvasFromAgent = (): void => {
+    if (agentPlan === null) return;
+    const validation = validateAgentPlan(agentPlan.plan, agentSkills);
+    if (!validation.ok) {
+      setAgentPlanIssues(validation.issues);
+      setAgentError(t('agent.plan.invalid', { issues: validation.issues.join('；') }));
+      return;
+    }
+    if (!setAgentCanvasHandoff(agentPlan.plan)) {
+      setAgentError(t('agent.plan.canvasFailed'));
+      return;
+    }
+    setAgentError(null);
+    navigate('#/canvas');
+  };
+
   /** S6-B2：应用计划 = 落草稿；**不调用 submitGenerate**。 */
   const applyAgentPlan = async (): Promise<void> => {
     if (agentPlan === null || agentApplying) return;
@@ -1300,6 +1318,7 @@ export function CreateView() {
               applying={agentApplying}
               issues={agentPlanIssues}
               onPlanChange={updateAgentPlan}
+              onCreateCanvas={createCanvasFromAgent}
               onApply={() => void applyAgentPlan()}
               onReject={() => {
                 setAgentPlan(null);

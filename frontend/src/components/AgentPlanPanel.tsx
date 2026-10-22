@@ -17,6 +17,7 @@ export interface AgentPlanPanelProps {
   applying: boolean;
   issues: readonly string[];
   onPlanChange(next: AgentPlan): void;
+  onCreateCanvas(): void;
   onApply(): void;
   onReject(): void;
   onModify(): void;
@@ -56,6 +57,7 @@ export function AgentPlanPanel({
   applying,
   issues,
   onPlanChange,
+  onCreateCanvas,
   onApply,
   onReject,
   onModify,
@@ -246,6 +248,15 @@ export function AgentPlanPanel({
           </button>
           <button type="button" className="wb-btn" onClick={onReject} disabled={applying}>
             {t('agent.plan.reject')}
+          </button>
+          <button
+            type="button"
+            className="wb-btn"
+            data-testid="agent-create-canvas"
+            onClick={onCreateCanvas}
+            disabled={applying || issues.length > 0}
+          >
+            {t('agent.plan.createCanvas')}
           </button>
           <button
             type="button"

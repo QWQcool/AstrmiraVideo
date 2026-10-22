@@ -22,6 +22,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import {
+  BUILTIN_SKILLS,
   createCanvasNode,
   createEmptyCanvasDoc,
   type CanvasDocNode,
@@ -94,6 +95,15 @@ import {
   resultHandoffAsset,
   type CanvasResultHandoff,
 } from '../lib/canvasHandoff';
+import {
+  appendAgentCanvasPlan,
+  buildAgentCanvasPlan,
+} from '../lib/agentCanvas';
+import {
+  clearAgentCanvasHandoff,
+  peekAgentCanvasHandoff,
+} from '../lib/agentCanvasHandoff';
+import { loadSkillLibrary } from '../lib/skills';
 import { newIdempotencyKey } from '../lib/idempotency';
 import {
   addCanvasLineageEdge,
@@ -279,6 +289,7 @@ export function CanvasStudioView() {
   const pendingSelect = useRef<string | null>(null);
   /** V2.49：结果交接在**保存成功之前**不消费，失败/刷新后还能再试 */
   const pendingHandoffRef = useRef<CanvasResultHandoff | null>(null);
+  const pendingAgentHandoffRef = useRef(false);
   /** 空索引自动建画布只允许一次；失败不自动重试（交给用户） */
   const autoCreateRef = useRef(false);
   const rfRef = useRef<ReactFlowInstance<StudioRfNode, Edge> | null>(null);
@@ -488,8 +499,11 @@ export function CanvasStudioView() {
           requestedProject ?? pickInitialCanvasProject(loaded, readActiveCanvasProjectId());
         if (initial !== null) {
           await openProject(initial);
-        } else if (!autoCreateRef.current && peekCanvasResultHandoff() !== null) {
-          // 「去画布编辑」但一块画布都没有：先建一块，交接由下面的 effect 消费。
+        } else if (
+          !autoCreateRef.current &&
+          (peekCanvasResultHandoff() !== null || peekAgentCanvasHandoff() !== null)
+        ) {
+          // 「去画布编辑」/「Agent 建画布草稿」但一块画布都没有：先建一块，交接由下面的 effect 消费。
           // 只自动建一次；保存失败就报错，不再循环创建。
           autoCreateRef.current = true;
           const fresh = createEmptyCanvasDoc(newCanvasProjectId(), defaultCanvasName(loaded.projects));
@@ -981,6 +995,43 @@ export function CanvasStudioView() {
     addAssets([resultHandoffAsset(handoff)], 'from_asset');
     setNotice(t('common.resultToCanvas'));
   }, [doc?.projectId, addAssets, setNodes, t]);
+
+  /**
+   * S7-C2：消费 Agent 计划交接，在当前画布创建草稿节点。
+   * 先 take 一次性计划；结构/能力在 CreateView 已校验，这里只处理 catalog 缺失。
+   */
+  useEffect(() => {
+    if (doc === null || pendingAgentHandoffRef.current) return;
+    const handed = peekAgentCanvasHandoff();
+    if (handed === null) return;
+    pendingAgentHandoffRef.current = true;
+    const skills = [...BUILTIN_SKILLS, ...loadSkillLibrary().library.custom];
+    const built = buildAgentCanvasPlan(handed, skills, { x: 80, y: 80 });
+    if (built.nodes.length === 0) {
+      clearAgentCanvasHandoff();
+      setNotice(
+        built.missingSkillIds.length === 0
+          ? t('agent.plan.canvasEmpty')
+          : t('agent.plan.canvasMissing', { ids: built.missingSkillIds.join(', ') }),
+      );
+      pendingAgentHandoffRef.current = false;
+      return;
+    }
+    const first = built.nodes[0];
+    if (first === undefined) {
+      pendingAgentHandoffRef.current = false;
+      return;
+    }
+    pendingSelect.current = first.id;
+    applyDoc((current) => appendAgentCanvasPlan(current, built));
+    clearAgentCanvasHandoff();
+    setNotice(
+      built.missingSkillIds.length === 0
+        ? t('agent.plan.canvasCreated', { count: built.nodes.length })
+        : t('agent.plan.canvasMissing', { ids: built.missingSkillIds.join(', ') }),
+    );
+    pendingAgentHandoffRef.current = false;
+  }, [doc?.projectId, applyDoc, t]);
 
   const handleUpload = useCallback(
     async (files: File[]): Promise<void> => {
