@@ -44,6 +44,8 @@ export function CanvasAgentPanel({
   const t = useTranslate();
   const { byok, openByok } = useShell();
   const [mode, setMode] = useState<'ask' | 'create'>('ask');
+  /** 创建模式默认走严格 schema；关闭后只拿自由文本建议，不能直接落节点。 */
+  const [structured, setStructured] = useState(true);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +78,7 @@ export function CanvasAgentPanel({
     setProposalMeta(null);
     setHistory((prev) => [...prev, { role: 'user', text: question }]);
     try {
-      if (mode === 'create') {
+      if (mode === 'create' && structured) {
         const result = await proposeCanvasTextNode(
           {
             instruction: question,
@@ -91,9 +93,13 @@ export function CanvasAgentPanel({
           ...(result.usage === undefined ? {} : { usage: result.usage }),
         });
       } else {
+        const freeformQuestion =
+          mode === 'create'
+            ? t('canvas.agent.freeformPrompt', { instruction: question })
+            : question;
         const result = await askCanvasAgent(
           {
-            question,
+            question: freeformQuestion,
             canvas: context,
             llm: resolveLlmConfig(byok),
           },
@@ -188,8 +194,30 @@ export function CanvasAgentPanel({
         </button>
       </div>
 
+      {mode === 'create' ? (
+        <label className="cs-agent-structure-toggle">
+          <input
+            type="checkbox"
+            data-testid="canvas-agent-structured"
+            checked={structured}
+            onChange={(event) => {
+              setStructured(event.target.checked);
+              setProposal(null);
+              setProposalMeta(null);
+              setError(null);
+            }}
+          />
+          <span>{t('canvas.agent.structured')}</span>
+          <span className="wb-note">{t('canvas.agent.structuredHint')}</span>
+        </label>
+      ) : null}
+
       <p className="wb-note cs-agent-readonly">
-        {mode === 'create' ? t('canvas.agent.createHint') : t('canvas.agent.readOnly')}
+        {mode === 'create'
+          ? structured
+            ? t('canvas.agent.createHint')
+            : t('canvas.agent.freeformHint')
+          : t('canvas.agent.readOnly')}
       </p>
 
       <div className="cs-agent-log" data-testid="canvas-agent-log" aria-live="polite">
@@ -308,7 +336,11 @@ export function CanvasAgentPanel({
           data-testid="canvas-agent-send"
           disabled={busy || message.trim() === ''}
         >
-          {mode === 'create' ? t('canvas.agent.propose') : t('canvas.agent.send')}
+          {mode === 'create'
+            ? structured
+              ? t('canvas.agent.propose')
+              : t('canvas.agent.freeform')
+            : t('canvas.agent.send')}
         </button>
       </form>
     </aside>

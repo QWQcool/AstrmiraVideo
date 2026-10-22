@@ -1709,6 +1709,19 @@
 - **【计划调整】** 保留我们更明确的「计划卡 + 显式创建画布草稿」，不改成自动落节点。新增 **S7-D1 Canvas Agent 只读侧栏**（list nodes/edges/outputs/selected node，禁止改节点/生成，文本成本单列）；再开 **S7-D2 写工具**：第一版只开放“创建文本节点”，必须先展示计划卡并确认；**默认不开放删除**，更新/连线逐项另开；成功判定必须读回 `CanvasDoc`，不信模型文案。首页与画布两个入口不强行合并会话，仍用 `agentCanvasHandoff` 传已确认计划。
 - **【不照搬】** 不把即梦纯聊天回复当唯一计划形态；不把“0 积分”写进我们 UI；不在写工具验证前宣称画布 Agent 能自动建节点。GPU/满血 MOSS 计划不变。
 
+### 2026-10-22 · S7-D3：结构化/自由发挥双模式与真实 DeepSeek 验收
+
+- **【双模式】** 创建模式增加「结构化」开关：
+  - 开：`POST /api/agent/canvas/node-plan`，严格 schema，出方案卡；确认后才落节点；
+  - 关：`POST /api/agent/canvas`，自由发挥只返回文本建议，**不生成方案卡、不出现创建按钮、不写画布**。
+  提示文案明确“自由发挥只读”；不把自由文本解析成写操作。
+- **【真实 DeepSeek】** 本机 Key（未回显/未提交）实测 2/2：
+  - 结构化：200，346 prompt + 194 completion tokens；`action=create-text-node`，标题/正文合法，返回 2 条 warning；
+  - 自由发挥：200，288 + 152 tokens；返回转场创意 + 依据，未生成媒体。
+- **【UI 证据】** 自由发挥：无 `canvas-node-proposal`、节点数仍 2；结构化：方案卡出现时仍 2 节点、0 次画布 PUT，确认后 3 节点，正文写入正确；0 次 `/api/generate`、0 console error。
+- **【门禁】** 前端 **608 passed**；后端 **707 passed**；契约 **11/11**；type/lint/build/visual-selfcheck 通过。
+- **【音效】** 用户明确暂缓音效/Foley；本片不新增 TTS、音乐、音效路由或依赖。音频作为后续独立大模块评估。
+
 ### 2026-10-22 · S7-D2：待确认的文本节点方案
 
 - **【契约】** CONTRACT 升 **V2.56** 新增 §25：`CanvasNodeProposal` / `CanvasNodeProposalRequest` / `CanvasNodeProposalResponse`；`POST /api/agent/canvas/node-plan` 只生成一张 `action: 'create-text-node'` 的方案，**服务端不写 CanvasDoc**。`CanvasNodeCreatedFrom` 新增 `agent`，与手动/技能节点区分。
