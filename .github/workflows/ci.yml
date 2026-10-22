@@ -2,6 +2,9 @@ name: CI
 
 # CI 三件套（PLAN §6-D14 / PLAN §4 Step 2-AC8）：lint / type / test，外加契约层专项。
 #
+# 2026-10-22：自动触发已暂停（Actions 配额原因），当前只能手动 workflow_dispatch。
+# 恢复自动的判断依据与具体改法见文件末尾注释。
+#
 # ⚠️ 关于 ffmpeg 与夹具片段（这两个都**不在仓库里**，必须由 runner 现场准备）：
 # 1. ffmpeg 走系统安装（PLAN §6-D10 / UPSTREAM.md）：仓库与镜像都不内置二进制；
 # 2. **夹具片段（tests/fixtures/clips/*.mp4）是 .gitignore 的** —— 二进制不入库，
@@ -10,10 +13,18 @@ name: CI
 #    看起来像"测试自己坏了"，实际只是**输入没生成**（这一步曾经漏过，五个提交全红）。
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # 2026-10-22：暂停自动 CI。原因：Free 计划私有仓库 2,000 分钟/月额度已用 90%
+  #（本月 193 次运行 × 平均 478 秒 ≈ 1,530 分钟），剩余额度不足以再自动跑。
+  # 改为按需手动触发：
+  #   网页 → Actions → CI → Run workflow → 选择分支 main
+  #   CLI  → gh workflow run CI --repo QWQcool/AstrmiraVideo --ref main -f deploy=false
+  # 恢复自动需把 push / pull_request 加回来，见文末「恢复自动」。
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: '验证通过后部署到生产（还需仓库 Variable ENABLE_DEPLOY=1）'
+        type: boolean
+        default: false
 
 jobs:
   verify:
@@ -98,11 +109,11 @@ jobs:
           path: artifacts/ui-smoke/
           if-no-files-found: ignore
 
-  # ── CD：CI 全绿后自动发布到服务器（Step 5）────────────────────────────────
+  # ── CD：手动工作流验证通过后按开关发布到服务器（Step 5）──────────────────
   #
   # 设计取舍（都是刻意的）：
   # 1. `needs: verify` —— **只有 CI 通过才部署**，避免把红着的代码送上线；
-  # 2. 只在 `push` 到 main 时部署 —— PR 不部署（否则每个 PR 都会重发布一次）；
+  # 2. 只在手动 workflow_dispatch 且勾选 `deploy` 时部署 —— 默认 false，避免只想验证时误发布；
   # 3. `concurrency` 且 `cancel-in-progress: false` —— 串行，且**不取消进行中的部署**
   #    （半途取消会留下解压完但没重启的中间态，比排队更糟）；
   # 4. 代码靠 **scp/ssh 主动推送**而不是让服务器 `git pull` —— 实测目标服务器
@@ -120,12 +131,12 @@ jobs:
   # 想改回密钥时，只需替换下面两步的连接方式，其余逻辑不用动。
   deploy:
     needs: verify
-    # 2026-10-21：线上主机已下线，自动部署暂停。
-    # 恢复方式：新服务器就绪后，重新配置 DEPLOY_HOST/PORT/USER/SSH_PASSWORD，
-    # 并在仓库 Variables 里设置 ENABLE_DEPLOY=1；否则本 job 永远跳过，main 的 CI 只跑 verify。
-    if: vars.ENABLE_DEPLOY == '1' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # 2026-10-22：触发器改为 workflow_dispatch 后 event_name 不再是 push，
+    # 原条件会让本 job 永久跳过；改为读取手动触发的 deploy 开关。
+    # 仍需仓库 Variable ENABLE_DEPLOY=1；默认 false，避免“只想验证”时误部署。
+    if: vars.ENABLE_DEPLOY == '1' && github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # 2026-10-20：主机不可达时 scp 曾挂 14+ 分钟；给整个部署一个上限，别让一次 push 卡住一整天
+    # 2026-10-20：主机不可达时 scp 曾挂 14+ 分钟；给整个部署一个上限，别让一次手动部署卡住一整天
     # 2026-10-21：端口 29598 已确认可达；19MB 包跨境上传在 90s 内没传完（exit 124），放宽到 30 分钟总上限
     timeout-minutes: 30
 
@@ -225,3 +236,33 @@ jobs:
             -o ServerAliveCountMax=2 \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             'docker ps --format "{{.Names}} | {{.Status}}"'
+
+# ── 恢复自动（2026-11-01 额度重置后再考虑，本次不做）────────────────────────
+# 恢复前先确认：
+#   1. 本月 Actions 用量与剩余额度足够；
+#   2. 默认分支上的 workflow_dispatch 已验证可用；
+#   3. 再决定是否恢复「轻量自动车道」。
+#
+# 轻量车道建议（只作为以后改法，当前不生效）：
+# on:
+#   push:
+#     branches: [main]
+#     paths-ignore:
+#       - '**.md'
+#       - 'docs/**'
+#       - '.gitignore'
+#   pull_request:
+#   workflow_dispatch:
+#     inputs:
+#       deploy:
+#         description: '验证通过后部署到生产'
+#         type: boolean
+#         default: false
+#
+# concurrency:
+#   group: ci-${{ github.ref }}
+#   cancel-in-progress: true
+#
+# 注意：deploy job 自己的 concurrency: deploy-production / cancel-in-progress: false
+# 是刻意的（半途取消会留下部署中间态），不要改成可取消。
+# 恢复自动后仍要保留手动入口，并继续按“功能收尾 / 合并前 / 部署前”节奏跑，不要每次提交都跑。

@@ -50,7 +50,7 @@
 - **单测**：后端 504 项（逐文件覆盖率门限 17 个文件）、前端 202+ 项（含静态"视觉自检"）；
 - **契约测试**：`pnpm test:contract` 双向比对 CONTRACT §5 路由表与真实注册路由；
 - **UI 冒烟**：`pnpm smoke:ui` 真 Chrome 跑生产形态（CSP 生效），断言界面动作 → 服务端留痕整条链；
-- **CI**：lint（oxlint）→ type → 契约 → 覆盖率 → 构建 → UI 冒烟 → 截图 artifact；main 合并后自动部署。
+- **CI**：lint（oxlint）→ type → 契约 → 覆盖率 → 构建 → UI 冒烟 → 截图 artifact；2026-10-22 起暂停自动触发，改为手动 `workflow_dispatch`；部署需显式 `deploy=true`。
 
 > 一句话：**框架选型是"能省则省"，但七道防线一样没落。** 这套组合的代价要如实说：
 > 没有 ORM/迁移框架，改表要人手守"改表必须走 ALTER"的纪律（`SCHEMA` 在 ALTER 之前执行，

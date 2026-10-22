@@ -69,14 +69,15 @@ node scripts/deploy.mjs
 
 **不要手工 `docker compose up` 代替它**：`.env.deploy` 里的空值不会自动推导，常见症状是视频参考退化成内联 data URL 或被上游拒绝。
 
-### 1.3 CI 自动部署
+### 1.3 CI 手动部署
 
-`.github/workflows/ci.yml` 的 `deploy-production` 只在：
+`.github/workflows/ci.yml` 已暂停 push / PR 自动触发，只保留 `workflow_dispatch`。部署只在：
 
 - `vars.ENABLE_DEPLOY == '1'`
-- push 到 `main`
+- 手动触发且 `deploy=true`
+- 分支为 `main`
 
-时运行。需要的仓库 Secrets：
+时运行。`deploy` 输入默认 `false`，只验证时不会误部署。需要的仓库 Secrets：
 
 | Secret | 用途 |
 |---|---|
@@ -99,7 +100,7 @@ curl -k -H "Authorization: Bearer $PUBLIC_API_TOKEN" https://<host>/api/health/r
 - 登录：浏览器输入 `.env.deploy` 里的 `BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD`。
 - 容器：`docker ps` 应看到 app 与 caddy 均 `healthy` / `Up`。
 - 回滚：保留上一版镜像 tag 或用上一份部署包重跑 `node scripts/deploy.mjs`；**数据卷不回滚**（任务/产物是用户数据）。
-- 冷构建：首次或清缓存后 Docker 构建可能 6–9 分钟；CI 已放宽到 30 分钟 job / 12 分钟部署步骤 / 600s 内层超时。
+- 冷构建：首次或清缓存后 Docker 构建可能 6–9 分钟；手动部署 job 已放宽到 30 分钟 / 12 分钟部署步骤 / 600s 内层超时。
 
 ---
 

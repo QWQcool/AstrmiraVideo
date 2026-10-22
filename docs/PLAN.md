@@ -1709,6 +1709,15 @@
 - **【计划调整】** 保留我们更明确的「计划卡 + 显式创建画布草稿」，不改成自动落节点。新增 **S7-D1 Canvas Agent 只读侧栏**（list nodes/edges/outputs/selected node，禁止改节点/生成，文本成本单列）；再开 **S7-D2 写工具**：第一版只开放“创建文本节点”，必须先展示计划卡并确认；**默认不开放删除**，更新/连线逐项另开；成功判定必须读回 `CanvasDoc`，不信模型文案。首页与画布两个入口不强行合并会话，仍用 `agentCanvasHandoff` 传已确认计划。
 - **【不照搬】** 不把即梦纯聊天回复当唯一计划形态；不把“0 积分”写进我们 UI；不在写工具验证前宣称画布 Agent 能自动建节点。GPU/满血 MOSS 计划不变。
 
+### 2026-10-22 · 暂停自动 CI/CD，改为手动 workflow_dispatch
+
+- **【原因】** GitHub Free 私有仓库 Actions 额度 2,000 分钟/月，本月已用 1,813，剩 187；push 触发的全量 verify 约 8 分钟/次，必须停止自动消耗。
+- **【触发】** `.github/workflows/ci.yml` 删除 `push` / `pull_request`，只保留 `workflow_dispatch`；`deploy` input 默认 `false`。
+- **【部署条件】** `deploy` job 从 `event_name == 'push'` 改为 `workflow_dispatch && inputs.deploy && ref == main`，并继续要求 `ENABLE_DEPLOY=1`；不改 secrets、SSH、超时、构建/部署步骤。
+- **【手动入口】** 网页 Actions → CI → Run workflow；CLI `gh workflow run CI --repo QWQcool/AstrmiraVideo --ref main -f deploy=false`。部署才用 `-f deploy=true`。
+- **【门禁】** 本次不做真实 CI 运行；用 Python YAML 解析 + 静态 grep 验收。推送后确认没有新增 run；首次真实手动运行推迟到额度允许时。
+- **【边界】** 不改测试逻辑、依赖版本、部署步骤；不恢复 schedule；`ENABLE_DEPLOY` 不动。
+
 ### 2026-10-22 · S7-D4：自由发挥显式转结构化方案
 
 - **【入口】** 创建模式下的自由发挥回答新增「整理成可创建方案」；只有用户点击才发起第二次 `/api/agent/canvas/node-plan` 请求，不自动解析自由文本、不自动落节点。
@@ -1881,7 +1890,7 @@
 - **【线上核对】** `https://43.228.79.210/` 带 Basic Auth 返回 200；首页脚本 `assets/index-D8qQgfgr.js` 与本地 `frontend/dist/index.html` **完全一致**；`/api/health` 200。
 - **【服务器】** `astrmiravideo-app-1` healthy、`astrmiravideo-caddy-1` up；旧 `frontend/src/components/LogPanel.tsx` 已不存在；`.env.deploy`、`data/`、`outputs/` 均保留。
 - **【根因链】** 19MB 包（docs 18.94MB）→ 上传 90s/420s 超时；服务器覆盖解压保留 9 月旧 `LogPanel.tsx` → Docker 构建找不到 `logActionLabel`；staging 放在目标目录内 → rsync exit 24。最终：排除 docs + rsync 外置 staging + `--delete` 同步，三步一起才通。
-- **【状态】** `ENABLE_DEPLOY=1`，`DEPLOY_PORT=29598`；后续 push 自动部署。密码只在 GitHub Secrets，不写入仓库/文档。
+- **【状态】** `ENABLE_DEPLOY=1`，`DEPLOY_PORT=29598`；后续 push 自动部署（**2026-10-22 已暂停自动触发，改手动 `workflow_dispatch` + `deploy=true`**）。密码只在 GitHub Secrets，不写入仓库/文档。
 
 ### 2026-10-21 · CD 修复：干净同步代替覆盖解压
 
