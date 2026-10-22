@@ -14,6 +14,8 @@ interface CanvasAgentMessage {
   text: string;
   model?: string;
   usage?: AgentPlanUsage;
+  /** 由“自由发挥”产生的建议；可显式再转成结构化方案。 */
+  freeform?: boolean;
 }
 
 export interface CanvasAgentPanelProps {
@@ -112,9 +114,46 @@ export function CanvasAgentPanel({
             text: result.answer,
             model: result.model,
             ...(result.usage === undefined ? {} : { usage: result.usage }),
+            ...(mode === 'create' ? { freeform: true } : {}),
           },
         ]);
       }
+    } catch (caught) {
+      setError(t('canvas.agent.failed', { reason: errorText(caught) }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** S7-D4：自由发挥转结构化必须由用户显式点击；不自动解析、不自动写画布。 */
+  const structureFreeform = async (suggestion: string): Promise<void> => {
+    if (busy) return;
+    const apiKey = resolveLlmKey(byok);
+    if (apiKey === undefined) {
+      setError(t('canvas.agent.noKey'));
+      openByok();
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setProposal(null);
+    setProposalMeta(null);
+    try {
+      const result = await proposeCanvasTextNode(
+        {
+          instruction: t('canvas.agent.freeformToPlanPrompt', {
+            suggestion: suggestion.trim().slice(0, 1800),
+          }),
+          canvas: context,
+          llm: resolveLlmConfig(byok),
+        },
+        { llmKey: apiKey },
+      );
+      setProposal(result.proposal);
+      setProposalMeta({
+        model: result.model,
+        ...(result.usage === undefined ? {} : { usage: result.usage }),
+      });
     } catch (caught) {
       setError(t('canvas.agent.failed', { reason: errorText(caught) }));
     } finally {
@@ -228,6 +267,17 @@ export function CanvasAgentPanel({
               {item.role === 'user' ? t('canvas.agent.you') : t('canvas.agent.title')}
             </span>
             <p>{item.text}</p>
+            {item.freeform === true ? (
+              <button
+                type="button"
+                className="wb-btn cs-agent-convert"
+                data-testid="canvas-freeform-to-structured"
+                disabled={busy}
+                onClick={() => void structureFreeform(item.text)}
+              >
+                {t('canvas.agent.convertToPlan')}
+              </button>
+            ) : null}
             {item.model === undefined ? null : (
               <span className="wb-note cs-agent-meta">
                 {item.model}

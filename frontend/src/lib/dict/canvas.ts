@@ -54,6 +54,9 @@ export const CANVAS_ZH = {
   'canvas.agent.freeformHint': '自由发挥：只读建议，不会直接创建节点',
   'canvas.agent.freeformPrompt':
     '请围绕这个目标自由发挥，给出你认为合适的文本节点方案或创作建议；只输出建议，不要声称已经创建或修改任何节点。\n\n{instruction}',
+  'canvas.agent.convertToPlan': '整理成可创建方案',
+  'canvas.agent.freeformToPlanPrompt':
+    '请把以下自由发挥建议整理为一个可创建的文本节点方案，保持原意；只输出方案字段，不要添加执行声明。\n\n{suggestion}',
   'canvas.agent.createHint': '先生成节点方案；确认后才会写入画布',
   'canvas.agent.createPlaceholder': '描述要创建的文本节点，例如“写一段雨夜转场说明”',
   'canvas.agent.propose': '生成方案',
@@ -502,6 +505,9 @@ export const CANVAS_EN = {
   'canvas.agent.freeformHint': 'Freeform: read-only suggestions; no node is created',
   'canvas.agent.freeformPrompt':
     'Feel free to explore this goal and propose a text-node plan or creative direction. Output suggestions only; do not claim that any node was created or changed.\n\n{instruction}',
+  'canvas.agent.convertToPlan': 'Turn into proposal',
+  'canvas.agent.freeformToPlanPrompt':
+    'Turn the following freeform suggestion into a creatable text-node proposal while preserving its intent. Output proposal fields only; do not claim execution.\n\n{suggestion}',
   'canvas.agent.createHint': 'Generate a node proposal; it is written only after you confirm',
   'canvas.agent.createPlaceholder': 'Describe the text node, e.g. “write a rainy-night transition note”',
   'canvas.agent.propose': 'Generate proposal',

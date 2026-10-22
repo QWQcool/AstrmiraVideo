@@ -1019,6 +1019,11 @@
   font-size: var(--fs-micro);
 }
 
+.cs-agent-convert {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
 .cs-agent-error {
   margin: 0 12px 8px;
 }
