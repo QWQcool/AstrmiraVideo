@@ -15,6 +15,8 @@ export interface AgentPlanPanelProps {
   usage?: AgentPlanUsage;
   skills: readonly SkillManifest[];
   applying: boolean;
+  issues: readonly string[];
+  onPlanChange(next: AgentPlan): void;
   onApply(): void;
   onReject(): void;
   onModify(): void;
@@ -52,11 +54,66 @@ export function AgentPlanPanel({
   usage,
   skills,
   applying,
+  issues,
+  onPlanChange,
   onApply,
   onReject,
   onModify,
 }: AgentPlanPanelProps) {
   const t = useTranslate();
+
+  const moveStep = (index: number, delta: -1 | 1): void => {
+    const target = index + delta;
+    if (target < 0 || target >= plan.steps.length) return;
+    const steps = [...plan.steps];
+    const [item] = steps.splice(index, 1);
+    if (item === undefined) return;
+    steps.splice(target, 0, item);
+    onPlanChange({ ...plan, steps });
+  };
+
+  const removeStep = (index: number): void => {
+    if (plan.steps.length <= 1) return;
+    onPlanChange({ ...plan, steps: plan.steps.filter((_, itemIndex) => itemIndex !== index) });
+  };
+
+  const stepActions = (index: number) => (
+    <span className="cr-agent-step-actions">
+      <button
+        type="button"
+        className="cr-agent-step-btn"
+        data-testid={`agent-step-up-${index}`}
+        aria-label={t('agent.plan.stepUp')}
+        title={t('agent.plan.stepUp')}
+        disabled={applying || index === 0}
+        onClick={() => moveStep(index, -1)}
+      >
+        ↑
+      </button>
+      <button
+        type="button"
+        className="cr-agent-step-btn"
+        data-testid={`agent-step-down-${index}`}
+        aria-label={t('agent.plan.stepDown')}
+        title={t('agent.plan.stepDown')}
+        disabled={applying || index === plan.steps.length - 1}
+        onClick={() => moveStep(index, 1)}
+      >
+        ↓
+      </button>
+      <button
+        type="button"
+        className="cr-agent-step-btn cr-agent-step-btn--danger"
+        data-testid={`agent-step-remove-${index}`}
+        aria-label={t('agent.plan.stepRemove')}
+        title={t('agent.plan.stepRemove')}
+        disabled={applying || plan.steps.length <= 1}
+        onClick={() => removeStep(index)}
+      >
+        ×
+      </button>
+    </span>
+  );
 
   return (
     <section className="cr-agent" data-testid="agent-plan" aria-label={t('agent.plan.title')}>
@@ -66,6 +123,7 @@ export function AgentPlanPanel({
           <p className="wb-note">
             {t('agent.plan.model', { model })} · {t('agent.plan.hint')}
           </p>
+          <p className="wb-note">{t('agent.plan.editHint')}</p>
         </div>
         <span className="recipe-tag recipe-tag--gold">{plan.version === 1 ? 'v1' : plan.version}</span>
       </header>
@@ -96,6 +154,7 @@ export function AgentPlanPanel({
                   ))}
                   {reason === null ? null : <span className="wb-note">{reason}</span>}
                 </span>
+                {stepActions(index)}
               </li>
             );
           }
@@ -112,6 +171,7 @@ export function AgentPlanPanel({
                   </span>
                   {reason === null ? null : <span className="wb-note">{reason}</span>}
                 </span>
+                {stepActions(index)}
               </li>
             );
           }
@@ -129,6 +189,7 @@ export function AgentPlanPanel({
                   </span>
                   {reason === null ? null : <span className="wb-note">{reason}</span>}
                 </span>
+                {stepActions(index)}
               </li>
             );
           }
@@ -136,10 +197,17 @@ export function AgentPlanPanel({
             <li key={`${step.kind}-${index}`} className="cr-agent-step">
               <span className="cr-agent-kind">{t('agent.plan.step.note')}</span>
               <span className="cr-agent-body">{step.text}</span>
+              {stepActions(index)}
             </li>
           );
         })}
       </ol>
+
+      {issues.length === 0 ? null : (
+        <p className="wb-alert cr-agent-invalid" role="alert" data-testid="agent-plan-issues">
+          {t('agent.plan.invalid', { issues: issues.join('；') })}
+        </p>
+      )}
 
       {plan.assumptions.length === 0 ? null : (
         <div className="cr-agent-notes">
@@ -184,7 +252,7 @@ export function AgentPlanPanel({
             className="wb-btn wb-btn-gold"
             data-testid="agent-apply"
             onClick={onApply}
-            disabled={applying}
+            disabled={applying || issues.length > 0}
           >
             {applying ? t('agent.plan.applying') : t('agent.plan.apply')}
           </button>

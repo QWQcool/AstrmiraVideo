@@ -13,10 +13,12 @@ import type {
   VideoGenerateRequest,
 } from '@astrmira/shared';
 import {
+  AgentPlanSchema,
   BUILTIN_SKILLS,
   estimateCostFromRequest,
   formatYuan,
   taskOutput,
+  validateAgentPlan,
 } from '@astrmira/shared';
 import {
   ApiError,
@@ -226,6 +228,12 @@ export function CreateView() {
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentApplying, setAgentApplying] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
+  const [agentPlanIssues, setAgentPlanIssues] = useState<string[]>([]);
+  /** 内置 + 自建；计划卡编辑后的能力校验必须用同一份目录。 */
+  const agentSkills = useMemo(
+    () => [...BUILTIN_SKILLS, ...loadSkillLibrary().library.custom],
+    [],
+  );
   /** S6-B3：最近一次 Agent 执行意图（方案 + 草稿指纹 + 幂等键），只在内存。 */
   const agentExecutionRef = useRef<AgentExecutionIntent | null>(null);
 
@@ -729,6 +737,7 @@ export function CreateView() {
     setAgentLoading(true);
     setAgentError(null);
     setAgentPlan(null);
+    setAgentPlanIssues([]);
     try {
       const result = await planAgent(
         {
@@ -750,9 +759,36 @@ export function CreateView() {
     }
   };
 
+  /** S7-C：计划卡的结构编辑只改步骤顺序/增删；应用前重新做 schema + 能力校验。 */
+  const updateAgentPlan = (next: AgentPlan): void => {
+    const parsed = AgentPlanSchema.safeParse(next);
+    if (!parsed.success) {
+      setAgentError(
+        t('agent.plan.invalid', {
+          issues: parsed.error.issues
+            .map((issue) => `${issue.path.join('.')} ${issue.message}`)
+            .join('；'),
+        }),
+      );
+      return;
+    }
+    setAgentPlan((previous) =>
+      previous === null ? previous : { ...previous, plan: parsed.data },
+    );
+    const validation = validateAgentPlan(parsed.data, agentSkills);
+    setAgentPlanIssues(validation.ok ? [] : validation.issues);
+    setAgentError(null);
+  };
+
   /** S6-B2：应用计划 = 落草稿；**不调用 submitGenerate**。 */
   const applyAgentPlan = async (): Promise<void> => {
     if (agentPlan === null || agentApplying) return;
+    const validation = validateAgentPlan(agentPlan.plan, agentSkills);
+    if (!validation.ok) {
+      setAgentPlanIssues(validation.issues);
+      setAgentError(t('agent.plan.invalid', { issues: validation.issues.join('；') }));
+      return;
+    }
     setAgentApplying(true);
     setAgentError(null);
 
@@ -870,6 +906,7 @@ export function CreateView() {
       setSubmitError(null);
       setNotice(t('agent.plan.applied'));
       setAgentPlan(null);
+      setAgentPlanIssues([]);
     } catch (caught) {
       setAgentError(t('agent.plan.failed', { reason: describeError(caught) }));
     } finally {
@@ -1165,10 +1202,6 @@ export function CreateView() {
   const pickFirstMatch = (): void => pickMentionAt(mentionIndex);
 
   // V2.40：产物可能是视频或图片（`t2i`）—— 用 shared 的 `taskOutput()` 收口
-  const agentSkills = useMemo(
-    () => [...BUILTIN_SKILLS, ...loadSkillLibrary().library.custom],
-    [],
-  );
   const output = task === null ? { kind: 'none' as const } : taskOutput(task);
   const outputUrl =
     output.kind === 'video' || output.kind === 'image' ? resolveMediaUrl(output.url) : null;
@@ -1265,14 +1298,18 @@ export function CreateView() {
               {...(agentPlan.usage === undefined ? {} : { usage: agentPlan.usage })}
               skills={agentSkills}
               applying={agentApplying}
+              issues={agentPlanIssues}
+              onPlanChange={updateAgentPlan}
               onApply={() => void applyAgentPlan()}
               onReject={() => {
                 setAgentPlan(null);
+                setAgentPlanIssues([]);
                 setAgentError(null);
                 setNotice(t('agent.plan.rejected'));
               }}
               onModify={() => {
                 setAgentPlan(null);
+                setAgentPlanIssues([]);
                 setAgentError(null);
                 promptEditorRef.current?.focus();
               }}

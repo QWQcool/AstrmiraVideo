@@ -1696,6 +1696,14 @@
 - **【暴露】** B4g 的 run 里 verify 已走到冒烟最后一段，只剩「被删项目从下拉里消失」失败：删除成功后 `select.value` 先回落 `default`，项目清单 `/api/projects` 是异步刷新，脚本在同一个 tick 读 option 仍是旧的。
 - **【修复】** 改为 `waitForFunction` 轮询「选项消失」（10s 上限）。如果项目真没删掉，等待会超时并失败，不是放宽断言。仅测试脚本改动。
 
+### 2026-10-22 · S7-C1：Agent 计划卡 step 级结构编辑
+
+- **【编辑】** 计划卡每个 step 增加上移/下移/删除；至少保留 1 步，最后一步的删除按钮禁用。编辑只改步骤结构，提示词/参数内容仍走「修改意图」重规划，不在计划卡里做隐形提示词改写。
+- **【校验】** 编辑后立即用 `AgentPlanSchema.safeParse` + `validateAgentPlan` 复核；不合法时显示全部问题并禁用「应用到草稿」。`applyAgentPlan` 开始处再校验一次，防止绕过 UI。
+- **【幂等】** 编辑后的计划进入 `reuseAgentExecution` 指纹；改顺序/删步骤会产生新执行意图，不会复用旧幂等键。
+- **【证据】** 3 步计划删除备注 → 2 步；上移参数步骤 → 顺序变化；应用后提示词逐字包含技能骨架，`POST /api/generate` 计数 **0**。需要参考图的自建技能：删掉唯一 reference 后提示「计划未通过校验：第 1 步技能…需要参考图」，应用按钮变为禁用。前端 **599 passed**；type/lint/build/visual-selfcheck 通过。
+- **【边界】** 不做 step 内联编辑（prompt/params 文本）；不创建画布节点（`create-node` 需先改 CONTRACT/执行层，另开片）；计划卡只在 CreateView。
+
 ### 2026-10-22 · S7-B：移动端安全区、长文本与弹层滚动收口
 
 - **【安全区】** `tokens.css` 新增 `--safe-top/right/bottom/left`（`env(safe-area-inset-*)`，缺失回落 0）。创作页 `.cr-wrap`、`.wb-page`、`.wb-drawer`/footer、移动侧栏、画布底部抽屉、画布检查器、资产选择器、灯箱、全屏预览关闭按钮全部按安全区避让；桌面 1366 的 `--safe-bottom=0`，原 56/32px 间距不变。

@@ -235,6 +235,7 @@
 }
 
 .cr-agent-body {
+  flex: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -243,6 +244,45 @@
   color: var(--muted);
   font-size: var(--fs-note);
   overflow-wrap: anywhere;
+}
+
+.cr-agent-step-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.cr-agent-step-btn {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-note);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cr-agent-step-btn:hover:not(:disabled) {
+  border-color: var(--line-gold);
+  color: var(--gold);
+}
+
+.cr-agent-step-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.cr-agent-step-btn--danger:hover:not(:disabled) {
+  border-color: var(--danger-line);
+  color: var(--danger);
+}
+
+.cr-agent-invalid {
+  margin: 0;
 }
 
 .cr-agent-body code {
