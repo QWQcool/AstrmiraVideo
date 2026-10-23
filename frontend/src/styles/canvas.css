@@ -1014,6 +1014,64 @@
   gap: 6px;
 }
 
+.cs-agent-storyboard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line-gold);
+  border-radius: 8px;
+  background: var(--panel2);
+  overflow-wrap: anywhere;
+}
+
+.cs-agent-storyboard-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cs-agent-storyboard-head p {
+  margin: 2px 0 0;
+}
+
+.cs-agent-storyboard-scroll {
+  overflow-x: auto;
+  overscroll-behavior: contain;
+}
+
+.cs-agent-storyboard-table {
+  width: 100%;
+  min-width: 460px;
+  border-collapse: collapse;
+  font-size: var(--fs-note);
+}
+
+.cs-agent-storyboard-table th,
+.cs-agent-storyboard-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.cs-agent-storyboard-table th {
+  color: var(--gold);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cs-agent-storyboard-notes ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: var(--fs-note);
+}
+
+.cs-agent-storyboard-notes li {
+  margin-bottom: 2px;
+}
+
 .cs-agent-log {
   display: flex;
   flex: 1;
@@ -1091,8 +1149,85 @@
   outline-offset: 1px;
 }
 
+.cs-inspector {
+  display: flex;
+  flex: 0 0 320px;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.cs-inspector-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cs-inspector-head p {
+  margin: 0;
+}
+
+.cs-inspector-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.cs-inspector-section {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.cs-inspector-section h4 {
+  margin: 0 0 4px;
+  color: var(--gold);
+  font-size: var(--fs-note);
+  font-weight: 500;
+}
+
+.cs-inspector-section p {
+  margin: 0 0 8px;
+}
+
+.cs-inspector-pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cs-inspector-batches {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cs-inspector-batches li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  font-size: var(--fs-note);
+}
+
 @media (max-width: 768px) {
-  .cs-agent-panel {
+  .cs-agent-panel,
+  .cs-inspector {
     position: fixed;
     top: calc(64px + var(--safe-top));
     right: var(--safe-right);

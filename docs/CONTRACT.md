@@ -1,6 +1,10 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.58 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.59 · 已冻结（变更需先改本文，再改代码）**
+> **V2.59 修订（2026-10-23）**：**分镜计划（§28）** —— P5。
+>   ① 新增 `StoryboardPlan` / `StoryboardRequest` / `StoryboardResponse`；
+>   ② 新增 `POST /api/agent/storyboard`：只返回镜头表，不写 CanvasDoc、不生成媒体；
+>   ③ `shots[]` 是分镜数据，不是画布节点；转节点必须由前端显式确认。
 > **V2.58 修订（2026-10-23）**：**外部作品导入历史（§27）与视频首帧** —— Step 11-S7-D8。
 >   ① 新增 `POST /api/history/import`：只接受本站已有 `assetId`，登记为 `provider='imported'` 的成功历史；
 >   ② 新增 `HistoryImportRequest` / `HistoryImportResponse`；不创建上游任务、不产生成本、不调用生成；
@@ -849,6 +853,7 @@ export interface AssetListResponse {
 | `POST` | `/api/agent/canvas` | **V2.55 新增（§24）**：**只读**画布助手；前端提交 `CanvasDoc` 派生快照，服务端只返回文本。**200 → `CanvasAgentResponse`（含必填 `engine: 'llm'`）**；无 Key → **501**；问题/快照非法或含写操作字段 → **400**；上游拒绝凭据 → **401**；其余上游故障 → **502**。不读画布数据库、不写画布、不调用生成 |
 | `POST` | `/api/agent/canvas/node-plan` | **V2.56 新增（§25）**：生成**待确认**的文本节点方案；服务端不写 CanvasDoc。**200 → `CanvasNodeProposalResponse`（`action: 'create-text-node'`，含 `engine: 'llm'`）**；无 Key → **501**；指令/快照非法或夹带写操作字段 → **400**；上游凭据 → **401**；其余上游故障 → **502**。确认与落节点由前端完成 |
 | `POST` | `/api/agent/canvas/node-update-plan` | **V2.57 新增（§26）**：为选中文本节点生成**待确认**更新方案；服务端不写 CanvasDoc。**200 → `CanvasTextNodeUpdateResponse`（`action: 'update-text-node'`）**；目标不存在/非 text → **400**；无 Key → **501**；上游凭据 → **401**；其余上游故障 → **502**。确认与更新由前端完成 |
+| `POST` | `/api/agent/storyboard` | **V2.59 新增（§28）**：生成独立分镜表；不写画布、不提交生成。**200 → `StoryboardResponse`**；无 Key → **501**；指令/快照非法 → **400**；上游凭据 → **401**；结构非法/超时 → **502**。分镜转节点由前端显式确认 |
 | `POST` | `/api/upload` | 上传参考图/视频/**音频**（multipart，**V2.6 起** ≤100MB × ≤4（**V2.10 起音频 ≤20MB**），**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目）。**V2.9**：落一份 sidecar `<assetId>.json`（`{ name?, uploadedAt }`）—— `name` = 用户原始文件名的 **sanitize 结果**（`basename` + 去控制字符 + 截断 120 字符），**只落本地**：不进上游请求、不进操作日志、不进任务快照；写失败不阻断上传（元数据是增强，不是事实源）。**V2.10（B57）**：白名单新增 **mp3 / wav / m4a**（`audio/mpeg` / `audio/wav` / 容器为 `video/mp4` 的纯音频文件），音频体积上限 **20MB**（`MAX_AUDIO_BYTES`，超限 413）、**原样落盘**（不走防线 4 图像清洗）；判 `audio` 的口径 = 容器嗅探 + **ffprobe 流类型复核**（见上「V2.10 修订」①，容器嗅探对 m4a 不可靠）；sidecar 增**可选** `kind`（`image`/`video`/`audio`，供 `/api/assets` 免探测复读）。**V2.11（B47）**：新增可选 multipart 字段 `projectId`（缺省 = 默认项目）→ 写进 sidecar 的项目归属；**显式给了不存在的项目 → 400 `INVALID_REQUEST` + 撤回本次已落盘的媒体文件**（不留孤儿）。⚠️ 字段可能在文件之后到达（multipart 顺序由客户端决定），因此 sidecar **统一在字段读完后写**（不支持"边收边写"会产生"资产在 A 项目、sidecar 写着默认项目"的错位） |
 | `GET` | `/api/assets` | **V2.7 新增**：**资产库清单（只读）**。**200 → `AssetListResponse`（§4 末尾）**（最近 200 个，新的在前；`mime` 为**魔数嗅探事实**，与 `/api/upload` 同口径；`url` 为同源 `/media/assets/<文件>` 直链；`createdAt` = 文件 mtime）。**V2.9**：条目新增可选 `name`（来自 sidecar；抽帧产物没有原始文件名 → 无该字段），弹层据此"按名字认素材"。**目录不存在**（从未上传过）→ 200 + 空数组，**不是 404**。用途：`@` 提及素材弹层（B41）与后续资产管理视图；不改变任何生命周期与清理规则（见 §7）。**V2.10（B57）**：`kind` 扩展为 `image|video|audio` —— **优先读 sidecar 的 `kind`**（上传时已由 ffprobe 算准，免去逐文件探测），sidecar 缺失 / 无该字段时按容器嗅探兜底（`audio/*` → audio、`video/*` → video；**不猜**——老资产与抽帧产物走这条，其中 `.m4a` 老资产会被兜底判为 video，属如实边界）。**V2.11（B47）**：条目新增**必填** `projectId`（sidecar 的 `projectId` 缺失即默认项目 —— 如实归属，不猜）；可选 `?project=<projectId>` 过滤，**省略 = 默认项目**（与 `/api/history` 同口径） |
 | `GET` | `/api/costs/summary` | **V2.12 新增（台账 B48）**：**成本台账汇总（只读）**。`?project=` —— **省略 = 默认项目**（与 `history` / `assets` 同口径）、字面量 **`all` = 跨项目汇总**（唯一刻意允许跨项目的读端点）；`?from=` / `?to=`（epoch ms，含端点）。**200 → `CostSummaryResponse`（§13）**：项目 / 按天 / 按模型三个维度的桶 + `uncertainCount`（`disposition='uncertain'` 的条数，**可能已产生费用**）+ `unsettledCount`（成功但无成本记录）+ `budget`（仅 `all` 档且配了 `MONTHLY_BUDGET_YUAN` 时非 null）+ `disclaimer`。**金额是预估**（公开价目 × 上游计费式），口径见 §13。扫描上界 20000 行，触界时 `truncated: true`（此时金额只是**部分之和**）；查询参数非法 → **400 `INVALID_REQUEST`**；无新错误码 |
@@ -3057,3 +3062,73 @@ poster 不存在时浏览器仍会按 metadata 尝试首帧。
 - 不接受外部 URL 直接登记；
 - 不伪造成本、上游 taskId、模型调用；
 - 不把导入任务混成“本服务生成”的文案。
+
+## 28. 分镜计划 `POST /api/agent/storyboard`（V2.59 新增；P5）
+
+> 分镜计划是**独立规划对象**，不是画布节点方案、不是生成任务。
+> 服务端只返回镜头表；转画布节点/提交生成必须由前端显式确认。
+
+### 28-1 请求 `StoryboardRequest`
+
+```ts
+interface StoryboardRequest {
+  instruction: string;              // 1–2000
+  canvas?: CanvasAgentContext;      // 可选只读快照
+  llm?: LlmConfig;
+}
+```
+
+- 请求体 strict：出现 `nodes`、`operations`、`tool` 等写操作字段 → 400。
+- 不读取画布数据库；不保存聊天。
+
+### 28-2 计划 `StoryboardPlan`
+
+```ts
+interface StoryboardPlan {
+  version: 1;
+  title: string;                    // 1–120
+  aspectRatio: '16:9' | '9:16' | '1:1';
+  durationSec: number;              // 1–600
+  shots: Array<{
+    index: number;                  // 从 1 连续
+    time: string;                   // 例如 0-3s
+    shotSize: string;               // 景别
+    camera: string;                 // 运镜
+    visual: string;                 // 画面
+    transition?: string;
+    audio?: string;
+  }>;                               // 1–20
+  openQuestions: string[];          // ≤8
+  warnings: string[];               // ≤8
+}
+```
+
+- 不包含节点 id、assetId、toolCalls、写操作。
+- 不自动把分镜变成 `CanvasDocNode`。
+
+### 28-3 响应 `StoryboardResponse`
+
+```ts
+interface StoryboardResponse {
+  plan: StoryboardPlan;
+  engine: 'llm';
+  model: string;
+  usage?: { promptTokens: number; completionTokens: number };
+}
+```
+
+### 28-4 错误映射
+
+| 条件 | HTTP | 错误码 |
+|---|---:|---|
+| 无 `X-LLM-Key` / 端点未配全 | 501 | `LLM_NOT_CONFIGURED` |
+| 指令为空、快照非法、夹带写字段 | 400 | `INVALID_REQUEST` |
+| 上游 401/403 | 401 | `KEY_INVALID` |
+| 上游超时、非 JSON、镜头结构非法 | 502 | `UPSTREAM_ERROR` |
+
+### 28-5 不做
+
+- 不自动建节点、不连线、不删除；
+- 不自动提交生成；
+- 不把分镜表当已执行结果；
+- 不把即梦内部计划 JSON 当作本契约。

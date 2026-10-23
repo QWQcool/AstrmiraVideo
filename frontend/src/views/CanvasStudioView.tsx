@@ -134,6 +134,7 @@ import { reuseFromBatch } from '../lib/canvasNodeReuse';
 import type { ReferenceSourceItem } from '../lib/referenceSources';
 import { CanvasContextMenu, type CanvasMenuItem } from '../canvas/studio/CanvasContextMenu';
 import { CanvasAgentPanel } from '../components/CanvasAgentPanel';
+import { CanvasNodeInspector } from '../components/CanvasNodeInspector';
 import { StudioNode } from '../canvas/studio/StudioNode';
 import { StudioProvider } from '../canvas/studio/StudioContext';
 
@@ -250,6 +251,8 @@ export function CanvasStudioView() {
   const [index, setIndex] = useState<CanvasProjectIndex | null>(null);
   /** S7-D1：只读画布侧栏；它不参与文档状态，也不会在打开时写盘。 */
   const [agentOpen, setAgentOpen] = useState(false);
+  /** P6：只读节点检查器；不改变 CanvasDoc。 */
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [doc, setDoc] = useState<CanvasDoc | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<StudioRfNode>([]);
   const [saveState, setSaveState] = useState<CanvasSaveState>('saved');
@@ -1878,10 +1881,26 @@ export function CanvasStudioView() {
           <button
             type="button"
             className="wb-btn"
+            data-testid="canvas-inspector-toggle"
+            aria-expanded={inspectorOpen}
+            disabled={doc === null || selectedIds.length === 0}
+            onClick={() => {
+              setInspectorOpen((value) => !value);
+              setAgentOpen(false);
+            }}
+          >
+            {t('canvas.inspector.open')}
+          </button>
+          <button
+            type="button"
+            className="wb-btn"
             data-testid="canvas-agent-toggle"
             aria-expanded={agentOpen}
             disabled={doc === null}
-            onClick={() => setAgentOpen((value) => !value)}
+            onClick={() => {
+              setAgentOpen((value) => !value);
+              setInspectorOpen(false);
+            }}
           >
             {t('canvas.agent.open')}
           </button>
@@ -2086,6 +2105,13 @@ export function CanvasStudioView() {
                 />
               )}
             </div>
+            {inspectorOpen && selectedIds[0] !== undefined ? (
+              <CanvasNodeInspector
+                doc={doc}
+                nodeId={selectedIds[0]}
+                onClose={() => setInspectorOpen(false)}
+              />
+            ) : null}
             {agentOpen ? (
               <CanvasAgentPanel
                 doc={doc}

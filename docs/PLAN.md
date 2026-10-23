@@ -1717,6 +1717,15 @@
 - **【证据】** 后端 **718 passed（81 文件）**；前端 **609 passed**；契约 **11/11**；type/lint/build/visual-selfcheck 通过。未运行 CI、未部署。线上历史仍为空，因为新端点尚未部署；导入的画布/资产数据已存在。
 - **【边界】** 未在本轮把即梦历史真正写入线上（缺少部署）；未做批量抓取；P2 脚本只做单文件、本地执行。
 
+### 2026-10-23 · P4-P6：导入历史 UI、分镜计划、节点检查器
+
+- **【审计】** 新增 `docs/JIMENG-GAP-AUDIT.md`：只读对比即梦 12 节点/2 分组、节点详情、分镜、导入/历史、时间线等。结论：分组成立但需动 `CanvasDoc`，本轮先做只读节点检查器；分镜独立于节点方案；导入历史优先补齐 UI。
+- **【P4】** 视频库新增「导入资产」面板：从当前项目资产库选图片/视频 → `POST /api/history/import` → 刷新历史；历史卡显示「外部导入」徽标。受控测试确认请求体正确、标记来源、无生成调用。
+- **【P5】** CONTRACT 升 **V2.59 §28** 新增 `StoryboardPlan` / `StoryboardRequest` / `StoryboardResponse` 与 `POST /api/agent/storyboard`；画布助手新增「分镜计划」模式，展示镜头表/待确认/警告，**不建节点、不写画布、不提交生成**。
+- **【P6】** 新增只读 `CanvasNodeInspector`：标题、类型、创建方式、批次数、引用数、提示词、上下游、批次产物；不修改 `CanvasDoc`。画布分组需要 schema+拖拽组，留作后续片。
+- **【证据】** 受控 P4：导入请求 1 次、`source=asset-library`、历史徽标显示；受控 P5/P6：检查器显示 prompt/上下游，分镜表 2 镜头、`storyboard` 1 次、画布 PUT 0、`/api/generate` 0、console error 0。后端 **723 passed（83 文件）**；前端 **609 passed**；契约 **11/11**；type/lint/build/visual-selfcheck 通过。
+- **【边界】** P1-P3 仍未部署；本轮未跑 CI/CD；真实 DeepSeek 分镜未调用；音频/GPU 不变。
+
 ### 2026-10-23 · S7-D7：导入视频首帧展示
 
 - **【问题】** 画布视频节点 `preload="none"` 且没有 `poster`，上传/导入视频初始显示黑块；文件本身 200、H.264/AAC、5.04s 正常。

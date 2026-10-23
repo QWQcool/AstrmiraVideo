@@ -33,6 +33,7 @@ export * from './skills.js';
 export * from './agent.js';
 export * from './agentCanvas.js';
 export * from './historyImport.js';
+export * from './storyboard.js';
 export * from './editProject.js';
 export * from './edit.js';
 export * from './projects.js';

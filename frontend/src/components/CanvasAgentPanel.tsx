@@ -4,9 +4,11 @@ import type {
   CanvasDoc,
   CanvasNodeProposal,
   CanvasTextNodeUpdateProposal,
+  StoryboardPlan,
 } from '@astrmira/shared';
 import {
   askCanvasAgent,
+  createStoryboard,
   proposeCanvasTextNode,
   proposeCanvasTextNodeUpdate,
 } from '../lib/api';
@@ -58,7 +60,7 @@ export function CanvasAgentPanel({
 }: CanvasAgentPanelProps) {
   const t = useTranslate();
   const { byok, openByok } = useShell();
-  const [mode, setMode] = useState<'ask' | 'create' | 'update'>('ask');
+  const [mode, setMode] = useState<'ask' | 'create' | 'update' | 'storyboard'>('ask');
   /** 创建模式默认走严格 schema；关闭后只拿自由文本建议，不能直接落节点。 */
   const [structured, setStructured] = useState(true);
   const [message, setMessage] = useState('');
@@ -68,6 +70,7 @@ export function CanvasAgentPanel({
   const [updateProposal, setUpdateProposal] = useState<CanvasTextNodeUpdateProposal | null>(
     null,
   );
+  const [storyboard, setStoryboard] = useState<StoryboardPlan | null>(null);
   const [proposalMeta, setProposalMeta] = useState<{
     model: string;
     usage?: AgentPlanUsage;
@@ -111,10 +114,25 @@ export function CanvasAgentPanel({
     setBusy(true);
     setProposal(null);
     setUpdateProposal(null);
+    setStoryboard(null);
     setProposalMeta(null);
     setHistory((prev) => [...prev, { role: 'user', text: question }]);
     try {
-      if (mode === 'update' && selected !== null) {
+      if (mode === 'storyboard') {
+        const result = await createStoryboard(
+          {
+            instruction: question,
+            canvas: context,
+            llm: resolveLlmConfig(byok),
+          },
+          { llmKey: apiKey },
+        );
+        setStoryboard(result.plan);
+        setProposalMeta({
+          model: result.model,
+          ...(result.usage === undefined ? {} : { usage: result.usage }),
+        });
+      } else if (mode === 'update' && selected !== null) {
         const result = await proposeCanvasTextNodeUpdate(
           {
             instruction: question,
@@ -187,6 +205,7 @@ export function CanvasAgentPanel({
     setError(null);
     setProposal(null);
     setUpdateProposal(null);
+    setStoryboard(null);
     setProposalMeta(null);
     try {
       const result = await proposeCanvasTextNode(
@@ -280,6 +299,7 @@ export function CanvasAgentPanel({
             setMode('ask');
             setProposal(null);
             setUpdateProposal(null);
+            setStoryboard(null);
             setProposalMeta(null);
             setError(null);
           }}
@@ -295,6 +315,7 @@ export function CanvasAgentPanel({
             setMode('create');
             setProposal(null);
             setUpdateProposal(null);
+            setStoryboard(null);
             setProposalMeta(null);
             setError(null);
           }}
@@ -312,11 +333,28 @@ export function CanvasAgentPanel({
             setMode('update');
             setProposal(null);
             setUpdateProposal(null);
+            setStoryboard(null);
             setProposalMeta(null);
             setError(null);
           }}
         >
           {t('canvas.agent.modeUpdate')}
+        </button>
+        <button
+          type="button"
+          className="cs-agent-mode"
+          data-testid="canvas-agent-mode-storyboard"
+          aria-pressed={mode === 'storyboard'}
+          onClick={() => {
+            setMode('storyboard');
+            setProposal(null);
+            setUpdateProposal(null);
+            setStoryboard(null);
+            setProposalMeta(null);
+            setError(null);
+          }}
+        >
+          {t('canvas.agent.modeStoryboard')}
         </button>
       </div>
 
@@ -355,6 +393,7 @@ export function CanvasAgentPanel({
               setStructured(event.target.checked);
               setProposal(null);
               setUpdateProposal(null);
+              setStoryboard(null);
               setProposalMeta(null);
               setError(null);
             }}
@@ -365,15 +404,17 @@ export function CanvasAgentPanel({
       ) : null}
 
       <p className="wb-note cs-agent-readonly">
-        {mode === 'update'
-          ? canUpdate
-            ? t('canvas.agent.updateHint')
-            : t('canvas.agent.selectTextHint')
-          : mode === 'create'
-            ? structured
-              ? t('canvas.agent.createHint')
-              : t('canvas.agent.freeformHint')
-            : t('canvas.agent.readOnly')}
+        {mode === 'storyboard'
+          ? t('canvas.agent.storyboardModeHint')
+          : mode === 'update'
+            ? canUpdate
+              ? t('canvas.agent.updateHint')
+              : t('canvas.agent.selectTextHint')
+            : mode === 'create'
+              ? structured
+                ? t('canvas.agent.createHint')
+                : t('canvas.agent.freeformHint')
+              : t('canvas.agent.readOnly')}
       </p>
 
       <div className="cs-agent-log" data-testid="canvas-agent-log" aria-live="polite">
@@ -409,6 +450,92 @@ export function CanvasAgentPanel({
           </div>
         ))}
         {busy ? <p className="wb-note">{t('canvas.agent.thinking')}</p> : null}
+        {storyboard === null ? null : (
+          <section className="cs-agent-storyboard" data-testid="canvas-storyboard">
+            <div className="cs-agent-storyboard-head">
+              <div>
+                <h4 className="cs-agent-proposal-title">{t('canvas.agent.storyboardTitle')}</h4>
+                <strong>{storyboard.title}</strong>
+                <p className="wb-note">
+                  {t('canvas.agent.storyboardMeta', {
+                    aspect: storyboard.aspectRatio,
+                    duration: storyboard.durationSec,
+                    shots: storyboard.shots.length,
+                  })}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="wb-btn lib-icon"
+                aria-label={t('canvas.agent.storyboardClose')}
+                onClick={() => setStoryboard(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="cs-agent-storyboard-scroll">
+              <table className="cs-agent-storyboard-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>{t('canvas.agent.storyboard.time')}</th>
+                    <th>{t('canvas.agent.storyboard.shot')}</th>
+                    <th>{t('canvas.agent.storyboard.visual')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {storyboard.shots.map((shot) => (
+                    <tr key={`${shot.index}-${shot.time}`}>
+                      <td>{shot.index}</td>
+                      <td>{shot.time}</td>
+                      <td>
+                        {shot.shotSize}
+                        <br />
+                        <span className="wb-note">{shot.camera}</span>
+                      </td>
+                      <td>
+                        {shot.visual}
+                        {shot.transition === undefined ? null : (
+                          <span className="wb-note"> · {shot.transition}</span>
+                        )}
+                        {shot.audio === undefined ? null : (
+                          <span className="wb-note"> · {shot.audio}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {storyboard.openQuestions.length === 0 ? null : (
+              <div className="cs-agent-storyboard-notes">
+                <span className="wb-note">{t('canvas.agent.storyboard.questions')}</span>
+                <ul>
+                  {storyboard.openQuestions.map((question) => (
+                    <li key={question}>{question}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {storyboard.warnings.map((warning) => (
+              <p className="wb-note cs-agent-proposal-warning" key={warning}>
+                {warning}
+              </p>
+            ))}
+            <p className="wb-note">{t('canvas.agent.storyboardHint')}</p>
+            {proposalMeta === null ? null : (
+              <span className="wb-note cs-agent-meta">
+                {proposalMeta.model}
+                {proposalMeta.usage === undefined
+                  ? ''
+                  : ` · ${t('canvas.agent.usage', {
+                      prompt: proposalMeta.usage.promptTokens,
+                      completion: proposalMeta.usage.completionTokens,
+                    })}`}
+              </span>
+            )}
+          </section>
+        )}
         {proposal === null ? null : (
           <section className="cs-agent-proposal" data-testid="canvas-node-proposal">
             <h4 className="cs-agent-proposal-title">{t('canvas.agent.proposalTitle')}</h4>
@@ -537,18 +664,22 @@ export function CanvasAgentPanel({
           className="cs-agent-input"
           data-testid="canvas-agent-input"
           aria-label={
-            mode === 'update'
-              ? t('canvas.agent.updatePlaceholder')
-              : mode === 'create'
-                ? t('canvas.agent.createPlaceholder')
-                : t('canvas.agent.placeholder')
+            mode === 'storyboard'
+              ? t('canvas.agent.storyboardPlaceholder')
+              : mode === 'update'
+                ? t('canvas.agent.updatePlaceholder')
+                : mode === 'create'
+                  ? t('canvas.agent.createPlaceholder')
+                  : t('canvas.agent.placeholder')
           }
           placeholder={
-            mode === 'update'
-              ? t('canvas.agent.updatePlaceholder')
-              : mode === 'create'
-                ? t('canvas.agent.createPlaceholder')
-                : t('canvas.agent.placeholder')
+            mode === 'storyboard'
+              ? t('canvas.agent.storyboardPlaceholder')
+              : mode === 'update'
+                ? t('canvas.agent.updatePlaceholder')
+                : mode === 'create'
+                  ? t('canvas.agent.createPlaceholder')
+                  : t('canvas.agent.placeholder')
           }
           rows={3}
           value={message}
@@ -568,13 +699,15 @@ export function CanvasAgentPanel({
           data-testid="canvas-agent-send"
           disabled={busy || message.trim() === '' || (mode === 'update' && !canUpdate)}
         >
-          {mode === 'update'
-            ? t('canvas.agent.updatePropose')
-            : mode === 'create'
-              ? structured
-                ? t('canvas.agent.propose')
-                : t('canvas.agent.freeform')
-              : t('canvas.agent.send')}
+          {mode === 'storyboard'
+            ? t('canvas.agent.storyboardGenerate')
+            : mode === 'update'
+              ? t('canvas.agent.updatePropose')
+              : mode === 'create'
+                ? structured
+                  ? t('canvas.agent.propose')
+                  : t('canvas.agent.freeform')
+                : t('canvas.agent.send')}
         </button>
       </form>
     </aside>

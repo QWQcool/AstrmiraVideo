@@ -23,6 +23,7 @@ import {
   fetchCanvasDoc,
   fetchCanvasIndex,
   fetchHistory,
+  importAssetsToHistory,
   resolveMediaUrl,
 } from '../lib/api';
 import { setCanvasResultHandoff } from '../lib/canvasHandoff';
@@ -132,6 +133,11 @@ export function LibraryView() {
   const [sort, setSort] = useState<LibrarySort>('time-desc');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  /** P4：从资产库挑一个图片/视频登记为 imported 历史；不伪造生成任务。 */
+  const [importOpen, setImportOpen] = useState(false);
+  const [importAssets, setImportAssets] = useState<AssetListEntry[]>([]);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   // S5-A：画布作为一等资产（独立于生成历史）
   const [canvasIndex, setCanvasIndex] = useState<CanvasProjectIndex | null>(null);
@@ -377,6 +383,48 @@ export function LibraryView() {
     }
   }
 
+  async function openImport(): Promise<void> {
+    setImportOpen(true);
+    setImportError(null);
+    setImportBusy(true);
+    try {
+      const pool = await fetchAssets(projectId);
+      setImportAssets(
+        pool.assets.filter((asset) => asset.kind === 'image' || asset.kind === 'video'),
+      );
+    } catch (caught) {
+      setImportError(t('library.import.failed', { reason: describeError(caught) }));
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+  async function handleImportAsset(asset: AssetListEntry): Promise<void> {
+    setImportBusy(true);
+    setImportError(null);
+    try {
+      const result = await importAssetsToHistory({
+        projectId,
+        items: [
+          {
+            assetId: asset.assetId,
+            kind: asset.kind === 'image' ? 'image' : 'video',
+            title: asset.name ?? asset.assetId.slice(0, 8),
+            prompt: asset.name ?? asset.assetId,
+            source: 'asset-library',
+          },
+        ],
+      });
+      await reload();
+      setImportOpen(false);
+      setNotice(t('library.import.done', { count: result.tasks.length }));
+    } catch (caught) {
+      setImportError(t('library.import.failed', { reason: describeError(caught) }));
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
   const activeLoading = tab === 'history' ? loading : canvasLoading;
   const activeError = tab === 'history' ? error : canvasError;
   const retryActive = (): void => {
@@ -391,14 +439,26 @@ export function LibraryView() {
           <h1 className="wb-page-title">{t('library.title')}</h1>
           <Eyebrow tone="gold">Library</Eyebrow>
         </div>
-        <button
-          type="button"
-          className="wb-btn"
-          onClick={retryActive}
-          disabled={activeLoading}
-        >
-          {t(activeLoading ? 'library.refresh.loading' : 'library.refresh.label')}
-        </button>
+        <div className="lib-head-actions">
+          {tab === 'history' ? (
+            <button
+              type="button"
+              className="wb-btn"
+              data-testid="library-import-open"
+              onClick={() => void openImport()}
+            >
+              {t('library.import.open')}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="wb-btn"
+            onClick={retryActive}
+            disabled={activeLoading}
+          >
+            {t(activeLoading ? 'library.refresh.loading' : 'library.refresh.label')}
+          </button>
+        </div>
       </div>
 
       <div className="lib-tabs" role="tablist" aria-label={t('library.tabs.aria')}>
@@ -437,6 +497,63 @@ export function LibraryView() {
           <span className="wb-note">{notice}</span>
         </div>
       )}
+
+      {tab === 'history' && importOpen ? (
+        <section className="wb-panel lib-import-panel" role="dialog" aria-label={t('library.import.title')}>
+          <div className="wb-field-head">
+            <Eyebrow tone="gold" as="h2">
+              {t('library.import.title')}
+            </Eyebrow>
+            <span className="wb-note">{t('library.import.hint')}</span>
+            <button
+              type="button"
+              className="wb-btn lib-icon"
+              aria-label={t('common.close')}
+              onClick={() => setImportOpen(false)}
+              disabled={importBusy}
+            >
+              ✕
+            </button>
+          </div>
+          {importError === null ? null : (
+            <p className="wb-alert" role="alert">
+              {importError}
+            </p>
+          )}
+          {importBusy ? <p className="wb-note">{t('library.import.loading')}</p> : null}
+          {!importBusy && importAssets.length === 0 && importError === null ? (
+            <p className="wb-note">{t('library.import.empty')}</p>
+          ) : null}
+          <div className="lib-import-list">
+            {importAssets.map((asset) => (
+              <div className="lib-import-item" key={asset.assetId}>
+                <span className="lib-import-thumb">
+                  {asset.kind === 'image' ? (
+                    <img src={asset.url} alt="" loading="lazy" />
+                  ) : (
+                    <span>▶</span>
+                  )}
+                </span>
+                <span className="lib-import-meta">
+                  <strong>{asset.name ?? asset.assetId.slice(0, 8)}</strong>
+                  <span className="wb-note">
+                    {t('library.import.meta', { kind: asset.kind, size: formatBytes(asset.size) })}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="wb-btn wb-btn-primary"
+                  data-testid={`library-import-${asset.assetId}`}
+                  disabled={importBusy}
+                  onClick={() => void handleImportAsset(asset)}
+                >
+                  {t('library.import.action')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="lib-toolbar">
         <label className="wb-field lib-search">
@@ -732,6 +849,15 @@ export function LibraryView() {
                       {t('library.card.editOrigin', {
                         id: task.origin.sourceTaskId.slice(0, 8),
                       })}
+                    </span>
+                  ) : null}
+                  {task.requestSnapshot.provider === 'imported' ? (
+                    <span
+                      className="recipe-tag recipe-tag--gold"
+                      data-testid="library-imported-badge"
+                      title={t('library.card.importedTitle')}
+                    >
+                      {t('library.card.imported')}
                     </span>
                   ) : null}
                   {/* V2.27（A1 片 A / B11）：执行位置如实标注（缺省 = 老任务 —— 不猜、不写） */}

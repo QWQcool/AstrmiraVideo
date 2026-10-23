@@ -4,6 +4,8 @@ import {
   CanvasAgentResponseSchema,
   CanvasNodeProposalResponseSchema,
   CanvasTextNodeUpdateResponseSchema,
+  HistoryImportResponseSchema,
+  StoryboardResponseSchema,
   CanvasDocSaveResponseSchema,
   CanvasDocSchema,
   CanvasProjectIndexSchema,
@@ -37,6 +39,10 @@ import type {
   CanvasNodeProposalResponse,
   CanvasTextNodeUpdateRequest,
   CanvasTextNodeUpdateResponse,
+  HistoryImportRequest,
+  HistoryImportResponse,
+  StoryboardRequest,
+  StoryboardResponse,
   CanvasDocSaveResponse,
   CanvasProjectIndex,
   CostSummaryResponse,
@@ -366,6 +372,28 @@ export function proposeCanvasTextNodeUpdate(
   options: { llmKey?: string } = {},
 ): Promise<CanvasTextNodeUpdateResponse> {
   return request('/api/agent/canvas/node-update-plan', CanvasTextNodeUpdateResponseSchema, {
+    method: 'POST',
+    body,
+    ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),
+  });
+}
+
+/** P3/P4：把资产库中的外部作品登记为 imported 历史（不是生成任务）。 */
+export function importAssetsToHistory(
+  body: HistoryImportRequest,
+): Promise<HistoryImportResponse> {
+  return request('/api/history/import', HistoryImportResponseSchema, {
+    method: 'POST',
+    body,
+  });
+}
+
+/** P5：生成一份独立的分镜计划；不写画布、不提交生成。 */
+export function createStoryboard(
+  body: StoryboardRequest,
+  options: { llmKey?: string } = {},
+): Promise<StoryboardResponse> {
+  return request('/api/agent/storyboard', StoryboardResponseSchema, {
     method: 'POST',
     body,
     ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),
