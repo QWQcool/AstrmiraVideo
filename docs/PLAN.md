@@ -1709,6 +1709,14 @@
 - **【计划调整】** 保留我们更明确的「计划卡 + 显式创建画布草稿」，不改成自动落节点。新增 **S7-D1 Canvas Agent 只读侧栏**（list nodes/edges/outputs/selected node，禁止改节点/生成，文本成本单列）；再开 **S7-D2 写工具**：第一版只开放“创建文本节点”，必须先展示计划卡并确认；**默认不开放删除**，更新/连线逐项另开；成功判定必须读回 `CanvasDoc`，不信模型文案。首页与画布两个入口不强行合并会话，仍用 `agentCanvasHandoff` 传已确认计划。
 - **【不照搬】** 不把即梦纯聊天回复当唯一计划形态；不把“0 积分”写进我们 UI；不在写工具验证前宣称画布 Agent 能自动建节点。GPU/满血 MOSS 计划不变。
 
+### 2026-10-23 · S7-D8：视频海报、导入守卫与外部历史
+
+- **【P1 海报】** 上传视频时尽力抽首帧到 `outputs/thumbs/<assetId>.jpg`（不与任务缩略图混用）；画布视频节点用该 URL 当 `poster`，保留 `preload="metadata"` 兜底。真实 ffmpeg 抽帧验证：17,644 字节 JPEG。
+- **【P2 守卫】** 新增本地运维脚本 `scripts/import-external-media.mjs`：HEAD 体积检查、≤100MB 下载、>100MB 远端 ffmpeg 转码、非 H.264 转码、上传后可选调用导入历史；不对公网暴露任意 URL 抓取。
+- **【P3 历史】** CONTRACT **V2.58 §27** 新增 `POST /api/history/import`：只接受本站已有 `assetId`（1–20 条），登记为 `provider='imported'` 的 succeeded 历史；不创建上游任务、不产生成本、不调用生成；`providerLabel` 显示「外部导入」。`provider` 增加 `imported` 仅用于该入口，注册表返回 null，不能提交生成。
+- **【证据】** 后端 **718 passed（81 文件）**；前端 **609 passed**；契约 **11/11**；type/lint/build/visual-selfcheck 通过。未运行 CI、未部署。线上历史仍为空，因为新端点尚未部署；导入的画布/资产数据已存在。
+- **【边界】** 未在本轮把即梦历史真正写入线上（缺少部署）；未做批量抓取；P2 脚本只做单文件、本地执行。
+
 ### 2026-10-23 · S7-D7：导入视频首帧展示
 
 - **【问题】** 画布视频节点 `preload="none"` 且没有 `poster`，上传/导入视频初始显示黑块；文件本身 200、H.264/AAC、5.04s 正常。

@@ -32,6 +32,7 @@ import { createCostRoutes } from './routes/costs.js';
 import { createObservabilityRoutes } from './routes/observability.js';
 import { createWebhookRoutes } from './routes/webhooks.js';
 import { createHistoryRoutes } from './routes/history.js';
+import { createHistoryImportRoutes } from './routes/historyImport.js';
 // V2.16（B53）：readiness 的媒体工具自检（ffmpeg/ffprobe 缺失不降级，但如实陈述）
 import { assertMediaToolsAvailable } from './lib/ffmpeg.js';
 // V2.17（B52）：服务进程锁（备份 CLI 判断"能不能恢复"的权威判据）
@@ -432,6 +433,7 @@ export async function buildApp() {
   await app.register(createKeyVerifyRoutes({ limiter: verifyLimiter }));
   await app.register(createTaskRoutes({ store }));
   await app.register(createHistoryRoutes({ store }));
+  await app.register(createHistoryImportRoutes({ store, projects }));
   // V2.12（B48）：成本台账汇总（只读；金额为预估，口径见 COST_DISCLAIMER）
   await app.register(createCostRoutes({ store, projects }));
   // V2.15（B51 片 A）：Webhook 订阅管理（终态回调；secret 只回显一次，URL 过 SSRF 准入）

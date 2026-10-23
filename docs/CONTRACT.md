@@ -1,6 +1,11 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.57 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.58 · 已冻结（变更需先改本文，再改代码）**
+> **V2.58 修订（2026-10-23）**：**外部作品导入历史（§27）与视频首帧** —— Step 11-S7-D8。
+>   ① 新增 `POST /api/history/import`：只接受本站已有 `assetId`，登记为 `provider='imported'` 的成功历史；
+>   ② 新增 `HistoryImportRequest` / `HistoryImportResponse`；不创建上游任务、不产生成本、不调用生成；
+>   ③ 上传视频时尽力生成 `/media/thumbs/<assetId>.jpg`；画布视频节点优先使用该 poster；
+>   ④ 不改现有任务历史形状；`imported` 只用于导入来源，不进入生成注册表。
 > **V2.57 修订（2026-10-22）**：**选中文本节点更新方案（§26）** —— Step 11-S7-D5。
 >   ① 新增 `CanvasTextNodeUpdateProposal` / 请求 / 响应；`action` 固定为 `update-text-node`；
 >   ② 新增 `POST /api/agent/canvas/node-update-plan`；只返回方案，不写 CanvasDoc；
@@ -864,6 +869,7 @@ export interface AssetListResponse {
 | `GET` | `/api/health/ready` | **V2.16 新增**：**就绪探针**（进程活着 ≠ 能干活）。检查项：数据库可读、输出目录**真写一次**、容量余量、媒体工具（见 §16）。**需鉴权**（回环免；它暴露部署内部细节 —— 探针自己带 `Authorization: Bearer <PUBLIC_API_TOKEN>`）。`required` 检查失败 → **503**（响应体**照样**给完整 `checks`：排错要看原因，不是只看状态码）；**非 required** 失败（ffmpeg 缺失、容量接近阈值、凭据未配）**不降级** —— BYOK / 纯云端部署下它们不影响力 |
 | `GET` | `/api/metrics` | **V2.16 新增**：**运维快照**（任务按状态 / 队列积压 / 存储 / 数据库体积 / Webhook 投递 / 告警 / 生效阈值）。**需鉴权**（回环免）。**200 → `MetricsResponse`（§16）**。⚠️ 它含**一次目录扫描**（毫秒级，本项目规模下），因此**不做服务端自动轮询** —— 调用方自己决定频率（建议 15~60s）。无新错误码 |
 | `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage, hasMore: boolean }`**（`items` 默认最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾）。**V2.4 起**：默认只返回**生成产物**（剪辑产物不进历史，避免提示词与源片相同造成的"重复"观感）；查询参数 `?kind=edit`：**V2.6 起 `source` 可选** —— 带 `source=<taskId>` 返回某源片的剪辑产物（剪辑台"本片剪辑历史"用）；**不带 `source` 返回全部剪辑产物**（剪辑台素材候选 / L2 血缘画布用，同样受条数上限约束）。**V2.11（B47）**：可选 `?project=<projectId>` —— **省略 = 默认项目**（不是"全部项目"：界面的心智模型是"我在哪个项目里"）；`storage` 聚合仍是**目录级全局**（它描述磁盘，不描述项目）。**V2.25（B44）**：新增可选 `?limit=`（**1~200，省略 = 50**，超出范围 → 400 `INVALID_REQUEST`）与 `?before=<epoch ms>`（只返回 `created_at < before` 的任务 —— "加载更早"的游标）；响应新增必填 `hasMore`（服务端按 `limit + 1` 探测后截断，不做额外 COUNT；老客户端忽略它即可）。**排序键是 `created_at`**（游标语义与之一致）。**V2.43**：新增可选 `?origin=create|canvas` —— **缺省与 `create` 都排除画布产物**（画布节点的结果只在画布里看得到，与实测产品一致）；`origin=canvas` 时只返回画布产物（画布内回查用）。过滤在 SQL 层做（`json_extract(request_snapshot,'$.origin')`），否则分页/搜索会把画布产物翻出来 |
+| `POST` | `/api/history/import` | **V2.58 新增（§27）**：把本站已上传的外部作品登记成历史。**200 → `HistoryImportResponse`**；资产不存在/类型不符/项目不存在 → **400 `INVALID_REQUEST`**。不调用上游、不创建队列任务、无成本；provider 固定 `imported` |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
 | `POST` | `/api/providers/keys/verify` | **V2.1 新增（原【规划·B2】）**：凭据与模型校验，**零费用**。请求头按轨取（视频 `X-Provider-Key` / 文本 `X-LLM-Key`）；**200 → `KeyVerifyResponse`（§9）**；未带 Key → **501 `KEY_MISSING`**；凭据被上游拒绝 → **401 `KEY_INVALID`**；上游不可达 → **502 `UPSTREAM_ERROR`**；**V2.8 起**：独立限流桶 `verify`（同一来源 IP **10 秒内最多 5 次**，内存突发窗口）→ 429 `RATE_LIMITED` + `Retry-After`。为什么：本端点**会向上游发真实请求**（`/models` + 空 content 探针），没有限流时被刷等于把部署者的服务器当免费探针——与生成任务的 60s 冷却（防线 5）分开计桶，互不影响。**为什么是"窗口 N 次"而不是"最小间隔"**：间隔语义会误伤正常交互（连点两次"测试连接"切轨道验证），窗口语义对"人"无感、对"脚本"生效；它是底线防护，真正的防线仍是 Caddy 登录 + `PUBLIC_API_TOKEN` |
 | `GET` | `/api/logs` | **V2.1 新增**：操作日志查询（筛选 + 分页，见 §10）。**200 → `{ items, total }`**；**V2.8 起**：独立限流桶 `logs`（同一来源 IP **10 秒内最多 30 次**，内存突发窗口）→ 429 `RATE_LIMITED` + `Retry-After`。为什么：日志页挂载 + 轮询 + 连续筛选的请求量远低于该配额（正常使用**完全无感**），但脚本级高频扫描会被挡住（读接口也要有一道底线）；同样独立计桶。**两个 DELETE 刻意不挂桶**（写操作、频率天然低，避免误伤"连续手删"） |
@@ -2989,3 +2995,65 @@ interface CanvasTextNodeUpdateResponse {
 - 不做服务端画布写入；
 - 不自动提交生成；
 - 不把模型方案当已执行结果。
+
+## 27. 外部作品导入历史 `POST /api/history/import`（V2.58 新增；Step 11-S7-D8）
+
+> 目标：把即梦等外部作品（已经上传到本站资产库的图片/视频）登记成历史，
+> 方便在历史/画廊里做视觉与功能对比。它不是模型生成任务，也不伪装成上游出片。
+
+### 27-1 请求 `HistoryImportRequest`
+
+```ts
+interface HistoryImportRequest {
+  projectId?: string;              // 缺省 = 默认项目
+  items: Array<{
+    assetId: string;               // 必须是 outputs/assets/<uuid>.*，不接受 URL
+    kind: 'image' | 'video';
+    title?: string;                // ≤120
+    prompt?: string;               // ≤4000
+    source?: string;               // ≤80，例如 jimeng
+    createdAt?: number;            // epoch ms；缺省 = 导入时刻
+  }>;                              // 1–20 条
+}
+```
+
+- 资产不存在、扩展名与 `kind` 不符、项目不存在 → **400 `INVALID_REQUEST`**。
+- 一次最多 20 条；不支持任意 URL，避免 SSRF 和伪造来源。
+- 请求体 strict。
+
+### 27-2 响应 `HistoryImportResponse`
+
+```ts
+interface HistoryImportResponse {
+  tasks: TaskProgress[];           // 每条都是 succeeded / provider='imported'
+}
+```
+
+- 任务 `provider` 固定 `imported`，`track: 'local'`；
+- 不创建上游任务、不进入生成队列、不产生成本；
+- `requestSnapshot` 使用导入的标题/提示词与 `origin:'create'`；
+- 视频优先使用 `/media/thumbs/<assetId>.jpg` 作为 `thumbnailUrl`；
+- 现有历史形状不变，`providerLabel` 显示「外部导入」。
+
+### 27-3 视频首帧（P1）
+
+`POST /api/upload` 对视频尽力生成：
+
+```text
+outputs/thumbs/<assetId>.jpg
+```
+
+失败不阻断上传；画布视频节点：
+
+```html
+<video preload="metadata" poster="/media/thumbs/<assetId>.jpg">
+```
+
+poster 不存在时浏览器仍会按 metadata 尝试首帧。
+
+### 27-4 不做
+
+- 不做批量远程抓取；本地导入器负责下载/体积守卫/转码；
+- 不接受外部 URL 直接登记；
+- 不伪造成本、上游 taskId、模型调用；
+- 不把导入任务混成“本服务生成”的文案。

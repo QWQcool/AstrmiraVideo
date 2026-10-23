@@ -18,6 +18,7 @@ import {
   sanitizeImage,
   type SanitizedImage,
 } from '../pipeline/imageSanitize.js';
+import { createAssetThumbnail } from '../pipeline/thumbnail.js';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
 
 /**
@@ -143,6 +144,11 @@ export interface UploadRoutesOptions {
   /** 测试注入：容器流类型复核（默认 = 真实 ffprobe；返回 null 表示复核不可用） */
   probeStreams?: (filePath: string) => Promise<ContainerStreams | null>;
   /**
+   * P1：上传视频后抽首帧。默认用 ffmpeg；失败只记日志/忽略，
+   * 不阻断上传（缩略图是体验增强，不是媒体事实）。
+   */
+  createVideoThumbnail?: (assetId: string, sourcePath: string) => Promise<string>;
+  /**
    * V2.11（台账 B47）：项目校验。**传了就校验** `projectId` 存在（不存在 → 400 + 撤回本次落盘）。
    * 不传则不校验（老测试零改动）；生产装配必须传（见 index.ts）。
    */
@@ -152,8 +158,13 @@ export interface UploadRoutesOptions {
 export const createUploadRoutes =
   (options: UploadRoutesOptions = {}): FastifyPluginAsyncZod =>
   async (app) => {
-    const assetsDir = path.join(options.outputsDir ?? resolveOutputsDir(), 'assets');
+    const outputsDir = options.outputsDir ?? resolveOutputsDir();
+    const assetsDir = path.join(outputsDir, 'assets');
     const probeStreams = options.probeStreams ?? defaultProbeStreams;
+    const createVideoThumbnail =
+      options.createVideoThumbnail ??
+      ((assetId: string, sourcePath: string) =>
+        createAssetThumbnail({ outputsDir, assetId, sourcePath }));
 
     app.post(
       '/api/upload',
@@ -290,6 +301,15 @@ export const createUploadRoutes =
                     `音频文件不得超过 ${MAX_AUDIO_BYTES / 1024 / 1024}MB`,
                   ),
                 );
+            }
+
+            if (kind === 'video') {
+              // P1：尽力而为；抽帧失败不能阻断上传。前端会有 preload=metadata 兜底。
+              try {
+                await createVideoThumbnail(assetId, mediaPath);
+              } catch {
+                /* 缩略图不是上传成功的判据 */
+              }
             }
 
             pendingMeta.push({

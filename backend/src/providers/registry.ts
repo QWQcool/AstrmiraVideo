@@ -232,6 +232,8 @@ const REGISTRY: Record<ProviderBaseType, ProviderFactory> = {
   // V2.47（§22）：配置型 HTTP 任务服务；没有默认实例，只有具名 `http-service:<name>`。
   // 这里保留 null 工厂，让 `ProviderBaseType` 的穷举检查仍成立；实例由 getProvider 分流。
   'http-service': () => null,
+  // V2.58（S7-D8）：导入历史不是可生成 provider；这里只让穷举成立。
+  imported: () => null,
 };
 
 /** ⚠️ 测试注入表（生产路径永不写入；见 `__setProviderForTesting`） */

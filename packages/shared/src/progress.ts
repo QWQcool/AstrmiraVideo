@@ -98,6 +98,7 @@ export const EXECUTED_BY_TITLES: Record<z.infer<typeof ExecutedBySchema>, string
  */
 export function resolveExecutedBy(provider: ProviderType): z.infer<typeof ExecutedBySchema> {
   if (provider === 'cloud-volcano-seedance') return 'cloud';
+  if (provider === 'imported') return 'remote';
   if (providerBaseType(provider) === 'http-service') return 'remote';
   return 'host-local';
 }

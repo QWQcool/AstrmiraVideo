@@ -45,6 +45,7 @@ export function describeAction(method: string, path: string): string | undefined
     // V2.5（B34 · P4）：浏览器端渲染产物入库（写操作；显式登记动作 id 便于日志页筛选）
     if (clean === '/api/edits/renders') return 'edit.render';
     if (clean === '/api/upload') return 'upload';
+    if (clean === '/api/history/import') return 'history.import';
     if (clean === '/api/prompt/enhance') return 'enhance';
   if (clean === '/api/agent/plan') return 'agent';
   if (clean === '/api/agent/canvas') return 'agent-canvas';

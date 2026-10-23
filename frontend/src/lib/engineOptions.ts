@@ -109,6 +109,7 @@ export function providerLabel(id: string, status: ProviderStatus | null): string
   // 显示名必须如实（既不能显示成空白，也不能假装它还在）
   if (id === 'local-minimax-h3') return translate(lang, 'common.engine.h3Revoked');
   if (id === 'fixture-local') return translate(lang, 'common.engine.fixture');
+  if (id === 'imported') return translate(lang, 'common.engine.imported');
   if (id === 'stock-local') return translate(lang, 'common.engine.stockLibrary');
 
   const comfyOption = comfyUiEngineOptions(status).find((item) => item.id === id);

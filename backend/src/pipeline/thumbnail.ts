@@ -48,20 +48,23 @@ export interface CreateThumbnailOptions {
   videoUrl: string;
 }
 
-/**
- * 抽首帧为 JPEG，返回同源直链。
- * @throws 抽帧失败时抛出（调用方负责降级 —— 见本文件头部第 1 条）
- */
-export async function createTaskThumbnail(options: CreateThumbnailOptions): Promise<string> {
-  const source = resolveLocalVideoPath(options.outputsDir, options.videoUrl);
-  if (source === null) {
-    throw new Error(`成片地址不是同源 /media/ 直链，跳过抽帧：${options.videoUrl}`);
-  }
+export interface CreateAssetThumbnailOptions {
+  outputsDir: string;
+  /** 上传资产的随机 id；缩略图固定为 `/media/thumbs/<assetId>.jpg` */
+  assetId: string;
+  /** 已落盘的视频文件绝对路径（只由服务端生成） */
+  sourcePath: string;
+}
 
-  const dir = path.join(options.outputsDir, THUMBNAIL_DIR_NAME);
+async function extractFirstFrame(
+  outputsDir: string,
+  key: string,
+  sourcePath: string,
+): Promise<string> {
+  const dir = path.join(outputsDir, THUMBNAIL_DIR_NAME);
   await mkdir(dir, { recursive: true });
 
-  const target = path.join(dir, `${options.taskId}.jpg`);
+  const target = path.join(dir, `${key}.jpg`);
   await rm(target, { force: true });
 
   try {
@@ -73,7 +76,7 @@ export async function createTaskThumbnail(options: CreateThumbnailOptions): Prom
         '-ss',
         '0',
         '-i',
-        source,
+        sourcePath,
         '-frames:v',
         '1',
         '-vf',
@@ -89,5 +92,29 @@ export async function createTaskThumbnail(options: CreateThumbnailOptions): Prom
     throw err;
   }
 
-  return thumbnailUrlOf(options.taskId);
+  return thumbnailUrlOf(key);
+}
+
+/**
+ * 抽首帧为 JPEG，返回同源直链。
+ * @throws 抽帧失败时抛出（调用方负责降级 —— 见本文件头部第 1 条）
+ */
+export async function createTaskThumbnail(options: CreateThumbnailOptions): Promise<string> {
+  const source = resolveLocalVideoPath(options.outputsDir, options.videoUrl);
+  if (source === null) {
+    throw new Error(`成片地址不是同源 /media/ 直链，跳过抽帧：${options.videoUrl}`);
+  }
+  return extractFirstFrame(options.outputsDir, options.taskId, source);
+}
+
+/**
+ * 上传/导入视频的首帧缩略图（S7-D7 / P1）。
+ *
+ * 与任务缩略图共用同一目录和 `/media/thumbs/<key>.jpg` 形状；key=assetId，
+ * 前端可用 assetId 直接推 derivable poster，不需要改 `CanvasOutput` 契约。
+ */
+export async function createAssetThumbnail(
+  options: CreateAssetThumbnailOptions,
+): Promise<string> {
+  return extractFirstFrame(options.outputsDir, options.assetId, options.sourcePath);
 }

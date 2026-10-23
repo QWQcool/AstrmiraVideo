@@ -44,6 +44,8 @@ export const PROVIDER_BASE_TYPES = [
   'http-service',
   'stock-local',
   'fixture-local',
+  // V2.58（S7-D8）：外部作品导入历史；不参与生成调度，只用于历史展示。
+  'imported',
 ] as const;
 
 export const ProviderBaseTypeSchema = z.enum(PROVIDER_BASE_TYPES);

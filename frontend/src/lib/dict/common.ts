@@ -141,6 +141,7 @@ export const COMMON_ZH = {
   'common.engine.unavailable': '这一台不可用',
   'common.engine.h3Revoked': '本地 MiniMax H3（已撤）',
   'common.engine.fixture': '开发期夹具',
+  'common.engine.imported': '外部导入',
   'common.engine.stockLibrary': '素材库（未实现）',
 
   // ── 相对时间（`lib/overviewStats.ts` 的 `formatRelativeTime`：视频库 / 画布 / 总览共用）──
@@ -269,6 +270,7 @@ export const COMMON_EN = {
   'common.engine.unavailable': 'This instance is unavailable',
   'common.engine.h3Revoked': 'Local MiniMax H3 (retired)',
   'common.engine.fixture': 'Dev fixture',
+  'common.engine.imported': 'Imported',
   'common.engine.stockLibrary': 'Asset library (not implemented)',
 
   'common.time.justNow': 'Just now',

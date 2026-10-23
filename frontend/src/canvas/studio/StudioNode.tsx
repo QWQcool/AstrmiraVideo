@@ -379,6 +379,11 @@ export function StudioNode({ id, selected }: NodeProps) {
 
   const mediaUrl = preview === null ? null : resolveMediaUrl(preview.output.url);
   const previewKind = preview?.output.kind ?? null;
+  const posterKey =
+    preview?.output.assetId.startsWith('task:') === true
+      ? preview.output.assetId.slice('task:'.length)
+      : preview?.output.assetId;
+  const posterUrl = previewKind === 'video' ? `/media/thumbs/${posterKey}.jpg` : null;
   const downloadExt =
     previewKind === 'image' ? 'png' : previewKind === 'audio' ? 'mp3' : 'mp4';
   // 默认标题就是「视频 1 / 图片 1」：再在前面加一个类型标签会显示成「视频 视频 1」
@@ -417,6 +422,7 @@ export function StudioNode({ id, selected }: NodeProps) {
           <video
             className="cs-card-media nodrag"
             src={mediaUrl}
+            poster={posterUrl ?? undefined}
             controls
             playsInline
             preload="metadata"
