@@ -91,6 +91,18 @@ async function sizeIfFile(file: string): Promise<number | null> {
  *
  * `toTaskProgress` 保持纯映射（零 IO），这两件事在路由层显式做一次——调用点 = history 与 tasks 两条查询。
  */
+/**
+ * `/media/...` 同源直链 → outputs 下的实际文件。
+ *
+ * 生成任务在 outputs 根；上传/导入资产在 outputs/assets；
+ * 不能一律用 basename 拼根目录，否则导入历史会被误判“文件不存在”。
+ */
+export function resolveOutputFilePath(outputsDir: string, url: string): string {
+  const name = path.basename(url);
+  if (url.startsWith('/media/assets/')) return path.join(outputsDir, 'assets', name);
+  return path.join(outputsDir, name);
+}
+
 export async function withOutputFileFacts(
   task: TaskProgress,
   outputsDir: string,
@@ -101,7 +113,7 @@ export async function withOutputFileFacts(
   for (const field of ['outputVideoUrl', 'outputImageUrl'] as const) {
     const url = next[field];
     if (url === undefined || url === '') continue;
-    const size = await sizeIfFile(path.join(outputsDir, path.basename(url)));
+    const size = await sizeIfFile(resolveOutputFilePath(outputsDir, url));
     if (size === null) {
       next = { ...next };
       delete next[field];
@@ -112,8 +124,9 @@ export async function withOutputFileFacts(
 
   const thumb = next.thumbnailUrl;
   if (thumb !== undefined && thumb !== '') {
+    // 任务缩略图是 <taskId>.jpg；导入资产缩略图是 <assetId>.jpg —— 都按 URL basename。
     const size = await sizeIfFile(
-      path.join(outputsDir, THUMBNAIL_DIR_NAME, `${next.taskId}.jpg`),
+      path.join(outputsDir, THUMBNAIL_DIR_NAME, path.basename(thumb)),
     );
     if (size === null) {
       next = { ...next };

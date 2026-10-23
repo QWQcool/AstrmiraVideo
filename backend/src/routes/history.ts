@@ -10,7 +10,11 @@ import {
 } from '@astrmira/shared';
 import { THUMBNAIL_DIR_NAME } from '../pipeline/thumbnail.js';
 import { resolveOutputsDir } from '../server/staticOutputs.js';
-import { readStorageUsage, withOutputFileFacts } from '../server/storageUsage.js';
+import {
+  readStorageUsage,
+  resolveOutputFilePath,
+  withOutputFileFacts,
+} from '../server/storageUsage.js';
 import { toTaskProgress, type TaskStore } from '../store/taskStore.js';
 
 /**
@@ -170,7 +174,7 @@ export const createHistoryRoutes =
         // V2.40：产物可能是**视频或图片**，两条都删（否则删掉图片任务后磁盘不释放）
         for (const url of [record.outputVideoUrl, record.outputImageUrl]) {
           if (url === undefined || url === '') continue;
-          await rm(path.join(outputsDir, path.basename(url)), { force: true }).catch(() => undefined);
+          await rm(resolveOutputFilePath(outputsDir, url), { force: true }).catch(() => undefined);
         }
 
         // 缩略图（V1.9）一并删：它不认识任何用户输入，文件名就是 taskId

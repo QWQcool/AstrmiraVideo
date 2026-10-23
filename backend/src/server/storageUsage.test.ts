@@ -33,10 +33,14 @@ function task(partial: Partial<TaskProgress> & { taskId: string }): TaskProgress
 beforeAll(async () => {
   outputsDir = await mkdtemp(path.join(tmpdir(), 'astrmira-facts-'));
   await mkdir(path.join(outputsDir, 'thumbs'), { recursive: true });
+  await mkdir(path.join(outputsDir, 'assets'), { recursive: true });
   await writeFile(path.join(outputsDir, 'has.mp4'), Buffer.alloc(2048));
   await writeFile(path.join(outputsDir, 'thumbs', 'has.jpg'), Buffer.alloc(64));
   // 有成片但**没有**缩略图的样本（抽帧失败 / 旧记录）
   await writeFile(path.join(outputsDir, 'no-thumb.mp4'), Buffer.alloc(512));
+  // P3/P4：导入资产落在 outputs/assets/，不能按根目录误判“文件不存在”
+  await writeFile(path.join(outputsDir, 'assets', 'import.png'), Buffer.alloc(333));
+  await writeFile(path.join(outputsDir, 'thumbs', 'import.jpg'), Buffer.alloc(32));
 });
 
 afterAll(async () => {
@@ -74,6 +78,20 @@ describe('withOutputFileFacts（V2.8）', () => {
     expect(result.outputSizeBytes).toBeUndefined();
     // 任务本身没被改动（返回的是新对象，调用方的记录不受影响）
     expect(result.taskId).toBe('evicted');
+  });
+
+  it('导入资产在 outputs/assets/：保留 /media/assets 直链与 assetId 缩略图', async () => {
+    const result = await withOutputFileFacts(
+      task({
+        taskId: 'import-task',
+        outputImageUrl: '/media/assets/import.png',
+        thumbnailUrl: '/media/thumbs/import.jpg',
+      }),
+      outputsDir,
+    );
+    expect(result.outputImageUrl).toBe('/media/assets/import.png');
+    expect(result.thumbnailUrl).toBe('/media/thumbs/import.jpg');
+    expect(result.outputSizeBytes).toBe(333);
   });
 
   it('缩略图单独缺失 → 只省略 thumbnailUrl（成片照常）', async () => {
