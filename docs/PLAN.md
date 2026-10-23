@@ -1685,6 +1685,16 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-24 · CI 加固：verify 超时、apt 重试、部署前版本比对
+
+- **【背景（实测）】** 10-24 手动部署（run `39995257754`）全流程 **32m9s**，其中「安装 ffmpeg / ffprobe」占绝大部分 —— 对照 10-23 那次该步 **1489s（约 25 分钟）**。而 `verify` job **没有 `timeout-minutes`** → 走 GitHub 默认 **6 小时**。本月额度只剩约 187 分钟，一次挂住的 apt 就会把额度烧空。
+- **【改动 1 · job 级上限】** `verify` 加 `timeout-minutes: 45`（实测 5~32 分钟，留足余量）。
+- **【改动 2 · apt 三层收口】** 该步改为：① `Acquire::Retries=3` + http/https 超时 30s；② `update` / `install` 各加 GNU `timeout`（300s / 420s）；③ `set -euo pipefail`，**不吞 `timeout` 的 124** —— 否则会带着没有 ffmpeg 的环境往下跑，症状变成"测试自己坏了"（历史踩过）。
+- **【改动 3 · 部署前自检】** 新增 `scripts/deploy-check.mjs`（根脚本 `pnpm deploy:check`，支持 `--json`）：从 `gh run list` 里**由新到旧**找第一次 `deploy` job `conclusion === 'success'` 的运行，把它的 `headSha` 与当前 HEAD 比对。退出码 `0` = 已部署 / `1` = 需部署 / `2` = 无法判断。判定**只看 Actions 事实，不读本文的记忆**。
+- **【为什么需要改动 3】** 10-24 曾把 `3455c1d` **重复部署了一次**（白跑 32 分钟）。根因：依据本文「P1-P3 仍未部署」的文字下结论，而实际 10-23 已有两次成功部署（`ab199aa` / `3455c1d`）——**文字记录会滞后，`gh run view` 里 deploy job 的结论不会**。
+- **【验证】** `ci.yml` 经 YAML 解析 + 该步 `run` 段导出后 `bash -n` 通过；`pnpm deploy:check` 实跑输出「HEAD `3455c1d` = 最近一次部署 `3455c1d`（run `39995257754`）→ 已是最新」，`--json` 输出正常；`gh` 不可达时按设计返回退出码 2 并给出可读原因（实测代理掉线时命中）。
+- **【边界】** 未恢复自动触发（额度原因不变）；未改部署步骤、secret、Dockerfile；**本轮未跑完整 CI**（额度），改动只在本机静态验证。
+
 ### 2026-10-20 · B4-0k：部署步骤加硬超时（verify 已绿，deploy 主机侧仍挂）
 
 - **【verify 绿】** B4-0j 的 `verify` **5m17s 通过**（覆盖率 681 + 全量 UI 冒烟，含 [12] 语言与 [8] 控制台卫生）。B4 的代码/测试门禁在 HEAD 上是绿的。

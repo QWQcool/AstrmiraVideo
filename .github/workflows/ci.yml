@@ -19,6 +19,10 @@ on:
   #   网页 → Actions → CI → Run workflow → 选择分支 main
   #   CLI  → gh workflow run CI --repo QWQcool/AstrmiraVideo --ref main -f deploy=false
   # 恢复自动需把 push / pull_request 加回来，见文末「恢复自动」。
+  #
+  # 2026-10-24：**部署前先跑 `pnpm deploy:check`** —— 它比对 HEAD 与"最近一次 deploy job
+  # 成功"的 headSha（只看 Actions 事实，不看文档记忆）。已是最新就别再触发，否则就是
+  # 白跑一次 5~32 分钟的额度（10-24 真发生过一次）。
   workflow_dispatch:
     inputs:
       deploy:
@@ -29,6 +33,10 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    # 2026-10-24：**此前没有超时**，一旦 apt 或冒烟挂住就走 GitHub 默认的 6 小时，
+    # 在只剩百来分钟额度时等于"一次手动跑就清空"。实测一次完整 verify 在 5~32 分钟之间
+    # （差异几乎全在"装 ffmpeg"那一步：2026-10-23 实测 1489s ≈ 25 分钟），45 分钟留足余量。
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -47,9 +55,21 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: 安装 ffmpeg / ffprobe（夹具合成与产物校验必需）
+        # 2026-10-24 加固：这一步在全流程里最慢且最不可控 —— 实测 2026-10-23 那次耗时
+        # **1489s（约 25 分钟）**，全部花在 apt 上；而原先既没有重试也没有命令级上限。
+        # 现在做三层收口：① apt 自身重试 + 网络超时；② 每条命令外加 GNU `timeout` 硬上限；
+        # ③ job 级 `timeout-minutes`（见本 job 头部）兜最后一道。
+        # 注意：**不要**把 `timeout` 的退出码吞掉 —— 124 必须让这一步红，否则会带着没有
+        # ffmpeg 的环境往下跑，症状会变成"测试自己坏了"（历史上真发生过）。
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          set -euo pipefail
+          apt_opts=(-y -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          if ! timeout 300s sudo apt-get update "${apt_opts[@]}"; then
+            echo "::warning::apt-get update 超时或失败，5s 后重试一次"
+            sleep 5
+            timeout 300s sudo apt-get update "${apt_opts[@]}"
+          fi
+          timeout 420s sudo apt-get install "${apt_opts[@]}" ffmpeg
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
 
