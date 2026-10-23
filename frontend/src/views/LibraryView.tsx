@@ -828,11 +828,14 @@ export function LibraryView() {
                   onClick={() => setSelectedId(task.taskId)}
                   aria-label={t('library.card.detailAria', { id: task.taskId })}
                 >
-                  {task.thumbnailUrl === undefined ? (
-                    <span className="lib-thumb-empty">{t('library.card.noCover')}</span>
-                  ) : (
-                    <img src={task.thumbnailUrl} alt="" loading="lazy" />
-                  )}
+                  {(() => {
+                    const coverUrl = task.thumbnailUrl ?? task.outputImageUrl;
+                    return coverUrl === undefined ? (
+                      <span className="lib-thumb-empty">{t('library.card.noCover')}</span>
+                    ) : (
+                      <img src={mediaHref(coverUrl)} alt="" loading="lazy" />
+                    );
+                  })()}
                   {task.requestSnapshot.params?.durationSec === undefined ? null : (
                     <span className="lib-dur">{task.requestSnapshot.params.durationSec}s</span>
                   )}

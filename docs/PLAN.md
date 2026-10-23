@@ -1720,7 +1720,7 @@
 ### 2026-10-23 · P4-P6：导入历史 UI、分镜计划、节点检查器
 
 - **【审计】** 新增 `docs/JIMENG-GAP-AUDIT.md`：只读对比即梦 12 节点/2 分组、节点详情、分镜、导入/历史、时间线等。结论：分组成立但需动 `CanvasDoc`，本轮先做只读节点检查器；分镜独立于节点方案；导入历史优先补齐 UI。
-- **【P4】** 视频库新增「导入资产」面板：从当前项目资产库选图片/视频 → `POST /api/history/import` → 刷新历史；历史卡显示「外部导入」徽标。受控测试确认请求体正确、标记来源、无生成调用。
+- **【P4】** 视频库新增「导入资产」面板：从当前项目资产库选图片/视频 → `POST /api/history/import` → 刷新历史；历史卡显示「外部导入」徽标。受控测试确认请求体正确、标记来源、无生成调用。历史卡封面优先 `thumbnailUrl`，图片任务回落 `outputImageUrl`；后端 `withOutputFileFacts` 识别 `/media/assets/` 与 assetId 缩略图，避免导入历史被误判“文件不存在”。
 - **【P5】** CONTRACT 升 **V2.59 §28** 新增 `StoryboardPlan` / `StoryboardRequest` / `StoryboardResponse` 与 `POST /api/agent/storyboard`；画布助手新增「分镜计划」模式，展示镜头表/待确认/警告，**不建节点、不写画布、不提交生成**。
 - **【P6】** 新增只读 `CanvasNodeInspector`：标题、类型、创建方式、批次数、引用数、提示词、上下游、批次产物；不修改 `CanvasDoc`。画布分组需要 schema+拖拽组，留作后续片。
 - **【证据】** 受控 P4：导入请求 1 次、`source=asset-library`、历史徽标显示；受控 P5/P6：检查器显示 prompt/上下游，分镜表 2 镜头、`storyboard` 1 次、画布 PUT 0、`/api/generate` 0、console error 0。后端 **723 passed（83 文件）**；前端 **609 passed**；契约 **11/11**；type/lint/build/visual-selfcheck 通过。
