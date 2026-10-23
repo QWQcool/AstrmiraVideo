@@ -1709,6 +1709,13 @@
 - **【计划调整】** 保留我们更明确的「计划卡 + 显式创建画布草稿」，不改成自动落节点。新增 **S7-D1 Canvas Agent 只读侧栏**（list nodes/edges/outputs/selected node，禁止改节点/生成，文本成本单列）；再开 **S7-D2 写工具**：第一版只开放“创建文本节点”，必须先展示计划卡并确认；**默认不开放删除**，更新/连线逐项另开；成功判定必须读回 `CanvasDoc`，不信模型文案。首页与画布两个入口不强行合并会话，仍用 `agentCanvasHandoff` 传已确认计划。
 - **【不照搬】** 不把即梦纯聊天回复当唯一计划形态；不把“0 积分”写进我们 UI；不在写工具验证前宣称画布 Agent 能自动建节点。GPU/满血 MOSS 计划不变。
 
+### 2026-10-23 · S7-D7：导入视频首帧展示
+
+- **【问题】** 画布视频节点 `preload="none"` 且没有 `poster`，上传/导入视频初始显示黑块；文件本身 200、H.264/AAC、5.04s 正常。
+- **【修复】** 只改 `StudioNode`：视频预览 `preload="none"` → `"metadata"`；只拉媒体头部，不整段预载。音频仍保持 `none`。
+- **【实测】** 对线上导入视频动态设置 `preload=metadata` 后 `readyState 0 → 4`、`duration 5.088s`，截图出现首帧；前端 **609 passed**，type/lint/build/visual-selfcheck 通过。
+- **【边界】** 不生成独立 poster/缩略图；metadata 不可用时仍可能黑块；不改上传/画布契约；不写历史。
+
 ### 2026-10-22 · 暂停自动 CI/CD，改为手动 workflow_dispatch
 
 - **【原因】** GitHub Free 私有仓库 Actions 额度 2,000 分钟/月，本月已用 1,813，剩 187；push 触发的全量 verify 约 8 分钟/次，必须停止自动消耗。

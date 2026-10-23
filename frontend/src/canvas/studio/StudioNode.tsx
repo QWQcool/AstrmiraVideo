@@ -411,13 +411,15 @@ export function StudioNode({ id, selected }: NodeProps) {
             decoding="async"
           />
         ) : null}
+        {/* S7-D6：没有 task 缩略图的上传/导入视频也要有首帧。
+            metadata 只拉头部，不会像 auto 一样整段预载。 */}
         {mediaUrl !== null && previewKind === 'video' ? (
           <video
             className="cs-card-media nodrag"
             src={mediaUrl}
             controls
             playsInline
-            preload="none"
+            preload="metadata"
           />
         ) : null}
         {mediaUrl !== null && previewKind === 'audio' ? (
