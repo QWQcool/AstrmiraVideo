@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CreationRun, VideoGenerateRequest } from '@astrmira/shared';
+import type { CreationRun, EditScript, VideoGenerateRequest } from '@astrmira/shared';
 import {
   CreationRunService,
   buildStepRequest,
@@ -45,6 +45,7 @@ interface Harness {
   service: CreationRunService;
   saved: CreationRun[];
   submissions: Array<{ request: VideoGenerateRequest; key: string }>;
+  editSubmissions: Array<{ script: EditScript; key: string }>;
   tasks: Map<string, RunTaskView>;
   setRun(value: CreationRun): void;
 }
@@ -52,6 +53,7 @@ interface Harness {
 function harness(): Harness {
   const saved: CreationRun[] = [];
   const submissions: Array<{ request: VideoGenerateRequest; key: string }> = [];
+  const editSubmissions: Array<{ script: EditScript; key: string }> = [];
   const tasks = new Map<string, RunTaskView>();
   let current: CreationRun | null = null;
   const ports: RunEnginePorts = {
@@ -59,6 +61,12 @@ function harness(): Harness {
     submit: async (request, key) => {
       submissions.push({ request, key });
       const taskId = `t${submissions.length}`;
+      tasks.set(taskId, { status: 'running', hasOutput: false });
+      return taskId;
+    },
+    submitEdit: async (script, key) => {
+      editSubmissions.push({ script, key });
+      const taskId = `e${editSubmissions.length}`;
       tasks.set(taskId, { status: 'running', hasOutput: false });
       return taskId;
     },
@@ -72,7 +80,16 @@ function harness(): Harness {
     ports,
     now: () => 12345,
   });
-  return { service, saved, submissions, tasks, setRun: (value) => { current = value; } };
+  return {
+    service,
+    saved,
+    submissions,
+    editSubmissions,
+    tasks,
+    setRun: (value) => {
+      current = value;
+    },
+  };
 }
 
 describe('CreationRunService · 拓扑执行（S8-B2）', () => {
@@ -146,6 +163,9 @@ describe('CreationRunService · 拓扑执行（S8-B2）', () => {
       submit: async () => {
         throw new Error('PROVIDER_UNAVAILABLE：引擎未启用');
       },
+      submitEdit: async () => {
+        throw new Error('不应进入拼接');
+      },
     };
     const service2 = new CreationRunService({
       load: () => run([step('img-1', 'image', { status: 'pending' })], { state: 'running' }),
@@ -191,5 +211,73 @@ describe('buildStepRequest · 请求构造（纯函数）', () => {
     expect(dep.assets?.firstFrameImage).toBe('task:t9');
     expect(dep.params?.durationSec).toBe(5);
     expect(dep.resolution).toEqual({ width: 1280, height: 720 });
+  });
+});
+
+describe('CreationRunService · 收尾自动合成（S8-C）', () => {
+  function twoShotRun(): CreationRun {
+    const r = run([
+      step('img-1', 'image', { status: 'succeeded', taskId: 't0', outputAssetId: 'task:t0' } as Record<string, unknown>),
+      step('shot-1', 'video', { dependsOn: ['img-1'], status: 'succeeded', taskId: 't1', outputAssetId: 'task:t1' } as Record<string, unknown>),
+      step('shot-2', 'video', { dependsOn: ['img-1'], status: 'succeeded', taskId: 't2', outputAssetId: 'task:t2' } as Record<string, unknown>),
+    ], { state: 'running', startedAt: 1 });
+    return r;
+  }
+
+  it('≥2 视频步全成功 → assembling；tick 提交 concat（镜头序）+ 确定性幂等键', async () => {
+    const h = harness();
+    const r = twoShotRun();
+    deriveTransition(r, 9);
+    expect(r.state).toBe('assembling');
+
+    h.setRun(r);
+    await h.service.tick('r1');
+    expect(h.editSubmissions).toHaveLength(1);
+    expect(h.editSubmissions[0]?.script).toEqual({
+      sourceTaskId: 't1',
+      operations: [{ type: 'concat', taskIds: ['t1', 't2'] }],
+    });
+    expect(h.editSubmissions[0]?.key).toBe('run:r1:assembly:a0');
+    expect(h.saved.at(-1)?.assembledTaskId).toBe('e1');
+    expect(h.saved.at(-1)?.state).toBe('assembling');
+  });
+
+  it('拼接成功 → succeeded（assembledTaskId 落盘）；拼接失败 → failed（stepId=assembly）', async () => {
+    const ok = harness();
+    const okRun = twoShotRun();
+    okRun.state = 'assembling';
+    okRun.assembledTaskId = 'e9';
+    ok.setRun(okRun);
+    ok.tasks.set('e9', { status: 'succeeded', hasOutput: true });
+    await ok.service.tick('r1');
+    const done = ok.saved.at(-1)!;
+    expect(done.state).toBe('succeeded');
+    expect(done.assembledTaskId).toBe('e9');
+    expect(done.finishedAt).toBe(12345);
+
+    const bad = harness();
+    const badRun = twoShotRun();
+    badRun.state = 'assembling';
+    badRun.assembledTaskId = 'e8';
+    bad.setRun(badRun);
+    bad.tasks.set('e8', { status: 'failed', hasOutput: false, message: 'ffmpeg 拼接失败' });
+    await bad.service.tick('r1');
+    const failed = bad.saved.at(-1)!;
+    expect(failed.state).toBe('failed');
+    expect(failed.failure).toEqual({ stepId: 'assembly', message: 'ffmpeg 拼接失败' });
+  });
+
+  it('单视频步会话：全成功直落 succeeded，不提交拼接', async () => {
+    const h = harness();
+    h.setRun(
+      run([
+        step('img-1', 'image', { status: 'succeeded', taskId: 't0', outputAssetId: 'task:t0' } as Record<string, unknown>),
+        step('shot-1', 'video', { dependsOn: ['img-1'], status: 'succeeded', taskId: 't1', outputAssetId: 'task:t1' } as Record<string, unknown>),
+      ], { state: 'running', startedAt: 1 }),
+    );
+    await h.service.tick('r1');
+    const done = h.saved.at(-1)!;
+    expect(done.state).toBe('succeeded');
+    expect(h.editSubmissions).toHaveLength(0);
   });
 });

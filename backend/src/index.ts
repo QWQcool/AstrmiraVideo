@@ -482,6 +482,26 @@ export async function buildApp() {
       });
       return taskId;
     },
+    // S8-C：收尾拼接走 /api/edits 的同一入队路径（kind:'edit' + 源片参数快照）
+    submitEdit: async (script, idempotencyKey) => {
+      const existing = store.findTaskIdByIdempotencyKey(idempotencyKey);
+      if (existing !== null) return existing;
+      const source = store.get(script.sourceTaskId);
+      if (source === null || source.status !== 'succeeded' || source.outputVideoUrl === undefined) {
+        throw new Error(`拼接源任务不可用：${script.sourceTaskId}`);
+      }
+      const taskId = randomUUID();
+      await queue.submit({
+        taskId,
+        track: 'local',
+        request: source.requestSnapshot,
+        idempotencyKey,
+        submitting: false,
+        kind: 'edit',
+        editScript: script,
+      });
+      return taskId;
+    },
   };
   const runService = new CreationRunService({
     load: (id) => runStore.get(id),

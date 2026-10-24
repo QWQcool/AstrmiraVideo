@@ -1709,6 +1709,14 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-25 · S8-C：会话收尾自动拼接（CONTRACT V2.65 / §29）
+
+- **【契约】** CONTRACT 升 **V2.65**：§29 补"自动拼接"口径——视频步 ≥2 → `assembling`，按**镜头顺序**提交一条 `concat`（单一操作，不受 8 条编辑上限约束；幂等键 `run:<runId>:assembly:a0` 断点回放）；拼接成功 → `succeeded` + `assembledTaskId`；失败 → `failed`（`failure.stepId='assembly'`）；**单视频步跳过拼接**直落 succeeded（拼接无信息量）。
+- **【实现】** 引擎：`deriveTransition` 全成功分支按视频步数分流（≥2 → assembling，1 → 直落 succeeded）；`buildAssemblyScript`（纯函数，镜头序 taskIds）；`tick` 增加 assembling 处理（未提交 → `submitEdit` 端口提交 + 回填 assembledTaskId；已提交 → 等终态收账；提交被拒/异常输入 → failed 如实记录）。`RunEnginePorts` 增 `submitEdit(script, key)`；buildApp 接线走 `/api/edits` 同一入队路径（`kind:'edit'` + 源片 `requestSnapshot` + 幂等回放）。
+- **【测试】** 引擎 **+3**：≥2 视频步全成功 → assembling + concat（镜头序 + 确定性键）/ 拼接成功→succeeded 与失败→failed(assembly) / 单视频步直落 succeeded 零拼接提交。既有"单视频步全成功 → succeeded"用例天然仍绿。
+- **【门禁】** 后端 **758 passed（89 文件，+3）**；`tsc --noEmit` 0 error；oxlint 0 warning；契约 **11/11**。前端无改动。
+- **【边界】** ① 转场（分镜表 `transition` → xfade）未接——v1 是纯 concat，转场随后续片按需加（`MAX_EDIT_OPERATIONS=8` 内组合 concat+xfade 可行）；② 拼接任务在画廊里是一条普通 edit 任务（`origin.kind='edit'`），会话视图经 `assembledTaskId` 指向它；③ 真实 ffmpeg 全链路（fixture 片源 → concat 成片）随 S8-E 的 J6 冒烟验证。
+
 ### 2026-10-25 · S8-B3：创作会话 REST 路由上线（摘【规划】标；§29 七条全实现）
 
 - **【路由】** `routes/runs.ts` 七条：`POST /api/agent/runs`（校验链：`validateCreationRunInput` 结构 → D74 云轨拒绝 → `PROVIDER_UNAVAILABLE` 未启用引擎 → `PROJECT_NOT_FOUND` 404；成功 201 planned，步骤归一 pending/attempt 0）/ `GET /api/agent/runs?project=`（轻量 summary）/ `GET /:id` / `start`（planned→running，409 拒非法迁移）/ `confirm`（awaiting-confirmation→running + `confirmedAt`）/ `cancel`（活跃态→cancelled + finishedAt；在途任务跑完不消费）/ `steps/:stepId/retry`（仅 failed 会话的 failed 步：attempt+1 换执行意图、清 failure/finishedAt，其余成功步不动）。**409 统一 `INVALID_REQUEST` + 人话消息**（§29 口径；"会话不存在"也用 INVALID_REQUEST + 404，不造新错误码）。

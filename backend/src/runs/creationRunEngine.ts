@@ -2,6 +2,7 @@ import {
   creationRunStepKey,
   type CreationRun,
   type CreationRunStep,
+  type EditScript,
   type VideoGenerateRequest,
 } from '@astrmira/shared';
 
@@ -31,6 +32,8 @@ export interface RunEnginePorts {
   getTask(taskId: string): RunTaskView | null;
   /** 返回 taskId；同幂等键命中既有任务时返回那个 taskId（断点续跑）。拒绝时抛错（含人话原因）。 */
   submit(request: VideoGenerateRequest, idempotencyKey: string): Promise<string>;
+  /** S8-C：收尾拼接（/api/edits 同一入队路径；同幂等键回放）。拒绝时抛错。 */
+  submitEdit(script: EditScript, idempotencyKey: string): Promise<string>;
 }
 
 /** 步骤终态判断（refresh 用） */
@@ -94,7 +97,12 @@ export function deriveTransition(run: CreationRun, now: number): boolean {
   }
 
   if (run.steps.every((step) => step.status === 'succeeded')) {
-    // S8-C 落地前：未配拼接 → 全部成功即 succeeded（契约 §29"未配拼接时"口径）
+    // S8-C：≥2 个视频步骤 → 进 assembling 自动拼接；单镜头直落 succeeded（拼接无信息量，V2.65 口径）
+    const videoCount = run.steps.filter((step) => step.kind === 'video').length;
+    if (videoCount >= 2) {
+      run.state = 'assembling';
+      return true;
+    }
     run.state = 'succeeded';
     run.finishedAt = now;
     return true;
@@ -116,6 +124,18 @@ export function deriveTransition(run: CreationRun, now: number): boolean {
     return true;
   }
   return false;
+}
+
+/** S8-C：拼接脚本 = 按镜头顺序 concat 全部视频步骤的任务（单一操作，不受 8 条上限约束） */
+export function buildAssemblyScript(run: CreationRun): EditScript | null {
+  const taskIds = run.steps
+    .filter((step) => step.kind === 'video' && step.status === 'succeeded' && step.taskId !== undefined)
+    .map((step) => step.taskId as string);
+  if (taskIds.length < 2) return null;
+  return {
+    sourceTaskId: taskIds[0]!,
+    operations: [{ type: 'concat', taskIds }],
+  };
 }
 
 /** ③ 当前可提交的步骤（纯）：pending（或崩溃残留的 submitting-无-taskId）+ 依赖全部 succeeded + 视频门放行 */
@@ -213,13 +233,63 @@ export class CreationRunService {
     this.inFlight.add(runId);
     try {
       const run = this.deps.load(runId);
-      if (run === null || (run.state !== 'running' && run.state !== 'planned')) return run;
+      if (run === null) return null;
       const now = this.deps.now?.() ?? Date.now();
 
       if (run.state === 'planned') {
         run.state = 'running';
         run.startedAt = now;
       }
+
+      // S8-C：assembling = 已提交（或待提交）自动拼接任务；等它终态
+      if (run.state === 'assembling') {
+        if (run.assembledTaskId === undefined) {
+          const script = buildAssemblyScript(run);
+          if (script === null) {
+            // 步骤状态不再满足拼接（异常输入）：如实失败，不硬拼
+            run.state = 'failed';
+            run.failure = { stepId: 'assembly', message: '会话进入拼接但找不到 ≥2 个成功视频步骤' };
+            run.finishedAt = now;
+          } else {
+            try {
+              const taskId = await this.deps.ports.submitEdit(
+                script,
+                creationRunStepKey(run.id, 'assembly', 0),
+              );
+              run.assembledTaskId = taskId;
+              run.updatedAt = now;
+            } catch (err) {
+              run.state = 'failed';
+              run.failure = {
+                stepId: 'assembly',
+                message: (err instanceof Error ? err.message : String(err)).slice(0, 600),
+              };
+              run.finishedAt = now;
+              run.updatedAt = now;
+            }
+          }
+          this.deps.save(run);
+          return run;
+        }
+        const assembly = this.deps.ports.getTask(run.assembledTaskId);
+        if (assembly !== null && assembly.status === 'succeeded' && assembly.hasOutput) {
+          run.state = 'succeeded';
+          run.finishedAt = now;
+          run.updatedAt = now;
+        } else if (assembly !== null && assembly.status === 'failed') {
+          run.state = 'failed';
+          run.failure = {
+            stepId: 'assembly',
+            message: assembly.message?.slice(0, 600) ?? '自动拼接失败',
+          };
+          run.finishedAt = now;
+          run.updatedAt = now;
+        }
+        this.deps.save(run);
+        return run;
+      }
+
+      if (run.state !== 'running') return run;
 
       refreshFromTasks(run, this.deps.ports.getTask);
       deriveTransition(run, now);

@@ -1,6 +1,9 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.64 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.65 · 已冻结（变更需先改本文，再改代码）**
+> **V2.65 修订（2026-10-25）**：**会话自动拼接口径补全（§29）** —— S8-C。
+>   视频步 ≥2 → assembling 按镜头序 concat（幂等键 `run:<runId>:assembly:a0`）；
+>   拼接失败 → failed（`failure.stepId='assembly'`）；**单视频步跳过拼接**直落 succeeded。
 > **V2.64 修订（2026-10-24）**：**创作会话增补 `confirmedAt`（§29）** —— S8-B2。
 >   可选时间戳：首帧确认档用户点「继续」的时刻；执行器据此区分"暂停前的 running"与
 >   "确认后的 running"（NULL = 未确认 / unattended 不适用）。纯增字段，无路由变化。
@@ -3302,6 +3305,10 @@ interface CreationRun {
 - **无依赖的 video 步**：`first-frame-confirm` 档下也要等确认（"确认"的对象是整批首帧，不区分有无依赖）；
 - **提交口径**：会话执行器内部复用 `/api/generate` 同一套校验与队列（含能力位拦截、`task:` 引用校验），
   **不走 HTTP 自调用**；无凭据路径（本地轨不需要）。
+- **自动拼接（S8-C / V2.65）**：全部步骤成功且**视频步骤 ≥2** → 进 `assembling`，按**镜头顺序**提交一条
+  `concat` 剪辑任务（单一操作；幂等键 `run:<runId>:assembly:a0`，断点回放）；拼接任务成功 → `succeeded`
+  并回填 `assembledTaskId`；失败 → `failed`（`failure.stepId = 'assembly'`）。
+  **单视频步会话跳过拼接**（拼接无信息量），直落 `succeeded`、`assembledTaskId` 缺省。
 
 **路由（S8-B3 已实现；语义见上方状态机）**
 
