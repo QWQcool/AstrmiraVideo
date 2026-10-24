@@ -1,6 +1,9 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.63 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.64 · 已冻结（变更需先改本文，再改代码）**
+> **V2.64 修订（2026-10-24）**：**创作会话增补 `confirmedAt`（§29）** —— S8-B2。
+>   可选时间戳：首帧确认档用户点「继续」的时刻；执行器据此区分"暂停前的 running"与
+>   "确认后的 running"（NULL = 未确认 / unattended 不适用）。纯增字段，无路由变化。
 > **V2.63 修订（2026-10-24）**：**创作会话（§29 / D72·D74·D75）** —— Step 12-S8-B1。
 >   新增 `CreationRun`（服务端确定性执行的"剧本→成片"会话）：状态机（planned/running/
 >   awaiting-confirmation/assembling/succeeded/failed/cancelled）、步骤图（图片首帧 → 视频依赖，
@@ -3269,7 +3272,8 @@ interface CreationRun {
   }>;                               // 1–32；视频步 1–16
   state: 'planned' | 'running' | 'awaiting-confirmation' | 'assembling'
        | 'succeeded' | 'failed' | 'cancelled';
-  createdAt: number; updatedAt: number; startedAt?: number; finishedAt?: number;
+  createdAt: number; updatedAt: number; confirmedAt?: number;   // V2.64：首帧确认时刻（NULL = 未确认/unattended）
+  startedAt?: number; finishedAt?: number;
   failure?: { stepId: string; message: string };   // 失败即停：第一个失败步骤
   assembledTaskId?: string;         // S8-C：自动拼接产物（一条普通 edit 任务）
 }

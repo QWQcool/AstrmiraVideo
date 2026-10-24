@@ -1,0 +1,195 @@
+import { describe, expect, it } from 'vitest';
+import type { CreationRun, VideoGenerateRequest } from '@astrmira/shared';
+import {
+  CreationRunService,
+  buildStepRequest,
+  deriveTransition,
+  readySteps,
+  type RunEnginePorts,
+  type RunTaskView,
+} from './creationRunEngine.js';
+
+function step(id: string, kind: 'image' | 'video', overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    kind,
+    prompt: `${id} 提示词`,
+    aspectRatio: '16:9' as const,
+    resolutionTier: '720p' as const,
+    ...(kind === 'video' ? { durationSec: 5 } : {}),
+    referenceAssetIds: [],
+    dependsOn: [],
+    status: 'pending' as const,
+    attempt: 0,
+    ...overrides,
+  };
+}
+
+function run(steps: Array<ReturnType<typeof step>>, overrides: Record<string, unknown> = {}): CreationRun {
+  return {
+    version: 1,
+    id: 'r1',
+    title: '雨夜霓虹',
+    projectId: 'default',
+    mode: 'unattended' as const,
+    provider: 'fixture-local',
+    steps,
+    state: 'planned' as const,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  } as CreationRun;
+}
+
+interface Harness {
+  service: CreationRunService;
+  saved: CreationRun[];
+  submissions: Array<{ request: VideoGenerateRequest; key: string }>;
+  tasks: Map<string, RunTaskView>;
+  setRun(value: CreationRun): void;
+}
+
+function harness(): Harness {
+  const saved: CreationRun[] = [];
+  const submissions: Array<{ request: VideoGenerateRequest; key: string }> = [];
+  const tasks = new Map<string, RunTaskView>();
+  let current: CreationRun | null = null;
+  const ports: RunEnginePorts = {
+    getTask: (taskId) => tasks.get(taskId) ?? null,
+    submit: async (request, key) => {
+      submissions.push({ request, key });
+      const taskId = `t${submissions.length}`;
+      tasks.set(taskId, { status: 'running', hasOutput: false });
+      return taskId;
+    },
+  };
+  const service = new CreationRunService({
+    load: () => current,
+    save: (value) => {
+      current = value;
+      saved.push(value);
+    },
+    ports,
+    now: () => 12345,
+  });
+  return { service, saved, submissions, tasks, setRun: (value) => { current = value; } };
+}
+
+describe('CreationRunService · 拓扑执行（S8-B2）', () => {
+  it('planned → running：先提交图片步，依赖未满足的视频步不提交', async () => {
+    const h = harness();
+    h.setRun(
+      run([step('img-1', 'image'), step('shot-1', 'video', { dependsOn: ['img-1'] })]),
+    );
+    await h.service.tick('r1');
+    expect(h.submissions).toHaveLength(1);
+    expect(h.submissions[0]?.request.mode).toBe('t2i');
+    const after = h.saved.at(-1)!;
+    expect(after.state).toBe('running');
+    expect(after.steps[0]?.status).toBe('submitting');
+    expect(after.steps[0]?.taskId).toBe('t1');
+    expect(after.steps[1]?.status).toBe('pending');
+    expect(after.startedAt).toBe(12345);
+  });
+
+  it('图片成功后：下一 tick 提交视频步（i2v + task: 首帧引用）；再成功 → 会话 succeeded', async () => {
+    const h = harness();
+    h.setRun(
+      run([step('img-1', 'image'), step('shot-1', 'video', { dependsOn: ['img-1'] })]),
+    );
+    await h.service.tick('r1');
+    h.tasks.set('t1', { status: 'succeeded', hasOutput: true });
+    await h.service.tick('r1');
+
+    expect(h.submissions).toHaveLength(2);
+    expect(h.submissions[1]?.request.mode).toBe('i2v');
+    expect(h.submissions[1]?.request.assets?.firstFrameImage).toBe('task:t1');
+    expect(h.submissions[1]?.key).toBe('run:r1:shot-1:a0');
+
+    h.tasks.set('t2', { status: 'succeeded', hasOutput: true });
+    await h.service.tick('r1');
+    const final = h.saved.at(-1)!;
+    expect(final.state).toBe('succeeded');
+    expect(final.finishedAt).toBe(12345);
+    expect(final.steps.every((s) => s.status === 'succeeded')).toBe(true);
+  });
+
+  it('失败即停：任务失败 → 会话 failed + failure 记录，后续步骤零提交', async () => {
+    const h = harness();
+    h.setRun(
+      run([step('img-1', 'image'), step('shot-1', 'video', { dependsOn: ['img-1'] })]),
+    );
+    await h.service.tick('r1');
+    h.tasks.set('t1', { status: 'failed', hasOutput: false, message: '上游拒绝' });
+    await h.service.tick('r1');
+
+    expect(h.submissions).toHaveLength(1); // 视频步从未提交
+    const failed = h.saved.at(-1)!;
+    expect(failed.state).toBe('failed');
+    expect(failed.failure).toEqual({ stepId: 'img-1', message: '上游拒绝' });
+  });
+
+  it('提交被拒 = 步骤失败（不重试）；断点续跑用同一幂等键重提', async () => {
+    const h = harness();
+    const rejected = run([step('img-1', 'image')]);
+    rejected.state = 'running';
+    rejected.startedAt = 1;
+    rejected.steps[0] = { ...rejected.steps[0]!, status: 'submitting' }; // 崩溃残留：无 taskId
+    h.setRun(rejected);
+    await h.service.tick('r1');
+    expect(h.submissions[0]?.key).toBe('run:r1:img-1:a0'); // 同键重提（幂等命中既有任务）
+
+    // 提交被拒路径
+    const h2 = harness();
+    const rejectedPorts: RunEnginePorts = {
+      getTask: () => null,
+      submit: async () => {
+        throw new Error('PROVIDER_UNAVAILABLE：引擎未启用');
+      },
+    };
+    const service2 = new CreationRunService({
+      load: () => run([step('img-1', 'image', { status: 'pending' })], { state: 'running' }),
+      save: (v) => h2.saved.push(v),
+      ports: rejectedPorts,
+      now: () => 1,
+    });
+    await service2.tick('r1');
+    expect(h2.saved.at(-1)?.state).toBe('failed');
+    expect(h2.saved.at(-1)?.failure?.message).toContain('PROVIDER_UNAVAILABLE');
+  });
+
+  it('首帧确认档：图片全部成功 → awaiting-confirmation 且不提交视频；确认后放行', async () => {
+    const confirmed = run(
+      [step('img-1', 'image'), step('shot-1', 'video', { dependsOn: ['img-1'] })],
+      { mode: 'first-frame-confirm', state: 'running', startedAt: 1 },
+    );
+    confirmed.steps[0] = { ...confirmed.steps[0]!, status: 'succeeded', outputAssetId: 'task:t0' };
+    expect(readySteps(confirmed)).toEqual([]); // 门未开
+    deriveTransition(confirmed, 9);
+    expect(confirmed.state).toBe('awaiting-confirmation');
+
+    confirmed.confirmedAt = 10; // confirm 端点的效果（B3 路由落地）
+    confirmed.state = 'running';
+    const gates = readySteps(confirmed).map((s) => s.id);
+    expect(gates).toEqual(['shot-1']);
+  });
+});
+
+describe('buildStepRequest · 请求构造（纯函数）', () => {
+  it('视频步无依赖：用户参考图第一张首帧、第二张尾帧；有依赖：上游产物作首帧', () => {
+    const r = run([
+      step('img-1', 'image', { status: 'succeeded', outputAssetId: 'task:t9' } as Record<string, unknown>),
+      step('shot-1', 'video', { referenceAssetIds: ['asset-a', 'asset-b'] }),
+      step('shot-2', 'video', { dependsOn: ['img-1'] }),
+    ]);
+    const free = buildStepRequest(r, r.steps[1]!);
+    expect(free.mode).toBe('i2v');
+    expect(free.assets).toEqual({ firstFrameImage: 'asset-a', lastFrameImage: 'asset-b' });
+
+    const dep = buildStepRequest(r, r.steps[2]!);
+    expect(dep.mode).toBe('i2v');
+    expect(dep.assets?.firstFrameImage).toBe('task:t9');
+    expect(dep.params?.durationSec).toBe(5);
+    expect(dep.resolution).toEqual({ width: 1280, height: 720 });
+  });
+});

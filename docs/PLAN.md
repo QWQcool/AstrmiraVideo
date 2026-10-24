@@ -1709,6 +1709,16 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-24 · S8-B2：会话存储与执行引擎（CONTRACT V2.64 / §29 · 引擎半片）
+
+- **【部署（事实）】** S8-A 收口后按用户决定攒批发部署：run `40102571971` 失败（GitHub runner 连站点 SSH 端口超时——跨境网络偶发，主机与端口本机实测可达），**重试 run `40103734176` 成功**（verify+deploy 双绿，10 分钟）。线上已运行 `cbe1b63..3177963` 全部七笔提交，实测 `POST /api/agent/storyboard/expand` 正确返回 **501 BYOK**——新代码确认在线。
+- **【契约】** CONTRACT 升 **V2.64**：§29 对象增补可选 `confirmedAt`（首帧确认时刻；执行器据此区分"暂停前的 running"与"确认后的 running"）。纯增字段，无路由变化。
+- **【存储】** `db.ts` SCHEMA 增 `creation_runs` 表（会话本体一行一档；任务走既有 tasks 表，幂等键 `run:<runId>:<stepId>:a<attempt>` 关联；索引 project/state）。`runs/runStore.ts`：create/get/update/listByProject/listActive（重启恢复用）；损坏行 schema strict 抛错不静默吞。
+- **【引擎】** `runs/creationRunEngine.ts`——正确性全在纯函数（沿 canvasPlanRunner 纪律）：`refreshFromTasks`（任务事实→步骤状态；成功无产物按失败如实处理）、`deriveTransition`（失败即停记 failure / 全成功→succeeded〔S8-C 落地前"未配拼接"口径〕/ 首帧确认档→awaiting-confirmation）、`readySteps`（拓扑就绪 + 视频门 + **崩溃残留的 submitting-无-taskId 用同键重提**——D74 本地轨安全路径）、`buildStepRequest`（依赖产物按序作首帧/尾帧、用户参考图同规则排后、tier×画幅→resolution）。`CreationRunService.tick` 薄驱动：同会话串行（in-flight 集合），提交被拒 = 步骤失败不重试。
+- **【测试】** `creationRunEngine.test.ts` **6 条**：planned→running 先提交图片步 / 图片成功→i2v+task: 首帧引用→全成功 succeeded / 失败即停零后续提交 / 提交被拒即败 + 同键断点重提 / 首帧确认档门控（未确认零视频提交、确认后放行）/ 请求构造（参考图首尾帧映射、依赖产物首帧、tier→1280×720）。runStore 随 db 建表被现有 store 测试面覆盖（CRUD 专测随 B3 路由测试走真实 db）。
+- **【门禁】** 后端 **747 passed（88 文件，+6）**；`tsc --noEmit` 0 error；oxlint 0 warning。前端/shared schema 增字段已构建通过。
+- **【边界】** REST 路由（创建/详情/列表/start/confirm/cancel/retry）与 buildApp 接线是 **S8-B3**；执行器尚未接生产 tick 定时器（B3 一并）；S8-C 拼接未接（全成功直落 succeeded，契约口径内）。
+
 ### 2026-10-24 · S8-B1：创作会话契约冻结（CONTRACT V2.63 / D72·D74·D75）
 
 - **【契约】** CONTRACT 升 **V2.63**：新增 **§29 创作会话 `CreationRun`**——服务端确定性执行的"剧本→成片"状态机（planned / running / awaiting-confirmation / assembling / succeeded / failed / cancelled）、步骤图（image 首帧步 → video 步依赖，**video ≤16 / D75**、依赖只认 image 步、环检测）、确定性幂等键 `run:<runId>:<stepId>:a<attempt>`、失败即停**绝不自动重提**（显式 retry 是唯一路径且换键）、**v1 仅本地轨**（云轨 provider 创建时 400，D74）、七条 REST 路由**带【规划】标记登记**进 §5 路由表（契约冻结、实现随 S8-B2/B3 同笔摘标）。§29-1 写明"不做"：不跑 LLM、不自动重提、不代持云端凭据、不改 CanvasDoc。

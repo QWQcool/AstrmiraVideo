@@ -1,0 +1,259 @@
+import {
+  creationRunStepKey,
+  type CreationRun,
+  type CreationRunStep,
+  type VideoGenerateRequest,
+} from '@astrmira/shared';
+
+/**
+ * 创作会话执行引擎（CONTRACT §29 / D72；S8-B2）。
+ *
+ * 分层与 canvasPlanRunner 同一条纪律：**正确性都在纯逻辑里，网络只是最后一步**。
+ * - `refreshFromTasks` / `deriveTransition` / `readySteps` / `buildStepRequest` 全纯函数（可单测）；
+ * - `CreationRunService.tick` 是薄驱动：读任务 → 推进状态 → 提交就绪步骤 → 落库。
+ *
+ * 四条执行铁律（§29）：
+ * 1. 拓扑提交：步骤只在 `dependsOn` 全部 succeeded 后提交；
+ * 2. 失败即停：任一步骤 failed → 会话 failed，**不再提交任何后续步骤**；
+ * 3. 绝不自动重提：`attempt` 只由显式 retry 端点 +1（换幂等键 = 真新任务）；
+ * 4. 断点续跑：幂等键确定性 —— `submitting` 但无 taskId 的步骤（提交瞬间崩溃）用**同一个键**重提，
+ *    幂等命中既有任务；这是本地轨（D74）下的安全路径，不适用于付费云轨。
+ */
+
+/** 服务端口：任务事实的读取与生成提交（生产环境接 TaskStore + /api/generate 同一链路；测试注入假件） */
+export interface RunTaskView {
+  status: 'queued' | 'submitting' | 'running' | 'succeeded' | 'failed';
+  hasOutput: boolean;
+  message?: string;
+}
+
+export interface RunEnginePorts {
+  getTask(taskId: string): RunTaskView | null;
+  /** 返回 taskId；同幂等键命中既有任务时返回那个 taskId（断点续跑）。拒绝时抛错（含人话原因）。 */
+  submit(request: VideoGenerateRequest, idempotencyKey: string): Promise<string>;
+}
+
+/** 步骤终态判断（refresh 用） */
+function taskTerminal(view: RunTaskView): boolean {
+  return view.status === 'succeeded' || view.status === 'failed';
+}
+
+/** ① 用任务事实刷新步骤状态（纯；返回是否有变化） */
+export function refreshFromTasks(run: CreationRun, getTask: RunEnginePorts['getTask']): boolean {
+  let changed = false;
+  run.steps.forEach((step, index) => {
+    if (step.taskId === undefined) return;
+    if (step.status !== 'submitting' && step.status !== 'running') return;
+    const view = getTask(step.taskId);
+    if (view === null || !taskTerminal(view)) {
+      // 任务还在跑 / 查不到（可能尚未轮询到）：如实保持，不猜
+      if (step.status === 'submitting' && view !== null) {
+        run.steps[index] = { ...step, status: 'running' };
+        changed = true;
+      }
+      return;
+    }
+    if (view.status === 'succeeded' && view.hasOutput) {
+      run.steps[index] = {
+        ...step,
+        status: 'succeeded',
+        outputAssetId: `task:${step.taskId}`,
+        ...(step.error === undefined ? {} : { error: undefined }),
+      };
+      changed = true;
+    } else if (view.status === 'failed') {
+      run.steps[index] = {
+        ...step,
+        status: 'failed',
+        error: view.message?.slice(0, 600) ?? '生成失败（上游未给出原因）',
+      };
+      changed = true;
+    } else if (view.status === 'succeeded' && !view.hasOutput) {
+      // 成功但没有产物 = 数据异常，按失败处理并如实说明（不假装成功）
+      run.steps[index] = {
+        ...step,
+        status: 'failed',
+        error: '任务成功但没有任何产物（数据异常）',
+      };
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+/** ② 状态推进（纯；直接改传入对象并返回是否有变化） */
+export function deriveTransition(run: CreationRun, now: number): boolean {
+  if (run.state !== 'running') return false;
+
+  const failed = run.steps.find((step) => step.status === 'failed');
+  if (failed !== undefined) {
+    run.state = 'failed';
+    run.failure = { stepId: failed.id, message: failed.error ?? '生成失败' };
+    run.finishedAt = now;
+    return true;
+  }
+
+  if (run.steps.every((step) => step.status === 'succeeded')) {
+    // S8-C 落地前：未配拼接 → 全部成功即 succeeded（契约 §29"未配拼接时"口径）
+    run.state = 'succeeded';
+    run.finishedAt = now;
+    return true;
+  }
+
+  const imageSteps = run.steps.filter((step) => step.kind === 'image');
+  const imagesDone =
+    imageSteps.length > 0 && imageSteps.every((step) => step.status === 'succeeded');
+  const anyVideoSubmitted = run.steps.some(
+    (step) => step.kind === 'video' && step.status !== 'pending',
+  );
+  if (
+    run.mode === 'first-frame-confirm' &&
+    imagesDone &&
+    run.confirmedAt === undefined &&
+    !anyVideoSubmitted
+  ) {
+    run.state = 'awaiting-confirmation';
+    return true;
+  }
+  return false;
+}
+
+/** ③ 当前可提交的步骤（纯）：pending（或崩溃残留的 submitting-无-taskId）+ 依赖全部 succeeded + 视频门放行 */
+export function readySteps(run: CreationRun): CreationRunStep[] {
+  if (run.state !== 'running') return [];
+  const hasImages = run.steps.some((step) => step.kind === 'image');
+  const videoGate = run.mode === 'unattended' || run.confirmedAt !== undefined || !hasImages;
+  return run.steps.filter((step) => {
+    const submittable =
+      step.status === 'pending' || (step.status === 'submitting' && step.taskId === undefined);
+    if (!submittable) return false;
+    if (step.kind === 'video' && !videoGate) return false;
+    return step.dependsOn.every((dep) => {
+      const upstream = run.steps.find((item) => item.id === dep);
+      return upstream !== undefined && upstream.status === 'succeeded';
+    });
+  });
+}
+
+/** 档位 × 画幅 → 分辨率（标准尺寸；服务端管线会把边对齐到 32 的倍数） */
+function resolutionOf(tier: '480p' | '720p' | '1080p', aspect: '16:9' | '9:16' | '1:1') {
+  const base = tier === '480p' ? 480 : tier === '720p' ? 720 : 1080;
+  if (aspect === '1:1') return { width: base, height: base };
+  return aspect === '16:9'
+    ? { width: Math.round((base * 16) / 9), height: base }
+    : { width: base, height: Math.round((base * 16) / 9) };
+}
+
+/** ④ 步骤 → 生成请求（纯）。依赖产物按序作首帧/尾帧；用户参考图排在其后同规则。 */
+export function buildStepRequest(run: CreationRun, step: CreationRunStep): VideoGenerateRequest {
+  const firstFrameImage =
+    step.dependsOn.length === 0
+      ? step.referenceAssetIds[0]
+      : run.steps.find((item) => item.id === step.dependsOn[0] && item.status === 'succeeded')
+          ?.outputAssetId;
+  const lastFrameImage =
+    step.dependsOn.length >= 2
+      ? run.steps.find((item) => item.id === step.dependsOn[1] && item.status === 'succeeded')
+          ?.outputAssetId
+      : step.referenceAssetIds.length > (step.dependsOn.length > 0 ? 0 : 1)
+        ? step.referenceAssetIds[step.dependsOn.length > 0 ? 0 : 1]
+        : undefined;
+
+  const resolution = step.resolutionTier === undefined
+    ? undefined
+    : resolutionOf(step.resolutionTier, step.aspectRatio);
+
+  if (step.kind === 'image') {
+    return {
+      prompt: step.prompt,
+      mode: 't2i',
+      aspectRatio: step.aspectRatio,
+      ...(resolution === undefined ? {} : { resolution }),
+      provider: run.provider,
+      projectId: run.projectId,
+    };
+  }
+  return {
+    prompt: step.prompt,
+    mode: firstFrameImage === undefined ? 't2v' : 'i2v',
+    ...(firstFrameImage === undefined && lastFrameImage === undefined
+      ? {}
+      : {
+          assets: {
+            ...(firstFrameImage === undefined ? {} : { firstFrameImage }),
+            ...(lastFrameImage === undefined ? {} : { lastFrameImage }),
+          },
+        }),
+    aspectRatio: step.aspectRatio,
+    ...(resolution === undefined ? {} : { resolution }),
+    ...(step.durationSec === undefined ? {} : { params: { durationSec: step.durationSec } }),
+    provider: run.provider,
+    projectId: run.projectId,
+  };
+}
+
+/**
+ * 薄驱动：一次 tick = 刷新 → 推进 → 提交就绪步骤 → 落库。
+ * 同一会话的 tick 串行（in-flight 集合），避免并发提交同一步骤。
+ */
+export class CreationRunService {
+  private readonly inFlight = new Set<string>();
+
+  constructor(
+    private readonly deps: {
+      load: (id: string) => CreationRun | null;
+      save: (run: CreationRun) => void;
+      ports: RunEnginePorts;
+      now?: () => number;
+    },
+  ) {}
+
+  async tick(runId: string): Promise<CreationRun | null> {
+    if (this.inFlight.has(runId)) return null;
+    this.inFlight.add(runId);
+    try {
+      const run = this.deps.load(runId);
+      if (run === null || (run.state !== 'running' && run.state !== 'planned')) return run;
+      const now = this.deps.now?.() ?? Date.now();
+
+      if (run.state === 'planned') {
+        run.state = 'running';
+        run.startedAt = now;
+      }
+
+      refreshFromTasks(run, this.deps.ports.getTask);
+      deriveTransition(run, now);
+      if (run.state !== 'running') {
+        run.updatedAt = now;
+        this.deps.save(run);
+        return run;
+      }
+
+      for (const step of readySteps(run)) {
+        const key = creationRunStepKey(run.id, step.id, step.attempt);
+        const index = run.steps.findIndex((item) => item.id === step.id);
+        try {
+          const taskId = await this.deps.ports.submit(buildStepRequest(run, step), key);
+          run.steps[index] = { ...run.steps[index]!, status: 'submitting', taskId };
+          run.updatedAt = now;
+        } catch (err) {
+          // 提交被拒 = 该步骤失败（失败即停；不重试）
+          run.steps[index] = {
+            ...run.steps[index]!,
+            status: 'failed',
+            error: (err instanceof Error ? err.message : String(err)).slice(0, 600),
+          };
+          run.state = 'failed';
+          run.failure = { stepId: step.id, message: run.steps[index]!.error ?? '提交被拒' };
+          run.finishedAt = now;
+          run.updatedAt = now;
+          break;
+        }
+      }
+      this.deps.save(run);
+      return run;
+    } finally {
+      this.inFlight.delete(runId);
+    }
+  }
+}

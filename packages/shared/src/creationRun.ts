@@ -103,6 +103,8 @@ export const CreationRunSchema = z
     state: CreationRunStateSchema,
     createdAt: z.number(),
     updatedAt: z.number(),
+    /** 首帧确认档的用户确认时刻（V2.64；NULL = 未确认 / unattended 不适用）。执行器据此放行视频步骤。 */
+    confirmedAt: z.number().optional(),
     startedAt: z.number().optional(),
     finishedAt: z.number().optional(),
     /** 失败即停时第一个失败步骤 */

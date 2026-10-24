@@ -114,6 +114,27 @@ CREATE TABLE IF NOT EXISTS event_log (
 CREATE INDEX IF NOT EXISTS idx_event_log_ts     ON event_log(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_event_log_ip     ON event_log(ip);
 CREATE INDEX IF NOT EXISTS idx_event_log_action ON event_log(action);
+
+-- 创作会话（V2.63 / CONTRACT §29，S8-B）：服务端确定性执行的"剧本→成片"会话本体。
+-- 任务不在这里 —— 每个步骤的生成走既有 tasks 表（幂等键 run:<runId>:<stepId>:a<attempt> 关联）。
+CREATE TABLE IF NOT EXISTS creation_runs (
+  id                TEXT PRIMARY KEY,
+  project_id        TEXT NOT NULL,
+  title             TEXT NOT NULL,
+  mode              TEXT NOT NULL,
+  provider          TEXT NOT NULL,
+  state             TEXT NOT NULL,
+  steps             TEXT NOT NULL,           -- JSON（CreationRunStep[]；步骤状态是会话的事实源）
+  confirmed_at      INTEGER,                 -- 首帧确认档的用户确认时刻（NULL = 未确认 / 不适用）
+  failure           TEXT,                    -- JSON { stepId, message }；失败即停的第一失败步
+  assembled_task_id TEXT,                    -- S8-C：自动拼接产物任务 id
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL,
+  started_at        INTEGER,
+  finished_at       INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_creation_runs_project ON creation_runs(project_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_creation_runs_state   ON creation_runs(state);
 `;
 
 /** 默认库路径：`<repo>/data/app.db`（可用 `DATA_DIR` 覆盖；`DATA_DIR=:memory:` 走内存库，测试用） */
@@ -180,8 +201,7 @@ function applyColumnMigrations(db: Db): void {
  * 「no such column」（这正是"改表必须走 ALTER"那条经验的下半句）。
  */
 const POST_MIGRATION_INDEXES = `
-CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, created_at DESC);
--- V2.12（B48）：成本汇总按时间区间扫，走这条（cost_yuan 为 NULL 的行不参与 SUM）
+CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, created_at DESC);-- V2.12（B48）：成本汇总按时间区间扫，走这条（cost_yuan 为 NULL 的行不参与 SUM）
 CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
 -- V2.15（B51）：投递流水去重（(webhook, task, event) 唯一）与"到期该投的"扫描
 CREATE UNIQUE INDEX IF NOT EXISTS idx_webhook_deliveries_unique
