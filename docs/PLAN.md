@@ -1709,6 +1709,14 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-24 · S8-B1：创作会话契约冻结（CONTRACT V2.63 / D72·D74·D75）
+
+- **【契约】** CONTRACT 升 **V2.63**：新增 **§29 创作会话 `CreationRun`**——服务端确定性执行的"剧本→成片"状态机（planned / running / awaiting-confirmation / assembling / succeeded / failed / cancelled）、步骤图（image 首帧步 → video 步依赖，**video ≤16 / D75**、依赖只认 image 步、环检测）、确定性幂等键 `run:<runId>:<stepId>:a<attempt>`、失败即停**绝不自动重提**（显式 retry 是唯一路径且换键）、**v1 仅本地轨**（云轨 provider 创建时 400，D74）、七条 REST 路由**带【规划】标记登记**进 §5 路由表（契约冻结、实现随 S8-B2/B3 同笔摘标）。§29-1 写明"不做"：不跑 LLM、不自动重提、不代持云端凭据、不改 CanvasDoc。
+- **【实现（schema 半片）】** `packages/shared/src/creationRun.ts`：CreationRun/Step/Input/Summary schema + `creationRunStepKey`（幂等键）+ `validateCreationRunInput`（跨字段校验：视频步 1..16、id 唯一、依赖存在/非自/上游必须是 image/环检测给出路径、image 步不带 durationSec；裸输入未过 zod default 时 dependsOn 按 [] 容错）。
+- **【测试】** `backend/src/runs/creationRunInput.test.ts` **6 条**：合法通过 / 无视频步拒绝 / >16 拒绝（D75）/ 依赖不存在·自依赖·依赖视频步拒绝 / 图片互依成环拒绝（含路径）/ 幂等键确定性与 attempt 换键。
+- **【门禁】** 后端 **741 passed（87 文件，+6）**；契约 **11/11**（【规划】行按既有纪律跳过路由覆盖检查）；oxlint 0 warning；`tsc --noEmit` 0 error。前端无改动未重跑。
+- **【边界】** 本片**只有契约与 schema**：执行器/存储/路由是 S8-B2/B3；§5 表里的七条路由仍是【规划】态，不声称可用。
+
 ### 2026-10-24 · S8-A2b：「转为画布镜头」批量落地（S8-A2 前端半片）
 
 - **【链路】** 画布助手分镜模式新增三步显式动作（每步都由用户点击发起）：① 分镜表下方「转为画布镜头」→ 调 `POST /api/agent/storyboard/expand`（参考候选 = 当前画布**上传/资产库来源的图片节点产物**，`collectLandingReferences` 纯函数收集，模型生成节点与视频不入选）；② 展开预览卡：逐镜列出 标题/画幅/档位/时长/是否先出首帧图/参考张数/警告汇总；③ 「创建 {count} 个镜头草稿」确认后才落节点。**镜头 >16 时按钮替换为拒绝提示**（客户端口径与服务端一致，D75）。
