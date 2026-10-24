@@ -28,8 +28,8 @@ export type CanvasLineagePlan =
   | { ok: true; role: CanvasReferenceRole; assetId: string; order: number }
   | { ok: false; problem: CanvasLineageProblem };
 
-/** 沿已有边从 `start` 出发能不能走到 `goal`（用于拒绝环） */
-function canReach(doc: CanvasDoc, start: string, goal: string): boolean {
+/** 沿已有边从 `start` 出发能不能走到 `goal`（用于拒绝环；`canvasReferenceLineage` 复用） */
+export function canReach(doc: CanvasDoc, start: string, goal: string): boolean {
   const adjacency = new Map<string, string[]>();
   for (const edge of doc.edges) {
     const list = adjacency.get(edge.from);

@@ -42,6 +42,7 @@ import {
   fetchCanvasDoc,
   fetchCanvasIndex,
   fetchTask,
+  resolveMediaUrl,
   saveCanvasDoc,
   submitGenerate,
   uploadAssets,
@@ -113,6 +114,7 @@ import {
   removeCanvasLineageEdge,
   type CanvasLineageProblem,
 } from '../lib/canvasLineage';
+import { reconcileReferenceLineage } from '../lib/canvasReferenceLineage';
 import { useTranslate, type MessageKey } from '../lib/i18n';
 import { useShell } from '../lib/shell';
 import {
@@ -129,6 +131,7 @@ import { AssetPickerDialog } from '../canvas/studio/AssetPickerDialog';
 import {
   addReferencesToDraft,
   allowedKindsForReferenceTarget,
+  referenceThumbnailPath,
 } from '../lib/canvasReferences';
 import { reuseFromBatch } from '../lib/canvasNodeReuse';
 import type { ReferenceSourceItem } from '../lib/referenceSources';
@@ -136,7 +139,7 @@ import { CanvasContextMenu, type CanvasMenuItem } from '../canvas/studio/CanvasC
 import { CanvasAgentPanel } from '../components/CanvasAgentPanel';
 import { CanvasNodeInspector } from '../components/CanvasNodeInspector';
 import { StudioNode } from '../canvas/studio/StudioNode';
-import { StudioProvider } from '../canvas/studio/StudioContext';
+import { StudioProvider, type ReferencePreview } from '../canvas/studio/StudioContext';
 
 /**
  * 创作画布（Step 11-S3 片 B2 骨架 + 片 B3 编辑器；CONTRACT §21 / 设计基准 §7.3）。
@@ -1368,9 +1371,17 @@ export function CanvasStudioView() {
 
   const handleDraftChange = useCallback(
     (nodeId: string, patch: CanvasDraftPatch): void => {
-      applyDoc((d) => updateCanvasNodeDraft(d, nodeId, patch), {
-        coalesceKey: `draft:${nodeId}`,
-      });
+      applyDoc(
+        (d) => {
+          const next = updateCanvasNodeDraft(d, nodeId, patch);
+          // 2026-10-24「引用即连线」：引用一变就把来源边对齐。
+          // 只增删 id 以 `edge-ref-` 开头的自动边，手动拖出来的边不回受影响。
+          return patch.references === undefined
+            ? next
+            : reconcileReferenceLineage(next, nodeId).doc;
+        },
+        { coalesceKey: `draft:${nodeId}` },
+      );
     },
     [applyDoc],
   );
@@ -1473,11 +1484,15 @@ export function CanvasStudioView() {
         },
       ];
       pendingSelect.current = id;
-      applyDoc((d) => ({
-        ...d,
-        nodes: [...d.nodes, draft],
-        updatedAt: Date.now(),
-      }));
+      applyDoc((d) => {
+        const withNode: CanvasDoc = {
+          ...d,
+          nodes: [...d.nodes, draft],
+          updatedAt: Date.now(),
+        };
+        // 「引用即连线」：新节点的参考来自上游产物，图上要能看见这条来源关系
+        return reconcileReferenceLineage(withNode, id).doc;
+      });
       setNotice(t('canvas.studio.continueCreated'));
     },
     [applyDoc, byok, labels.video, providerStatus, t],
@@ -1751,6 +1766,37 @@ export function CanvasStudioView() {
   void historyRev;
 
   const edgeSource = doc?.edges ?? null;
+  /**
+   * 2026-10-24「引用缩略图」：assetId → 可显示的封面。
+   *
+   * 只从**已有批次产物**里取（那是唯一可信的来源），因此：
+   * 上传素材若被用作参考、但它不是任何节点产物，这里就取不到 —— 组件退化回文字标签。
+   */
+  const referencePreviews = useMemo((): ReadonlyMap<string, ReferencePreview> => {
+    const map = new Map<string, ReferencePreview>();
+    if (doc === null) return map;
+    for (const node of doc.nodes) {
+      for (const batch of node.data.batches) {
+        for (const output of batch.outputs) {
+          if (output.kind !== 'image' && output.kind !== 'video') continue;
+          if (map.has(output.assetId)) continue;
+          // 图片直接用产物地址（一定可显示）；视频用服务端抽帧封面，失败由组件 onError 兜底
+          const url =
+            output.kind === 'image'
+              ? (resolveMediaUrl(output.url) ?? referenceThumbnailPath(output.assetId))
+              : referenceThumbnailPath(output.assetId);
+          map.set(output.assetId, { kind: output.kind, url });
+        }
+      }
+    }
+    return map;
+  }, [doc]);
+
+  const referencePreview = useCallback(
+    (assetId: string): ReferencePreview | null => referencePreviews.get(assetId) ?? null,
+    [referencePreviews],
+  );
+
   const rfEdges = useMemo<Edge[]>(() => {
     if (edgeSource === null) return NO_EDGES;
     return edgeSource.map((edge) => ({
@@ -1968,6 +2014,7 @@ export function CanvasStudioView() {
             doc,
             live,
             submitting,
+            referencePreview,
             onDraftChange: handleDraftChange,
             onSubmit: (id) => void submitNode(id),
             onRecover: (id, batchId) => void recoverSubmit(id, batchId),

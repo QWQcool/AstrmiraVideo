@@ -10,6 +10,17 @@ import type { CanvasDraftPatch } from '../../lib/canvasDocOps';
  * （否则每 2 秒一次轮询都会重建节点、打断拖动）。把 `doc` 放在 context 里，
  * 节点卡永远读当前值，RF 只负责位置与选中。
  */
+/**
+ * 参考的缩略图（2026-10-24「引用缩略图」）。
+ *
+ * 与即梦一致的取向：参考在输入区里**看得见图**，而不是一串 id。
+ * `url` 一定是同源 `/media/*`（调用方已做校验），组件层不再拼路径。
+ */
+export interface ReferencePreview {
+  kind: 'image' | 'video';
+  url: string;
+}
+
 export interface StudioServices {
   doc: CanvasDoc;
   /** 运行中的任务（只用于显示百分比；**不落盘**，见 CONTRACT §21-10） */
@@ -18,6 +29,11 @@ export interface StudioServices {
   submitting: ReadonlySet<string>;
   onDraftChange(nodeId: string, patch: CanvasDraftPatch): void;
   onSubmit(nodeId: string): void;
+  /**
+   * 按 assetId 取参考缩略图；**取不到就返回 null**（上传素材、抽帧失败、外部导入都可能没有）。
+   * 组件层必须能退化回纯文字标签 —— 不假装有图。
+   */
+  referencePreview(assetId: string): ReferencePreview | null;
   /** V2.49：核对“提交结果未知”的批次（用原请求 + 原幂等键重放） */
   onRecover(nodeId: string, batchId: string): void;
   /** S5-Ac：从资产库给节点添加参考（不新建节点、不复制文件） */

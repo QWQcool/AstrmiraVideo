@@ -1685,6 +1685,17 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-24 · 画布「引用即连线」+ 参考缩略图
+
+- **【问题（事实）】** 建边在全仓**只有一条路径**：手动拖节点连接柄（`CanvasStudioView` 的 `handleConnect` → `addCanvasLineageEdge`）。而两处"产生参考"的入口只写 `draft.references`、**不写边**：① 资产库给节点加参考（`addReferencesToNode`）；② 「从选中版本继续」新建节点（`continueFromVersion`）。结果是**数据里有关系、图上没有线** —— 与即梦"派生即连边"的手感差在这里，不是渲染 bug（边色是 `--text-dim`→`--muted`，有边就看得见）。
+- **【契约】** CONTRACT 升 **V2.60**：§21-11 增「引用即连线」。无新路由、无新字段、无新错误码（边是文档内容，随 `PUT /api/canvas/docs` 落盘）。
+- **【实现 · 对齐函数】** 新增 `frontend/src/lib/canvasReferenceLineage.ts`：`reconcileReferenceLineage(doc, nodeId)` 从**批次产物**建 `assetId → 节点` 索引，按 `references` 补齐缺少的 `lineage` 边、删掉失去依据的边、同步首尾互换后的 `role`。三条硬口径：① 只增删 id 以 `edge-ref-` 开头的自动边（**手动边一律不动**）；② 会成环则不连；③ 无变化时**返回同一个 doc 引用**（不触发一次无意义保存）。边 id 确定性：`edge-ref-<from>><to>:<assetId>`。
+- **【实现 · 接线】** `handleDraftChange` 在 `patch.references` 存在时套一层对齐（覆盖加参考、删参考、行内 token 撤销/恢复、首尾互换）；`continueFromVersion` 建完新节点后就地对齐一次。
+- **【实现 · 缩略图】** `StudioServices` 增 `referencePreview(assetId)`：视图从批次产物建封面表（**图片**用产物 `url`；**视频**用 `/media/thumbs/<taskId|assetId>.jpg`）；`cs-ref` 从"角色 · id 前 8 位"改为「缩略图 + 角色」，取不到封面或 `<img onError>` 时**退回纯文字**（不显示破图、不隐藏这条参考）。
+- **【测试】** `canvasReferenceLineage.test.ts` **9 项**：补边且 id/role 正确 / 幂等（同一 doc 引用）/ 删参考同时删边 / 首尾互换只改 role 不重建 / 上传素材不连 / 自己产物不连 / 手动边不受影响 / 两节点互相引用只留一条不造环 / id 前缀。
+- **【门禁】** 前端 **618 passed（+9）**；前端 `tsc --noEmit` 0 error；`oxlint` 0 warning（379 文件）；`vite build` 通过；`visual-selfcheck` 通过。
+- **【边界（如实）】** ① **未跑 UI 冒烟**（要 build 后起生产形态 + chromium，本轮只做静态与单测）；② 没做"把参考拖到画布空白处直接生成下游节点"的手势（那是新的交互，不是本片）；③ 视频封面按路径推断，**没有逐任务实测**——抽帧失败时会走 `onError` 退化，属预期降级但仍需真机确认；④ 服务端零改动。
+
 ### 2026-10-24 · CI 加固：verify 超时、apt 重试、部署前版本比对
 
 - **【背景（实测）】** 10-24 手动部署（run `39995257754`）全流程 **32m9s**，其中「安装 ffmpeg / ffprobe」占绝大部分 —— 对照 10-23 那次该步 **1489s（约 25 分钟）**。而 `verify` job **没有 `timeout-minutes`** → 走 GitHub 默认 **6 小时**。本月额度只剩约 187 分钟，一次挂住的 apt 就会把额度烧空。

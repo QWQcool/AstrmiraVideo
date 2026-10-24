@@ -1771,12 +1771,33 @@ audio.cs-card-media {
 }
 
 .cs-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 2px 5px;
   border: 1px solid var(--line);
   border-radius: 4px;
   color: var(--text-dim);
   font-size: var(--fs-micro);
   font-variant-numeric: tabular-nums;
+}
+
+/* 2026-10-24：有封面时缩短左内边距，让缩略图贴边（参考"是那张图"，不是一个 id） */
+.cs-ref--media {
+  padding: 2px 6px 2px 2px;
+}
+
+.cs-ref-thumb {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  object-fit: cover;
+  background: var(--panel);
+}
+
+.cs-ref-label {
+  white-space: nowrap;
 }
 
 .cs-toolbar-issue {

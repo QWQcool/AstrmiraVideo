@@ -23,6 +23,21 @@ export interface AddReferencesResult {
   ignored: number;
 }
 
+/**
+ * 参考的缩略图地址（同源）。
+ *
+ * 服务端把两种 key 的封面放在同一目录（`pipeline/thumbnail.ts`）：
+ * - 模型产物 `task:<taskId>` → `/media/thumbs/<taskId>.jpg`
+ * - 上传资产 `<assetId>`（视频抽帧）→ `/media/thumbs/<assetId>.jpg`
+ *
+ * 只是**拼地址**，不保证文件存在（抽帧失败、旧任务、外部导入都可能没有）；
+ * 调用方必须在 `<img onError>` 里退化回文字标签，不能假装有图。
+ */
+export function referenceThumbnailPath(assetId: string): string {
+  const key = assetId.startsWith('task:') ? assetId.slice('task:'.length) : assetId;
+  return `/media/thumbs/${key}.jpg`;
+}
+
 export function allowedKindsForReferenceTarget(
   references: readonly CanvasReference[],
 ): ReferenceKind[] {

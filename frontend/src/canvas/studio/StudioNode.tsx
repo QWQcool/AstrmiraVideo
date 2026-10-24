@@ -51,7 +51,7 @@ import {
   type InlinePromptToken,
 } from '../../components/StructuredPromptInput';
 import { useShell } from '../../lib/shell';
-import { useStudio } from './StudioContext';
+import { useStudio, type ReferencePreview } from './StudioContext';
 
 /**
  * 画布节点卡 + **锚定浮动创作框**（Step 11-S3 片 B3；CONTRACT §21-10）。
@@ -572,9 +572,11 @@ export function StudioNode({ id, selected }: NodeProps) {
               {[...draft.references]
                 .sort((a, b) => a.order - b.order)
                 .map((item, index) => (
-                  <span className="cs-ref" key={`${item.role}-${item.assetId}-${index}`}>
-                    {t(REFERENCE_LABEL_KEYS[item.role])} · {item.assetId.slice(0, 8)}
-                  </span>
+                  <ReferenceChip
+                    key={`${item.role}-${item.assetId}-${index}`}
+                    label={t(REFERENCE_LABEL_KEYS[item.role])}
+                    preview={studio.referencePreview(item.assetId)}
+                  />
                 ))}
               {draft.references.some((item) => item.role === 'first-frame') &&
               draft.references.some((item) => item.role === 'last-frame') ? (
@@ -791,5 +793,39 @@ export function StudioNode({ id, selected }: NodeProps) {
         <Handle type="target" position={Position.Left} className="cs-handle" />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * 参考 chip（2026-10-24「引用缩略图」）。
+ *
+ * 有封面就显示封面（与即梦一致：参考是"看得见的那张图"），没有就退回纯文字标签。
+ * 两种情况都必须能点/能读 —— **不得**因为取不到封面就隐藏这条参考，
+ * 也不得显示破图占位（`onError` 只退化这一次，不重试）。
+ */
+function ReferenceChip({
+  label,
+  preview,
+}: {
+  label: string;
+  preview: ReferencePreview | null;
+}): ReactNode {
+  const [broken, setBroken] = useState(false);
+  const src = preview === null ? null : resolveMediaUrl(preview.url);
+  const showThumb = src !== null && !broken;
+
+  return (
+    <span className={`cs-ref${showThumb ? ' cs-ref--media' : ''}`} title={label}>
+      {showThumb ? (
+        <img
+          className="cs-ref-thumb"
+          src={src}
+          alt=""
+          loading="lazy"
+          onError={() => setBroken(true)}
+        />
+      ) : null}
+      <span className="cs-ref-label">{label}</span>
+    </span>
   );
 }
