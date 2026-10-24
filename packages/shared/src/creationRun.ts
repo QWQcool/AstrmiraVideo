@@ -58,6 +58,12 @@ export const CreationRunStepSchema = z
     referenceAssetIds: z.array(z.string().min(1)).max(4).default([]),
     /** 上游 step id（≤4）。执行语义：其**产物**作本步骤的 first-frame（按依赖序首个），其余进 last-frame */
     dependsOn: z.array(z.string().min(1)).max(4).default([]),
+    /**
+     * V2.66（S9）：本镜头与**下一镜头**接缝处的转场文案（来自分镜表 transition 原文）。
+     * 服务端做白名单映射（叠化→fade / 左移→wipeleft / 右移→slideright），未映射 = 硬切。
+     * 只在自动拼接时消费；不是生成请求字段。
+     */
+    transition: z.string().trim().max(160).optional(),
     status: CreationRunStepStatusSchema.default('pending'),
     taskId: z.string().min(1).optional(),
     /** 成功产物（`task:<taskId>` 形态，可被下游引用） */

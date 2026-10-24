@@ -291,6 +291,12 @@ export function CanvasAgentPanel({
           title: storyboard.title,
           mode: runMode,
           provider: runProvider,
+          // S9：分镜表的转场文案按镜头序传给会话（自动拼接时映射为 xfade）
+          transitions: new Map(
+            storyboard.shots
+              .filter((shot) => shot.transition !== undefined && shot.transition !== '')
+              .map((shot) => [shot.index, shot.transition as string]),
+          ),
         }),
       );
       await startCreationRun(created.run.id);

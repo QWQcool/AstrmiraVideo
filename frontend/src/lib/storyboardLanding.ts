@@ -206,10 +206,13 @@ export function buildCreationRunInput(
     mode: CreationRunMode;
     provider: string;
     projectId?: string;
+    /** S9：分镜表镜头序的 transition 原文（index → 文案）；落到对应视频步骤上供自动拼接映射 */
+    transitions?: ReadonlyMap<number, string | undefined>;
   },
 ): CreationRunInput {
   const steps: CreationRunInputStep[] = [];
   for (const shot of expansion.shots) {
+    const transition = options.transitions?.get(shot.index);
     if (shot.imagePrompt !== undefined) {
       const imageId = `img-${shot.index}`;
       steps.push({
@@ -228,6 +231,7 @@ export function buildCreationRunInput(
         aspectRatio: shot.aspectRatio,
         resolutionTier: shot.resolutionTier,
         ...(shot.durationSec === undefined ? {} : { durationSec: shot.durationSec }),
+        ...(transition === undefined || transition === '' ? {} : { transition }),
         referenceAssetIds: shot.referenceAssetIds,
         dependsOn: [imageId],
       });
@@ -239,6 +243,7 @@ export function buildCreationRunInput(
         aspectRatio: shot.aspectRatio,
         resolutionTier: shot.resolutionTier,
         ...(shot.durationSec === undefined ? {} : { durationSec: shot.durationSec }),
+        ...(transition === undefined || transition === '' ? {} : { transition }),
         referenceAssetIds: shot.referenceAssetIds,
         dependsOn: [],
       });

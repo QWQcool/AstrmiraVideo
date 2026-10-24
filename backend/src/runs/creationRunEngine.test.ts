@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CreationRun, EditScript, VideoGenerateRequest } from '@astrmira/shared';
+import { buildAssemblyScript } from './creationRunEngine.js';
 import {
   CreationRunService,
   buildStepRequest,
@@ -279,5 +280,31 @@ describe('CreationRunService · 收尾自动合成（S8-C）', () => {
     const done = h.saved.at(-1)!;
     expect(done.state).toBe('succeeded');
     expect(h.editSubmissions).toHaveLength(0);
+  });
+});
+
+describe('buildAssemblyScript · 转场映射（S9 / V2.66）', () => {
+  function videoRun(): CreationRun {
+    return run([
+      step('shot-1', 'video', { status: 'succeeded', taskId: 't1', outputAssetId: 'task:t1' } as Record<string, unknown>),
+      step('shot-2', 'video', { status: 'succeeded', taskId: 't2', outputAssetId: 'task:t2' } as Record<string, unknown>),
+      step('shot-3', 'video', { status: 'succeeded', taskId: 't3', outputAssetId: 'task:t3' } as Record<string, unknown>),
+    ], { state: 'assembling', startedAt: 1 });
+  }
+
+  it('transition 白名单命中 → concat 后追加单一 xfade（0.5s）', () => {
+    const script = buildAssemblyScript(videoRun(), ['切', '叠化']);
+    expect(script?.operations).toEqual([
+      { type: 'concat', taskIds: ['t1', 't2', 't3'] },
+      { type: 'xfade', transition: 'fade', durationSec: 0.5 },
+    ]);
+  });
+
+  it('未映射文案与缺省 = 硬切（纯 concat）；擦除类各自映射', () => {
+    expect(buildAssemblyScript(videoRun(), ['匹配剪辑', undefined])?.operations).toHaveLength(1);
+    expect(buildAssemblyScript(videoRun(), [])?.operations).toHaveLength(1);
+    expect(
+      buildAssemblyScript(videoRun(), ['左移', '右移'])?.operations?.[1],
+    ).toEqual({ type: 'xfade', transition: 'wipeleft', durationSec: 0.5 });
   });
 });

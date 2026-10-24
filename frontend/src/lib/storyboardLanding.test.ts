@@ -207,3 +207,20 @@ describe('buildCreationRunInput · 分镜展开 → 会话输入（S8-D）', () 
     ]);
   });
 });
+
+describe('buildCreationRunInput · 转场透传（S9 / V2.66）', () => {
+  it('transitions 映射按镜头序落到视频步骤；缺省不带 transition 字段', () => {
+    const input = buildCreationRunInput(
+      expansion([{ durationSec: 3 }, { durationSec: 3 }, { durationSec: 3 }]),
+      {
+        title: '雨夜霓虹',
+        mode: 'unattended',
+        provider: 'fixture-local',
+        transitions: new Map([[2, '叠化']]),
+      },
+    );
+    expect(input.steps[0]).not.toHaveProperty('transition');
+    expect(input.steps[1]).toMatchObject({ id: 'shot-2', transition: '叠化' });
+    expect(input.steps[2]).not.toHaveProperty('transition');
+  });
+});

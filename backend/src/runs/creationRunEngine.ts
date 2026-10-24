@@ -3,6 +3,7 @@ import {
   type CreationRun,
   type CreationRunStep,
   type EditScript,
+  type EditTransition,
   type VideoGenerateRequest,
 } from '@astrmira/shared';
 
@@ -126,15 +127,46 @@ export function deriveTransition(run: CreationRun, now: number): boolean {
   return false;
 }
 
-/** S8-C：拼接脚本 = 按镜头顺序 concat 全部视频步骤的任务（单一操作，不受 8 条上限约束） */
-export function buildAssemblyScript(run: CreationRun): EditScript | null {
-  const taskIds = run.steps
-    .filter((step) => step.kind === 'video' && step.status === 'succeeded' && step.taskId !== undefined)
-    .map((step) => step.taskId as string);
+/** 分镜表 transition 文案 → 剪辑转场枚举（S9；未匹配 = 硬切，不猜） */
+const TRANSITION_MAP: Readonly<Record<string, EditTransition>> = {
+  '叠化': 'fade',
+  '淡入淡出': 'fade',
+  'fade': 'fade',
+  '左移': 'wipeleft',
+  '左擦': 'wipeleft',
+  'wipeleft': 'wipeleft',
+  '右移': 'slideright',
+  '右擦': 'slideright',
+  'slideright': 'slideright',
+};
+
+/**
+ * S9：拼接脚本 = 按镜头顺序 concat 全部视频步骤的任务。
+ * 分镜表的 `transition` 非空且可映射 → 接缝用该转场（单一 xfade 紧跟 concat，0.5s）；
+ * 未映射/缺省 = 硬切（纯 concat，S8-C 口径）。转场语义属于"接缝"（editExecutor 的显式规则）。
+ */
+export function buildAssemblyScript(
+  run: CreationRun,
+  transitions: readonly (string | undefined)[] = [],
+): EditScript | null {
+  const videoSteps = run.steps.filter(
+    (step) => step.kind === 'video' && step.status === 'succeeded' && step.taskId !== undefined,
+  );
+  const taskIds = videoSteps.map((step) => step.taskId as string);
   if (taskIds.length < 2) return null;
+
+  const operations: EditScript['operations'] = [{ type: 'concat', taskIds }];
+  // transitions[i] = 第 i 段与第 i+1 段之间的转场文案（镜头序）；取第一个可映射值作为全片接缝转场
+  const seam = transitions
+    .slice(0, taskIds.length - 1)
+    .map((raw) => raw?.trim())
+    .find((raw) => raw !== undefined && raw !== '' && TRANSITION_MAP[raw] !== undefined);
+  if (seam !== undefined) {
+    operations.push({ type: 'xfade', transition: TRANSITION_MAP[seam]!, durationSec: 0.5 });
+  }
   return {
     sourceTaskId: taskIds[0]!,
-    operations: [{ type: 'concat', taskIds }],
+    operations,
   };
 }
 
@@ -244,7 +276,11 @@ export class CreationRunService {
       // S8-C：assembling = 已提交（或待提交）自动拼接任务；等它终态
       if (run.state === 'assembling') {
         if (run.assembledTaskId === undefined) {
-          const script = buildAssemblyScript(run);
+          // S9：转场文案按镜头序收集（每步的 transition = 与下一镜的接缝）
+          const transitions = run.steps
+            .filter((step) => step.kind === 'video')
+            .map((step) => step.transition);
+          const script = buildAssemblyScript(run, transitions);
           if (script === null) {
             // 步骤状态不再满足拼接（异常输入）：如实失败，不硬拼
             run.state = 'failed';

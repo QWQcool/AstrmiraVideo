@@ -1709,6 +1709,14 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-25 · S9-C：分镜转场进会话自动拼接（CONTRACT V2.66）
+
+- **【契约】** CONTRACT 升 **V2.66**：`CreationRunStep` 增可选 `transition`（本镜与下一镜接缝的转场文案原文，≤160 字；来自分镜表 `transition`）。**服务端白名单映射**：叠化/淡入淡出→`fade`、左移/左擦→`wipeleft`、右移/右擦→`slideright`；未映射文案 = **硬切**（不猜）。映射命中 → 拼接脚本在 `concat` 后追加**单一 `xfade`（0.5s）**——沿用 editExecutor 的显式规则"转场语义属于接缝"（concat 登记片段、紧随的 xfade 决定接缝）。非生成请求字段，只影响自动拼接。
+- **【实现】** 引擎：`TRANSITION_MAP` + `buildAssemblyScript(run, transitions)`（镜头序文案 → 取第一个可映射值作全片接缝转场；v1 用单一转场而非逐缝定制——ffmpeg xfade 链式逐缝参数复杂度不成比例，如实登记）；tick 的 assembling 分支从视频步骤收集 transitions 传入。前端：`buildCreationRunInput` 增 `transitions?: ReadonlyMap<index, string>`；`CanvasAgentPanel.submitRun` 从分镜表收集非空 transition 按镜头序传入。
+- **【设计取舍（如实）】** 分镜表每镜的 `transition` 是"与下一镜之间"的接缝语义，理论上逐缝可不同；v1 取**第一个可映射值统一全片**——理由：`concatWithTransition` 是单次 xfade 链（一片一段连拼），逐缝异构转场需要把链拆成两两 xfade 的树，复杂度/收益不成比例；先让"写了转场的分镜"有转场，逐缝异构等真实需求出现再立项。
+- **【测试】** 引擎 **+2**（白名单命中追加 xfade / 未映射与缺省硬切 + 擦除类映射）；前端 **+1**（transitions 按镜头序落步骤、缺省不带字段）。后端 **761 passed**；前端 **636 passed**；契约 **11/11**；tsc 0；oxlint 0。
+- **【边界】** 转场时长固定 0.5s（可调参数等真实观感反馈）；fixture 链路的转场 ffmpeg 真跑未单测（editExecutor 自身的 xfade 有既有测试覆盖，引擎只断言脚本形状）；真模型全链路的转场观感待 ComfyUI 就绪后一并看。
+
 ### 2026-10-25 · S9-B：画布助手会话持久化 + 即梦登录态观察落档
 
 - **【观察（即梦登录态，只读零消耗）】** 用 CDP 驱动调试 Edge 截了用户两个画布与 AI 侧栏（工具 `scripts/cdp-{shot,click,eval}.mjs` 已入库；截图在 `.tmp/jimeng-shots/`）。三个发现：① 官方"商品视频"模板画布 = **场景参考图 → 商品三视图（定妆）→ 生成视频结果** 的管线 + "工作流说明"文本节点（一句话描述/最终效果/步骤说明三段式）——与我们 S8 首帧确认档同构，方向验证；② 选中图片节点浮出 **13 项编辑操作工具条**（智能改图/720全景/扩图/智能超清/抠图/预设/多角度/智能打光/营销/工具/AI助手/放大/下载）——图片编辑链是我们画布的真实差距（登记为 **S9-A**，待 ComfyUI 环境）；③ 画布 Agent 侧栏可开新会话/有历史（占位符支持 /技能、@主体）→ 本片落地会话持久化。

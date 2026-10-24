@@ -1,6 +1,10 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.65 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.66 · 已冻结（变更需先改本文，再改代码）**
+> **V2.66 修订（2026-10-25）**：**会话步骤增 `transition`（§29 / S9）** —— 每个视频步骤可带
+>   与下一镜接缝处的转场文案（分镜表原文）；自动拼接时服务端白名单映射
+>   （叠化/淡入淡出→`fade`、左移/左擦→`wipeleft`、右移/右擦→`slideright`），未映射 = 硬切；
+>   映射命中时拼接脚本追加单一 `xfade`（0.5s，editExecutor 的"转场属于接缝"规则）。非生成字段。
 > **V2.65 修订（2026-10-25）**：**会话自动拼接口径补全（§29）** —— S8-C。
 >   视频步 ≥2 → assembling 按镜头序 concat（幂等键 `run:<runId>:assembly:a0`）；
 >   拼接失败 → failed（`failure.stepId='assembly'`）；**单视频步跳过拼接**直落 succeeded。
@@ -3267,6 +3271,7 @@ interface CreationRun {
     durationSec?: number;           // 1–10，仅 video
     referenceAssetIds: string[];    // ≤4；用户已有资产：第一张 first-frame、第二张 last-frame
     dependsOn: string[];            // ≤4；**只能依赖 image 步骤**（首帧语义）
+    transition?: string;            // V2.66：与下一镜接缝的转场文案（拼接时白名单映射，非生成字段）
     status: 'pending' | 'submitting' | 'running' | 'succeeded' | 'failed';
     taskId?: string;                // 提交后回填
     outputAssetId?: string;         // 成功产物（task:<taskId> 形态，可被下游引用）
