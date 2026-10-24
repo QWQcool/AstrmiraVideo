@@ -8,7 +8,7 @@
 >   新增 `CreationRun`（服务端确定性执行的"剧本→成片"会话）：状态机（planned/running/
 >   awaiting-confirmation/assembling/succeeded/failed/cancelled）、步骤图（图片首帧 → 视频依赖，
 >   视频 ≤16）、确定性幂等键 `run:<runId>:<stepId>:a<attempt>`、失败即停不自动重提、
->   v1 仅本地轨（D74）。五条 REST 路由**带【规划】标记登记**（契约冻结、实现随 S8-B2/B3 落地摘标）。
+>   v1 仅本地轨（D74）。七条 REST 路由随 S8-B3 实现摘标（§5 路由表）。
 > **V2.62 修订（2026-10-24）**：**分镜展开（§28-6 / D72·D75）** —— Step 12-S8-A2a。
 >   新增 `POST /api/agent/storyboard/expand`：确认过的分镜表 + 参考素材清单 → 每镜生成参数
 >   （`StoryboardExpansion`，镜头 ≤16、引用防编造、index 一一对应）；只做参数展开，
@@ -873,13 +873,13 @@ export interface AssetListResponse {
 | `POST` | `/api/agent/canvas/node-update-plan` | **V2.57 新增（§26）**：为选中文本节点生成**待确认**更新方案；服务端不写 CanvasDoc。**200 → `CanvasTextNodeUpdateResponse`（`action: 'update-text-node'`）**；目标不存在/非 text → **400**；无 Key → **501**；上游凭据 → **401**；其余上游故障 → **502**。确认与更新由前端完成 |
 | `POST` | `/api/agent/storyboard` | **V2.59 新增（§28）**：生成独立分镜表；不写画布、不提交生成。**200 → `StoryboardResponse`**；无 Key → **501**；指令/快照非法 → **400**；上游凭据 → **401**；结构非法/超时 → **502**。分镜转节点由前端显式确认 |
 | `POST` | `/api/agent/storyboard/expand` | **V2.62 新增（§28-6）**：确认过的分镜表 → 每镜生成参数（第二次规划）；不建节点、不提交生成。**200 → `StoryboardExpandResponse`**；分镜 >16 镜 → **400（D75，调上游前拒绝）**；无 Key → **501**；上游凭据 → **401**；结构/index 不对应/引用编造 → **502**。落地由前端「转为画布镜头」显式执行 |
-| `POST` | `/api/agent/runs` 【规划】 | **V2.63 登记（§29）**：创建创作会话（服务端确定性执行；v1 仅本地轨 D74）。**201 → `{ run }`**；结构/依赖/环/云轨 provider → **400**；项目不存在 → **404**。实现随 S8-B2/B3 落地摘标 |
-| `GET` | `/api/agent/runs` 【规划】 | **V2.63 登记（§29）**：会话列表（`?project=` 缺省默认项目；轻量 summary）。实现随 S8-B 落地摘标 |
-| `GET` | `/api/agent/runs/:id` 【规划】 | **V2.63 登记（§29）**：会话详情（进度轮询）→ `{ run }`；不存在 → **404**。实现随 S8-B 落地摘标 |
-| `POST` | `/api/agent/runs/:id/start` 【规划】 | **V2.63 登记（§29）**：planned → running 开始执行；非 planned → **409**。实现随 S8-B 落地摘标 |
-| `POST` | `/api/agent/runs/:id/confirm` 【规划】 | **V2.63 登记（§29）**：首帧确认档 awaiting-confirmation → running；非该态 → **409**。实现随 S8-B 落地摘标 |
-| `POST` | `/api/agent/runs/:id/cancel` 【规划】 | **V2.63 登记（§29）**：活跃态 → cancelled（在途任务跑完但不被消费）；已终态 → **409**。实现随 S8-B 落地摘标 |
-| `POST` | `/api/agent/runs/:id/steps/:stepId/retry` 【规划】 | **V2.63 登记（§29）**：失败步显式重试（attempt+1 换幂等键，其余成功步不重跑）；非 failed 会话/非失败步 → **409**。实现随 S8-B 落地摘标 |
+| `POST` | `/api/agent/runs` | **V2.63 新增（§29）**：创建创作会话（服务端确定性执行；v1 仅本地轨 D74）。**201 → `{ run }`**；结构/依赖/环/云轨 provider → **400**；项目不存在 → **404**（S8-B3 已实现） |
+| `GET` | `/api/agent/runs` | **V2.63 新增（§29）**：会话列表（`?project=` 缺省默认项目；轻量 summary）（S8-B3 已实现） |
+| `GET` | `/api/agent/runs/:id` | **V2.63 新增（§29）**：会话详情（进度轮询）→ `{ run }`；不存在 → **404**（S8-B3 已实现） |
+| `POST` | `/api/agent/runs/:id/start` | **V2.63 新增（§29）**：planned → running 开始执行；非 planned → **409**（S8-B3 已实现） |
+| `POST` | `/api/agent/runs/:id/confirm` | **V2.63 新增（§29）**：首帧确认档 awaiting-confirmation → running；非该态 → **409**（S8-B3 已实现） |
+| `POST` | `/api/agent/runs/:id/cancel` | **V2.63 新增（§29）**：活跃态 → cancelled（在途任务跑完但不被消费）；已终态 → **409**（S8-B3 已实现） |
+| `POST` | `/api/agent/runs/:id/steps/:stepId/retry` | **V2.63 新增（§29）**：失败步显式重试（attempt+1 换幂等键，其余成功步不重跑）；非 failed 会话/非失败步 → **409**（S8-B3 已实现） |
 | `POST` | `/api/upload` | 上传参考图/视频/**音频**（multipart，**V2.6 起** ≤100MB × ≤4（**V2.10 起音频 ≤20MB**），**按魔数嗅探判定类型**、不信任 `Content-Type`）：**200 → `{ assets: [{ assetId, kind, mime, size }] }`**——**图像须过防线 4 清洗网关**，返回的 `mime` / `size` 因此是**清洗后的产物事实**（HEIC/WebP → JPEG、带透明通道保 PNG；视频原样落盘），不是客户端声明的类型；超体积 / 超数量 → **413**；白名单外 / 伪造类型 / **清洗失败**（含 `.heic` 的 HEVC 编码——按实测能力诚实拒绝）→ **415 `INVALID_ASSET`**（细则见 PLAN §7-6 与 §5 的 S6 条目）。**V2.9**：落一份 sidecar `<assetId>.json`（`{ name?, uploadedAt }`）—— `name` = 用户原始文件名的 **sanitize 结果**（`basename` + 去控制字符 + 截断 120 字符），**只落本地**：不进上游请求、不进操作日志、不进任务快照；写失败不阻断上传（元数据是增强，不是事实源）。**V2.10（B57）**：白名单新增 **mp3 / wav / m4a**（`audio/mpeg` / `audio/wav` / 容器为 `video/mp4` 的纯音频文件），音频体积上限 **20MB**（`MAX_AUDIO_BYTES`，超限 413）、**原样落盘**（不走防线 4 图像清洗）；判 `audio` 的口径 = 容器嗅探 + **ffprobe 流类型复核**（见上「V2.10 修订」①，容器嗅探对 m4a 不可靠）；sidecar 增**可选** `kind`（`image`/`video`/`audio`，供 `/api/assets` 免探测复读）。**V2.11（B47）**：新增可选 multipart 字段 `projectId`（缺省 = 默认项目）→ 写进 sidecar 的项目归属；**显式给了不存在的项目 → 400 `INVALID_REQUEST` + 撤回本次已落盘的媒体文件**（不留孤儿）。⚠️ 字段可能在文件之后到达（multipart 顺序由客户端决定），因此 sidecar **统一在字段读完后写**（不支持"边收边写"会产生"资产在 A 项目、sidecar 写着默认项目"的错位） |
 | `GET` | `/api/assets` | **V2.7 新增**：**资产库清单（只读）**。**200 → `AssetListResponse`（§4 末尾）**（最近 200 个，新的在前；`mime` 为**魔数嗅探事实**，与 `/api/upload` 同口径；`url` 为同源 `/media/assets/<文件>` 直链；`createdAt` = 文件 mtime）。**V2.9**：条目新增可选 `name`（来自 sidecar；抽帧产物没有原始文件名 → 无该字段），弹层据此"按名字认素材"。**目录不存在**（从未上传过）→ 200 + 空数组，**不是 404**。用途：`@` 提及素材弹层（B41）与后续资产管理视图；不改变任何生命周期与清理规则（见 §7）。**V2.10（B57）**：`kind` 扩展为 `image|video|audio` —— **优先读 sidecar 的 `kind`**（上传时已由 ffprobe 算准，免去逐文件探测），sidecar 缺失 / 无该字段时按容器嗅探兜底（`audio/*` → audio、`video/*` → video；**不猜**——老资产与抽帧产物走这条，其中 `.m4a` 老资产会被兜底判为 video，属如实边界）。**V2.11（B47）**：条目新增**必填** `projectId`（sidecar 的 `projectId` 缺失即默认项目 —— 如实归属，不猜）；可选 `?project=<projectId>` 过滤，**省略 = 默认项目**（与 `/api/history` 同口径） |
 | `GET` | `/api/costs/summary` | **V2.12 新增（台账 B48）**：**成本台账汇总（只读）**。`?project=` —— **省略 = 默认项目**（与 `history` / `assets` 同口径）、字面量 **`all` = 跨项目汇总**（唯一刻意允许跨项目的读端点）；`?from=` / `?to=`（epoch ms，含端点）。**200 → `CostSummaryResponse`（§13）**：项目 / 按天 / 按模型三个维度的桶 + `uncertainCount`（`disposition='uncertain'` 的条数，**可能已产生费用**）+ `unsettledCount`（成功但无成本记录）+ `budget`（仅 `all` 档且配了 `MONTHLY_BUDGET_YUAN` 时非 null）+ `disclaimer`。**金额是预估**（公开价目 × 上游计费式），口径见 §13。扫描上界 20000 行，触界时 `truncated: true`（此时金额只是**部分之和**）；查询参数非法 → **400 `INVALID_REQUEST`**；无新错误码 |
@@ -3303,7 +3303,7 @@ interface CreationRun {
 - **提交口径**：会话执行器内部复用 `/api/generate` 同一套校验与队列（含能力位拦截、`task:` 引用校验），
   **不走 HTTP 自调用**；无凭据路径（本地轨不需要）。
 
-**路由（【规划】：实现随 S8-B2/B3 落地，落地提交同一笔摘标）**
+**路由（S8-B3 已实现；语义见上方状态机）**
 
 | 方法 | 路径 | 说明 |
 |---|---|---|

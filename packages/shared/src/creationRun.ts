@@ -197,6 +197,17 @@ export const CreationRunSummarySchema = z
   .strict();
 export type CreationRunSummary = z.infer<typeof CreationRunSummarySchema>;
 
+/** 路由响应（§29 / S8-B3） */
+export const CreationRunResponseSchema = z
+  .object({ run: CreationRunSchema })
+  .strict();
+export type CreationRunResponse = z.infer<typeof CreationRunResponseSchema>;
+
+export const CreationRunListResponseSchema = z
+  .object({ runs: z.array(CreationRunSummarySchema) })
+  .strict();
+export type CreationRunListResponse = z.infer<typeof CreationRunListResponseSchema>;
+
 /** 归一化 projectId（与 /api/generate 同口径：空/缺省 → 默认项目 id） */
 export function normalizeCreationRunProject(projectId: string | undefined): string {
   return normalizeProjectId(projectId);

@@ -24,11 +24,18 @@ import { createAgentCanvasRoutes } from './routes/agentCanvas.js';
 import { createCanvasNodeProposalRoutes } from './routes/canvasNodeProposal.js';
 import { createCanvasNodeUpdateProposalRoutes } from './routes/canvasNodeUpdateProposal.js';
 import { createStoryboardRoutes } from './routes/storyboard.js';
+import { createRunRoutes } from './routes/runs.js';
+import { getComfyCapability } from './routes/providers.js';
+import { RunStore } from './runs/runStore.js';
+import {
+  CreationRunService,
+  type RunEnginePorts,
+} from './runs/creationRunEngine.js';
 import { createEnhanceRoutes } from './routes/enhance.js';
 import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
 // V2.16（B53）：告警阈值走 shared 的**同一份**解析（env 变量名也定义在那边，一处改、两处生效）
-import { readThresholdsFromEnv, resolveThresholds } from '@astrmira/shared';
+import { providerBaseType, readThresholdsFromEnv, resolveThresholds } from '@astrmira/shared';
 import { createCostRoutes } from './routes/costs.js';
 import { createObservabilityRoutes } from './routes/observability.js';
 import { createWebhookRoutes } from './routes/webhooks.js';
@@ -428,6 +435,77 @@ export async function buildApp() {
   await app.register(createCanvasNodeUpdateProposalRoutes());
   // P5：分镜计划（只返回镜头表，不写画布/不生成）
   await app.register(createStoryboardRoutes());
+  // S8-B3（CONTRACT §29）：创作会话——服务端确定性执行"剧本→成片"（v1 仅本地轨，D74）
+  const runStore = new RunStore(db);
+  // 提交适配器：复用 /api/generate 的本地轨路径（能力位拦截 + 幂等回放 + 队列），**不做 HTTP 自调用**。
+  // 冷却豁免与 x-plan-run 同一条理由：会话的一次 start 是一次有意动作，步骤串不该被 60s 冷却逐条拦下。
+  const runPorts: RunEnginePorts = {
+    getTask: (taskId) => {
+      const task = store.get(taskId);
+      if (task === null) return null;
+      if (task.status === 'succeeded') {
+        return {
+          status: 'succeeded',
+          hasOutput: task.outputVideoUrl !== undefined || task.outputImageUrl !== undefined,
+        };
+      }
+      if (task.status === 'failed' || task.status === 'cancelled') {
+        return {
+          status: 'failed',
+          hasOutput: false,
+          ...(task.error?.message === undefined ? {} : { message: task.error.message }),
+        };
+      }
+      return { status: 'submitting', hasOutput: false };
+    },
+    submit: async (request, idempotencyKey) => {
+      if (getProvider(request.provider) === null) {
+        throw new Error(`provider 未实现或未启用：${request.provider}`);
+      }
+      if (providerBaseType(request.provider) === 'host-comfyui') {
+        const cached = getComfyCapability(request.provider);
+        if (cached !== undefined && !cached.modes.includes(request.mode)) {
+          throw new Error(`这台 ComfyUI 最近一次自检未声明支持 ${request.mode}`);
+        }
+      }
+      // 断点续跑：同幂等键命中既有任务直接返回（不重复计费）
+      const existing = store.findTaskIdByIdempotencyKey(idempotencyKey);
+      if (existing !== null) return existing;
+      const taskId = randomUUID();
+      await queue.submit({
+        taskId,
+        track: 'local',
+        request,
+        idempotencyKey,
+        projectId: request.projectId ?? 'default',
+        submitting: true,
+      });
+      return taskId;
+    },
+  };
+  const runService = new CreationRunService({
+    load: (id) => runStore.get(id),
+    save: (value) => runStore.update(value),
+    ports: runPorts,
+  });
+  const tickRun = (id: string): Promise<unknown> =>
+    runService.tick(id).catch((err) => {
+      app.log.warn({ err, runId: id }, '创作会话 tick 失败（下一轮定时器会重试）');
+    });
+  // 周期照看活跃会话（含重启恢复；间隔内完成的任务由下一轮 tick 收账）
+  const runTimer = setInterval(() => {
+    for (const active of runStore.listActive()) void tickRun(active.id);
+  }, 5000);
+  runTimer.unref?.();
+  app.addHook('onClose', async () => clearInterval(runTimer));
+  await app.register(
+    createRunRoutes({
+      runs: runStore,
+      tick: tickRun,
+      resolveProvider: getProvider,
+      projects,
+    }),
+  );
   // V9 · B9：基础剪辑 EDL（本地 ffmpeg；与生成任务共用队列与轮询）—— B34 后 UI 不再暴露，API 保留
   await app.register(createEditRoutes({ store, queue }));
   // V2.5（B34 · P4）：浏览器端渲染产物入库（同步归档，服务端不渲染）

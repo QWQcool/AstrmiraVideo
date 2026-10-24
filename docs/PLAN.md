@@ -1709,6 +1709,15 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-25 · S8-B3：创作会话 REST 路由上线（摘【规划】标；§29 七条全实现）
+
+- **【路由】** `routes/runs.ts` 七条：`POST /api/agent/runs`（校验链：`validateCreationRunInput` 结构 → D74 云轨拒绝 → `PROVIDER_UNAVAILABLE` 未启用引擎 → `PROJECT_NOT_FOUND` 404；成功 201 planned，步骤归一 pending/attempt 0）/ `GET /api/agent/runs?project=`（轻量 summary）/ `GET /:id` / `start`（planned→running，409 拒非法迁移）/ `confirm`（awaiting-confirmation→running + `confirmedAt`）/ `cancel`（活跃态→cancelled + finishedAt；在途任务跑完不消费）/ `steps/:stepId/retry`（仅 failed 会话的 failed 步：attempt+1 换执行意图、清 failure/finishedAt，其余成功步不动）。**409 统一 `INVALID_REQUEST` + 人话消息**（§29 口径；"会话不存在"也用 INVALID_REQUEST + 404，不造新错误码）。
+- **【接线（buildApp）】** `RunStore(db)` + 提交适配器（**复用 /api/generate 本地轨路径**：getProvider 可用性 → ComfyUI 能力位缓存拦截 → 幂等键回放（断点续跑不重复计费）→ queue.submit submitting:true；**不做 HTTP 自调用**；冷却豁免沿 x-plan-run 同一条"一次 start = 一次有意动作"的理由）+ `CreationRunService` + **5s 周期 tick 定时器**（照看 listActive 含重启恢复；unref + onClose 清理；单轮失败记日志下轮重试）。
+- **【契约】** §5 路由表 7 行摘【规划】标 → "V2.63 新增（§29）…（S8-B3 已实现）"；§29 正文路由表头同步；**契约测试从"跳过规划行"转为实际核验 7 条路由存在**（11/11 绿）。
+- **【测试】** `routes/runs.test.ts` **8 条**（内存库 + 真 RunStore + 假 tick 记录器）：创建归一 / D74 云轨与未启用引擎 400 / >16 与依赖不存在 400 且零落库 / 详情列表 404 与过滤 / start 触发 tick + 重复 409 / confirm 早调 409 与 confirmedAt / cancel 终态 409 / retry attempt+1 且成功步不动 + 非失败步 409。
+- **【门禁】** 后端 **755 passed（89 文件，+8）**；契约 **11/11**；`tsc --noEmit` 0 error；oxlint 0 warning。前端无改动。
+- **【边界】** ① 会话端到端真跑（fixture provider 全链路：start → 图片步 → 首帧确认暂停 → confirm → 视频步 → succeeded）随 **S8-E** 的 J6 冒烟做——本片路由与引擎各自单测覆盖，组合行为待集成验证；② S8-C 拼接未接（全成功仍直落 succeeded，契约"未配拼接"口径内）；③ UI 消费（S8-D）未动。
+
 ### 2026-10-24 · S8-B2：会话存储与执行引擎（CONTRACT V2.64 / §29 · 引擎半片）
 
 - **【部署（事实）】** S8-A 收口后按用户决定攒批发部署：run `40102571971` 失败（GitHub runner 连站点 SSH 端口超时——跨境网络偶发，主机与端口本机实测可达），**重试 run `40103734176` 成功**（verify+deploy 双绿，10 分钟）。线上已运行 `cbe1b63..3177963` 全部七笔提交，实测 `POST /api/agent/storyboard/expand` 正确返回 **501 BYOK**——新代码确认在线。
