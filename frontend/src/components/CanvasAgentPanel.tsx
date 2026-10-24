@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   STORYBOARD_SESSION_MAX_SHOTS,
   type AgentPlanUsage,
@@ -26,6 +26,11 @@ import {
   canvasAgentSelectedSummary,
 } from '../lib/canvasAgentContext';
 import { buildCreationRunInput, collectLandingReferences } from '../lib/storyboardLanding';
+import {
+  clearAgentSession,
+  loadAgentSession,
+  saveAgentSession,
+} from '../lib/canvasAgentSessions';
 import { useTranslate } from '../lib/i18n';
 import { useShell } from '../lib/shell';
 
@@ -90,11 +95,17 @@ export function CanvasAgentPanel({
   const [runMode, setRunMode] = useState<CreationRunMode>('first-frame-confirm');
   const [runProvider, setRunProvider] = useState<string | null>(null);
   const [runBusy, setRunBusy] = useState(false);
+  /** S9-B：会话持久化——挂载时回读本画布的历史问答（只存文本，不存方案卡）。 */
+  const [history, setHistory] = useState<CanvasAgentMessage[]>(() => loadAgentSession(doc.projectId));
   const [proposalMeta, setProposalMeta] = useState<{
     model: string;
     usage?: AgentPlanUsage;
   } | null>(null);
-  const [history, setHistory] = useState<CanvasAgentMessage[]>([]);
+
+  // S9-B：问答变化即落盘（FIFO 上限在 saveAgentSession 内裁剪）
+  useEffect(() => {
+    saveAgentSession(doc.projectId, history);
+  }, [doc.projectId, history]);
 
   const context = useMemo(
     () => buildCanvasAgentContext(doc, selectedNodeId),
@@ -382,6 +393,25 @@ export function CanvasAgentPanel({
             {summary.truncated ? ` · ${t('canvas.agent.truncated')}` : ''}
           </p>
         </div>
+        <button
+          type="button"
+          className="wb-btn cs-icon-btn"
+          data-testid="canvas-agent-new-session"
+          aria-label={t('canvas.agent.newSession')}
+          title={t('canvas.agent.newSession')}
+          onClick={() => {
+            clearAgentSession(doc.projectId);
+            setHistory([]);
+            setProposal(null);
+            setUpdateProposal(null);
+            setStoryboard(null);
+            setExpansion(null);
+            setRunOpen(false);
+            setError(null);
+          }}
+        >
+          ⟳
+        </button>
         <button
           type="button"
           className="wb-btn cs-icon-btn"

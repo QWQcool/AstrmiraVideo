@@ -1709,6 +1709,15 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-25 · S9-B：画布助手会话持久化 + 即梦登录态观察落档
+
+- **【观察（即梦登录态，只读零消耗）】** 用 CDP 驱动调试 Edge 截了用户两个画布与 AI 侧栏（工具 `scripts/cdp-{shot,click,eval}.mjs` 已入库；截图在 `.tmp/jimeng-shots/`）。三个发现：① 官方"商品视频"模板画布 = **场景参考图 → 商品三视图（定妆）→ 生成视频结果** 的管线 + "工作流说明"文本节点（一句话描述/最终效果/步骤说明三段式）——与我们 S8 首帧确认档同构，方向验证；② 选中图片节点浮出 **13 项编辑操作工具条**（智能改图/720全景/扩图/智能超清/抠图/预设/多角度/智能打光/营销/工具/AI助手/放大/下载）——图片编辑链是我们画布的真实差距（登记为 **S9-A**，待 ComfyUI 环境）；③ 画布 Agent 侧栏可开新会话/有历史（占位符支持 /技能、@主体）→ 本片落地会话持久化。
+- **【实现（S9-B）】** 新增 `lib/canvasAgentSessions.ts`（纯函数 + 注入存储）：按画布 projectId 隔离（键 `astrmira.canvasAgentSession.<id>`）、**只存问答文本**（role/text/model/usage/freeform——方案卡/分镜表/展开结果是"待确认操作状态"，刷新后残留旧方案反而危险，不存）、FIFO 60 条、损坏 JSON 过滤不抛错。`CanvasAgentPanel`：挂载回读 + 问答变化即落盘 + 头部「新会话」按钮（⟳：清会话 + 清全部卡片态）。`CanvasAgentPanel` 组件不重挂载时 projectId 变化不会重读历史——当前该组件随画布视图卸载（agentOpen 关闭即卸），如实登记为已知边界。
+- **【测试】** `canvasAgentSessions.test.ts` **4 条**（内存存储注入）：项目隔离 / 损坏 JSON 与脏条目过滤 / 80→60 FIFO 与 clear / 可选字段往返。dict +1 键（中/英）。
+- **【门禁】** 前端 **635 passed（55 文件，+4）**；全脚本（含 visual-selfcheck + 字典完整性）exit 0；`tsc --noEmit` 0 error；oxlint 0 warning；`vite build` 通过。后端无改动。
+- **【边界】** ① 浏览器级验收（输入→刷新→历史还在→新会话清空）随下次部署冒烟；② 不做会话改名/多会话切换（即梦有"新会话"单线即可覆盖当前诉求，多会话登记不做）；③ 问答文本只在本机 localStorage，不上传（与 B61 零上报红线一致）。
+- **【并行】** 本机模型下载进行中（wan2.2_vae / flux2-vae / umt5_xxl_fp8 完成，qwen_3_4b 传输中，两个大 UNET 排队）；ComfyUI 便携版下载随队列。
+
 ### 2026-10-25 · DeepSeek 真实全链路实测（剧本 → 成片，S8 收官证据）
 
 - **【脚本】** 新增 `scripts/deepseek-run-e2e.mjs`（可反复跑）：真实 DeepSeek（环境变量 Key，preset=deepseek，不落盘）→ `/api/agent/storyboard` → `/api/agent/storyboard/expand` → `/api/agent/runs`（首帧确认档）→ start → awaiting-confirmation → confirm → succeeded。服务侧 = `pnpm serve:local --fixture --port 3100`（需先 `pnpm build`——**本地 dist 曾过期导致 404，重建后正常**）。

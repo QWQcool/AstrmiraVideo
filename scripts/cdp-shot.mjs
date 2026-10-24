@@ -41,7 +41,7 @@ ws.onmessage = (event) => {
 await new Promise((resolve) => { ws.onopen = resolve; });
 await send('Page.enable');
 await send('Emulation.setDeviceMetricsOverride', {
-  width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false,
+  width: 2048, height: 1080, deviceScaleFactor: 1, mobile: false,
 });
 if (url !== '') {
   await send('Page.navigate', { url });
