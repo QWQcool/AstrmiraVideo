@@ -1709,6 +1709,14 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-25 · DeepSeek 真实全链路实测（剧本 → 成片，S8 收官证据）
+
+- **【脚本】** 新增 `scripts/deepseek-run-e2e.mjs`（可反复跑）：真实 DeepSeek（环境变量 Key，preset=deepseek，不落盘）→ `/api/agent/storyboard` → `/api/agent/storyboard/expand` → `/api/agent/runs`（首帧确认档）→ start → awaiting-confirmation → confirm → succeeded。服务侧 = `pnpm serve:local --fixture --port 3100`（需先 `pnpm build`——**本地 dist 曾过期导致 404，重建后正常**）。
+- **【实测（一次通过）】** 剧本"雨夜霓虹小巷橘猫"：① 分镜 **3.3s / 348+484 tokens** →《雨夜霓虹小巷橘猫分镜》16:9 · 9s · 3 镜；② 展开 **5.1s / 827+740 tokens** → 每镜 720p/3s、均带首帧图提示词 + 2~3 条 warnings（一致性提示）；③ 会话 6 步（3 图 + 3 视频）→ **首帧确认暂停真实触发**（图片步 3 个全成功后才暂停，视频步零提前提交）→ confirm → **29.5s 全链路 succeeded**；④ 成片 `fe41054a`：ffprobe = **h264 1280×704 + aac，12.0s，3.8MB**，`/media` 可取。
+- **【暴露并修复】** 脚本首版 pollRun 不把 awaiting-confirmation 当返回条件（180s 干等超时）——这是**测试脚本缺陷**，不是产品缺陷；已修（暂停态返回由调用方决定 confirm）。
+- **【口径（如实）】** 文本轨 = 真钱（两次规划合计约 2.3k tokens）；生成轨 = fixture（零成本，t2i 语义不真——图片步产物实为夹具视频，此边界沿用 J6 登记）。**真实模型（Wan/FLUX）的链路验收 = 本机 ComfyUI 环境就绪后跑同款脚本**（模型下载已在进行，见下条）。
+- **【并行启动（本机算力环境）】** 4060 Ti 本机开始装 ComfyUI：`D:\ComfyUI` 断点续传下载中——Wan2.2 TI2V-5B（ti2v_5B_fp16 + umt5_xxl_fp8 + wan2.2_vae）+ FLUX-2 Klein 4B（klein-4b + qwen_3_4b + flux2-vae，内置 t2i 模板的目标模型）+ ComfyUI 便携版。**用户 2026-10-25 解除"本地不装 ComfyUI"的暂缓**（原 2026-10-24 拍板暂缓，本轮明示"可以下载模型测试生图生视频"）。
+
 ### 2026-10-25 · S8-E：J6 全链路验收（fixture 真跑通）与 Step 12 收口
 
 - **【J6（e2e，真 TCP + 真 fixture provider + 真 ffmpeg）】** `src/e2e/creationRun.e2e.test.ts`：创建（无人值守 · 双视频步）→ 列表可见 → `start` → **服务端 5s tick 定时器自主推进**（不经任何测试驱动）→ 两步 `succeeded`（`outputAssetId = task:<id>`）→ **自动拼接成片**（普通 edit 任务，`outputVideoUrl` 可取、>10KB）→ `succeeded` + `assembledTaskId`。全链路零人工干预，断言含媒体字节。
