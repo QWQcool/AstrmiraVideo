@@ -1709,6 +1709,15 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-24 · S8-A2b：「转为画布镜头」批量落地（S8-A2 前端半片）
+
+- **【链路】** 画布助手分镜模式新增三步显式动作（每步都由用户点击发起）：① 分镜表下方「转为画布镜头」→ 调 `POST /api/agent/storyboard/expand`（参考候选 = 当前画布**上传/资产库来源的图片节点产物**，`collectLandingReferences` 纯函数收集，模型生成节点与视频不入选）；② 展开预览卡：逐镜列出 标题/画幅/档位/时长/是否先出首帧图/参考张数/警告汇总；③ 「创建 {count} 个镜头草稿」确认后才落节点。**镜头 >16 时按钮替换为拒绝提示**（客户端口径与服务端一致，D75）。
+- **【实现】** 新增 `lib/storyboardLanding.ts`（全纯函数）：`buildStoryboardLanding` 按 index 分行网格布局（图片列 + 视频列，行距 400）；带 `imagePrompt` 的镜头 = 图片草稿 + 视频草稿 + `dependency` 计划边（`edge-story-` 前缀）；无首帧图镜头的参考图自动接线**前两张**（first-frame/last-frame），接不上的（首帧位被计划边占用 / 超两张）**全部进报告不静默丢**；`storyboardLandingOrigin` 取现有内容下方；`appendStoryboardLanding` 追加不覆盖。`CanvasAgentPanel` 增 `onLandStoryboard` prop（沿用 onCreateText 的"返回 false = 不可写"约定）；`CanvasStudioView.landStoryboard` 落地后按报告给两条提示语（含未接线参考数）。dict +13 键（中/英）。
+- **【不做的（如实）】** 落地**不提交任何生成**（草稿 + 计划边，`/api/generate` 计数 0）；不自动转场（拼接与转场属 S8-C 会话收尾）；`resolutionTier` 不写进节点（引擎按画幅推断，§28-7）。
+- **【测试】** `storyboardLanding.test.ts` **6 条**：首帧图镜头结构（含计划边与 unattached 报告）/ 无首帧图参考自动接线与超额报告 / 多镜头网格布局与 warnings 汇总 / 0 与 17 镜抛错（D75 防御）/ append 纯函数不改原文档 + origin 在内容下方 / 参考候选过滤（uploaded+from_asset 图片产物入选，model_generated 与视频排除）。
+- **【门禁】** 前端 **630 passed（54 文件，+6）**；`pnpm --filter frontend test` 全脚本（含 visual-selfcheck）exit 0；`tsc --noEmit` 0 error；oxlint 0 warning；`vite build` 通过。后端无改动未重跑。
+- **【边界】** ① 面板交互的浏览器级验收（点击 → 展开卡 → 确认 → 节点出现 → 0 生成）随 S8-E 冒烟统一做；② 真实 DeepSeek 展开调用未做（受控响应测协议，同 S8-A2a 口径）；③ 上传视频节点暂不作为参考候选（分镜参考 v1 只认图片；视频参考（v2v）待能力接线另开）。
+
 ### 2026-10-24 · S8-A2a：分镜展开端点（CONTRACT V2.62 / D72·D75 · 后端半片）
 
 - **【契约】** CONTRACT 升 **V2.62**：§28-6 新增 `POST /api/agent/storyboard/expand`（请求/`StoryboardExpansion`/响应/错误映射/业务校验/不做）+ §5 路由表登记。要点：① 入参 = **已确认**的分镜表 + 参考素材清单（≤20）+ 可选 llm；② 输出 = 每镜生成参数（`index/title/imagePrompt?/videoPrompt/aspectRatio/resolutionTier/durationSec/referenceAssetIds≤4/warnings`）；③ `STORYBOARD_SESSION_MAX_SHOTS = 16`（D75）——**请求超过 16 镜在调用上游之前 400 拒绝**（不花第二次规划的钱）；④ 业务校验（schema 外）：展开镜头与分镜表**同数量同顺序同 index**、`referenceAssetIds` ⊆ 请求清单（防编造 id）。

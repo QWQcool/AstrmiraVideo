@@ -32,6 +32,7 @@ import {
   type CanvasTextNodeUpdateProposal,
   type CanvasProjectIndex,
   type CanvasReferenceRole,
+  type StoryboardExpansion,
   type TaskProgress,
 } from '@astrmira/shared';
 import type { AssetListEntry } from '@astrmira/shared';
@@ -118,6 +119,11 @@ import {
   type CanvasLineageProblem,
 } from '../lib/canvasLineage';
 import { reconcileReferenceLineage } from '../lib/canvasReferenceLineage';
+import {
+  appendStoryboardLanding,
+  buildStoryboardLanding,
+  storyboardLandingOrigin,
+} from '../lib/storyboardLanding';
 import { useTranslate, type MessageKey } from '../lib/i18n';
 import { useShell } from '../lib/shell';
 import {
@@ -833,6 +839,33 @@ export function CanvasStudioView() {
       );
     },
     [applyDoc, labels],
+  );
+
+  /**
+   * S8-A2b：只有用户在展开卡点击「创建镜头草稿」后才落节点；Agent 自己不写文档。
+   * 只落草稿 + 计划依赖边，不提交任何生成（/api/generate 计数必须为 0）。
+   */
+  const landStoryboard = useCallback(
+    (expansion: StoryboardExpansion): boolean => {
+      const current = docRef.current;
+      if (current === null) return false;
+      const landing = buildStoryboardLanding(expansion, storyboardLandingOrigin(current));
+      applyDoc((d) => appendStoryboardLanding(d, landing));
+      setNotice(
+        landing.report.unattachedReferences.length === 0
+          ? t('canvas.agent.storyboard.landed', {
+              shots: landing.report.shotCount,
+              images: landing.report.imageNodeCount,
+            })
+          : t('canvas.agent.storyboard.landedWithUnattached', {
+              shots: landing.report.shotCount,
+              images: landing.report.imageNodeCount,
+              unattached: landing.report.unattachedReferences.length,
+            }),
+      );
+      return true;
+    },
+    [applyDoc, t],
   );
 
   /** S7-D2：只有用户在方案卡点击“创建节点”后才落节点；Agent 自己不写文档。 */
@@ -2191,6 +2224,7 @@ export function CanvasStudioView() {
                 {...(selectedIds[0] === undefined ? {} : { selectedNodeId: selectedIds[0] })}
                 onCreateText={createAgentTextNode}
                 onUpdateText={updateAgentTextNode}
+                onLandStoryboard={landStoryboard}
                 onClose={() => setAgentOpen(false)}
               />
             ) : null}

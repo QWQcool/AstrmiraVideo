@@ -5,6 +5,7 @@ import {
   CanvasNodeProposalResponseSchema,
   CanvasTextNodeUpdateResponseSchema,
   HistoryImportResponseSchema,
+  StoryboardExpandResponseSchema,
   StoryboardResponseSchema,
   CanvasDocSaveResponseSchema,
   CanvasDocSchema,
@@ -41,6 +42,8 @@ import type {
   CanvasTextNodeUpdateResponse,
   HistoryImportRequest,
   HistoryImportResponse,
+  StoryboardExpandRequest,
+  StoryboardExpandResponse,
   StoryboardRequest,
   StoryboardResponse,
   CanvasDocSaveResponse,
@@ -394,6 +397,18 @@ export function createStoryboard(
   options: { llmKey?: string } = {},
 ): Promise<StoryboardResponse> {
   return request('/api/agent/storyboard', StoryboardResponseSchema, {
+    method: 'POST',
+    body,
+    ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),
+  });
+}
+
+/** S8-A2：把确认过的分镜表展开成每镜生成参数（第二次规划）；落地由前端显式执行。 */
+export function expandStoryboard(
+  body: StoryboardExpandRequest,
+  options: { llmKey?: string } = {},
+): Promise<StoryboardExpandResponse> {
+  return request('/api/agent/storyboard/expand', StoryboardExpandResponseSchema, {
     method: 'POST',
     body,
     ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),

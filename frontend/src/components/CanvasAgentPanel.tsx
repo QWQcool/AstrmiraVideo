@@ -1,14 +1,17 @@
 import { useMemo, useState } from 'react';
-import type {
-  AgentPlanUsage,
-  CanvasDoc,
-  CanvasNodeProposal,
-  CanvasTextNodeUpdateProposal,
-  StoryboardPlan,
+import {
+  STORYBOARD_SESSION_MAX_SHOTS,
+  type AgentPlanUsage,
+  type CanvasDoc,
+  type CanvasNodeProposal,
+  type CanvasTextNodeUpdateProposal,
+  type StoryboardExpansion,
+  type StoryboardPlan,
 } from '@astrmira/shared';
 import {
   askCanvasAgent,
   createStoryboard,
+  expandStoryboard,
   proposeCanvasTextNode,
   proposeCanvasTextNodeUpdate,
 } from '../lib/api';
@@ -18,6 +21,7 @@ import {
   canvasAgentContextSummary,
   canvasAgentSelectedSummary,
 } from '../lib/canvasAgentContext';
+import { collectLandingReferences } from '../lib/storyboardLanding';
 import { useTranslate } from '../lib/i18n';
 import { useShell } from '../lib/shell';
 
@@ -37,6 +41,8 @@ export interface CanvasAgentPanelProps {
   onCreateText(proposal: CanvasNodeProposal): boolean;
   /** 用户点击“确认修改”后才调用；目标失效时返回 false。 */
   onUpdateText(proposal: CanvasTextNodeUpdateProposal): boolean;
+  /** S8-A2b：用户在展开卡点击“创建镜头草稿”后才调用；返回 false 表示当前文档不可写。 */
+  onLandStoryboard(expansion: StoryboardExpansion): boolean;
   onClose(): void;
 }
 
@@ -56,6 +62,7 @@ export function CanvasAgentPanel({
   selectedNodeId,
   onCreateText,
   onUpdateText,
+  onLandStoryboard,
   onClose,
 }: CanvasAgentPanelProps) {
   const t = useTranslate();
@@ -71,6 +78,9 @@ export function CanvasAgentPanel({
     null,
   );
   const [storyboard, setStoryboard] = useState<StoryboardPlan | null>(null);
+  /** S8-A2：分镜展开结果（每镜生成参数）；确认后才由视图落节点。 */
+  const [expansion, setExpansion] = useState<StoryboardExpansion | null>(null);
+  const [expansionBusy, setExpansionBusy] = useState(false);
   const [proposalMeta, setProposalMeta] = useState<{
     model: string;
     usage?: AgentPlanUsage;
@@ -115,6 +125,7 @@ export function CanvasAgentPanel({
     setProposal(null);
     setUpdateProposal(null);
     setStoryboard(null);
+    setExpansion(null);
     setProposalMeta(null);
     setHistory((prev) => [...prev, { role: 'user', text: question }]);
     try {
@@ -190,6 +201,53 @@ export function CanvasAgentPanel({
     } finally {
       setBusy(false);
     }
+  };
+
+  /**
+   * S8-A2：把确认过的分镜表展开成每镜生成参数（第二次文本调用，用户点击才发起）。
+   * 参考图候选 = 当前画布上上传/资产库来源的图片节点产物；展开结果只进预览卡，
+   * 落节点必须再点一次「创建镜头草稿」。
+   */
+  const expand = async (): Promise<void> => {
+    if (storyboard === null || busy || expansionBusy) return;
+    const apiKey = resolveLlmKey(byok);
+    if (apiKey === undefined) {
+      setError(t('canvas.agent.noKey'));
+      openByok();
+      return;
+    }
+    setExpansionBusy(true);
+    setError(null);
+    try {
+      const result = await expandStoryboard(
+        {
+          plan: storyboard,
+          references: collectLandingReferences(doc),
+          llm: resolveLlmConfig(byok),
+        },
+        { llmKey: apiKey },
+      );
+      setExpansion(result.plan);
+      setProposalMeta({
+        model: result.model,
+        ...(result.usage === undefined ? {} : { usage: result.usage }),
+      });
+    } catch (caught) {
+      setError(t('canvas.agent.storyboard.expandFailed', { reason: errorText(caught) }));
+    } finally {
+      setExpansionBusy(false);
+    }
+  };
+
+  /** S8-A2b：确认落地。失败（文档不可写）时保留预览卡，让用户处理后再试。 */
+  const confirmLanding = (): void => {
+    if (expansion === null) return;
+    if (!onLandStoryboard(expansion)) {
+      setError(t('canvas.agent.storyboard.landingBlocked'));
+      return;
+    }
+    setStoryboard(null);
+    setExpansion(null);
   };
 
   /** S7-D4：自由发挥转结构化必须由用户显式点击；不自动解析、不自动写画布。 */
@@ -523,6 +581,61 @@ export function CanvasAgentPanel({
               </p>
             ))}
             <p className="wb-note">{t('canvas.agent.storyboardHint')}</p>
+            {storyboard.shots.length > STORYBOARD_SESSION_MAX_SHOTS ? (
+              <p className="wb-note cs-agent-proposal-warning" data-testid="canvas-storyboard-over-limit">
+                {t('canvas.agent.storyboard.overLimit', {
+                  count: storyboard.shots.length,
+                  max: STORYBOARD_SESSION_MAX_SHOTS,
+                })}
+              </p>
+            ) : (
+              <button
+                type="button"
+                className="wb-btn cs-agent-primary"
+                data-testid="canvas-storyboard-expand"
+                disabled={expansionBusy}
+                onClick={() => {
+                  void expand();
+                }}
+              >
+                {expansionBusy
+                  ? t('canvas.agent.storyboard.expandBusy')
+                  : t('canvas.agent.storyboard.toShots')}
+              </button>
+            )}
+            {expansion === null ? null : (
+              <div className="cs-agent-storyboard-notes" data-testid="canvas-storyboard-expansion">
+                <span className="wb-note">{t('canvas.agent.storyboard.expansionTitle')}</span>
+                <ul>
+                  {expansion.shots.map((shot) => (
+                    <li key={shot.index}>
+                      <strong>{shot.title}</strong>
+                      <span className="wb-note">
+                        {` · ${shot.aspectRatio} · ${shot.resolutionTier} · ${shot.durationSec}s`}
+                        {shot.imagePrompt === undefined ? '' : ` · ${t('canvas.agent.storyboard.firstFrame')}`}
+                        {shot.referenceAssetIds.length === 0
+                          ? ''
+                          : ` · ${t('canvas.agent.storyboard.shotRefs', { count: shot.referenceAssetIds.length })}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {expansion.shots.some((shot) => shot.warnings.length > 0) ? (
+                  <p className="wb-note cs-agent-proposal-warning">
+                    {t('canvas.agent.storyboard.hasWarnings')}
+                  </p>
+                ) : null}
+                <p className="wb-note">{t('canvas.agent.storyboard.landingNote')}</p>
+                <button
+                  type="button"
+                  className="wb-btn cs-agent-primary"
+                  data-testid="canvas-storyboard-land"
+                  onClick={confirmLanding}
+                >
+                  {t('canvas.agent.storyboard.confirmLanding', { count: expansion.shots.length })}
+                </button>
+              </div>
+            )}
             {proposalMeta === null ? null : (
               <span className="wb-note cs-agent-meta">
                 {proposalMeta.model}

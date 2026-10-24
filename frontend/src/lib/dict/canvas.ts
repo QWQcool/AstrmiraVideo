@@ -62,6 +62,23 @@ export const CANVAS_ZH = {
   'canvas.agent.storyboard.visual': '画面 / 转场',
   'canvas.agent.storyboard.questions': '待确认：',
   'canvas.agent.storyboardHint': '分镜表只读；转成节点或提交生成需要另行确认',
+  'canvas.agent.storyboard.toShots': '转为画布镜头',
+  'canvas.agent.storyboard.expandBusy': '正在展开每镜参数…',
+  'canvas.agent.storyboard.expandFailed': '分镜展开失败：{reason}',
+  'canvas.agent.storyboard.overLimit':
+    '镜头数 {count} 超过单次创作会话上限 {max}：请把剧本拆成两段，分别生成分镜再落地',
+  'canvas.agent.storyboard.expansionTitle': '每镜生成参数（确认后创建草稿节点，不自动生成）',
+  'canvas.agent.storyboard.firstFrame': '先出首帧图',
+  'canvas.agent.storyboard.shotRefs': '参考 {count} 张',
+  'canvas.agent.storyboard.hasWarnings': '部分镜头带警告，创建后请在节点上查看并调整',
+  'canvas.agent.storyboard.landingNote':
+    '将创建视频草稿节点，首帧图草稿用虚线计划边连接；不会提交任何生成',
+  'canvas.agent.storyboard.confirmLanding': '创建 {count} 个镜头草稿',
+  'canvas.agent.storyboard.landed':
+    '已创建 {shots} 个镜头草稿（含 {images} 个首帧图节点）；虚线是计划依赖，生成前可继续编辑',
+  'canvas.agent.storyboard.landedWithUnattached':
+    '已创建 {shots} 个镜头草稿（含 {images} 个首帧图节点）；{unattached} 张参考图未能自动接线，请到节点上手动添加',
+  'canvas.agent.storyboard.landingBlocked': '当前画布不可写，未创建节点',
   'canvas.agent.updateHint': '生成更新方案；确认后才会修改选中节点',
   'canvas.agent.selectTextHint': '先在画布选中一个文本节点',
   'canvas.agent.updatePlaceholder': '说明要如何修改选中的文本节点',
@@ -561,6 +578,25 @@ export const CANVAS_EN = {
   'canvas.agent.storyboard.visual': 'Visual / transition',
   'canvas.agent.storyboard.questions': 'Open questions:',
   'canvas.agent.storyboardHint': 'Storyboard is read-only; applying to nodes or generating needs separate confirmation',
+  'canvas.agent.storyboard.toShots': 'Turn into canvas shots',
+  'canvas.agent.storyboard.expandBusy': 'Expanding per-shot parameters…',
+  'canvas.agent.storyboard.expandFailed': 'Storyboard expansion failed: {reason}',
+  'canvas.agent.storyboard.overLimit':
+    '{count} shots exceed the per-session limit of {max}: split the script into two storyboards',
+  'canvas.agent.storyboard.expansionTitle':
+    'Per-shot generation params (creates draft nodes after confirmation; no auto generation)',
+  'canvas.agent.storyboard.firstFrame': 'first-frame image first',
+  'canvas.agent.storyboard.shotRefs': '{count} reference image(s)',
+  'canvas.agent.storyboard.hasWarnings':
+    'Some shots carry warnings; review and adjust them on the nodes after creation',
+  'canvas.agent.storyboard.landingNote':
+    'Creates video draft nodes; first-frame drafts connect via dashed planned edges. Nothing is submitted for generation',
+  'canvas.agent.storyboard.confirmLanding': 'Create {count} shot drafts',
+  'canvas.agent.storyboard.landed':
+    'Created {shots} shot drafts ({images} first-frame image nodes); dashed lines are planned dependencies — edit freely before generating',
+  'canvas.agent.storyboard.landedWithUnattached':
+    'Created {shots} shot drafts ({images} first-frame image nodes); {unattached} reference image(s) could not be wired automatically — add them on the nodes manually',
+  'canvas.agent.storyboard.landingBlocked': 'Canvas is not writable right now; nothing was created',
   'canvas.agent.updateHint': 'Generate an update proposal; confirm before editing the selected node',
   'canvas.agent.selectTextHint': 'Select a text node on the canvas first',
   'canvas.agent.updatePlaceholder': 'Describe how to update the selected text node',
