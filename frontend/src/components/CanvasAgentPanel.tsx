@@ -5,23 +5,27 @@ import {
   type CanvasDoc,
   type CanvasNodeProposal,
   type CanvasTextNodeUpdateProposal,
+  type CreationRunMode,
   type StoryboardExpansion,
   type StoryboardPlan,
 } from '@astrmira/shared';
 import {
   askCanvasAgent,
+  createCreationRun,
   createStoryboard,
   expandStoryboard,
   proposeCanvasTextNode,
   proposeCanvasTextNodeUpdate,
+  startCreationRun,
 } from '../lib/api';
 import { resolveLlmConfig, resolveLlmKey } from '../lib/byok';
+import { comfyUiEngineOptions } from '../lib/engineOptions';
 import {
   buildCanvasAgentContext,
   canvasAgentContextSummary,
   canvasAgentSelectedSummary,
 } from '../lib/canvasAgentContext';
-import { collectLandingReferences } from '../lib/storyboardLanding';
+import { buildCreationRunInput, collectLandingReferences } from '../lib/storyboardLanding';
 import { useTranslate } from '../lib/i18n';
 import { useShell } from '../lib/shell';
 
@@ -66,7 +70,7 @@ export function CanvasAgentPanel({
   onClose,
 }: CanvasAgentPanelProps) {
   const t = useTranslate();
-  const { byok, openByok } = useShell();
+  const { byok, openByok, providerStatus } = useShell();
   const [mode, setMode] = useState<'ask' | 'create' | 'update' | 'storyboard'>('ask');
   /** 创建模式默认走严格 schema；关闭后只拿自由文本建议，不能直接落节点。 */
   const [structured, setStructured] = useState(true);
@@ -81,6 +85,11 @@ export function CanvasAgentPanel({
   /** S8-A2：分镜展开结果（每镜生成参数）；确认后才由视图落节点。 */
   const [expansion, setExpansion] = useState<StoryboardExpansion | null>(null);
   const [expansionBusy, setExpansionBusy] = useState(false);
+  /** S8-D：会话提交区（档位 + 本地引擎选择）。 */
+  const [runOpen, setRunOpen] = useState(false);
+  const [runMode, setRunMode] = useState<CreationRunMode>('first-frame-confirm');
+  const [runProvider, setRunProvider] = useState<string | null>(null);
+  const [runBusy, setRunBusy] = useState(false);
   const [proposalMeta, setProposalMeta] = useState<{
     model: string;
     usage?: AgentPlanUsage;
@@ -97,6 +106,11 @@ export function CanvasAgentPanel({
     [doc, selectedNodeId],
   );
   const canUpdate = selected !== null && selected.type === 'text';
+  /** S8-D：会话可用的本地引擎（只列"已配置"的 ComfyUI 档；云轨按 D74 不进会话） */
+  const runEngines = useMemo(
+    () => comfyUiEngineOptions(providerStatus).filter((engine) => engine.configured),
+    [providerStatus],
+  );
   const selectedUpstream =
     selected === null || selected.upstream.length === 0
       ? t('canvas.agent.none')
@@ -248,6 +262,39 @@ export function CanvasAgentPanel({
     }
     setStoryboard(null);
     setExpansion(null);
+    setRunOpen(false);
+  };
+
+  /** S8-D：提交创作会话并立即开始（创建 → start 一气呵成；进度到 #/runs 看）。 */
+  const submitRun = async (): Promise<void> => {
+    if (expansion === null || storyboard === null || runBusy) return;
+    if (runProvider === null) {
+      setError(t('runs.submit.noProvider'));
+      return;
+    }
+    setRunBusy(true);
+    setError(null);
+    try {
+      const created = await createCreationRun(
+        buildCreationRunInput(expansion, {
+          title: storyboard.title,
+          mode: runMode,
+          provider: runProvider,
+        }),
+      );
+      await startCreationRun(created.run.id);
+      setHistory((prev) => [
+        ...prev,
+        { role: 'assistant', text: t('runs.submit.created') },
+      ]);
+      setStoryboard(null);
+      setExpansion(null);
+      setRunOpen(false);
+    } catch (caught) {
+      setError(t('runs.submit.failed', { reason: errorText(caught) }));
+    } finally {
+      setRunBusy(false);
+    }
   };
 
   /** S7-D4：自由发挥转结构化必须由用户显式点击；不自动解析、不自动写画布。 */
@@ -634,6 +681,64 @@ export function CanvasAgentPanel({
                 >
                   {t('canvas.agent.storyboard.confirmLanding', { count: expansion.shots.length })}
                 </button>
+                <button
+                  type="button"
+                  className="wb-btn"
+                  data-testid="canvas-storyboard-run-toggle"
+                  onClick={() => {
+                    setRunOpen((prev) => !prev);
+                    if (runProvider === null && runEngines.length > 0) {
+                      setRunProvider(runEngines[0]!.id);
+                    }
+                  }}
+                >
+                  {t('runs.submit.title')}
+                </button>
+                {runOpen ? (
+                  <div className="cs-agent-storyboard-notes" data-testid="canvas-storyboard-run">
+                    <p className="wb-note">{t('runs.submit.note')}</p>
+                    <label className="wb-label">
+                      {t('runs.submit.mode')}
+                      <select
+                        className="wb-input"
+                        value={runMode}
+                        onChange={(event) => setRunMode(event.target.value as CreationRunMode)}
+                      >
+                        <option value="first-frame-confirm">{t('runs.mode.confirm')}</option>
+                        <option value="unattended">{t('runs.mode.unattended')}</option>
+                      </select>
+                    </label>
+                    {runEngines.length === 0 ? (
+                      <p className="wb-note cs-agent-proposal-warning">{t('runs.submit.noProvider')}</p>
+                    ) : (
+                      <label className="wb-label">
+                        {t('runs.submit.provider')}
+                        <select
+                          className="wb-input"
+                          value={runProvider ?? runEngines[0]!.id}
+                          onChange={(event) => setRunProvider(event.target.value)}
+                        >
+                          {runEngines.map((engine) => (
+                            <option key={engine.id} value={engine.id}>
+                              {engine.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    <button
+                      type="button"
+                      className="wb-btn cs-agent-primary"
+                      data-testid="canvas-storyboard-run-submit"
+                      disabled={runBusy || runEngines.length === 0}
+                      onClick={() => {
+                        void submitRun();
+                      }}
+                    >
+                      {t('runs.submit.ok')}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             )}
             {proposalMeta === null ? null : (

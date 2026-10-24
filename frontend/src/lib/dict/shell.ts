@@ -26,6 +26,7 @@ export const SHELL_ZH = {
   'shell.nav.canvas': '画布',
   'shell.nav.costs': '成本台账',
   'shell.nav.recipes': '配方库',
+  'shell.nav.runs': '创作会话',
   'shell.nav.logs': '操作日志',
   'shell.nav.edit': '剪辑台',
 
@@ -117,6 +118,7 @@ export const SHELL_EN = {
   'shell.nav.canvas': 'Canvas',
   'shell.nav.costs': 'Cost Ledger',
   'shell.nav.recipes': 'Recipe Library',
+  'shell.nav.runs': 'Creation Runs',
   'shell.nav.logs': 'Activity Log',
   'shell.nav.edit': 'Editing Desk',
 

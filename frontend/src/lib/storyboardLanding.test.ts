@@ -9,6 +9,7 @@ import {
 } from '@astrmira/shared';
 import {
   appendStoryboardLanding,
+  buildCreationRunInput,
   buildStoryboardLanding,
   collectLandingReferences,
   storyboardLandingOrigin,
@@ -175,5 +176,34 @@ describe('collectLandingReferences · 参考候选只认上传/资产库图片',
     const refs = collectLandingReferences(makeDoc(uploadedImageNode('u1'), generated, video, fromAsset));
     expect(refs.map((ref) => ref.assetId)).toEqual(['asset-u1', 'asset-fa']);
     expect(refs[0]).toMatchObject({ kind: 'image', label: '素材u1' });
+  });
+});
+
+describe('buildCreationRunInput · 分镜展开 → 会话输入（S8-D）', () => {
+  it('带首帧图的镜头拆两步（img-N + shot-N 依赖）；无首帧图单视频步；id 确定性', () => {
+    const input = buildCreationRunInput(
+      expansion([
+        { imagePrompt: '定妆图', referenceAssetIds: ['asset-a'] },
+        { durationSec: 3 },
+      ]),
+      { title: '雨夜霓虹', mode: 'first-frame-confirm', provider: 'fixture-local' },
+    );
+    expect(input.mode).toBe('first-frame-confirm');
+    expect(input.projectId).toBeUndefined();
+    expect(input.steps).toEqual([
+      {
+        id: 'img-1', kind: 'image', prompt: '定妆图', aspectRatio: '16:9',
+        resolutionTier: '720p', referenceAssetIds: [], dependsOn: [],
+      },
+      {
+        id: 'shot-1', kind: 'video', prompt: '镜头 1 视频提示词', aspectRatio: '16:9',
+        resolutionTier: '720p', durationSec: 5, referenceAssetIds: ['asset-a'],
+        dependsOn: ['img-1'],
+      },
+      {
+        id: 'shot-2', kind: 'video', prompt: '镜头 2 视频提示词', aspectRatio: '16:9',
+        resolutionTier: '720p', durationSec: 3, referenceAssetIds: [], dependsOn: [],
+      },
+    ]);
   });
 });

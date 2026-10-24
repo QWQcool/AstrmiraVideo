@@ -1709,6 +1709,16 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-25 · S8-D：创作会话 UI（#/runs 视图 + 展开卡提交入口）
+
+- **【视图】** 新增 `views/RunsView.tsx`（`#/runs`，侧栏「创作会话」）：列表（标题/状态/进度/档位/更新时间，点击行开详情）；详情 = 步骤表（类型/状态/第几次执行/产物/错误）+ 按状态出现的显式动作（planned→开始、awaiting→确认首帧并继续、活跃→取消、failed 步骤→重试）+ 成片任务标注；**轮询只在有活跃会话时开 3s，全终态即停**（不打无意义请求）；断线由服务端 tick 定时器兜底，页面回来续看。注册进 `VIEW_REGISTRY` + 侧栏 nav 键。
+- **【入口】** `CanvasAgentPanel` 展开预览卡新增「提交会话执行」：内联提交区（执行档位下拉：首帧确认默认/无人值守；本地引擎下拉 = `/status` 里**已配置**的 ComfyUI 档，`comfyUiEngineOptions` 过滤 `configured`——云轨按 D74 不出现，无可用引擎时如实提示并禁用）；提交 = `buildCreationRunInput`（纯转换，`img-<index>`/`shot-<index>` 确定性 id）→ `createCreationRun` → `startCreationRun` 一气呵成，成功后助手消息指路 `#/runs`。
+- **【api client】** 六函数：create/list/get/start/confirm/cancel/retryStep（§29 七条路由中 create+start 由入口直连，其余由视图消费）。
+- **【字典】** 新域 `dict/runs.ts`（中/英各 45 键；措辞三底线：状态不粉饰、重试是花钱动作、无人值守不写成"全自动搞定"）+ `shell.nav.runs`。
+- **【测试】** `storyboardLanding.test.ts` **+1**（buildCreationRunInput：带首帧图镜头拆两步/无首帧图单视频步/id 确定）。视图与面板交互的浏览器级验收随 S8-E。
+- **【门禁】** 前端 **631 passed（54 文件，+1）**；`pnpm --filter frontend test` 全脚本（含 visual-selfcheck，新侧栏键与字典过 i18n 完整性）exit 0；`tsc --noEmit` 0 error；oxlint 0 warning；`vite build` 通过。后端无改动。
+- **【边界】** ① 会话进度视图**不回写画布**（§29-1，产物进画廊/视频库）；② 首帧确认档的"逐镜重出首帧"暂以"会话外单独重出"为口径（awaitingHint 写明），会话内换首帧重跑留后续片；③ 引擎下拉只列 ComfyUI 档——`http-service` 按云轨处理（D74），fixture 只在测试环境注册。
+
 ### 2026-10-25 · S8-C：会话收尾自动拼接（CONTRACT V2.65 / §29）
 
 - **【契约】** CONTRACT 升 **V2.65**：§29 补"自动拼接"口径——视频步 ≥2 → `assembling`，按**镜头顺序**提交一条 `concat`（单一操作，不受 8 条编辑上限约束；幂等键 `run:<runId>:assembly:a0` 断点回放）；拼接成功 → `succeeded` + `assembledTaskId`；失败 → `failed`（`failure.stepId='assembly'`）；**单视频步跳过拼接**直落 succeeded（拼接无信息量）。

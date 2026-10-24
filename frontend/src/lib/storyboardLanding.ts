@@ -5,6 +5,9 @@ import {
   type CanvasDocEdge,
   type CanvasDocNode,
   type CanvasReference,
+  type CreationRunInput,
+  type CreationRunInputStep,
+  type CreationRunMode,
   type StoryboardExpansion,
   type StoryboardReference,
 } from '@astrmira/shared';
@@ -188,5 +191,66 @@ export function appendStoryboardLanding(
     nodes: [...doc.nodes, ...landing.nodes],
     edges: [...doc.edges, ...landing.edges],
     updatedAt: now,
+  };
+}
+
+/**
+ * S8-D：分镜展开 → 创作会话输入（纯转换）。
+ * 镜头带 imagePrompt → 拆两步（图片首帧 + 依赖它的视频）；无 → 单视频步。
+ * 幂等性靠步骤 id 的确定性（img-<index> / shot-<index>），同一份展开重复提交得到同一张图。
+ */
+export function buildCreationRunInput(
+  expansion: StoryboardExpansion,
+  options: {
+    title: string;
+    mode: CreationRunMode;
+    provider: string;
+    projectId?: string;
+  },
+): CreationRunInput {
+  const steps: CreationRunInputStep[] = [];
+  for (const shot of expansion.shots) {
+    if (shot.imagePrompt !== undefined) {
+      const imageId = `img-${shot.index}`;
+      steps.push({
+        id: imageId,
+        kind: 'image',
+        prompt: shot.imagePrompt,
+        aspectRatio: shot.aspectRatio,
+        resolutionTier: shot.resolutionTier,
+        referenceAssetIds: [],
+        dependsOn: [],
+      });
+      steps.push({
+        id: `shot-${shot.index}`,
+        kind: 'video',
+        prompt: shot.videoPrompt,
+        aspectRatio: shot.aspectRatio,
+        resolutionTier: shot.resolutionTier,
+        ...(shot.durationSec === undefined ? {} : { durationSec: shot.durationSec }),
+        referenceAssetIds: shot.referenceAssetIds,
+        dependsOn: [imageId],
+      });
+    } else {
+      steps.push({
+        id: `shot-${shot.index}`,
+        kind: 'video',
+        prompt: shot.videoPrompt,
+        aspectRatio: shot.aspectRatio,
+        resolutionTier: shot.resolutionTier,
+        ...(shot.durationSec === undefined ? {} : { durationSec: shot.durationSec }),
+        referenceAssetIds: shot.referenceAssetIds,
+        dependsOn: [],
+      });
+    }
+  }
+  return {
+    title: options.title,
+    mode: options.mode,
+    provider: options.provider,
+    ...(options.projectId === undefined || options.projectId === ''
+      ? {}
+      : { projectId: options.projectId }),
+    steps,
   };
 }

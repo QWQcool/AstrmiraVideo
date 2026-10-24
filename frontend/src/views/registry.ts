@@ -8,6 +8,7 @@ import { EditView } from './EditView';
 import { LibraryView } from './LibraryView';
 import { LogsView } from './LogsView';
 import { OverviewView } from './OverviewView';
+import { RunsView } from './RunsView';
 import { SkillsView } from './SkillsView';
 import { WorkbenchView } from './WorkbenchView';
 
@@ -78,6 +79,7 @@ export const VIEW_REGISTRY: readonly ViewDef[] = [
   // S6-A2：配方/模板收敛为单一「技能」入口。旧 `#/recipes` 保留为隐藏别名，旧书签不断。
   { path: '#/skills', titleKey: 'shell.nav.skills', eyebrow: 'Skills', icon: 'cards', component: SkillsView },
   { path: '#/recipes', titleKey: 'shell.nav.skills', eyebrow: 'Skills', icon: 'cards', component: SkillsView, hidden: true },
+  { path: '#/runs', titleKey: 'shell.nav.runs', eyebrow: 'Runs', icon: 'spark', component: RunsView },
   { path: '#/logs', titleKey: 'shell.nav.logs', eyebrow: 'Logs', icon: 'list', component: LogsView },
   { path: '#/edit', titleKey: 'shell.nav.edit', eyebrow: 'Editing Desk', icon: 'scissors', component: EditView, hidden: true, preferRail: true },
 ];

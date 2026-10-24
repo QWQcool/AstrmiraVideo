@@ -7,6 +7,8 @@ import {
   HistoryImportResponseSchema,
   StoryboardExpandResponseSchema,
   StoryboardResponseSchema,
+  CreationRunListResponseSchema,
+  CreationRunResponseSchema,
   CanvasDocSaveResponseSchema,
   CanvasDocSchema,
   CanvasProjectIndexSchema,
@@ -46,6 +48,9 @@ import type {
   StoryboardExpandResponse,
   StoryboardRequest,
   StoryboardResponse,
+  CreationRunInput,
+  CreationRunListResponse,
+  CreationRunResponse,
   CanvasDocSaveResponse,
   CanvasProjectIndex,
   CostSummaryResponse,
@@ -413,6 +418,47 @@ export function expandStoryboard(
     body,
     ...(options.llmKey === undefined ? {} : { llmKey: options.llmKey }),
   });
+}
+
+/** S8-D：创作会话 REST 客户端（CONTRACT §29）。 */
+
+export function createCreationRun(body: CreationRunInput): Promise<CreationRunResponse> {
+  return request('/api/agent/runs', CreationRunResponseSchema, { method: 'POST', body });
+}
+
+export function fetchCreationRuns(project?: string): Promise<CreationRunListResponse> {
+  const query = project === undefined || project === '' ? '' : `?project=${encodeURIComponent(project)}`;
+  return request(`/api/agent/runs${query}`, CreationRunListResponseSchema, {});
+}
+
+export function fetchCreationRun(id: string): Promise<CreationRunResponse> {
+  return request(`/api/agent/runs/${encodeURIComponent(id)}`, CreationRunResponseSchema, {});
+}
+
+export function startCreationRun(id: string): Promise<CreationRunResponse> {
+  return request(`/api/agent/runs/${encodeURIComponent(id)}/start`, CreationRunResponseSchema, {
+    method: 'POST',
+  });
+}
+
+export function confirmCreationRun(id: string): Promise<CreationRunResponse> {
+  return request(`/api/agent/runs/${encodeURIComponent(id)}/confirm`, CreationRunResponseSchema, {
+    method: 'POST',
+  });
+}
+
+export function cancelCreationRun(id: string): Promise<CreationRunResponse> {
+  return request(`/api/agent/runs/${encodeURIComponent(id)}/cancel`, CreationRunResponseSchema, {
+    method: 'POST',
+  });
+}
+
+export function retryCreationRunStep(id: string, stepId: string): Promise<CreationRunResponse> {
+  return request(
+    `/api/agent/runs/${encodeURIComponent(id)}/steps/${encodeURIComponent(stepId)}/retry`,
+    CreationRunResponseSchema,
+    { method: 'POST' },
+  );
 }
 
 /**

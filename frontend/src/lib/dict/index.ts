@@ -8,6 +8,7 @@ import { COSTS_EN, COSTS_ZH } from './costs';
 import { EDIT_EN, EDIT_ZH } from './edit';
 import { LIBRARY_EN, LIBRARY_ZH } from './library';
 import { LOGS_EN, LOGS_ZH } from './logs';
+import { RUNS_EN, RUNS_ZH } from './runs';
 import { OVERVIEW_EN, OVERVIEW_ZH } from './overview';
 import { RECIPES_EN, RECIPES_ZH } from './recipes';
 import { SKILLS_EN, SKILLS_ZH } from './skills';
@@ -88,6 +89,7 @@ export const ZH = {
   ...RECIPES_ZH,
   ...SKILLS_ZH,
   ...LOGS_ZH,
+  ...RUNS_ZH,
   ...OVERVIEW_ZH,
   ...EDIT_ZH,
 };
@@ -115,6 +117,7 @@ export const EN: Record<MessageKey, string> = {
   ...RECIPES_EN,
   ...SKILLS_EN,
   ...LOGS_EN,
+  ...RUNS_EN,
   ...OVERVIEW_EN,
   ...EDIT_EN,
 };
