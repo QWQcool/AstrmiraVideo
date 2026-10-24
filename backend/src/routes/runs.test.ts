@@ -212,3 +212,55 @@ describe('会话生命周期（S8-B3）', () => {
     expect(wrongStep.statusCode).toBe(409);
   });
 });
+
+describe('首帧确认档 · 会话内重出首帧（S9-D / V2.67）', () => {
+  async function confirmPhaseApp(): Promise<{ app: FastifyInstance; deps: RunRoutesDeps; id: string }> {
+    const h = await harness();
+    const res = await h.app.inject({ method: 'POST', url: '/api/agent/runs', payload: body({ mode: 'first-frame-confirm' }) });
+    const id = res.json().run.id as string;
+    const run = h.deps.runs.get(id)!;
+    h.deps.runs.update({
+      ...run,
+      state: 'awaiting-confirmation',
+      steps: run.steps.map((step) =>
+        step.id === 'img-1'
+          ? { ...step, status: 'succeeded', taskId: 't9', outputAssetId: 'task:t9' }
+          : step,
+      ),
+    });
+    return { app: h.app, deps: h.deps, id };
+  }
+
+  it('确认档重出已成功 image 步：attempt+1、回 running、清产物', async () => {
+    const { app, deps, id } = await confirmPhaseApp();
+    const res = await app.inject({ method: 'POST', url: `/api/agent/runs/${id}/steps/img-1/retry` });
+    expect(res.statusCode).toBe(200);
+    const after = res.json().run;
+    expect(after.state).toBe('running');
+    // 假 tick 不真提交：步骤保持 pending（attempt+1、taskId 已清）
+    expect(after.steps[0]).toMatchObject({ status: 'pending', attempt: 1 });
+    expect(after.steps[0]?.taskId).toBeUndefined();
+    expect(after.steps[1]?.status).toBe('pending'); // 视频步不动
+    expect(deps.runs.get(id)?.state).toBe('running');
+  });
+
+  it('确认档不能重出视频步 / 无人值守不能重出成功步 → 409', async () => {
+    const { app, id } = await confirmPhaseApp();
+    const video = await app.inject({ method: 'POST', url: `/api/agent/runs/${id}/steps/shot-1/retry` });
+    expect(video.statusCode).toBe(409);
+
+    const h2 = await harness();
+    const res2 = await h2.app.inject({ method: 'POST', url: '/api/agent/runs', payload: body() });
+    const id2 = res2.json().run.id as string;
+    const run2 = h2.deps.runs.get(id2)!;
+    h2.deps.runs.update({
+      ...run2,
+      state: 'running',
+      steps: run2.steps.map((step) =>
+        step.id === 'img-1' ? { ...step, status: 'succeeded' } : step,
+      ),
+    });
+    const unattended = await h2.app.inject({ method: 'POST', url: `/api/agent/runs/${id2}/steps/img-1/retry` });
+    expect(unattended.statusCode).toBe(409);
+  });
+});

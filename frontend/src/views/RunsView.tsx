@@ -275,6 +275,7 @@ export function RunsView() {
                     {step.error === undefined
                       ? ''
                       : step.error}
+                    {/* S9-D：失败步重试（failed 会话）；确认档重出首帧（awaiting-confirmation 的 image 步） */}
                     {detail.state === 'failed' && step.status === 'failed' ? (
                       <button
                         type="button"
@@ -284,6 +285,18 @@ export function RunsView() {
                         onClick={() => void act(() => retryCreationRunStep(detail.id, step.id))}
                       >
                         {t('runs.action.retry')}
+                      </button>
+                    ) : null}
+                    {detail.state === 'awaiting-confirmation' && step.kind === 'image' && step.status === 'succeeded' ? (
+                      <button
+                        type="button"
+                        className="wb-btn lib-icon"
+                        style={{ marginLeft: 8 }}
+                        disabled={busy}
+                        title={t('runs.action.redoHint')}
+                        onClick={() => void act(() => retryCreationRunStep(detail.id, step.id))}
+                      >
+                        {t('runs.action.redo')}
                       </button>
                     ) : null}
                   </td>

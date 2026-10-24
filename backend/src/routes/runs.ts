@@ -229,16 +229,44 @@ export const createRunRoutes =
         if (run === null) {
           return reply.code(404).send(createErrorResponse('INVALID_REQUEST', `会话不存在：${id}`));
         }
-        if (run.state !== 'failed') {
+
+        /**
+         * 两种合法重试（S9-D / V2.67）：
+         * ① failed 会话的失败步（原口径，S8-B3）；
+         * ② **首帧确认档**暂停中（awaiting-confirmation）对已成功 image 步的重出——
+         *    用户对某张首帧不满意时不必取消整场会话：attempt+1 换幂等键 = 真新任务，
+         *    会话回 running；视频步因确认门未开保持 pending，全部图步再次成功后
+         *    引擎自然回到 awaiting-confirmation（deriveTransition 既有逻辑，零新状态）。
+         *    无人值守档**不开放**（没有人盯着，重出只是浪费算力）。
+         */
+        const isConfirmPhase =
+          run.state === 'awaiting-confirmation' &&
+          run.mode === 'first-frame-confirm';
+        if (run.state !== 'failed' && !isConfirmPhase) {
           return reply.code(409).send(
-            createErrorResponse('INVALID_REQUEST', `只有失败的会话能重试步骤（当前 ${run.state}）`),
+            createErrorResponse(
+              'INVALID_REQUEST',
+              `只有失败的会话或首帧确认档暂停中的会话能重试步骤（当前 ${run.state}）`,
+            ),
           );
         }
-        const index = run.steps.findIndex((step) => step.id === stepId);
-        if (index === -1 || run.steps[index]!.status !== 'failed') {
-          return reply.code(409).send(
-            createErrorResponse('INVALID_REQUEST', `步骤 ${stepId} 不存在或不是失败状态`),
-          );
+        if (run.state === 'failed') {
+          const step = run.steps.find((item) => item.id === stepId);
+          if (step === undefined || step.status !== 'failed') {
+            return reply.code(409).send(
+              createErrorResponse('INVALID_REQUEST', `步骤 ${stepId} 不存在或不是失败状态`),
+            );
+          }
+        } else if (isConfirmPhase) {
+          const step = run.steps.find((item) => item.id === stepId);
+          if (step === undefined || step.kind !== 'image' || step.status !== 'succeeded') {
+            return reply.code(409).send(
+              createErrorResponse(
+                'INVALID_REQUEST',
+                `首帧确认档只能重出已成功的首帧图步骤（${stepId} 不满足）`,
+              ),
+            );
+          }
         }
         const now = Date.now();
         const { failure: _failure, finishedAt: _finishedAt, ...rest } = run;
@@ -260,8 +288,10 @@ export const createRunRoutes =
           updatedAt: now,
         };
         deps.runs.update(retried);
+        // tick 可能立刻重新提交该步骤（taskId 回填）——响应给 tick 后的实时状态，不给快照
+        const latest = deps.runs.get(id);
         await deps.tick(id);
-        return { run: retried };
+        return { run: deps.runs.get(id) ?? latest ?? retried };
       },
     );
   };
