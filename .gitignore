@@ -64,3 +64,4 @@ test-results/
 
 # AI 出图的默认落点（参考用图经挑选后以 JPG 收进 docs/assets/）
 generated-images/
+.tmp/jimeng-shots/
