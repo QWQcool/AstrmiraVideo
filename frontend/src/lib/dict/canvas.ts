@@ -206,6 +206,8 @@ export const CANVAS_ZH = {
   'canvas.studio.lineage.sourceNotMedia': '上游产物不是图片或视频',
   'canvas.studio.lineage.targetNotVideo': '只有视频节点能接收参考',
   'canvas.studio.lineage.roleTaken': '首帧 / 尾帧 / 参考视频已经占满',
+  'canvas.studio.lineage.plannedEdgeCreated':
+    '上游还没有产物 —— 已建为计划依赖边（虚线）。上游出片后删掉它重连来源边，或交给会话执行自动转换',
   // ── 旧血缘图下线（S3-B4）──
   'canvas.legacy.title': '血缘图已并入创作画布',
   'canvas.legacy.body':
@@ -705,6 +707,8 @@ export const CANVAS_EN = {
   'canvas.studio.lineage.sourceNotMedia': 'The upstream output is neither image nor video',
   'canvas.studio.lineage.targetNotVideo': 'Only video nodes can receive references',
   'canvas.studio.lineage.roleTaken': 'First frame / last frame / reference video are already taken',
+  'canvas.studio.lineage.plannedEdgeCreated':
+    'Upstream has no output yet — created a planned dependency edge (dashed). Remove it and reconnect as a source edge after the upstream generates, or let a session run convert it',
   'canvas.legacy.title': 'The lineage view is now part of the studio canvas',
   'canvas.legacy.body':
     'The old read-only lineage view has been retired. Source relationships are drawn on the studio canvas: drag from the right handle of an upstream node to a downstream video node.',

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createCanvasNode, createEmptyCanvasDoc, type CanvasDoc, type CanvasDocNode } from '@astrmira/shared';
 import { removeCanvasNodes } from './canvasDocOps';
-import { addCanvasLineageEdge, planCanvasLineage, removeCanvasLineageEdge } from './canvasLineage';
+import {
+  addCanvasDependencyEdge,
+  addCanvasLineageEdge,
+  planCanvasDependency,
+  planCanvasLineage,
+  removeCanvasLineageEdge,
+} from './canvasLineage';
 
 function makeNode(id: string, type: 'image' | 'video' | 'audio' | 'text'): CanvasDocNode {
   const node = createCanvasNode({ id, type, x: 0, y: 0, title: id, now: 1 });
@@ -224,6 +230,87 @@ describe('S5-B3b：来源边固定可见版本', () => {
     const removed = removeCanvasLineageEdge(second, 'e1');
     expect(removed.nodes[1]!.data.draft.references.map((ref) => ref.assetId)).toEqual([
       'task:new',
+    ]);
+  });
+});
+
+describe('计划依赖边（V2.61 / D73）', () => {
+  function makeDraftNode(id: string, type: 'image' | 'video' | 'audio' | 'text'): CanvasDocNode {
+    const node = makeNode(id, type);
+    node.data.batches = [];
+    return node;
+  }
+
+  it('草稿之间可建计划边：不要求产物、不写参考、无 role/assetId', () => {
+    const doc = makeDoc(makeDraftNode('a', 'image'), makeDraftNode('b', 'video'));
+    expect(planCanvasDependency(doc, 'a', 'b')).toEqual({ ok: true });
+    const added = addCanvasDependencyEdge(doc, 'a', 'b', 'd1', 10);
+    expect(added.problem).toBeNull();
+    expect(added.doc.edges).toEqual([{ id: 'd1', from: 'a', to: 'b', kind: 'dependency' }]);
+    expect(added.doc.nodes[1]!.data.draft.references).toEqual([]);
+  });
+
+  it('音频上游 / 文本上游 / 非视频下游 / 自环：拒绝并给对应理由', () => {
+    const doc = makeDoc(
+      makeDraftNode('a', 'audio'),
+      makeDraftNode('t', 'text'),
+      makeDraftNode('img', 'image'),
+      makeDraftNode('v', 'video'),
+    );
+    expect(planCanvasDependency(doc, 'a', 'v')).toEqual({ ok: false, problem: 'source-audio' });
+    expect(planCanvasDependency(doc, 't', 'v')).toEqual({ ok: false, problem: 'source-not-media' });
+    expect(planCanvasDependency(doc, 'img', 't')).toEqual({ ok: false, problem: 'target-not-video' });
+    expect(planCanvasDependency(doc, 'img', 'img')).toEqual({ ok: false, problem: 'self' });
+  });
+
+  it('同向边已存在（任一 kind）拒绝：事实边与计划边不并存', () => {
+    const doc = makeDoc(makeNode('a', 'image'), makeNode('b', 'video'));
+    const linked = addCanvasLineageEdge(doc, 'a', 'b', 'e1', 10);
+    expect(planCanvasDependency(linked.doc, 'a', 'b')).toEqual({ ok: false, problem: 'duplicate' });
+
+    // 反方向同理：已有计划边时，来源边的重复判定也把计划边算进去（assetId 缺省匹配）
+    const draftDoc = makeDoc(makeNode('a', 'image'), makeNode('b', 'video'));
+    const withDep = addCanvasDependencyEdge(draftDoc, 'a', 'b', 'd1', 10).doc;
+    expect(planCanvasLineage(withDep, 'a', 'b')).toEqual({ ok: false, problem: 'duplicate' });
+  });
+
+  it('环检测覆盖两类边：跨 kind 成环也拒绝', () => {
+    const doc0 = makeDoc(makeNode('a', 'video'), makeNode('b', 'video'));
+    const linked = addCanvasLineageEdge(doc0, 'b', 'a', 'e1', 10);
+    expect(linked.problem).toBeNull();
+    expect(planCanvasDependency(linked.doc, 'a', 'b')).toEqual({ ok: false, problem: 'cycle' });
+
+    const draftDoc = makeDoc(makeDraftNode('a', 'video'), makeDraftNode('b', 'video'));
+    const withDep = addCanvasDependencyEdge(draftDoc, 'b', 'a', 'd1', 10).doc;
+    expect(planCanvasDependency(withDep, 'a', 'b')).toEqual({ ok: false, problem: 'cycle' });
+  });
+
+  it('删计划边只删边，不动下游任何参考（kind 分流）', () => {
+    const doc0 = makeDoc(makeNode('a', 'image'), makeNode('b', 'video'));
+    const withDep = addCanvasDependencyEdge(doc0, 'a', 'b', 'd1', 10).doc;
+    // 模拟资产库入口写入的参考（不经边）：删计划边不得波及它
+    const withRef: CanvasDoc = {
+      ...withDep,
+      nodes: withDep.nodes.map((node) =>
+        node.id === 'b'
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                draft: {
+                  ...node.data.draft,
+                  references: [{ assetId: 'task:a-t1', role: 'first-frame', order: 0 }],
+                },
+              },
+            }
+          : node,
+      ),
+    };
+    const after = removeCanvasLineageEdge(withRef, 'd1', 20);
+    expect(after.edges.find((edge) => edge.id === 'd1')).toBeUndefined();
+    const target = after.nodes.find((node) => node.id === 'b');
+    expect(target!.data.draft.references).toEqual([
+      { assetId: 'task:a-t1', role: 'first-frame', order: 0 },
     ]);
   });
 });

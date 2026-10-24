@@ -109,9 +109,12 @@ import {
 import { loadSkillLibrary } from '../lib/skills';
 import { newIdempotencyKey } from '../lib/idempotency';
 import {
+  addCanvasDependencyEdge,
   addCanvasLineageEdge,
+  planCanvasDependency,
   planCanvasLineage,
   removeCanvasLineageEdge,
+  type CanvasDependencyProblem,
   type CanvasLineageProblem,
 } from '../lib/canvasLineage';
 import { reconcileReferenceLineage } from '../lib/canvasReferenceLineage';
@@ -212,6 +215,17 @@ const LINEAGE_PROBLEM_KEYS: Record<CanvasLineageProblem, MessageKey> = {
   'source-not-media': 'canvas.studio.lineage.sourceNotMedia',
   'target-not-video': 'canvas.studio.lineage.targetNotVideo',
   'role-taken': 'canvas.studio.lineage.roleTaken',
+};
+
+/** 计划依赖边的拒绝理由（V2.61）：是来源边那批理由的子集，共用同一组文案键。 */
+const DEPENDENCY_PROBLEM_KEYS: Record<CanvasDependencyProblem, MessageKey> = {
+  'node-missing': 'canvas.studio.lineage.nodeMissing',
+  self: 'canvas.studio.lineage.self',
+  duplicate: 'canvas.studio.lineage.duplicate',
+  cycle: 'canvas.studio.lineage.cycle',
+  'source-audio': 'canvas.studio.lineage.sourceAudio',
+  'source-not-media': 'canvas.studio.lineage.sourceNotMedia',
+  'target-not-video': 'canvas.studio.lineage.targetNotVideo',
 };
 
 function toRfNode(node: CanvasDocNode, selected: boolean): StudioRfNode {
@@ -1555,24 +1569,36 @@ export function CanvasStudioView() {
     [applyDoc],
   );
 
-  /** 连接柄拖拽 → 来源边（规则见 CONTRACT §21-11；不合法时只提示，不建边） */
-  const handleConnect = useCallback(
-    (connection: Connection): void => {
-      const current = docRef.current;
-      const from = connection.source;
-      const to = connection.target;
-      if (current === null || from === null || to === null) return;
-      const plan = planCanvasLineage(current, from, to);
-      if (!plan.ok) {
-        setNotice(t(LINEAGE_PROBLEM_KEYS[plan.problem]));
-        return;
-      }
-      const edgeId = `edge-${newCanvasProjectId()}`;
-      setNotice(null);
-      applyDoc((d) => addCanvasLineageEdge(d, from, to, edgeId).doc);
-    },
-    [applyDoc, t],
-  );
+    /** 连接柄拖拽 → 来源边；上游尚无产物时回退为计划依赖边（V2.61 / CONTRACT §21-11） */
+    const handleConnect = useCallback(
+      (connection: Connection): void => {
+        const current = docRef.current;
+        const from = connection.source;
+        const to = connection.target;
+        if (current === null || from === null || to === null) return;
+        const plan = planCanvasLineage(current, from, to);
+        if (!plan.ok) {
+          if (plan.problem === 'source-no-output') {
+            // 草稿之间先连成流水线是合法意图：建虚线计划边（不写参考），不是拒绝。
+            const dep = planCanvasDependency(current, from, to);
+            if (dep.ok) {
+              const edgeId = `edge-${newCanvasProjectId()}`;
+              setNotice(t('canvas.studio.lineage.plannedEdgeCreated'));
+              applyDoc((d) => addCanvasDependencyEdge(d, from, to, edgeId).doc);
+              return;
+            }
+            setNotice(t(DEPENDENCY_PROBLEM_KEYS[dep.problem]));
+            return;
+          }
+          setNotice(t(LINEAGE_PROBLEM_KEYS[plan.problem]));
+          return;
+        }
+        const edgeId = `edge-${newCanvasProjectId()}`;
+        setNotice(null);
+        applyDoc((d) => addCanvasLineageEdge(d, from, to, edgeId).doc);
+      },
+      [applyDoc, t],
+    );
 
   const deleteEdge = useCallback(
     (edgeId: string): void => {

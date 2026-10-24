@@ -114,6 +114,75 @@ export interface CanvasLineageResult {
   problem: CanvasLineageProblem | null;
 }
 
+/**
+ * 计划依赖边的问题码（V2.61 / D73）。与来源边共用文案键：拒绝的理由是同一批事实
+ * （自环 / 成环 / 音频上游 / 非视频下游……），只是适用范围少了"产物/角色"那一组。
+ */
+export type CanvasDependencyProblem =
+  | 'node-missing'
+  | 'self'
+  | 'duplicate'
+  | 'cycle'
+  | 'source-audio'
+  | 'source-not-media'
+  | 'target-not-video';
+
+export type CanvasDependencyPlan =
+  | { ok: true }
+  | { ok: false; problem: CanvasDependencyProblem };
+
+/**
+ * 计划一条依赖边：表达"上游出片后，下游要用它"的**未来依赖**（V2.61 / D73）。
+ *
+ * 与 `planCanvasLineage` 的三点差别：
+ * 1. **不要求上游已有产物**（它计划的正是"还没发生"的消费）；
+ * 2. **不算角色**（`role`/`assetId` 不存在，也不写 `draft.references`）；
+ * 3. 重复判定收严为"同向边已存在（任一 kind）"——同一对节点上事实边与计划边并存只有歧义，没有信息。
+ */
+export function planCanvasDependency(doc: CanvasDoc, from: string, to: string): CanvasDependencyPlan {
+  const source = doc.nodes.find((node) => node.id === from);
+  const target = doc.nodes.find((node) => node.id === to);
+  if (source === undefined || target === undefined) {
+    return { ok: false, problem: 'node-missing' };
+  }
+  if (from === to) return { ok: false, problem: 'self' };
+  if (canReach(doc, to, from)) return { ok: false, problem: 'cycle' };
+  if (source.type === 'audio') return { ok: false, problem: 'source-audio' };
+  if (source.type !== 'image' && source.type !== 'video') {
+    return { ok: false, problem: 'source-not-media' };
+  }
+  if (target.type !== 'video') return { ok: false, problem: 'target-not-video' };
+  if (doc.edges.some((edge) => edge.from === from && edge.to === to)) {
+    return { ok: false, problem: 'duplicate' };
+  }
+  return { ok: true };
+}
+
+export interface CanvasDependencyResult {
+  doc: CanvasDoc;
+  edge: CanvasDocEdge | null;
+  problem: CanvasDependencyProblem | null;
+}
+
+/** 加一条计划依赖边：只加边，不写参考（意图不是事实；V2.61 / D73）。 */
+export function addCanvasDependencyEdge(
+  doc: CanvasDoc,
+  from: string,
+  to: string,
+  edgeId: string,
+  now: number = Date.now(),
+): CanvasDependencyResult {
+  const plan = planCanvasDependency(doc, from, to);
+  if (!plan.ok) return { doc, edge: null, problem: plan.problem };
+
+  const edge: CanvasDocEdge = { id: edgeId, from, to, kind: 'dependency' };
+  return {
+    doc: { ...doc, edges: [...doc.edges, edge], updatedAt: now },
+    edge,
+    problem: null,
+  };
+}
+
 /** 加边 + 把上游产物写进下游参考（一步完成，避免"有边没参考"的半状态） */
 export function addCanvasLineageEdge(
   doc: CanvasDoc,
@@ -170,7 +239,8 @@ function sourceAssetIds(doc: CanvasDoc, from: string): Set<string> {
 }
 
 /**
- * 删边 + 删掉它写进去的那条参考（按边上的角色与上游产物 id 匹配）。
+ * 删边：`lineage` 同时删掉它写进去的那条参考（按边上的角色与上游产物 id 匹配）；
+ * `dependency` **只删边**——计划边从未写过参考，删它不该波及同上游的任何真实参考（V2.61）。
  *
  * 只删一条：同一个上游可能在角色不同时被连了两次（首帧 / 尾帧），各边各管各的参考。
  */
@@ -181,6 +251,10 @@ export function removeCanvasLineageEdge(
 ): CanvasDoc {
   const edge = doc.edges.find((item) => item.id === edgeId);
   if (edge === undefined) return doc;
+
+  if (edge.kind === 'dependency') {
+    return { ...doc, edges: doc.edges.filter((item) => item.id !== edgeId), updatedAt: now };
+  }
 
   const candidates = sourceAssetIds(doc, edge.from);
   const nodes = doc.nodes.map((node) => {

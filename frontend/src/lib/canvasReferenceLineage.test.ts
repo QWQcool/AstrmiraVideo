@@ -163,3 +163,23 @@ describe('引用即连线：把参考对齐成来源边', () => {
     expect(second.doc.edges[0]?.to).toBe('b');
   });
 });
+
+describe('引用即连线：对账不碰计划依赖边（V2.61 / D73）', () => {
+  it('已有 dependency 边 + 对应参考时：对账只补自动边，不删不改计划边', () => {
+    const a = makeNode('a', 'image');
+    const b = withReference(makeNode('b', 'video'), 'task:a-t1', 'first-frame');
+    const doc = makeDoc(a, b);
+    // 用户在 a 出片前连的计划边（V2.61 手势回退建的；上游后来出片了）
+    doc.edges = [{ id: 'edge-manual-1', from: 'a', to: 'b', kind: 'dependency' }];
+
+    const result = reconcileReferenceLineage(doc, 'b', 333);
+
+    // 自动边照常补齐（参考的事实成立），计划边一字不动
+    expect(result.added).toBe(1);
+    expect(result.removed).toBe(0);
+    const dep = result.doc.edges.find((edge) => edge.id === 'edge-manual-1');
+    expect(dep).toEqual({ id: 'edge-manual-1', from: 'a', to: 'b', kind: 'dependency' });
+    const auto = result.doc.edges.find((edge) => edge.id !== 'edge-manual-1');
+    expect(auto).toMatchObject({ from: 'a', to: 'b', kind: 'lineage', role: 'first-frame' });
+  });
+});
