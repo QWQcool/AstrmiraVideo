@@ -1709,6 +1709,14 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-24 · S8-A2a：分镜展开端点（CONTRACT V2.62 / D72·D75 · 后端半片）
+
+- **【契约】** CONTRACT 升 **V2.62**：§28-6 新增 `POST /api/agent/storyboard/expand`（请求/`StoryboardExpansion`/响应/错误映射/业务校验/不做）+ §5 路由表登记。要点：① 入参 = **已确认**的分镜表 + 参考素材清单（≤20）+ 可选 llm；② 输出 = 每镜生成参数（`index/title/imagePrompt?/videoPrompt/aspectRatio/resolutionTier/durationSec/referenceAssetIds≤4/warnings`）；③ `STORYBOARD_SESSION_MAX_SHOTS = 16`（D75）——**请求超过 16 镜在调用上游之前 400 拒绝**（不花第二次规划的钱）；④ 业务校验（schema 外）：展开镜头与分镜表**同数量同顺序同 index**、`referenceAssetIds` ⊆ 请求清单（防编造 id）。
+- **【实现】** `packages/shared/src/storyboard.ts` +5 schema/常量；`backend/src/providers/storyboardExpand.ts`（沿用 storyboardPlan 骨架；system prompt 按 S7-A 教训写死字段与枚举——16:9/9:16/1:1、480p/720p/1080p、durationSec 1-10、"referenceAssetIds 只能从清单选、禁止编造"、"videoPrompt 自包含不写见上文"）；`routes/storyboard.ts` 挂新端点（deps.expand 注入点供测试；顺手核对并保留了第一端点 catch 里的 `dispositionOverride` 覆盖语义）。
+- **【测试】** 后端 **+10**：路由 4（无 Key 501 / >16 镜 400 且上游 0 调用 / 成功 200 结构与 usage / 上游故障 502）+ provider 6（合法解析 / 编造引用 502 / index 不对应 502 ×2 / 非法枚举与 17 镜 schema 拒 / 401→KEY_INVALID / 纯校验函数直测）。
+- **【门禁】** 后端 **735 passed（86 文件，+10）**；契约 **11/11**；oxlint 0 warning；`tsc --noEmit` 0 error。前端无改动未重跑。
+- **【边界】** ① 真实 DeepSeek 调用未做（沿用"受控响应测协议"的口径；真实链路 S7-A 已验过同骨架）；② `resolutionTier` 不直接写画布节点（落地时前端映射，节点无 tier 字段——§28-7）；③ 落地 UI（「转为画布镜头」）是 **S8-A2b**，本片只有端点。
+
 ### 2026-10-24 · S8-A1：手动连接回退为计划依赖边（CONTRACT V2.61 / D73）
 
 - **【事实修正】** 动手前核对发现：`kind:'dependency'` **自 V2.46 起就在 schema 里**（S7-C2 Agent 落草稿已在创建），D73 初稿写的"新增 planned 边"不准确——已改为"**启用既有类型为手动可建**"，D73 与 §4 S8-A1 行同步修正。
