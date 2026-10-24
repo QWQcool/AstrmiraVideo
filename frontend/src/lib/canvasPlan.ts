@@ -415,6 +415,6 @@ export function saveCanvasPlan(
   try {
     writeLocal(access, canvasPlanKey(projectId), JSON.stringify(plan));
   } catch {
-    /* 配额满 / 隐私模式：编排暂时写不进去，不阻塞画布（界面上有提示位，见 CanvasView） */
+    /* 配额满 / 隐私模式：编排暂时写不进去，不阻塞画布（界面上有提示位；旧 CanvasView 已删，S8-0） */
   }
 }

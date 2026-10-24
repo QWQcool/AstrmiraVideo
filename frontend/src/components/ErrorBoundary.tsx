@@ -15,7 +15,8 @@ import { getLanguage, translate } from '../lib/i18n';
  * - ❌ **事件回调**里的抛错（`onClick` / `onNodeClick` / `setTimeout` / Promise）—— React 不把它们交给 boundary。
  *   本仓有过**真实实例**：B67 的便签让 `MiniMap` 的 `onNodeClick` 抛错，那一刻整页白屏，
  *   而**包了 boundary 也照样白屏**。事件回调的纪律是**就地 try/catch**
- *   （见 `views/CanvasView.tsx` 里那条注释）。"window 层兜底 + 上报"属后续片（它需要一条前端上报通道）。
+ *   （此纪律源自原 `views/CanvasView.tsx` 的一条注释；该视图已于 S8-0 删除，纪律仍然成立）。
+ *   "window 层兜底 + 上报"属后续片（它需要一条前端上报通道）。
  * - ❌ **异步数据错误**（fetch 失败）：那是业务状态，走各视图自己的错误文案，不该由它兜。
  *
  * ## 兜底面板要说什么（三句话，缺一不可）

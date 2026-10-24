@@ -23,7 +23,8 @@ import { getLanguage, translate, type MessageKey } from './i18n';
  *
  * ## 语言迁移第十八批：这一层`从共享包搬来前端`，原因（"这句话给谁看"）
  * 它原先在 `packages/shared/src/canvasPlanFile.ts`，但**消费者只有前端**
- * （`views/CanvasView.tsx` + 它自己的单测）—— 也就是说，这里每一句 `reason` 都是**给人看的**，
+ * （原 `views/CanvasView.tsx` + 它自己的单测；该视图已于 S8-0 删除，本文件作为编排文件格式的实现与
+ * S8-B 服务端会话的参考保留）—— 也就是说，这里每一句 `reason` 都是**给人看的**，
  * 而共享包（纯类型 / 数据层）**没法持有界面文案**（它不能 import 前端字典）。
  * 搬来前端之后，它与**本来就在前端**的编辑层 `lib/canvasPlan.ts` 重新成了对称的一对：
  * 一个管"编排本身"，一个管"编排的文件形态"。
@@ -47,7 +48,7 @@ export const CANVAS_PLAN_FILE_KIND = 'astrmira.canvas-plan';
  *
  * 为什么是常量而不是函数：这些是**关于文件格式本身的事实**（不随导出时机变化）；
  * 而"导入会怎样"（新身份 / 装载语义）属于**导入端的行为**，写进文件反而会在将来变成谎言
- * —— 那部分由导入界面的提示负责（见 CanvasView）。
+ * —— 那部分由导入界面的提示负责（原 CanvasView 导入界面已删，S8-0；新入口随 S8 会话 UI 另开）。
  *
  * 语言：**产物内容，不跟界面语言走**（理由见文件头）—— 四条各自带 `i18n-exempt` 标记。
  */
