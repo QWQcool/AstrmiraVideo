@@ -1709,6 +1709,14 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-25 · S8-E：J6 全链路验收（fixture 真跑通）与 Step 12 收口
+
+- **【J6（e2e，真 TCP + 真 fixture provider + 真 ffmpeg）】** `src/e2e/creationRun.e2e.test.ts`：创建（无人值守 · 双视频步）→ 列表可见 → `start` → **服务端 5s tick 定时器自主推进**（不经任何测试驱动）→ 两步 `succeeded`（`outputAssetId = task:<id>`）→ **自动拼接成片**（普通 edit 任务，`outputVideoUrl` 可取、>10KB）→ `succeeded` + `assembledTaskId`。全链路零人工干预，断言含媒体字节。
+- **【护栏（如实分层）】** 失败即停/提交被拒/同键断点重提/取消/首帧确认门控已由**单测**钉住（`creationRunEngine.test` 6+3 条、`runs.test` 8 条）；e2e 不重复注入——fixture 无不依赖 `options` 的确定性失败注入点（`options` 不在会话步骤 schema 里，注入会被 create 400 拒掉，这是 schema 的正确行为）。
+- **【边界】** 图步（t2i）/首帧确认暂停分支的**真实引擎**验收待 ComfyUI 环境（fixture 是视频夹具，t2i 语义不真；单测已覆盖分支逻辑）。转场（分镜 `transition` → xfade）未接，v1 纯 concat。
+- **【门禁】** 后端 **759 passed（90 文件，+1 e2e）**；`tsc --noEmit` 0 error；oxlint 0 warning。前端本片无改动（631 绿沿用 S8-D）。
+- **【Step 12（S8）状态】** S8-0/A1/A2a/A2b/B1/B2/B3/C/D/E **全部完成**：计划边（连线问题根因修复）→ 分镜展开 → 画布落地 → 会话契约/引擎/路由 → 自动拼接 → `#/runs` UI 与提交入口 → J6 全链路证据。**"给剧本和图 → 拿成片"的服务端链路已通**（本地轨/fixture）；算力到位后配 ComfyUI 即插即用。
+
 ### 2026-10-25 · S8-D：创作会话 UI（#/runs 视图 + 展开卡提交入口）
 
 - **【视图】** 新增 `views/RunsView.tsx`（`#/runs`，侧栏「创作会话」）：列表（标题/状态/进度/档位/更新时间，点击行开详情）；详情 = 步骤表（类型/状态/第几次执行/产物/错误）+ 按状态出现的显式动作（planned→开始、awaiting→确认首帧并继续、活跃→取消、failed 步骤→重试）+ 成片任务标注；**轮询只在有活跃会话时开 3s，全终态即停**（不打无意义请求）；断线由服务端 tick 定时器兜底，页面回来续看。注册进 `VIEW_REGISTRY` + 侧栏 nav 键。
