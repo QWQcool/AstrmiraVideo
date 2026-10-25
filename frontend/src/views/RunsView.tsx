@@ -174,7 +174,7 @@ export function RunsView() {
                   <td>
                     {t('runs.progress', {
                       done: item.succeededCount,
-                      total: item.videoStepCount,
+                      total: item.totalStepCount,
                     })}
                     {item.failedCount === 0
                       ? ''

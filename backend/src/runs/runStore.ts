@@ -141,6 +141,7 @@ export function toSummary(run: CreationRun): CreationRunSummary {
     provider: run.provider,
     state: run.state,
     videoStepCount: run.steps.filter((step) => step.kind === 'video').length,
+    totalStepCount: run.steps.length,
     succeededCount: run.steps.filter((step) => step.status === 'succeeded').length,
     failedCount: run.steps.filter((step) => step.status === 'failed').length,
     createdAt: run.createdAt,

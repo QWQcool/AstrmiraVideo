@@ -195,6 +195,8 @@ export const CreationRunSummarySchema = z
     provider: z.string().min(1),
     state: CreationRunStateSchema,
     videoStepCount: z.number().int().min(0),
+    /** V2.69 修正：全部步骤数（图片+视频）——列表进度的分母（此前只数视频步，"6/3"口径错位） */
+    totalStepCount: z.number().int().min(0),
     succeededCount: z.number().int().min(0),
     failedCount: z.number().int().min(0),
     createdAt: z.number(),
