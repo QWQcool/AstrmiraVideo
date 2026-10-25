@@ -73,10 +73,14 @@ for (const shot of expanded.plan.shots) {
 
 // ③ 组装会话输入（与前端 buildCreationRunInput 同规则）
 const steps = [];
+// S9-A1 定妆语义：首镜图步无依赖，后续图步都参考第一张定妆图（与前端 buildCreationRunInput 同规则）
+let anchorImageId = null;
 for (const shot of expanded.plan.shots) {
   if (shot.imagePrompt !== undefined) {
-    steps.push({ id: `img-${shot.index}`, kind: 'image', prompt: shot.imagePrompt, aspectRatio: shot.aspectRatio, resolutionTier: shot.resolutionTier, referenceAssetIds: [], dependsOn: [] });
-    steps.push({ id: `shot-${shot.index}`, kind: 'video', prompt: shot.videoPrompt, aspectRatio: shot.aspectRatio, resolutionTier: shot.resolutionTier, durationSec: shot.durationSec, referenceAssetIds: shot.referenceAssetIds, dependsOn: [`img-${shot.index}`] });
+    const imageId = `img-${shot.index}`;
+    steps.push({ id: imageId, kind: 'image', prompt: shot.imagePrompt, aspectRatio: shot.aspectRatio, resolutionTier: shot.resolutionTier, referenceAssetIds: [], dependsOn: anchorImageId === null ? [] : [anchorImageId] });
+    if (anchorImageId === null) anchorImageId = imageId;
+    steps.push({ id: `shot-${shot.index}`, kind: 'video', prompt: shot.videoPrompt, aspectRatio: shot.aspectRatio, resolutionTier: shot.resolutionTier, durationSec: shot.durationSec, referenceAssetIds: shot.referenceAssetIds, dependsOn: [imageId] });
   } else {
     steps.push({ id: `shot-${shot.index}`, kind: 'video', prompt: shot.videoPrompt, aspectRatio: shot.aspectRatio, resolutionTier: shot.resolutionTier, durationSec: shot.durationSec, referenceAssetIds: shot.referenceAssetIds, dependsOn: [] });
   }

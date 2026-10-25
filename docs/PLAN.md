@@ -1709,6 +1709,14 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-25 · S9-A1：跨镜角色一致性——定妆锚点 + ReferenceLatent 参考出图
+
+- **【设计】** "商品视频工作流"的官方方法论（即梦模板画布观察：场景参考 → 商品三视图定妆 → 生成视频）落到会话引擎：**首镜图步 = 定妆镜，后续图步全部依赖它**（刻意不做链式——每多一跳参考就多一层漂移，定妆要的是"都像第一张"）；视频步依赖自己的首帧图步不变。
+- **【实现】** ① 引擎 `buildStepRequest`：image 步带依赖时带 `assets.firstFrameImage = 上游产物`（mode 仍 t2i）；② 前端 `buildCreationRunInput` + 验收脚本：img-2+ 的 `dependsOn = [img-1]`；③ **新内置模板 `flux2-klein-t2i-ref`**（ReferenceLatent 机制：参考图经 LoadImage→VAEEncode→ReferenceLatent 注入 conditioning，FLUX.2 edit 标准做法；同一套 Klein 权重）；④ 声明接口增 `referenceImage` 标志（V2.68 语义，sidecar 可写），provider `pickTemplateForMode` 按"提交是否带参考"分流——纯文生图不劫持、带参考不落空。
+- **【测试】** 引擎 +1（图步带依赖 → t2i + firstFrameImage；首镜无 assets）/ 前端 +1（锚点依赖三镜布局、视频步不受影响）/ 模板清单 +1（三份内置、ref 变体声明 referenceImage=true）。后端 **766 passed**；前端 **637 passed**；契约 11/11；tsc/lint 0。
+- **【真模型验收（一次通过）】** 会话 6 步：img-1 纯文生图定妆 → img-2/img-3 请求快照确认带 `firstFrameImage: task:<img-1>` → 三段 Wan i2v → 自动拼接 succeeded（约 9.3 分钟，参考串行使总时长略增）。**一致性肉眼可验**：三张首帧是同一只橘虎斑绿眼猫，镜 2 中景正脸与镜 3 极近特写严格延续镜 1 定妆（湿毛/雨巷/霓虹湿地反光）；对比上一轮"三镜各自独立生成形态有差异"是质的改善。
+- **【边界（如实）】** ① 参考强度不可调（ReferenceLatent 默认注入，调权属模板参数化，等真实观感反馈）；② 定妆镜不可选（固定 img-1——分镜展开的第一镜即"定妆位"，将来若要"角色参考图上传后全片参考"走 referenceAssetIds 通道，另开）；③ S9-A2（tier→分辨率映射 480p 落 832×480 的精度问题）与 S9-A3（画布图片编辑派生）另行开工。
+
 ### 2026-10-25 · 本机真模型环境就绪：全链路真跑通（FLUX t2i + Wan i2v + 自动拼接）
 
 - **【环境（4060 Ti 16G 本机，用户授权安装）】** ComfyUI 便携版 0.42.1（`D:\ComfyUI\ComfyUI`，`--listen 127.0.0.1 --port 8188`）+ 六个模型硬链接就位：Wan2.2 TI2V-5B fp16（10GB）+ umt5_xxl_fp8（6.5GB）+ wan2.2_vae、FLUX-2-Klein-4B（7.75GB）+ qwen_3_4b + flux2-vae。`COMFYUI_BASE_URL` + `EXPOSE_HOST_LOCAL_TRACK=1` 接入 serve-local；**自检正确判定** t2v/i2v（wan22-ti2v-5b 模板声明）+ t2i（flux2-klein-t2i 模板声明）。

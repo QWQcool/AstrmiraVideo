@@ -211,6 +211,9 @@ export function buildCreationRunInput(
   },
 ): CreationRunInput {
   const steps: CreationRunInputStep[] = [];
+  // S9-A1：首镜图步是"定妆镜"，后续图步都依赖它（跨镜一致性：以第一张定妆图为准继续出图）。
+  // 刻意不做链式（img-3 依赖 img-2）——每多一跳参考就多一层漂移，定妆语义要的是"都像第一张"。
+  let anchorImageId: string | null = null;
   for (const shot of expansion.shots) {
     const transition = options.transitions?.get(shot.index);
     if (shot.imagePrompt !== undefined) {
@@ -222,8 +225,9 @@ export function buildCreationRunInput(
         aspectRatio: shot.aspectRatio,
         resolutionTier: shot.resolutionTier,
         referenceAssetIds: [],
-        dependsOn: [],
+        dependsOn: anchorImageId === null ? [] : [anchorImageId],
       });
+      if (anchorImageId === null) anchorImageId = imageId;
       steps.push({
         id: `shot-${shot.index}`,
         kind: 'video',

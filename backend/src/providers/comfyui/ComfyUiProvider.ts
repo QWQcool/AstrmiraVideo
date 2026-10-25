@@ -243,13 +243,25 @@ export class ComfyUiProvider implements VideoProvider {
     return this.loadedTemplates;
   }
 
-  /** 按模式挑模板（V2.40）：能跑该模式的模板里，优先 `defaultIndex` 指的那份 */
-  private pickTemplateForMode(runtimes: TemplateRuntime[], mode: GenerationMode): TemplateRuntime | undefined {
+  /**
+   * 按模式挑模板（V2.40）：能跑该模式的模板里，优先 `defaultIndex` 指的那份。
+   * S9-A1：`wantsReference`（t2i 提交带了首帧参考）时优先 `referenceImage` 声明的模板，
+   * 未带时优先**没有**该声明的模板——普通文生图不被参考图版劫持，反之亦然。
+   */
+  private pickTemplateForMode(
+    runtimes: TemplateRuntime[],
+    mode: GenerationMode,
+    wantsReference = false,
+  ): TemplateRuntime | undefined {
     const candidates = runtimes.filter((item) => item.capabilities.modes.includes(mode));
     if (candidates.length === 0) return undefined;
+    const byReference = candidates.filter(
+      (item) => (item.loaded.declaration?.referenceImage ?? false) === wantsReference,
+    );
+    const pool = byReference.length > 0 ? byReference : candidates;
     const loaded = this.templates();
     const preferredName = loaded.templates[loaded.defaultIndex]?.name;
-    return candidates.find((item) => item.loaded.name === preferredName) ?? candidates[0];
+    return pool.find((item) => item.loaded.name === preferredName) ?? pool[0];
   }
 
   // ── 探测与自检 ─────────────────────────────────────────────────────────────
@@ -373,7 +385,10 @@ export class ComfyUiProvider implements VideoProvider {
 
   async submit(request: VideoGenerateRequest): Promise<{ taskId: string }> {
     const runtimes = await this.readInventory();
-    const target = this.pickTemplateForMode(runtimes, request.mode);
+    // S9-A1：t2i 提交带首帧参考（会话跨镜一致性）→ 用 ReferenceLatent 变体
+    const wantsReference =
+      request.mode === 't2i' && request.assets?.firstFrameImage !== undefined;
+    const target = this.pickTemplateForMode(runtimes, request.mode, wantsReference);
 
     if (target === undefined) {
       // **不假装可用**：没有模板能跑这个模式就直说，而不是提交上去等上游 400
@@ -394,7 +409,9 @@ export class ComfyUiProvider implements VideoProvider {
     const dimensions = planComfyDimensions(request, this.tuning.maxPixels);
     const frames = planComfyFrames(request.params?.durationSec, this.tuning.fps);
     const startImageName =
-      request.mode === 'i2v' ? await this.uploadFirstFrame(request) : undefined;
+      request.mode === 'i2v' || wantsReference
+        ? await this.uploadFirstFrame(request)
+        : undefined;
 
     const workflow = buildComfyWorkflow({
       models,

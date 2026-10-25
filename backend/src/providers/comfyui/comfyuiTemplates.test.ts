@@ -9,6 +9,7 @@ import {
 } from './comfyuiProtocol.js';
 import {
   COMFYUI_DEFAULT_TEMPLATE_NAME,
+  COMFYUI_IMAGE_REF_TEMPLATE_NAME,
   COMFYUI_IMAGE_TEMPLATE_NAME,
   isWorkflowTemplate,
   loadWorkflowTemplate,
@@ -248,15 +249,19 @@ describe('loadWorkflowTemplate · 从哪拿模板', () => {
  * 而一套模型 = 一张节点图，所以模板必须是**清单**（每份各自声明能做什么）。
  */
 describe('loadWorkflowTemplates · 清单', () => {
-  it('零配置 → **两份内置**（视频 + 图片），defaultIndex 指向视频那份', () => {
+  it('零配置 → **三份内置**（视频 + 图片 + 参考图变体），defaultIndex 指向视频那份', () => {
     const loaded = loadWorkflowTemplates({} as NodeJS.ProcessEnv);
     expect(loaded.templates.map((item) => item.name)).toEqual([
       COMFYUI_DEFAULT_TEMPLATE_NAME,
       COMFYUI_IMAGE_TEMPLATE_NAME,
+      COMFYUI_IMAGE_REF_TEMPLATE_NAME,
     ]);
     expect(loaded.defaultIndex).toBe(0);
     // 图片那份的声明必须写着 t2i（否则能力位不会亮）
     expect(loaded.templates[1]?.declaration?.modes).toEqual(['t2i']);
+    // S9-A1：参考图变体也声明 t2i，且带 referenceImage 标志（provider 挑模板的依据）
+    expect(loaded.templates[2]?.declaration?.modes).toEqual(['t2i']);
+    expect(loaded.templates[2]?.declaration?.referenceImage).toBe(true);
   });
 
   it('目录里每份 `<name>.api.json` 各成一条（**加一份模板 = 多一种能力**）', () => {

@@ -143,6 +143,11 @@ export interface ComfyTemplateDeclaration {
   label?: string;
   /** 给操作者的说明（进自检结论） */
   notes?: string;
+  /**
+   * V2.68（S9-A1）：该 t2i 模板**消费参考图**（提交需带 `assets.firstFrameImage`）。
+   * provider 在"t2i + 带参考"时优先选它；纯文生图优先选**没**有此标志的模板。
+   */
+  referenceImage?: boolean;
 }
 
 /**
@@ -191,6 +196,14 @@ export function parseTemplateDeclaration(
   if (typeof label === 'string' && label.trim() !== '') declaration.label = label.trim();
   const notes = record['notes'];
   if (typeof notes === 'string' && notes.trim() !== '') declaration.notes = notes.trim();
+  // V2.68（S9-A1）：t2i 模板是否消费参考图
+  const referenceImage = record['referenceImage'];
+  if (referenceImage !== undefined) {
+    if (typeof referenceImage !== 'boolean') {
+      throw new Error(`${source} 的 referenceImage 必须是布尔值`);
+    }
+    if (referenceImage) declaration.referenceImage = true;
+  }
   return declaration;
 }
 
@@ -812,6 +825,70 @@ export const FLUX2_KLEIN_T2I_DECLARATION: ComfyTemplateDeclaration = {
   notes:
     '4 步 / CFG 1（蒸馏版参数写死在模板里）；不使用负向提示词；' +
     '需要 diffusion_models 里有 flux-2-klein-4b、text_encoders 里有 qwen_3_4b、vae 里有 flux2-vae',
+};
+
+/**
+ * S9-A1：带**参考图**的 Klein 变体（ReferenceLatent 机制）——跨镜角色一致性的生成侧基础。
+ *
+ * 与普通 t2i 的差异：参考图经 `LoadImage → VAEEncode → ReferenceLatent` 注入 conditioning
+ * （FLUX.2 edit 的标准做法：参考图进条件而不是替换初始 latent），模型是同一套 Klein 权重。
+ * `referenceImage: true` 让 provider 在"t2i + 带首帧参考"的提交时**优先选它**，
+ * 纯文生图仍走普通模板（参考图版不该被无图提交劫持）。
+ */
+export const FLUX2_KLEIN_T2I_REF_TEMPLATE: WorkflowTemplate = {
+  '70': {
+    class_type: 'UNETLoader',
+    inputs: { unet_name: '{{UNET_NAME}}', weight_dtype: '{{WEIGHT_DTYPE}}' },
+  },
+  '71': {
+    class_type: 'CLIPLoader',
+    inputs: { clip_name: '{{CLIP_NAME}}', type: '{{CLIP_TYPE}}' },
+  },
+  '72': { class_type: 'VAELoader', inputs: { vae_name: '{{VAE_NAME}}' } },
+  '56': { class_type: 'LoadImage', inputs: { image: '{{START_IMAGE_NAME}}' } },
+  '77': { class_type: 'VAEEncode', inputs: { pixels: ['56', 0], vae: ['72', 0] } },
+  '74': { class_type: 'CLIPTextEncode', inputs: { text: '{{PROMPT}}', clip: ['71', 0] } },
+  '78': { class_type: 'ReferenceLatent', inputs: { conditioning: ['74', 0], latent: ['77', 0] } },
+  '76': { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['74', 0] } },
+  '63': {
+    class_type: 'CFGGuider',
+    inputs: { model: ['70', 0], positive: ['78', 0], negative: ['76', 0], cfg: 1 },
+  },
+  '62': {
+    class_type: 'Flux2Scheduler',
+    inputs: { steps: 4, width: '{{WIDTH}}', height: '{{HEIGHT}}' },
+  },
+  '61': { class_type: 'KSamplerSelect', inputs: { sampler_name: 'euler' } },
+  '73': { class_type: 'RandomNoise', inputs: { noise_seed: '{{SEED}}' } },
+  '66': {
+    class_type: 'EmptyFlux2LatentImage',
+    inputs: { width: '{{WIDTH}}', height: '{{HEIGHT}}', batch_size: 1 },
+  },
+  '64': {
+    class_type: 'SamplerCustomAdvanced',
+    inputs: {
+      noise: ['73', 0],
+      guider: ['63', 0],
+      sampler: ['61', 0],
+      sigmas: ['62', 0],
+      latent_image: ['66', 0],
+    },
+  },
+  '65': { class_type: 'VAEDecode', inputs: { samples: ['64', 0], vae: ['72', 0] } },
+  '9': {
+    class_type: 'SaveImage',
+    inputs: { images: ['65', 0], filename_prefix: '{{OUTPUT_PREFIX}}' },
+  },
+};
+
+export const FLUX2_KLEIN_T2I_REF_DECLARATION: ComfyTemplateDeclaration = {
+  modes: ['t2i'],
+  modelMatch: { unet: 'klein', clip: 'qwen_3', vae: 'flux2', clipType: 'flux2' },
+  referenceImage: true,
+  label: 'FLUX.2 Klein 4B（distilled · 参考图出图）',
+  notes:
+    '与文生图同一套权重；参考图经 ReferenceLatent 注入 conditioning（FLUX.2 edit 语义）。' +
+    '用于"以首镜定妆图为准继续出后续镜头"的跨镜一致性；提交必须带 assets.firstFrameImage',
 };
 
 export interface ComfyWorkflowInput {

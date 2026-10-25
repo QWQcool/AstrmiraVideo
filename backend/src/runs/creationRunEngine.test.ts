@@ -308,3 +308,18 @@ describe('buildAssemblyScript · 转场映射（S9 / V2.66）', () => {
     ).toEqual({ type: 'xfade', transition: 'wipeleft', durationSec: 0.5 });
   });
 });
+
+describe('buildStepRequest · 图步定妆参考（S9-A1）', () => {
+  it('image 步带依赖 → t2i + assets.firstFrameImage = 上游产物', () => {
+    const r = run([
+      step('img-1', 'image', { status: 'succeeded', taskId: 't0', outputAssetId: 'task:t0' } as Record<string, unknown>),
+      step('img-2', 'image', { dependsOn: ['img-1'] }),
+    ]);
+    const req = buildStepRequest(r, r.steps[1]!);
+    expect(req.mode).toBe('t2i');
+    expect(req.assets).toEqual({ firstFrameImage: 'task:t0' });
+    const first = buildStepRequest(r, r.steps[0]!);
+    expect(first.mode).toBe('t2i');
+    expect(first.assets).toBeUndefined();
+  });
+});

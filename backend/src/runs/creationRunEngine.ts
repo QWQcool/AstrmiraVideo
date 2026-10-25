@@ -216,9 +216,16 @@ export function buildStepRequest(run: CreationRun, step: CreationRunStep): Video
     : resolutionOf(step.resolutionTier, step.aspectRatio);
 
   if (step.kind === 'image') {
+    // S9-A1：图步带依赖（定妆语义）→ 参考首镜产物继续出图（ReferenceLatent 模板在 provider 侧接住）
+    const reference =
+      step.dependsOn.length === 0
+        ? step.referenceAssetIds[0]
+        : run.steps.find((item) => item.id === step.dependsOn[0] && item.status === 'succeeded')
+            ?.outputAssetId;
     return {
       prompt: step.prompt,
       mode: 't2i',
+      ...(reference === undefined ? {} : { assets: { firstFrameImage: reference } }),
       aspectRatio: step.aspectRatio,
       ...(resolution === undefined ? {} : { resolution }),
       provider: run.provider,

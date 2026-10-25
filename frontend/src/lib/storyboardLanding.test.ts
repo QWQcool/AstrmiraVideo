@@ -224,3 +224,26 @@ describe('buildCreationRunInput · 转场透传（S9 / V2.66）', () => {
     expect(input.steps[2]).not.toHaveProperty('transition');
   });
 });
+
+describe('buildCreationRunInput · 定妆锚点依赖（S9-A1）', () => {
+  it('首镜图步无依赖，后续图步都依赖 img-1（全片参考第一张定妆图）', () => {
+    const input = buildCreationRunInput(
+      expansion([
+        { imagePrompt: '定妆 1' },
+        { imagePrompt: '定妆 2', durationSec: 3 },
+        { imagePrompt: '定妆 3' },
+      ]),
+      { title: '雨夜', mode: 'unattended', provider: 'fixture-local' },
+    );
+    const imageSteps = input.steps.filter((step) => step.kind === 'image');
+    expect(imageSteps).toHaveLength(3);
+    expect(imageSteps[0]?.dependsOn).toEqual([]);
+    expect(imageSteps[1]?.dependsOn).toEqual(['img-1']);
+    expect(imageSteps[2]?.dependsOn).toEqual(['img-1']);
+    // 视频步依赖自己的首帧图步，不受锚点影响
+    const videoSteps = input.steps.filter((step) => step.kind === 'video');
+    expect(videoSteps.map((step) => step.dependsOn)).toEqual([
+      ['img-1'], ['img-2'], ['img-3'],
+    ]);
+  });
+});

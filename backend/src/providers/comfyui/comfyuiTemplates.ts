@@ -2,6 +2,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import {
   FLUX2_KLEIN_T2I_DECLARATION,
+  FLUX2_KLEIN_T2I_REF_DECLARATION,
+  FLUX2_KLEIN_T2I_REF_TEMPLATE,
   FLUX2_KLEIN_T2I_TEMPLATE,
   parseTemplateDeclaration,
   WAN22_TI2V_5B_DECLARATION,
@@ -45,6 +47,8 @@ export const COMFYUI_DEFAULT_TEMPLATE_NAME = 'wan22-ti2v-5b';
 
 /** 内置的图片模板名（V2.40） */
 export const COMFYUI_IMAGE_TEMPLATE_NAME = 'flux2-klein-t2i';
+/** S9-A1：带参考图的 Klein 变体（ReferenceLatent；跨镜一致性用） */
+export const COMFYUI_IMAGE_REF_TEMPLATE_NAME = 'flux2-klein-t2i-ref';
 
 export interface LoadedTemplate {
   /** 模板名（不含扩展名）：内置的用内置名，用户的用文件名 —— `COMFYUI_TEMPLATE` 按它匹配 */
@@ -136,6 +140,13 @@ export const BUILTIN_TEMPLATES: readonly LoadedTemplate[] = [
     template: FLUX2_KLEIN_T2I_TEMPLATE,
     source: `内置 ${COMFYUI_IMAGE_TEMPLATE_NAME}`,
     declaration: FLUX2_KLEIN_T2I_DECLARATION,
+  },
+  {
+    // S9-A1：参考图变体（跨镜一致性）；不设为任何 default，只在"t2i + 带参考"时被优先挑中
+    name: COMFYUI_IMAGE_REF_TEMPLATE_NAME,
+    template: FLUX2_KLEIN_T2I_REF_TEMPLATE,
+    source: `内置 ${COMFYUI_IMAGE_REF_TEMPLATE_NAME}`,
+    declaration: FLUX2_KLEIN_T2I_REF_DECLARATION,
   },
 ];
 
