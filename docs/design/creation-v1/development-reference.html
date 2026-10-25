@@ -25,7 +25,7 @@
   <div class="nav-footer"><span class="badge">离线设计演示</span><p>示例素材来自原设计包。<br>所有交互均不提交生成任务。</p><a href="../../PLAN.md#handoff-audit-status">进度与实测 → PLAN</a></div>
 </aside>
 <div class="main-shell">
-  <header class="topbar"><div><span class="eyebrow">DESIGN REFERENCE / 2026.10.25</span><p>依据现有资料整理 · 审计基线 45387b1</p></div><div class="top-actions"><button id="annotations-toggle" aria-pressed="true">隐藏开发注释</button><button id="print">打印当前页</button></div></header>
+  <header class="topbar"><div><span class="eyebrow">DESIGN REFERENCE / 2026.10.25</span><p>本日 REA 页面复核 · 业务基线 3314404 · 多素材 / 双入口增补</p></div><div class="top-actions"><button id="annotations-toggle" aria-pressed="true">隐藏开发注释</button><button id="print">打印当前页</button></div></header>
   <div class="document-heading"><div><p id="page-kicker" class="eyebrow">创作闭环</p><h1 id="page-title">从“能出片”走向“能持续创作”</h1><p id="page-summary">把界面、能力与验收放在一起看。点击左侧页面，查看目标交互与依据。</p></div><span id="page-tag" class="badge gold">证据快照</span></div>
   <div class="body-grid">
   <main id="workspace" tabindex="-1">
@@ -45,23 +45,30 @@
     <section id="create" class="page" hidden aria-label="创作入口设计">
       <div class="mock-caption"><span>目标交互示意</span><span>演示操作 · 不调用模型</span></div>
       <div class="creation-stage">
-        <p class="eyebrow">灯具品牌 / 蓝调客厅</p><h2>把一份剧本，变成一支片子。</h2><p class="muted">先确定画面与参考，再确认生成计划。</p>
-        <div class="composer"><div class="segmented" aria-label="创作类型"><button data-mode="script" aria-pressed="true">剧本成片</button><button data-mode="image" aria-pressed="false">图片</button><button data-mode="video" aria-pressed="false">视频</button></div><div class="reference-line"><img src="scene.png" alt="示例客厅参考"><div><strong>客厅空间参考</strong><small id="reference-role">参考用途在展开前确认</small></div><button id="reference-toggle" aria-pressed="true">移除参考</button></div><label class="sr-only" for="prompt">创作描述</label><textarea id="prompt" rows="4">一支蓝调客厅灯具短片：全景建立空间，镜头靠近环形灯，最后落到温暖的沙发与阅读角。共三镜，保持灯具造型和空间布局一致。</textarea><div class="parameter-row"><label>画幅<select id="aspect"><option>16:9</option><option>9:16</option><option>1:1</option></select></label><label>档位<select><option>480p</option><option>720p</option></select></label><label id="duration-control">每镜<select><option>2 秒</option><option>5 秒</option></select></label><span class="muted">费用待核算</span><button id="create-next" class="primary">查看分镜方案</button></div><p class="inline-note" id="create-note">规划会调用文本模型；确认并启动后才提交媒体生成。</p></div>
+        <div class="entry-switch" aria-label="创作入口"><button data-entry="create" aria-pressed="true">对话</button><button data-entry="canvas" aria-pressed="false">画布</button></div>
+        <p class="eyebrow">灯具品牌 / 蓝调客厅 · 同一份创作</p><h2>把想法说清楚，再把画面摆出来。</h2><p class="muted">对话梳理剧本，画布安排素材。切换入口保留文字与参考。</p>
+        <details class="conversation-example"><summary>查看对话布局示意</summary><p class="chat-user">用这组灯具与空间参考，规划三镜短片。</p><div class="chat-assistant"><strong>Astrmira · 方案示意</strong><p>空间全景 → 灯具细节 → 阅读角。先核对每份参考的用途，再确认分镜；应用方案只写草稿。</p><button data-entry="canvas">去画布整理素材</button></div></details>
+        <div class="composer"><div class="segmented" aria-label="创作类型"><button data-mode="script" aria-pressed="true">剧本成片</button><button data-mode="image" aria-pressed="false">图片</button><button data-mode="video" aria-pressed="false">视频</button></div>
+          <div class="reference-controls"><label>参考方式<select id="reference-mode"><option value="single">单图参考</option><option value="frames">首尾帧</option><option value="video">视频参考</option><option value="multi">多图 / 图视频混合 · 规划</option></select></label><button id="reference-picker" aria-expanded="false">＋ 添加示例素材</button></div>
+          <div id="reference-options" class="reference-options" hidden><button data-add-ref="space">空间图片</button><button data-add-ref="lamp">灯具图片</button><button data-add-ref="style">光线图片</button><button data-add-ref="motion">运镜视频占位</button></div>
+          <div id="reference-tray" class="reference-tray" aria-label="已添加的参考素材"></div><p id="reference-status" class="reference-status" role="status"></p>
+          <div class="reference-cases" aria-label="布局案例"><span>查看状态</span><button data-ref-case="empty">空态</button><button data-ref-case="single">单图</button><button data-ref-case="multi">三张图片</button><button data-ref-case="mixed">图片＋视频</button><button data-ref-case="frames">首尾帧</button></div>
+          <label class="sr-only" for="prompt">创作描述</label><textarea id="prompt" rows="4">一支蓝调客厅灯具短片：全景建立空间，镜头靠近环形灯，最后落到温暖的沙发与阅读角。共三镜，保持灯具造型和空间布局一致。</textarea><div class="parameter-row"><label>画幅<select id="aspect"><option>16:9</option><option>9:16</option><option>1:1</option></select></label><label>档位<select><option>480p</option><option>720p</option></select></label><label id="duration-control">每镜<select><option>2 秒</option><option>5 秒</option></select></label><span class="muted">费用待核算</span><button id="create-next" class="primary">查看分镜方案</button></div><p class="inline-note" id="create-note">规划会调用文本模型；确认并启动后才提交媒体生成。所有卡片仅为布局示例。</p></div>
         <div class="start-prompts"><button data-prompt="product">产品展示</button><button data-prompt="story">故事短片</button><button data-prompt="space">空间氛围</button></div>
       </div>
       <div class="implementation-note"><strong>实现关注点</strong><p>提示词、参考用途与参数在同一处完成；切换模式保留输入。模型无法消费的参考组合明确提示，不能静默舍弃。</p></div>
     </section>
 
     <section id="canvas" class="page" hidden aria-label="媒体画布设计">
-      <div class="mock-caption"><span>目标交互示意</span><span>点击节点切换锚定面板</span></div>
-      <div class="canvas-stage"><div class="canvas-top"><strong>蓝调客厅 / 创作画布</strong><span>示例文档</span></div><div class="canvas-flow">
+      <div class="mock-caption"><span>可拖动交互示意</span><span>拖动媒体卡 · 白线实时跟随 · 方向键微调</span></div>
+      <div class="entry-switch" aria-label="创作入口"><button data-entry="create" aria-pressed="false">对话</button><button data-entry="canvas" aria-pressed="true">画布</button></div><p id="shared-context" class="shared-context"></p>
+      <div class="canvas-stage"><div class="canvas-top"><strong>蓝调客厅 / 创作画布</strong><div class="canvas-controls"><button id="canvas-zoom-out" aria-label="缩小画布">−</button><span id="canvas-zoom-label">100%</span><button id="canvas-zoom-in" aria-label="放大画布">＋</button><button id="canvas-reset">复位</button></div></div><div class="canvas-viewport" tabindex="0" aria-label="画布示意，可滚动查看；选中卡片后用方向键移动"><div class="canvas-sizer"><div class="canvas-flow">
+        <svg id="reference-wires" aria-label="引用关系"><path data-wire="source" tabindex="0" role="button" aria-label="客厅参考到首帧：已绑定的图片引用"><title>客厅参考 → 首帧 · 图片引用</title></path><path data-wire="plan" class="planned" tabindex="0" role="button" aria-label="首帧到视频：计划依赖，尚未生成"><title>首帧 → 视频 · 计划依赖，尚未生成</title></path></svg>
         <div class="node-column"><span class="flow-label">输入素材</span><button class="media-node" data-node="reference"><img src="scene.png" alt="画布中的客厅参考素材"><span><strong>客厅参考</strong><small>上传素材 · 图片</small></span></button></div>
-        <span class="flow-arrow" aria-label="作为参考">→</span>
         <div class="node-column"><span class="flow-label">首帧定妆</span><button class="media-node selected" data-node="image" aria-pressed="true"><img class="image-close" src="scene.png" alt="首帧图片位置示意，使用同一原创素材"><span><strong>镜头 01 · 空间全景</strong><small>示例版本 v1 · 已选中</small></span></button><div id="node-composer" class="node-composer"><div class="mini-tools"><button data-action="derive">作为参考继续</button><button data-go="edit">图片编辑</button></div><p id="node-context">正在编辑：镜头 01 · 首帧草稿</p><label class="sr-only" for="node-prompt">节点提示词</label><textarea id="node-prompt" rows="3">保持环形灯与房间布局，蓝调时刻的柔和暖光。</textarea><div class="node-parameters"><span>图片 · 单参考</span><button data-action="draft" class="primary">查看提交确认</button></div></div></div>
-        <span class="flow-arrow" aria-label="计划依赖">⇢</span>
         <div class="node-column"><span class="flow-label">视频镜头</span><button class="media-node" data-node="video"><div class="video-poster"><img src="scene.png" alt="视频镜头封面示意"><span class="poster-label">视频占位</span></div><span><strong>镜头 01 · 缓慢推进</strong><small>计划依赖 · 尚未生成</small></span></button></div>
-      </div><div class="canvas-bottom"><span>实线：实际来源　/　虚线：计划依赖</span><span>选择不触发生成</span></div></div>
-      <div class="implementation-note"><strong>版本与派生</strong><p>在原节点再生成：追加版本并保留上一成功预览。作为参考继续：建立相邻草稿，引用固定到所见版本，等待显式提交。</p></div>
+      </div></div></div><div class="canvas-bottom"><span>细白实线：已绑定来源　/　灰白虚线：计划依赖</span><span>节点拖动、缩放与切换均不触发生成</span></div><p id="wire-detail" class="wire-detail" role="status">选中连线查看来源与用途；连线本身不证明模型已消费。</p></div>
+      <div class="implementation-note"><strong>轻连线，清楚的关系</strong><p>默认无箭头、无常驻标签；悬停或键盘聚焦才强调关系。当前演示实时更新连线端点，支持缩放、滚动和卡片拖动；生产实现复用 XYFlow，保存、撤销和循环依赖保护另行验收。</p></div>
     </section>
 
     <section id="edit" class="page" hidden aria-label="图片编辑设计">

@@ -15,12 +15,12 @@ const pages = {
   },
   create: {
     title: '输入、参考、参数，一次说清楚', kicker: '01 / 创作入口', tag: '目标交互',
-    summary: '在提交前让用户知道每份素材的用途，以及哪一步会开始消耗模型资源。',
-    image: '02-home-video.jpg', caption: '即梦视频创作态 · 2026-10-20；首页与 Agent 态必须分别观察。',
-    observation: '视频创作态包含模型、参考方式和参数行。不能从 Agent 首页截图推断其他模式没有参数。',
-    current: '首页、参数与参考已有实现；分镜二次规划丢失 480p 约束、用户参考未完整消费等问题见 F3/F8。',
-    rules: ['切换图片/视频/剧本保留草稿，不默默丢素材。', '参数随能力显示；图片态不显示视频时长。', '创建 planned 会话与显式 start 分开；规划费用如实说明。'],
-    checks: ['模式切换后提示词与参考仍在。', '上传参考在实际生成请求中得到消费或明确拒绝。', '创建但未 start 时，无 provider 提交。'],
+    summary: '同一份创作有对话与画布两个入口；多素材先整理，再按模型能力确认用途。',
+    image: '05-reference-modes.jpg', caption: '即梦参考模式菜单 · 2026-10-20；本日 REA 补看首页与画布，原始截图留在本地。',
+    observation: '本日 REA 确认全能参考、首尾帧等菜单；Seedance 2.0 mini 输入提示最多 12 份素材（该模式限定，不照搬为我们的限额）。首页另见生成/画布入口，画布多素材汇入结果节点。',
+    current: '画布图片派生支持单图；视频协议有首尾帧或单视频，二者非混合；本机 ComfyUI 未证明多图/视频混合。分镜接受参考清单不等于实际消费，F3 仍待修。',
+    rules: ['对话/画布切换保留当前项目、文字、参考与用途。', '参考条提供缩略图、类型、用途、排序、移除与 @ 提及。', '不兼容的参考留在草稿并阻止提交，不静默挑第一张。'],
+    checks: ['空态/单图/多图/图视频混合及首尾帧分别验收。', '切换后 ID、顺序、用途和提示词保持一致；移除不删除素材。', '提交载荷与模板消费逐项核对；没有能力就拒绝。'],
     decision: '沿用 D69：Enter 换行、Ctrl/Cmd+Enter 提交；此参照没有绑定真实提交快捷键。N9 未决定前不默认启用主体锚点。',
   },
   canvas: {
@@ -29,9 +29,9 @@ const pages = {
     image: '14-canvas-node-panel.jpg', caption: '即梦节点面板 · 2026-10-20；锚定位置来自实际观察。',
     observation: '选中节点的输入面板贴近节点，常用参数紧凑排列，节点上方提供上下文操作。',
     current: '新画布、引用连线、检查器、版本及图片派生已有实现；助手跨画布历史覆盖需修。',
-    rules: ['输入面板随所选节点定位，避开视口边缘。', '作为参考继续创建草稿，原节点再生成追加版本。', '计划依赖与已消费来源区分；不把拖动当执行。'],
-    checks: ['节点 A→B→A 的草稿与助手记录不串。', '切换预览版本后，引用与下载指向所见版本。', '生成中/失败时仍能查看上一次成功产物。'],
-    decision: 'D58 / D63 / D70 / D73。此处仅演示选择与锚定；平移、连线编辑、撤销和保存须在真实应用验收。',
+    rules: ['引用使用细白曲线，默认不显示箭头和用途标签。', '拖动、缩放与滚动时端点随卡片移动；来源和目标均可交互。', 'D73 保留：计划依赖为灰白虚线；已绑定来源也不等于已执行。'],
+    checks: ['拖动前后端点贴合卡片，缩放后线宽仍清楚。', 'A→B→A 的草稿不串，返回对话后参考与文字保留。', '生产中撤销、保存重载、删边语义与循环保护继续通过。'],
+    decision: 'D58 / D63 / D70 / D73 / D76。本页只演示布局状态，不写 CanvasDoc；生产连线样式复用 XYFlow。',
   },
   edit: {
     title: '把“改图”拆成明确的编辑操作', kicker: '03 / 像素级图片编辑', tag: '新能力规划',
@@ -96,6 +96,7 @@ function showPage(id, updateHash = true) {
   listInto('#rules', page.rules); listInto('#checks', page.checks);
   if (updateHash) history.replaceState(null, '', `#${activePage}`);
   document.title = `Astrmira · ${page.title}`;
+  if (activePage === 'canvas') { syncContext(); requestAnimationFrame(drawWires); }
 }
 function notice(text) {
   $('#notice').textContent = text; $('#notice').hidden = false;
@@ -146,13 +147,14 @@ function updateEditOption() {
 }
 document.addEventListener('click', event => {
   const target=event.target.closest('button,a'); if(!target) return;
+  if(target.dataset.entry){showPage(target.dataset.entry);$('#workspace').focus({preventScroll:true});return;}
   const id=target.dataset.page ?? target.dataset.go;
   if(id){event.preventDefault();showPage(id);$('#workspace').focus({preventScroll:true});return;}
   if(target.dataset.mode){
     const mode=target.dataset.mode; $$('[data-mode]').forEach(button=>button.setAttribute('aria-pressed',String(button===target)));
     $('#duration-control').hidden=mode==='image'; $('#create-next').textContent=mode==='script'?'查看分镜方案':'查看提交前确认'; $('#create-next').dataset.mode=mode;
-    $('#reference-role').textContent=mode==='image'?'图片参考 · 单参考示意':mode==='video'?'首帧参考 · 兼容性需校验':'参考用途在展开前确认';
     $('#create-note').textContent=mode==='script'?'规划会调用文本模型；确认并启动后才提交媒体生成。':'模型能力、输入用途与费用在提交前确认；本页仅演示。';
+    validateReferences();
   }
   if(target.dataset.prompt){const text={product:'三镜灯具产品短片：展示客厅空间、环形灯细节与暖光阅读角。保持产品造型一致。',story:'用三个镜头讲述从忙碌归家到安静阅读的小故事，灯光是连接三个画面的线索。',space:'呈现客厅从蓝调时刻到夜晚的光线变化，保留房间布局和环形灯造型。'};$('#prompt').value=text[target.dataset.prompt];}
   if(target.dataset.node){
@@ -163,13 +165,13 @@ document.addEventListener('click', event => {
     $('#node-prompt').value=nodeDrafts[activeNode];$('#node-prompt').readOnly=activeNode==='reference';
     $('.node-parameters>span').textContent=activeNode==='video'?'视频 · 2 秒 · 首帧参考':activeNode==='image'?'图片 · 单参考':'素材仅作输入';
     $('[data-action="draft"]').disabled=activeNode==='reference';
+    requestAnimationFrame(drawWires);
   }
   if(target.dataset.tool)setTool(target.dataset.tool);
   if(target.dataset.preview)openDialog(target.dataset.preview,'这是同一原创素材的布局占位，不是该镜头真实生成结果。','scene.png');
   if(target.dataset.reroll){const anchor=target.dataset.reroll==='镜头 01';openDialog(`重出 ${target.dataset.reroll}`,'真实实现将提交一个新任务并保留旧版本。'+(anchor?'该镜头可能是定妆锚点，后镜仍引用旧版本；N10 未拍板前不能自动重出后继。':'只作用于当前镜头，不自动重出其他成功镜头。'),null,{label:'查看重出提示（演示）',run:()=>notice('已展示显式重出流程；没有提交任务，也没有生成新图片。')});}
   if(target.dataset.action){const content={derive:['作为参考继续','目标行为：从当前所见产物建立相邻草稿并固定引用；不会自动提交生成。'],draft:['提交前确认','核对当前提示词、参考用途、模型能力和费用后，才允许显式提交。本页只展示这一确认位置。'],package:['交付包说明','生产交付应包含成片、必要的源素材清单和来源信息。画布备份恢复还须修复审计 F5；本页未提供模拟下载。']};const [title,text]=content[target.dataset.action];openDialog(title,text);}
 });
-$('#reference-toggle').addEventListener('click',()=>{const enabled=$('#reference-toggle').getAttribute('aria-pressed')!=='true';$('#reference-toggle').setAttribute('aria-pressed',String(enabled));$('#reference-toggle').textContent=enabled?'移除参考':'恢复示例参考';$('.reference-line>img').hidden=!enabled;$('.reference-line strong').textContent=enabled?'客厅空间参考':'未选择参考图';});
 $('#create-next').addEventListener('click',()=>{if(($('#create-next').dataset.mode??'script')==='script'){showPage('confirm');runState('ready');$('#workspace').focus({preventScroll:true});}else openDialog('提交前核对','目标实现需要核对参考用途、模型能力、参数和费用。此设计页不会调用生成接口。');});
 $('#show-mask').addEventListener('click',()=>{$('.mask').removeAttribute('hidden');});$('#clear-mask').addEventListener('click',()=>{$('.mask').setAttribute('hidden','');});
 $('#edit-option').addEventListener('change',updateEditOption);
@@ -183,4 +185,73 @@ $('#detail-dialog').addEventListener('close',()=>{if(dialogReturn?.isConnected)d
 $('#annotations-toggle').addEventListener('click',()=>{const show=$('#inspector').hidden;$('#inspector').hidden=!show;$('.body-grid').classList.toggle('without-notes',!show);$('#annotations-toggle').setAttribute('aria-pressed',String(show));$('#annotations-toggle').textContent=show?'隐藏开发注释':'显示开发注释';});
 $('#print').addEventListener('click',()=>window.print());
 window.addEventListener('hashchange',()=>showPage(location.hash.slice(1),false));
+const referenceCatalog = {
+  space:{name:'空间图片',kind:'image',mention:'图片1',crop:'center'},
+  lamp:{name:'灯具图片',kind:'image',mention:'图片2',crop:'top'},
+  style:{name:'光线图片',kind:'image',mention:'图片3',crop:'bottom'},
+  motion:{name:'运镜视频',kind:'video',mention:'视频1',crop:'center'},
+};
+let referenceDraft = [{id:'space',role:'图片参考'}];
+function element(tag,text,className){const el=document.createElement(tag);if(text)el.textContent=text;if(className)el.className=className;return el;}
+function renderReferences(){
+  const cards=referenceDraft.map((ref,index)=>{
+    const asset=referenceCatalog[ref.id], card=element('article',null,'reference-card');card.dataset.refId=ref.id;
+    const preview=element('div',null,'reference-thumb'),img=element('img');img.src='scene.png';img.alt=`${asset.name}：同一原创图片的布局示意`;img.style.objectPosition=asset.crop;preview.append(img,element('span',asset.kind==='video'?'视频占位 · 无媒体':`图片 ${index+1}`));card.append(preview);
+    card.append(element('strong',asset.name));const label=element('label','用途');const select=element('select');select.setAttribute('aria-label',`${asset.name}用途`);
+    const roles=asset.kind==='video'?['视频参考','运镜（规划）']:['图片参考','首帧','尾帧','主体（规划）','场景（规划）','风格（规划）'];
+    roles.forEach(role=>{const option=element('option',role);option.value=role;select.append(option);});select.value=ref.role;select.addEventListener('change',()=>{ref.role=select.value;validateReferences();});label.append(select);card.append(label);
+    const actions=element('div',null,'reference-card-actions');for(const [action,text,title]of [['mention','@','插入提及'],['up','←','前移'],['down','→','后移'],['remove','×','移除引用']]){
+      const button=element('button',text);button.type='button';button.dataset.refAction=action;button.dataset.ref=ref.id;button.setAttribute('aria-label',`${title}${asset.name}`);button.disabled=action==='up'&&index===0||action==='down'&&index===referenceDraft.length-1;actions.append(button);
+    }card.append(actions);return card;
+  });
+  $('#reference-tray').replaceChildren(...(cards.length?cards:[element('p','添加图片或视频，先保留素材，再指定本次用途。','reference-empty')]));
+  $$('[data-add-ref]').forEach(button=>button.disabled=referenceDraft.some(ref=>ref.id===button.dataset.addRef));validateReferences();
+}
+function validateReferences(){
+  const mode=$('#reference-mode').value,kind=$('#create-next').dataset.mode??'script',count=referenceDraft.length;
+  let message='',blocked=false;
+  if(!count){blocked=mode!=='single';message=blocked?'当前参考方式需要素材，请添加参考或切回单图/无参考草稿。':'尚未添加参考；可先整理文字草稿。';}
+  else if(mode==='multi'||referenceDraft.some(ref=>ref.role.includes('规划'))){blocked=true;message=`已保留 ${count} 份素材。多图语义 / 图视频混合尚未接通，当前不能生成；用途待 N9 / N12 与真实模板验证。`;}
+  else if(mode==='single'&&(count>1||referenceDraft[0].role!=='图片参考'||referenceCatalog[referenceDraft[0].id].kind!=='image')){blocked=true;message='单图参考需一张图片，且用途为“图片参考”。其余素材已保留，请调整参考方式或移除引用。';}
+  else if(mode==='frames'){
+    blocked=kind!=='video'||count!==2||!referenceDraft.some(ref=>ref.role==='首帧')||!referenceDraft.some(ref=>ref.role==='尾帧');
+    message=blocked?'首尾帧需要视频创作、两张图片，并分别指定首帧和尾帧；素材不会自动改用途。':'首尾帧布局就绪。协议有此通道；实际可提交仍取决于所选实例模板，本页不证明本机支持。';
+  }else if(mode==='video'){blocked=true;message='单视频参考有协议通道，本机当前模板未验通。视频已保留，不把抽帧或文字描述冒充原生视频条件。';}
+  else message='单图布局就绪。生产仍需修复剧本参考传递并校验模板；本页只查看方案，不提交任务。';
+  $('#reference-status').textContent=message;$('#reference-status').classList.toggle('blocked',blocked);$('#create-next').disabled=blocked;syncContext();
+}
+function syncContext(){ $('#shared-context').textContent=`与对话共用：蓝调客厅 · ${referenceDraft.length} 份参考 · 当前画布为固定关系示例，切换不自动建节点或提交任务。`; }
+$('#reference-picker').addEventListener('click',()=>{const open=$('#reference-options').hidden;$('#reference-options').hidden=!open;$('#reference-picker').setAttribute('aria-expanded',String(open));});
+$('#reference-mode').addEventListener('change',validateReferences);
+document.addEventListener('click',event=>{
+  const button=event.target.closest('button');if(!button)return;
+  if(button.dataset.addRef){const id=button.dataset.addRef;if(!referenceDraft.some(ref=>ref.id===id))referenceDraft.push({id,role:referenceCatalog[id].kind==='video'?'视频参考':'图片参考'});renderReferences();}
+  if(button.dataset.refAction){const i=referenceDraft.findIndex(ref=>ref.id===button.dataset.ref);if(i<0)return;const action=button.dataset.refAction;
+    if(action==='mention'){const prompt=$('#prompt');prompt.setRangeText(`@${referenceCatalog[button.dataset.ref].mention} `,prompt.selectionStart,prompt.selectionEnd,'end');prompt.focus();return;}
+    if(action==='remove')referenceDraft.splice(i,1);else{const next=action==='up'?i-1:i+1;if(next>=0&&next<referenceDraft.length)[referenceDraft[i],referenceDraft[next]]=[referenceDraft[next],referenceDraft[i]];}renderReferences();$('#reference-picker').focus({preventScroll:true});
+  }
+  if(button.dataset.refCase){const c=button.dataset.refCase;const ids={empty:[],single:['space'],multi:['space','lamp','style'],mixed:['space','lamp','motion'],frames:['space','lamp']}[c];referenceDraft=ids.map((id,i)=>({id,role:c==='frames'?(i?'尾帧':'首帧'):referenceCatalog[id].kind==='video'?'视频参考':'图片参考'}));$('#reference-mode').value=c==='multi'||c==='mixed'?'multi':c==='frames'?'frames':'single';if(c==='frames')$('[data-mode="video"]').click();renderReferences();}
+});
+const initialPositions={reference:[30,90],image:[285,130],video:[550,230]};
+const positions=Object.fromEntries(Object.entries(initialPositions).map(([key,xy])=>[key,[...xy]]));
+let zoom=1,drag=null,suppressNodeClick=false;
+const flow=$('.canvas-flow');
+function placeNodes(){for(const card of $$('.media-node')){const col=card.closest('.node-column'),[x,y]=positions[card.dataset.node];col.style.left=`${x}px`;col.style.top=`${y}px`;}drawWires();}
+function drawWires(){
+  if(!flow.getClientRects().length)return;const origin=flow.getBoundingClientRect();
+  const point=(id,right)=>{const box=$(`[data-node="${id}"]`).getBoundingClientRect();return[(box.left-origin.left+(right?box.width:0))/zoom,(box.top-origin.top+box.height/2)/zoom];};
+  for(const [wire,a,b] of [['source','reference','image'],['plan','image','video']]){const [x1,y1]=point(a,true),[x2,y2]=point(b,false),curve=Math.max(24,Math.abs(x2-x1)*.45);$(`[data-wire="${wire}"]`).setAttribute('d',`M ${x1} ${y1} C ${x1+curve} ${y1}, ${x2-curve} ${y2}, ${x2} ${y2}`);}
+}
+function setZoom(value){zoom=Math.max(.6,Math.min(1.3,value));flow.style.transform=`scale(${zoom})`;$('.canvas-sizer').style.width=`${800*zoom}px`;$('.canvas-sizer').style.height=`${820*zoom}px`;$('#canvas-zoom-label').textContent=`${Math.round(zoom*100)}%`;drawWires();}
+flow.addEventListener('pointerdown',event=>{const card=event.target.closest('.media-node');if(!card||event.button!==0)return;event.preventDefault();const id=card.dataset.node;drag={id,card,start:[event.clientX,event.clientY],origin:[...positions[id]],moved:false};card.setPointerCapture(event.pointerId);});
+flow.addEventListener('pointermove',event=>{if(!drag)return;const dx=(event.clientX-drag.start[0])/zoom,dy=(event.clientY-drag.start[1])/zoom;if(Math.abs(dx)+Math.abs(dy)>4)drag.moved=true;positions[drag.id]=[Math.max(8,Math.min(588,drag.origin[0]+dx)),Math.max(25,Math.min(360,drag.origin[1]+dy))];placeNodes();});
+function finishDrag(event){if(!drag)return;suppressNodeClick=drag.moved;if(drag.card.hasPointerCapture(event.pointerId))drag.card.releasePointerCapture(event.pointerId);drag=null;setTimeout(()=>{suppressNodeClick=false;},0);}
+flow.addEventListener('pointerup',finishDrag);flow.addEventListener('pointercancel',finishDrag);
+flow.addEventListener('click',event=>{if(suppressNodeClick){event.preventDefault();event.stopPropagation();}},true);
+flow.addEventListener('keydown',event=>{const card=event.target.closest('.media-node'),delta={ArrowLeft:[-8,0],ArrowRight:[8,0],ArrowUp:[0,-8],ArrowDown:[0,8]}[event.key];if(!card||!delta)return;event.preventDefault();const p=positions[card.dataset.node];p[0]=Math.max(8,Math.min(588,p[0]+delta[0]));p[1]=Math.max(25,Math.min(360,p[1]+delta[1]));placeNodes();});
+$('#canvas-zoom-out').addEventListener('click',()=>setZoom(zoom-.1));$('#canvas-zoom-in').addEventListener('click',()=>setZoom(zoom+.1));
+$('#canvas-reset').addEventListener('click',()=>{for(const id of Object.keys(positions))positions[id]=[...initialPositions[id]];setZoom(1);placeNodes();});
+for(const wire of $$('[data-wire]')){const describe=()=>{$('#wire-detail').textContent=wire.getAttribute('aria-label')+'。示例关系，不触发执行。';};wire.addEventListener('pointerenter',describe);wire.addEventListener('focus',describe);wire.addEventListener('click',describe);wire.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();describe();}});}
+new ResizeObserver(()=>requestAnimationFrame(drawWires)).observe(flow);
+renderReferences();placeNodes();setZoom(1);
 showPage(location.hash.slice(1)||'overview',false);

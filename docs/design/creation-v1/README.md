@@ -8,6 +8,8 @@
 
 保留同目录 `development-reference.css`、`development-reference.js`、`scene.png` 及相邻 `reference-jimeng-2026-10-20` 截图目录。可直接打开 HTML，无安装或后端要求。全部操作均是离线示意，不调用接口或保存输入；未来能力与待拍板方案有明确标记。原始观察与本仓当前代码不混为一谈；实施进度和此片验收见 [PLAN §5](../../PLAN.md#ui-development-reference-status)。
 
+多素材与双入口参照：创作页可切空态、单图、三图、图片＋视频和首尾帧；添加/排序/移除、用途和 @ 文本提及均为内存示意，不兼容时会阻止进入下一步。顶部「对话 / 画布」切换保留草稿；画布媒体卡可拖动或用方向键移动，细白曲线随端点变化，支持缩放与滚动，计划依赖仍为虚线。三张图复用同一原创素材，视频是无媒体占位；不会伪装为多参考真实推理。验收与在线观察见 [PLAN §5](../../PLAN.md#multi-reference-reference-status)。
+
 ### 历史 V1 原型
 
 直接在浏览器打开 [prototype.html](prototype.html)，无需应用后端、依赖安装或登录；也可以用任意静态文件服务器打开本目录。保留同目录的 CSS、JS 和 PNG。GitHub 文件页不会执行 HTML，下载本目录后用浏览器打开即可。
