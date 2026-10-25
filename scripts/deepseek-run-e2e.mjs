@@ -12,6 +12,7 @@
  */
 const BASE = process.env.BASE ?? 'http://127.0.0.1:3000';
 const KEY = process.env.DEEPSEEK_API_KEY ?? '';
+const PROVIDER = process.env.PROVIDER ?? 'fixture-local'; // host-comfyui = 真模型（本地 ComfyUI）
 const INSTRUCTION =
   process.env.PROMPT ??
   '雨夜霓虹小巷里的橘猫：从巷口推进到猫抬头，最后定格霓虹倒影。共 3 个镜头、每镜约 3 秒、16:9 电影感。';
@@ -85,17 +86,17 @@ for (const shot of expanded.plan.shots) {
 const created = await call('/api/agent/runs', {
   title: `DeepSeek 实测 · ${storyboard.plan.title}`.slice(0, 120),
   mode: 'first-frame-confirm',
-  provider: 'fixture-local',
+  provider: PROVIDER,
   steps,
 });
 await fetch(`${BASE}/api/agent/runs/${created.run.id}/start`, { method: 'POST' });
-console.log(`[3] 会话已创建并启动（${created.run.steps.length} 步 · 首帧确认档）`);
+console.log(`[3] 会话已创建并启动（${created.run.steps.length} 步 · 首帧确认档 · 引擎 ${PROVIDER}）`);
 
-let run = await pollRun(created.run.id, 180_000);
+let run = await pollRun(created.run.id, PROVIDER === 'fixture-local' ? 180_000 : 2_400_000);
 if (run.state === 'awaiting-confirmation') {
   console.log(`[4] 首帧确认暂停（图片步 ${run.steps.filter((x) => x.kind === 'image').length} 个已完成）→ 继续`);
   await fetch(`${BASE}/api/agent/runs/${created.run.id}/confirm`, { method: 'POST' });
-  run = await pollRun(created.run.id, 180_000);
+  run = await pollRun(created.run.id, PROVIDER === 'fixture-local' ? 180_000 : 2_400_000);
 }
 
 if (run.state !== 'succeeded') {

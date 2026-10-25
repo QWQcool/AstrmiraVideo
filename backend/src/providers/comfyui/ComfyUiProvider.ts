@@ -8,6 +8,8 @@ import type {
   VideoGenerateRequest,
   VideoProvider,
 } from '@astrmira/shared';
+import type { TaskVideoResolution } from '../../store/assets.js';
+import { parseTaskRef } from '@astrmira/shared';
 import {
   buildComfyWorkflow,
   comfyCapabilities,
@@ -106,6 +108,8 @@ export interface ComfyUiProviderOptions {
   outputPrefix?: string;
   /** 资产 id → 可下载地址（i2v 的首帧要先下载再上传给 ComfyUI） */
   resolveAssetUrl?: (assetId: string) => Promise<string | null>;
+  /** S9 修正：`task:<taskId>` 引用 → 上游可访问地址（t2i 任务产物作 i2v 首帧；V2.6 通道补 ComfyUI 侧） */
+  resolveTaskVideoUrl?: (taskId: string) => Promise<TaskVideoResolution>;
   /** `/object_info` 的缓存时长（测试可设 0 强制每次重探） */
   inventoryTtlMs?: number;
 }
@@ -176,6 +180,7 @@ export class ComfyUiProvider implements VideoProvider {
   private readonly tuning: ComfyTuning;
   private readonly outputPrefix: string;
   private readonly resolveAssetUrl?: (assetId: string) => Promise<string | null>;
+  private readonly resolveTaskVideoUrl?: (taskId: string) => Promise<TaskVideoResolution>;
   private readonly inventoryTtlMs: number;
 
   /** 每份模板各自挑到的模型与判定出的能力位（V2.40：清单式） */
@@ -200,6 +205,9 @@ export class ComfyUiProvider implements VideoProvider {
     this.outputPrefix = options.outputPrefix ?? `${COMFY_OUTPUT_SUBDIR}/comfy`;
     this.inventoryTtlMs = options.inventoryTtlMs ?? DEFAULT_INVENTORY_TTL_MS;
     if (options.resolveAssetUrl !== undefined) this.resolveAssetUrl = options.resolveAssetUrl;
+    if (options.resolveTaskVideoUrl !== undefined) {
+      this.resolveTaskVideoUrl = options.resolveTaskVideoUrl;
+    }
     if (options.template !== undefined) this.injectedTemplate = options.template;
     if (options.declaration !== undefined) this.injectedDeclaration = options.declaration;
   }
@@ -445,7 +453,27 @@ export class ComfyUiProvider implements VideoProvider {
     if (this.resolveAssetUrl === undefined) {
       throw new Error('i2v 需要解析首帧地址，但本 provider 没有拿到 resolveAssetUrl（装配问题）');
     }
-    const url = await this.resolveAssetUrl(assetId);
+    // S9 修正：`task:<taskId>` 引用（图片任务产物作首帧）走 V2.6 的 task 通道——
+    // 会话引擎的图片步产物就是 `task:<id>`，只查 assets 目录必然落空。
+    const taskRef = parseTaskRef(assetId);
+    let url: string | null = null;
+    if (taskRef !== null) {
+      if (this.resolveTaskVideoUrl === undefined) {
+        throw new Error('i2v 需要 task: 引用通道，但本 provider 没有拿到 resolveTaskVideoUrl（装配问题）');
+      }
+      const resolution = await this.resolveTaskVideoUrl(taskRef);
+      if (!resolution.ok) {
+        const REASONS: Record<Exclude<TaskVideoResolution, { ok: true }>['reason'], string> = {
+          not_found: '任务不存在',
+          no_output: '任务没有可用产物（或尚未成功）',
+          no_public_base: '服务未配置 PUBLIC_BASE_URL，无法给 ComfyUI 提供可下载地址',
+        };
+        throw new Error(`首帧引用的任务不可用：${taskRef}（${REASONS[resolution.reason]}）`);
+      }
+      url = resolution.url;
+    } else {
+      url = await this.resolveAssetUrl(assetId);
+    }
     if (url === null) throw new Error(`首帧资产不存在或不可读：${assetId}`);
 
     const media = await this.fetchImpl(url);

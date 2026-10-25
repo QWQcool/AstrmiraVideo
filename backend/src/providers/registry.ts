@@ -165,6 +165,8 @@ function createComfyProviderFor(id: string, ctx: ProviderResolutionContext): Vid
     ...(server.template === undefined ? {} : { templateName: server.template }),
     ...(server.tuning === undefined ? {} : { tuning: server.tuning }),
     ...(ctx.resolveAssetUrl === undefined ? {} : { resolveAssetUrl: ctx.resolveAssetUrl }),
+    // S9 修正：i2v 首帧引用 `task:<id>`（会话图片步产物）需要 task 通道——与云端 provider 对齐
+    ...(ctx.resolveTaskVideoUrl === undefined ? {} : { resolveTaskVideoUrl: ctx.resolveTaskVideoUrl }),
   });
 }
 

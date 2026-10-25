@@ -86,4 +86,36 @@ describe('createTaskVideoUrlResolver', () => {
     });
     await expect(resolve('task-ref-1')).resolves.toEqual({ ok: false, reason: 'no_public_base' });
   });
+
+  // S9 修正（真机全链路实测暴露）：t2i 任务的产物在 outputImageUrl——i2v 首帧引用图片任务必须可用
+  it('t2i 任务（只有 outputImageUrl）→ 返回图片地址，不判 no_output', async () => {
+    const imageRecord: TaskRecord = {
+      ...succeededRecord(),
+      outputVideoUrl: undefined,
+      outputImageUrl: '/media/28028f63.png',
+    };
+    const resolve = createTaskVideoUrlResolver({
+      store: makeStore(imageRecord),
+      publicBaseUrl: 'http://127.0.0.1:3100',
+    });
+    await expect(resolve('task-ref-1')).resolves.toEqual({
+      ok: true,
+      url: 'http://127.0.0.1:3100/media/28028f63.png',
+    });
+  });
+
+  it('视频与图片并存时优先视频（i2v 参考视频语义不变）', async () => {
+    const both: TaskRecord = {
+      ...succeededRecord('/media/clip.mp4'),
+      outputImageUrl: '/media/first-frame.png',
+    };
+    const resolve = createTaskVideoUrlResolver({
+      store: makeStore(both),
+      publicBaseUrl: 'http://127.0.0.1:3100',
+    });
+    await expect(resolve('task-ref-1')).resolves.toEqual({
+      ok: true,
+      url: 'http://127.0.0.1:3100/media/clip.mp4',
+    });
+  });
 });

@@ -117,12 +117,19 @@ export function createTaskVideoUrlResolver(
   return (taskId: string): Promise<TaskVideoResolution> => {
     const record = options.store.get(taskId);
     if (record === null) return Promise.resolve({ ok: false, reason: 'not_found' });
-    if (record.status !== 'succeeded' || record.outputVideoUrl === undefined || record.outputVideoUrl === '') {
+    if (record.status !== 'succeeded') {
+      return Promise.resolve({ ok: false, reason: 'no_output' });
+    }
+    // S9 修正（真机全链路实测暴露）：t2i 任务的产物是**图片**（outputImageUrl）——
+    // i2v 首帧引用一个图片任务完全合法；只认 outputVideoUrl 会把
+    // "图生视频接在文生图之后"的链路判成 no_output。
+    const output = record.outputVideoUrl ?? record.outputImageUrl;
+    if (output === undefined || output === '') {
       return Promise.resolve({ ok: false, reason: 'no_output' });
     }
     if (base === undefined || base === '') {
       return Promise.resolve({ ok: false, reason: 'no_public_base' });
     }
-    return Promise.resolve({ ok: true, url: `${base}${record.outputVideoUrl}` });
+    return Promise.resolve({ ok: true, url: `${base}${output}` });
   };
 }
