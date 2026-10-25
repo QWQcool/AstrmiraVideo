@@ -74,6 +74,15 @@ export function planCanvasLineage(doc: CanvasDoc, from: string, to: string): Can
   if (output.kind !== 'image' && output.kind !== 'video') {
     return { ok: false, problem: 'source-not-media' };
   }
+  // S9-A3：图片 → 图片 = **派生编辑**（以该图作参考继续出图；ReferenceLatent 通道）。
+  // 视频产物当图片参考没有通道，仍然拒绝。
+  if (target.type === 'image') {
+    if (output.kind !== 'image') return { ok: false, problem: 'source-not-media' };
+    if (target.data.draft.references.some((ref) => ref.role === 'reference-image')) {
+      return { ok: false, problem: 'role-taken' };
+    }
+    return { ok: true, role: 'reference-image', assetId: output.assetId, order: 0 };
+  }
   if (target.type !== 'video') return { ok: false, problem: 'target-not-video' };
 
   // 同一对节点：同一产物重复连接拒绝；换了可见版本允许再连一条（旧边仍固定原产物）

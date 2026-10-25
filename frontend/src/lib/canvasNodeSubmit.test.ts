@@ -312,3 +312,25 @@ describe('文档不变式（B3）', () => {
     expect(doc.edges).toEqual([]);
   });
 });
+
+describe('图片节点派生编辑请求（S9-A3 / V2.69）', () => {
+  it('image 节点带单张 reference-image → t2i + assets.firstFrameImage；其它角色仍 unsupported', () => {
+    const node = createCanvasNode({ id: 'img', type: 'image', x: 0, y: 0, now: 1 });
+    node.data.draft.references = [
+      { assetId: 'task:src-1', role: 'reference-image', order: 0 },
+      { assetId: 'task:x', role: 'first-frame', order: 0 },
+    ];
+    const mode = canvasDraftMode(node);
+    expect(mode.mode).toBe('t2i');
+    expect(mode.assets).toEqual({ firstFrameImage: 'task:src-1' });
+    expect(mode.unsupportedRoles).toEqual(['first-frame']);
+  });
+
+  it('image 节点无参考 → 纯 t2i 无 assets（原行为）', () => {
+    const node = createCanvasNode({ id: 'img2', type: 'image', x: 0, y: 0, now: 1 });
+    const mode = canvasDraftMode(node);
+    expect(mode.mode).toBe('t2i');
+    expect(mode.assets).toBeUndefined();
+    expect(mode.unsupportedRoles).toEqual([]);
+  });
+});

@@ -1709,6 +1709,15 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-25 · S9-A3：画布图片派生编辑（CONTRACT V2.69 / 打通 reference-image 生成语义）
+
+- **【切口（比预想小）】** `reference-image` 角色**自 V2.45 起就在枚举里**（UI 标签"参考图"也齐），但 image 分支声明"任何参考都不会被发送"。S9-A3 = 打通它的生成语义，不发明新角色。
+- **【契约】** CONTRACT 升 **V2.69**：§21-11 规则表增"图片 → 图片"行——下游 image、上游产物为图片 → `reference-image` 角色（**单参考**，已占用即拒 role-taken）；视频产物作图片参考仍 `source-not-media`；无新路由/错误码/字段。
+- **【实现】** ① `canvasLineage.planCanvasLineage`：image 目标分支（role=reference-image、单参考纪律；视频目标规则一字未动）；② `canvasDraftMode`：image 节点的单张 reference-image → mode t2i + `assets.firstFrameImage`（其余角色照旧 unsupported；多张时超额进 unsupported 如实禁提）；③ provider 侧零改动——S9-A1 的 ReferenceLatent 变体与挑选逻辑直接接住画布路径。
+- **【测试】** lineage +2（图片→图片建边与单参考拒绝、视频产物拒绝）/ submit +2（单参考带 assets + 超额与其它角色 unsupported、无参考纯 t2i 原行为）。后端 **766 passed**；前端 **641 passed**；契约 11/11；tsc/lint 0。
+- **【真模型验收】** 画布路径提交（t2i + assets.firstFrameImage=历史图片任务）→ ReferenceLatent 模板 30s 出图：参考雨夜巷橘猫定妆图，产物"同一只橘虎斑绿眼猫坐在红丝绒垫（日光棚拍）"——角色特征严格延续、场景按提示词重置。
+- **【边界】** ① 扩图/智能超清等**像素级编辑**模板（outpaint/upscale）另行开工（本片是"参考重绘"语义，不是局部编辑）；② 多参考（ReferenceMultiLatent）等真实需求出现再开；③ 对账（引用即连线）对 reference-image 角色天然工作（role 泛型透传），画布上图片→图片连线即显示"参考图"标签。
+
 ### 2026-10-25 · S9-A1：跨镜角色一致性——定妆锚点 + ReferenceLatent 参考出图
 
 - **【设计】** "商品视频工作流"的官方方法论（即梦模板画布观察：场景参考 → 商品三视图定妆 → 生成视频）落到会话引擎：**首镜图步 = 定妆镜，后续图步全部依赖它**（刻意不做链式——每多一跳参考就多一层漂移，定妆要的是"都像第一张"）；视频步依赖自己的首帧图步不变。

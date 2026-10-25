@@ -92,7 +92,7 @@ function firstByRole(
  * 节点草稿 → 生成模式与参考字段。
  *
  * 模式映射（契约写死，不猜）：
- * - image → `t2i`（本地模板出图，不带任何参考）
+ * - image → `t2i`（S9-A3：带单张 reference-image 时把该图作首帧参考发出去——ReferenceLatent 派生编辑）
  * - video：参考视频 → `v2v`；首 + 尾帧 → `fl2v`；只有首帧 → `i2v`；否则 → `t2v`
  */
 export function canvasDraftMode(node: CanvasDocNode): CanvasDraftMode {
@@ -100,9 +100,21 @@ export function canvasDraftMode(node: CanvasDocNode): CanvasDraftMode {
   const unsupportedRoles: CanvasReferenceRole[] = [];
 
   if (node.type === 'image') {
-    // 当前图像通道只有 t2i：任何参考都不会被发送，不能假装用了
-    if (references.length > 0) unsupportedRoles.push(...references.map((item) => item.role));
-    return { mode: 't2i', unsupportedRoles: dedupe(unsupportedRoles) };
+    // S9-A3：图片节点支持**单张** reference-image（派生编辑——以它图为底参考出图，
+    // provider 走 ReferenceLatent 变体模板）；其余角色仍无通道，不能假装用了。
+    const editSources = references.filter((item) => item.role === 'reference-image');
+    if (editSources.length > 1) unsupportedRoles.push(...editSources.slice(1).map((item) => item.role));
+    unsupportedRoles.push(
+      ...references
+        .filter((item) => item.role !== 'reference-image')
+        .map((item) => item.role),
+    );
+    const source = [...editSources].sort((a, b) => a.order - b.order)[0];
+    return {
+      mode: 't2i',
+      ...(source === undefined ? {} : { assets: { firstFrameImage: source.assetId } }),
+      unsupportedRoles: dedupe(unsupportedRoles),
+    };
   }
 
   if (node.type === 'text') {

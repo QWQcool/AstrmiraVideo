@@ -314,3 +314,27 @@ describe('计划依赖边（V2.61 / D73）', () => {
     ]);
   });
 });
+
+describe('图片派生编辑（S9-A3 / V2.69）', () => {
+  it('图片 → 图片：reference-image 角色（单参考），不写首尾帧语义', () => {
+    const doc = makeDoc(makeNode('a', 'image'), makeNode('b', 'image'));
+    expect(planCanvasLineage(doc, 'a', 'b')).toEqual({
+      ok: true,
+      role: 'reference-image',
+      assetId: 'task:a-t1',
+      order: 0,
+    });
+    const added = addCanvasLineageEdge(doc, 'a', 'b', 'e9', 10);
+    expect(added.doc.edges[0]).toMatchObject({ from: 'a', to: 'b', kind: 'lineage', role: 'reference-image' });
+    expect(added.doc.nodes[1]!.data.draft.references).toEqual([
+      { assetId: 'task:a-t1', role: 'reference-image', order: 0 },
+    ]);
+  });
+
+  it('已有 reference-image → 再连拒绝（单参考纪律）；视频产物作图片参考拒绝', () => {
+    const doc0 = makeDoc(makeNode('a', 'image'), makeNode('b', 'image'), makeNode('c', 'image'), makeNode('v', 'video'));
+    const linked = addCanvasLineageEdge(doc0, 'a', 'b', 'e1', 10);
+    expect(planCanvasLineage(linked.doc, 'c', 'b')).toEqual({ ok: false, problem: 'role-taken' });
+    expect(planCanvasLineage(doc0, 'v', 'b')).toEqual({ ok: false, problem: 'source-not-media' });
+  });
+});
