@@ -1709,6 +1709,15 @@
 
 <a id="creation-experience-status"></a>
 
+### 2026-10-25 · 本机真模型环境就绪：全链路真跑通（FLUX t2i + Wan i2v + 自动拼接）
+
+- **【环境（4060 Ti 16G 本机，用户授权安装）】** ComfyUI 便携版 0.42.1（`D:\ComfyUI\ComfyUI`，`--listen 127.0.0.1 --port 8188`）+ 六个模型硬链接就位：Wan2.2 TI2V-5B fp16（10GB）+ umt5_xxl_fp8（6.5GB）+ wan2.2_vae、FLUX-2-Klein-4B（7.75GB）+ qwen_3_4b + flux2-vae。`COMFYUI_BASE_URL` + `EXPOSE_HOST_LOCAL_TRACK=1` 接入 serve-local；**自检正确判定** t2v/i2v（wan22-ti2v-5b 模板声明）+ t2i（flux2-klein-t2i 模板声明）。
+- **【单任务真跑】** FLUX t2i（霓虹雨巷橘猫，1:1）：**20s 出图**（1024×1024 PNG，构图/氛围/主体全部命中提示词）；Wan t2v（16:9 5s）：**255s 出片**（h264 832×480 5.04s）；显存峰值 12/16.4GB（动态 VRAM 加载生效），GPU 100%。
+- **【S9-E 真实缺陷（全链路首跑暴露，已修）】** 会话图片步产物是 `task:<taskId>` 引用，视频步 i2v 取首帧时两处断裂：① `createTaskVideoUrlResolver` 只认 `outputVideoUrl`（t2i 产物在 `outputImageUrl`）→ 判 `no_output`；② `ComfyUiProvider.uploadFirstFrame` 只查 assets 目录、没接 V2.6 的 task 通道（云端 provider 有、本地轨漏了）。修复：resolver 视频/图片产物都认（并存时视频优先）；provider 按 `parseTaskRef` 分流走注入的 `resolveTaskVideoUrl`（三类失败给人话）；registry 透传选项。测试 +2（后端 **765 passed**）。顺手把脚本 pollRun 超时按 provider 放宽（真模型 240s）。
+- **【真模型全链路（修复后一次通过）】** `deepseek-run-e2e`（PROVIDER=host-comfyui，首帧确认档）：分镜 4.2s（348+476 tok）→ 展开 4.9s（930+719 tok）→ 6 步会话 → 首帧确认暂停真实触发 → confirm → **3 图（FLUX）+ 3 视频（Wan i2v，各以依赖的首帧图作输入）全部 succeeded** → 自动拼接 → **succeeded**；成片 `777bcf1a` = h264 832×480 **12.17s / 7.0MB**（ffprobe 复核）。全程约 6 分钟，零人工干预（除确认点击）。
+- **【口径（如实）】** ① i2v 首帧经 `PUBLIC_BASE_URL`（http://127.0.0.1:3100）由 ComfyUI 拉取后上传到它自己的 input 目录——同机链路，无公网暴露；② 720p tier 落地 832×480 是模板默认档位映射（16:9 480p 档），tier→分辨率的映射精度待后续片对齐；③ 一致性：三镜首帧各自独立生成（FLUX 无跨镜角色锁定），猫的形态有差异——一致性属 S9-A（图片编辑链/角色参考）要解决的问题，如实记录。
+- **【意义】** "给剧本和图 → 拿成片"的主张**第一次在真模型上完整成立**（此前 fixture 只验协议）。租到算力服务器后按 runbook G1–G14 换 H3/满血 MOSS，同一套代码零改动。
+
 ### 2026-10-25 · S9-D：首帧确认档"会话内重出首帧"（CONTRACT V2.67）+ OI-3 关闭
 
 - **【契约】** CONTRACT 升 **V2.67**：`steps/:stepId/retry` 扩展为两种合法语义——① failed 会话的失败步（原口径不变）；② **首帧确认档** `awaiting-confirmation` 态下对**已成功的 image 步**重出（attempt+1 换幂等键 = 真新任务）。语义链：会话回 running → 视频步因确认门未开保持 pending（引擎零改动）→ 全部图步再次成功后 `deriveTransition` 自然回 awaiting-confirmation（**零新状态**）。**无人值守档不开放**（没有人盯着，重出只是浪费算力——护栏语义）。
