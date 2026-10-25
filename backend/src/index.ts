@@ -111,7 +111,13 @@ const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'tru
  * 供 `app.inject()` 测试与直接运行共用同一装配路径（Step 1.5 / T4；PLAN §6-D19）。
  */
 export async function buildApp() {
-  const app = Fastify({
+  /** S9-A2：正整数 env 解析（坏值静默回落 undefined，让默认值兜底） */
+function readPositiveIntEnv(raw: string): number | undefined {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+const app = Fastify({
     // R2：反代后 req.ip 的正确性 —— 未开启时所有请求同 IP，防线 5 的冷却会退化成全局锁
     trustProxy: process.env.TRUST_PROXY === '1',
     /**
@@ -289,6 +295,11 @@ export async function buildApp() {
   const dispatcher = new JobDispatcher({
     queue,
     resolveProvider: getProvider,
+    // S9-A2：上游轮询超时可配（默认 10 分钟）。本地大分辨率（720p 单镜 ~15 分钟/4060 Ti 实测）
+    // 会被默认值误判成 UNCERTAIN_RESULT——任务还在跑，不该归为结果不明。`POLL_TIMEOUT_MS` 覆盖。
+    ...(process.env.POLL_TIMEOUT_MS === undefined || process.env.POLL_TIMEOUT_MS.trim() === ''
+      ? {}
+      : { pollTimeoutMs: readPositiveIntEnv(process.env.POLL_TIMEOUT_MS) ?? undefined }),
     // B 方案：凭据按任务暂存在进程内存，调度器领取时取出、终态时释放
     keyVault,
     // 参考资产 → 上游可访问地址（公网基址未配时退回 data URL）
