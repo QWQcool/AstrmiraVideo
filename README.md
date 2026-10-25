@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Node%2022%20%2B%20Fastify%205%20%2B%20SQLite-3178c6)](docs/PLAN.md)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20Vite%206-61dafb)](docs/PLAN.md)
-[![Contract](https://img.shields.io/badge/CONTRACT-V2.46-success)](docs/CONTRACT.md)
+[![Contract](https://img.shields.io/badge/CONTRACT-specification-success)](docs/CONTRACT.md)
 
 > **当前进度、已完成项与未做项的唯一权威是 [docs/PLAN.md](docs/PLAN.md#creation-experience-status) §5 与 §9 台账** ——
 > 本文不维护第二份状态描述（历史上正是因为 README 里写了一份"进度"，它最先过期）。
@@ -143,6 +143,7 @@ AstrmiraVideo/
 | [docs/PLAN.md](docs/PLAN.md) | 产品与开发规划 | 架构、功能清单、**七道防线**、**Step+AC**、**进度日志（§5，唯一权威）**、决策记录、安全合规、成本风险、**台账 §9** |
 | [docs/CREATION-EXPERIENCE-DESIGN.md](docs/CREATION-EXPERIENCE-DESIGN.md) | 创作体验设计基准 | 新版交互规则、视觉图、可点击稿、模型未配置状态、即梦观察证据；实施与进度仍见 PLAN |
 | [docs/CONTRACT.md](docs/CONTRACT.md) | 接口唯一权威 | TS 类型、**路由表**、错误码字典、存储与资产生命周期、备份与恢复契约 |
+| [docs/HANDOFF-AUDIT-2026-10-25.md](docs/HANDOFF-AUDIT-2026-10-25.md) | 交接审计证据 | 代码/契约/测试差异与复现；当前基线和进度只见 [PLAN §5](docs/PLAN.md#handoff-audit-status) |
 | [docs/GUIDE.md](docs/GUIDE.md) | 上手指南与运维手册 | Tier 0~3 算力矩阵、双轨引擎接入、四种工作流、FAQ、**运维巡检与备份恢复 SOP** |
 | [docs/DEPLOYMENT-RUNBOOK.md](docs/DEPLOYMENT-RUNBOOK.md) | **部署与租卡施工手册** | 已成功站点部署的复刻步骤、GitHub Actions/回滚、**租算力服务器后的全部 GPU 依赖项（G1–G14）** |
 | [docs/MOSS-IMAGE-EVALUATION.md](docs/MOSS-IMAGE-EVALUATION.md) | MOSS 评估记录 | 8-step DMD/量化版本机实测、与 FLUX.2 的中文海报对照、可选模板边界 |

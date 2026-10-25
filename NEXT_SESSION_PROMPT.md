@@ -11,6 +11,7 @@
 5. [创作体验设计基准](docs/CREATION-EXPERIENCE-DESIGN.md)：V1 视觉方向、§8 旧/新实现对照与目标交互规则、节点锚定输入区及观察证据。
 6. [PENDING-DECISIONS](docs/PENDING-DECISIONS.md)：仍需用户决定的事项与未执行的清理记录。
 7. 按需查 [GUIDE](docs/GUIDE.md)、[FRONTEND-REVIEW](docs/FRONTEND-REVIEW.md)、[N8N-REFERENCE](docs/N8N-REFERENCE.md) 及对应验收记录，不重新维护一份计划。
+8. 交接审计从 [证据报告](docs/HANDOFF-AUDIT-2026-10-25.md)、[下一片 AC](docs/PLAN.md#handoff-next-slice) 与 [开放选择](docs/PENDING-DECISIONS.md#handoff-open-decisions) 继续；门禁与真模型核验只看 [PLAN §5](docs/PLAN.md#handoff-audit-status)。
 
 ## 继续工作
 
