@@ -12,6 +12,7 @@
 6. [PENDING-DECISIONS](docs/PENDING-DECISIONS.md)：仍需用户决定的事项与未执行的清理记录。
 7. 按需查 [GUIDE](docs/GUIDE.md)、[FRONTEND-REVIEW](docs/FRONTEND-REVIEW.md)、[N8N-REFERENCE](docs/N8N-REFERENCE.md) 及对应验收记录，不重新维护一份计划。
 8. 交接审计从 [证据报告](docs/HANDOFF-AUDIT-2026-10-25.md)、[下一片 AC](docs/PLAN.md#handoff-next-slice) 与 [开放选择](docs/PENDING-DECISIONS.md#handoff-open-decisions) 继续；门禁与真模型核验只看 [PLAN §5](docs/PLAN.md#handoff-audit-status)。
+9. UI 开发参照使用 [详情图 HTML](docs/design/creation-v1/development-reference.html) 与 [交互规格](docs/CREATION-EXPERIENCE-DESIGN.md)。图中新增能力及 N9/N10 方案不是实施授权；当前状态只看 [PLAN §5](docs/PLAN.md#ui-development-reference-status)。
 
 ## 继续工作
 

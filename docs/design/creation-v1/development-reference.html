@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'none'; font-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Astrmira · 创作体验开发参照</title>
+  <link rel="stylesheet" href="development-reference.css">
+</head>
+<body>
+<a class="skip" href="#workspace">跳到内容</a>
+<aside class="sidebar">
+  <a class="brand" href="#overview"><span class="brand-mark">A</span><span>Astrmira<small>创作体验开发参照</small></span></a>
+  <p class="nav-label">从灵感到成片</p>
+  <nav aria-label="参照页面">
+    <a href="#overview" data-page="overview"><span>总览</span><small>差距与边界</small></a>
+    <a href="#create" data-page="create"><span>01　创作入口</span><small>剧本 · 参数 · 参考</small></a>
+    <a href="#canvas" data-page="canvas"><span>02　媒体画布</span><small>选中 · 版本 · 派生</small></a>
+    <a href="#edit" data-page="edit"><span>03　图片编辑</span><small>超清 · 扩图 · 重绘</small></a>
+    <a href="#subjects" data-page="subjects"><span>04　主体复用</span><small>定妆 · 引用 · 版本</small></a>
+    <a href="#confirm" data-page="confirm"><span>05　首帧确认</span><small>检查 · 重出 · 继续</small></a>
+    <a href="#delivery" data-page="delivery"><span>06　成片交付</span><small>播放 · 核验 · 导出</small></a>
+  </nav>
+  <div class="nav-footer"><span class="badge">离线设计演示</span><p>示例素材来自原设计包。<br>所有交互均不提交生成任务。</p><a href="../../PLAN.md#handoff-audit-status">进度与实测 → PLAN</a></div>
+</aside>
+<div class="main-shell">
+  <header class="topbar"><div><span class="eyebrow">DESIGN REFERENCE / 2026.10.25</span><p>依据现有资料整理 · 审计基线 45387b1</p></div><div class="top-actions"><button id="annotations-toggle" aria-pressed="true">隐藏开发注释</button><button id="print">打印当前页</button></div></header>
+  <div class="document-heading"><div><p id="page-kicker" class="eyebrow">创作闭环</p><h1 id="page-title">从“能出片”走向“能持续创作”</h1><p id="page-summary">把界面、能力与验收放在一起看。点击左侧页面，查看目标交互与依据。</p></div><span id="page-tag" class="badge gold">证据快照</span></div>
+  <div class="body-grid">
+  <main id="workspace" tabindex="-1">
+    <section id="overview" class="page" aria-label="差距总览">
+      <div class="thesis"><div><span class="eyebrow">当前判断</span><h2>主链已经接通，<br>关键操作还需闭环。</h2><p>分镜、画布、资产与生成引擎已有基础。接下来要让输入被准确消费、结果可检查、局部可修改、成片可可靠交付。</p></div><figure><img src="scene.png" alt="原创设计素材：蓝调时刻的客厅与环形吸顶灯"><figcaption>原创示例素材 · 不是新生成结果</figcaption></figure></div>
+      <ol class="journey" aria-label="创作链路"><li>剧本与参考</li><li>分镜规划</li><li>首帧确认</li><li>逐镜生成</li><li>核验交付</li></ol>
+      <div class="section-label"><h2>按能力看距离</h2><span>不以按钮数量估算完成百分比</span></div>
+      <div class="gap-list">
+        <article><span class="badge">基础骨架</span><h3>入口、画布、分镜、作品</h3><p>已有对应实现。旧报告中的检查器、分镜、导入入口缺失不应重新立项。</p><a href="#create" data-go="create">查看入口 →</a></article>
+        <article><span class="badge amber">交互待闭环</span><h3>参考、确认、失败恢复</h3><p>参考消费、助手隔离、首帧可见与成片出口需要实测修复。详见审计 F1–F10。</p><a href="#confirm" data-go="confirm">查看确认 →</a></article>
+        <article><span class="badge outline">新能力</span><h3>像素编辑与主体库</h3><p>需要工作流、数据语义与交互共同落地。自然语言派生不能替代区域编辑。</p><a href="#edit" data-go="edit">查看编辑 →</a></article>
+        <article><span class="badge">待对照验证</span><h3>画质、速度、稳定性</h3><p>尚无同素材、同目标的即梦 A/B 评测；不据截图宣称模型效果追平。</p><a href="../../HANDOFF-AUDIT-2026-10-25.md">查看证据 →</a></article>
+      </div>
+      <div class="boundary"><h3>沿用已定范围</h3><p>单用户私有部署；不加入会员积分、公开社区或协作房间。图片模型可替换，未接通的能力明确停用。优先级、进度与 AC 继续由 PLAN 维护。</p></div>
+    </section>
+
+    <section id="create" class="page" hidden aria-label="创作入口设计">
+      <div class="mock-caption"><span>目标交互示意</span><span>演示操作 · 不调用模型</span></div>
+      <div class="creation-stage">
+        <p class="eyebrow">灯具品牌 / 蓝调客厅</p><h2>把一份剧本，变成一支片子。</h2><p class="muted">先确定画面与参考，再确认生成计划。</p>
+        <div class="composer"><div class="segmented" aria-label="创作类型"><button data-mode="script" aria-pressed="true">剧本成片</button><button data-mode="image" aria-pressed="false">图片</button><button data-mode="video" aria-pressed="false">视频</button></div><div class="reference-line"><img src="scene.png" alt="示例客厅参考"><div><strong>客厅空间参考</strong><small id="reference-role">参考用途在展开前确认</small></div><button id="reference-toggle" aria-pressed="true">移除参考</button></div><label class="sr-only" for="prompt">创作描述</label><textarea id="prompt" rows="4">一支蓝调客厅灯具短片：全景建立空间，镜头靠近环形灯，最后落到温暖的沙发与阅读角。共三镜，保持灯具造型和空间布局一致。</textarea><div class="parameter-row"><label>画幅<select id="aspect"><option>16:9</option><option>9:16</option><option>1:1</option></select></label><label>档位<select><option>480p</option><option>720p</option></select></label><label id="duration-control">每镜<select><option>2 秒</option><option>5 秒</option></select></label><span class="muted">费用待核算</span><button id="create-next" class="primary">查看分镜方案</button></div><p class="inline-note" id="create-note">规划会调用文本模型；确认并启动后才提交媒体生成。</p></div>
+        <div class="start-prompts"><button data-prompt="product">产品展示</button><button data-prompt="story">故事短片</button><button data-prompt="space">空间氛围</button></div>
+      </div>
+      <div class="implementation-note"><strong>实现关注点</strong><p>提示词、参考用途与参数在同一处完成；切换模式保留输入。模型无法消费的参考组合明确提示，不能静默舍弃。</p></div>
+    </section>
+
+    <section id="canvas" class="page" hidden aria-label="媒体画布设计">
+      <div class="mock-caption"><span>目标交互示意</span><span>点击节点切换锚定面板</span></div>
+      <div class="canvas-stage"><div class="canvas-top"><strong>蓝调客厅 / 创作画布</strong><span>示例文档</span></div><div class="canvas-flow">
+        <div class="node-column"><span class="flow-label">输入素材</span><button class="media-node" data-node="reference"><img src="scene.png" alt="画布中的客厅参考素材"><span><strong>客厅参考</strong><small>上传素材 · 图片</small></span></button></div>
+        <span class="flow-arrow" aria-label="作为参考">→</span>
+        <div class="node-column"><span class="flow-label">首帧定妆</span><button class="media-node selected" data-node="image" aria-pressed="true"><img class="image-close" src="scene.png" alt="首帧图片位置示意，使用同一原创素材"><span><strong>镜头 01 · 空间全景</strong><small>示例版本 v1 · 已选中</small></span></button><div id="node-composer" class="node-composer"><div class="mini-tools"><button data-action="derive">作为参考继续</button><button data-go="edit">图片编辑</button></div><p id="node-context">正在编辑：镜头 01 · 首帧草稿</p><label class="sr-only" for="node-prompt">节点提示词</label><textarea id="node-prompt" rows="3">保持环形灯与房间布局，蓝调时刻的柔和暖光。</textarea><div class="node-parameters"><span>图片 · 单参考</span><button data-action="draft" class="primary">查看提交确认</button></div></div></div>
+        <span class="flow-arrow" aria-label="计划依赖">⇢</span>
+        <div class="node-column"><span class="flow-label">视频镜头</span><button class="media-node" data-node="video"><div class="video-poster"><img src="scene.png" alt="视频镜头封面示意"><span class="poster-label">视频占位</span></div><span><strong>镜头 01 · 缓慢推进</strong><small>计划依赖 · 尚未生成</small></span></button></div>
+      </div><div class="canvas-bottom"><span>实线：实际来源　/　虚线：计划依赖</span><span>选择不触发生成</span></div></div>
+      <div class="implementation-note"><strong>版本与派生</strong><p>在原节点再生成：追加版本并保留上一成功预览。作为参考继续：建立相邻草稿，引用固定到所见版本，等待显式提交。</p></div>
+    </section>
+
+    <section id="edit" class="page" hidden aria-label="图片编辑设计">
+      <div class="mock-caption"><span>规划中的交互示意</span><span>真实模板接通后才能开放</span></div>
+      <div class="edit-tools" aria-label="编辑操作"><button data-tool="upscale" aria-pressed="true">智能超清</button><button data-tool="outpaint" aria-pressed="false">扩图</button><button data-tool="inpaint" aria-pressed="false">局部重绘</button></div>
+      <div class="edit-workspace"><div class="edit-artboard" id="edit-artboard"><img src="scene.png" alt="编辑源图：原始客厅素材"><svg class="mask" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="示意蒙版，非真实编辑结果" hidden><ellipse cx="71" cy="64" rx="17" ry="15"></ellipse></svg><span class="artboard-label" id="artboard-label">原图预览 · 未生成超分结果</span></div><div class="edit-controls"><span class="eyebrow">新产物 · 保留原图</span><h2 id="edit-title">智能超清</h2><p id="edit-description">选择放大倍率，提交前显示目标尺寸与模型能力。</p><label id="edit-option-label">倍率<select id="edit-option"><option>2 倍</option><option>4 倍</option></select></label><div id="mask-tools" hidden><button id="show-mask">显示示意蒙版</button><button id="clear-mask">清除蒙版</button><p class="muted">仅示意覆盖区域，画笔与撤销待实现。</p></div><label for="edit-prompt">补充要求<textarea id="edit-prompt" rows="3" placeholder="例如：保留灯具边缘与原有材质"></textarea></label><p class="capability-note">该工具尚未接通，不能提交生成。</p><button class="primary" disabled>能力待接入</button><a href="../../PLAN.md#handoff-next-slice">查看真实接线验收标准 →</a></div></div>
+      <div class="implementation-note"><strong>原图、区域、结果分清楚</strong><p>扩图明确新增画幅与原图位置；重绘明确遮罩区域与未遮罩区域的保持策略；超清显示真实输出尺寸。操作名本身不能代替模型能力。</p></div>
+    </section>
+
+    <section id="subjects" class="page" hidden aria-label="主体库设计">
+      <div class="mock-caption"><span>规划中的交互示意</span><span>N9 未拍板 · 单主体方案仅作推荐</span></div>
+      <div class="subject-heading"><div><h2>让同一个主体，进入下一幅画面。</h2><p>一次定妆，保存名称、参考与版本；使用时看得见它将参与哪一步。</p></div><span class="badge outline">主体库待实现</span></div>
+      <div class="subject-workspace"><button id="subject-select" class="subject-card" aria-pressed="false"><img src="scene.png" alt="环形灯主体的示例来源图"><span class="badge">产品主体示意</span><h3>双环吸顶灯</h3><p>参考 v1 · 来源：客厅空间图</p><span class="subject-action">选择此主体</span></button><div class="subject-binding"><h3>引用前核对</h3><label>目标项目<select><option>蓝调客厅短片（示例）</option><option>暖光阅读角（示例）</option></select></label><div class="binding-preview" id="subject-binding">尚未选择主体</div><p>建议：主体参考先用于首张定妆图；后续镜头继承该定妆产物。这个语义必须先完成 N9 决策和契约。</p><button id="subject-use" class="primary" disabled>插入引用示意</button><a href="../../PENDING-DECISIONS.md#handoff-open-decisions">查看 N9 选项 →</a></div></div>
+    </section>
+
+    <section id="confirm" class="page" hidden aria-label="首帧确认设计">
+      <div class="mock-caption"><span>目标交互示意</span><span>三张卡复用同一素材，非生成分镜</span></div>
+      <div class="run-header"><div><span class="badge gold">等待首帧确认</span><h2>蓝调客厅灯具短片</h2><p>先检查画面，再启动视频。重出一张图片也需要明确确认。</p></div><label>查看场景<select id="run-state"><option value="ready">等待确认</option><option value="running">生成中</option><option value="failed">单镜失败</option><option value="unavailable">模型不可用</option></select></label></div>
+      <div id="run-status" class="state-strip" role="status">3 张首帧可检查；视频尚未启动。这是目标界面演示。</div>
+      <div class="shot-grid">
+        <article class="shot"><button data-preview="镜头 01 · 空间全景"><img src="scene.png" alt="镜头 01 的首帧占位图，点击放大"><span>查看大图</span></button><div><span class="eyebrow">SHOT 01 / 2s</span><h3>空间全景</h3><p class="shot-state">可检查 · 示例 v1</p><button data-reroll="镜头 01">重出这张首帧</button></div></article>
+        <article class="shot"><button data-preview="镜头 02 · 灯具细节"><img class="image-close" src="scene.png" alt="镜头 02 的首帧占位图，点击放大"><span>查看大图</span></button><div><span class="eyebrow">SHOT 02 / 2s</span><h3>灯具细节</h3><p class="shot-state">可检查 · 示例 v1</p><button data-reroll="镜头 02">重出这张首帧</button></div></article>
+        <article class="shot"><button data-preview="镜头 03 · 阅读角落"><img class="image-right" src="scene.png" alt="镜头 03 的首帧占位图，点击放大"><span>查看大图</span></button><div><span class="eyebrow">SHOT 03 / 2s</span><h3>阅读角落</h3><p class="shot-state">可检查 · 示例 v1</p><button data-reroll="镜头 03">重出这张首帧</button></div></article>
+      </div><div class="confirm-footer"><div><strong>3 镜 · 预计 6 秒</strong><p>成片还须核验实际时长、镜头顺序与项目归属。</p></div><button id="confirm-next" class="primary">确认首帧并继续（演示）</button></div>
+      <div class="implementation-note"><strong>锚点重出需要说明影响</strong><p>如果镜头 01 是后镜的定妆锚点，重出后须提示已有后镜仍引用旧版本。是否批量重出由 N10 决定，不能自动消耗算力。</p></div>
+    </section>
+
+    <section id="delivery" class="page" hidden aria-label="成片交付设计">
+      <div class="mock-caption"><span>目标交付页示意</span><span>静态封面 · 本页没有可播放成片</span></div>
+      <div class="delivery-layout"><div><div class="delivery-poster"><img src="scene.png" alt="成片封面占位图"><span>视频播放器位置示意</span></div><div class="filmstrip"><span>01 空间全景</span><span>02 灯具细节</span><span>03 阅读角落</span></div><h2>蓝调客厅灯具短片</h2><p class="muted">项目：蓝调客厅　/　媒体事实以实际产物探测为准</p></div><div class="delivery-check"><span class="eyebrow">拿走成片之前</span><h3>先核对交付事实</h3><ul><li>每个镜头恰好出现一次</li><li>时长符合素材与转场</li><li>尺寸、帧率、音轨如实</li><li>成片与镜头归属同一项目</li><li>媒体可解码、可下载</li></ul><button class="primary" disabled>下载成片（示例无文件）</button><button data-go="canvas">查看回到画布的路径</button><button data-action="package">查看交付包说明</button></div></div>
+      <div class="finding"><span class="badge amber">真实审计 F10</span><p>三段源片各 2.04 秒，实测拼接成片为 8.17 秒：首镜重复。成功状态与文件可取不能替代内容验收。</p><a href="../../HANDOFF-AUDIT-2026-10-25.md">查看原始审计 →</a></div>
+    </section>
+  </main>
+  <aside id="inspector" class="inspector" aria-label="开发注释">
+    <div class="inspector-heading"><span class="eyebrow">依据与实施边界</span><span class="badge" id="evidence-kind">已有证据</span></div>
+    <button id="evidence-preview" class="evidence-preview"><img id="evidence-image" alt="即梦历史参考截图"><span>查看历史截图</span></button>
+    <p id="evidence-caption" class="caption"></p>
+    <h2>观察事实</h2><p id="observation"></p>
+    <h2>本仓现状</h2><p id="current"></p>
+    <h2>目标交互</h2><ul id="rules"></ul>
+    <h2>验收关注</h2><ul id="checks"></ul>
+    <div id="decision-note" class="decision-note"></div>
+    <div class="source-links"><a href="../../CREATION-EXPERIENCE-DESIGN.md">交互规格</a><a href="../../CONTRACT.md">接口契约</a><a href="../../PLAN.md#handoff-next-slice">分片与 AC</a></div>
+  </aside>
+  </div>
+  <footer class="document-footer">开发参照 ≠ 已实现能力。已定交互以规格为准，新增建议等待对应决策与契约；进度只维护在 PLAN。<a href="prototype.html">查看历史 V1 原型</a></footer>
+</div>
+<dialog id="detail-dialog" aria-labelledby="dialog-title"><div class="dialog-heading"><h2 id="dialog-title">详情</h2><button id="dialog-close" aria-label="关闭详情">关闭</button></div><div id="dialog-body"></div></dialog>
+<output id="notice" aria-live="polite" hidden></output>
+<noscript><p>请启用 JavaScript 查看交互页面；总览和仓库中的 Markdown 文档仍可阅读。</p></noscript>
+<script src="development-reference.js"></script>
+</body>
+</html>

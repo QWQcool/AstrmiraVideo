@@ -4,6 +4,12 @@
 
 ## 查看
 
+优先打开 [开发参照详情图](development-reference.html)：总览 + 创作入口 / 媒体画布 / 图片编辑 / 主体复用 / 首帧确认 / 成片交付。左侧切页，右侧查看历史截图、目标规则与验收关注；支持图片放大、节点锚定面板、草稿切换、编辑工具与蒙版示意、主体选择、等待/运行/失败/不可用状态、开发注释开关和当前页打印。
+
+保留同目录 `development-reference.css`、`development-reference.js`、`scene.png` 及相邻 `reference-jimeng-2026-10-20` 截图目录。可直接打开 HTML，无安装或后端要求。全部操作均是离线示意，不调用接口或保存输入；未来能力与待拍板方案有明确标记。原始观察与本仓当前代码不混为一谈；实施进度和此片验收见 [PLAN §5](../../PLAN.md#ui-development-reference-status)。
+
+### 历史 V1 原型
+
 直接在浏览器打开 [prototype.html](prototype.html)，无需应用后端、依赖安装或登录；也可以用任意静态文件服务器打开本目录。保留同目录的 CSS、JS 和 PNG。GitHub 文件页不会执行 HTML，下载本目录后用浏览器打开即可。
 
 - [首页视觉图](home-concept.png)
