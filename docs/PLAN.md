@@ -1766,7 +1766,8 @@
 - **【隔离验收】** 新增 `creationRunStartGuard.test.ts`：临时 SQLite 数据目录，创建 planned 后模拟两个 5s 调度周期 + 直接 tick + 关闭重开同一数据目录；结果始终 `planned`、`startedAt` 缺省、`tasks` 0、`provider.submit` 0。另测 running 重启时已有 taskId 的步骤不再提交。
 - **【兼容行为】** 显式 start、重复 start 409、确认、重试、取消、无人值守/首帧确认两档由既有 `runs.test.ts` 与引擎测试覆盖并经全量回归；修正原先把 planned tick 自动执行当作预期的旧测试。
 - **【八项门禁】** 逐项 exit 0：`pnpm lint`、`pnpm type`、`pnpm test:contract`、`pnpm test:coverage`、`pnpm --filter backend test`、`pnpm --filter frontend test`、`pnpm build`、`pnpm smoke:ui`。后端 **769 passed / 91 文件**；前端 **641 passed**；契约 **11/11**；coverage statements/lines **88.86%**、branches **79.97%**、functions **95.14%**；UI smoke 通过。命令/退出码/日志见 `.tmp/s10r1/gates.jsonl`（不入库）。
-- **【如实边界】** 未修改调度器以外的执行语义；未开始 B107 首镜重复拼接；未运行真实模型/付费云；未部署。下一片为 **B107**。
+- **【部署】** 手动 CI/CD `40279468770`：verify 3m17s、deploy 1m36s，均成功；线上 `/api/health` 200。HEAD `657f6ea`。
+- **【如实边界】** 未修改调度器以外的执行语义；未开始 B107 首镜重复拼接；未运行真实模型/付费云。下一片为 **B107**。
 - **【指针回检】** README 的 CONTRACT 徽章不重复维护版本号，NEXT 只指向 PLAN §5；两处无需新增状态副本，未改。§4 首行与 §9 B92 已标完成，下一片 B107。
 
 ### 2026-10-25 · 多素材 / 双入口 / 细白连线开发参照（文档与离线 HTML 片）
