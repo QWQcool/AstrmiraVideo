@@ -46,7 +46,7 @@ interface Harness {
   service: CreationRunService;
   saved: CreationRun[];
   submissions: Array<{ request: VideoGenerateRequest; key: string }>;
-  editSubmissions: Array<{ script: EditScript; key: string }>;
+  editSubmissions: Array<{ script: EditScript; key: string; projectId: string }>;
   tasks: Map<string, RunTaskView>;
   setRun(value: CreationRun): void;
 }
@@ -54,7 +54,7 @@ interface Harness {
 function harness(): Harness {
   const saved: CreationRun[] = [];
   const submissions: Array<{ request: VideoGenerateRequest; key: string }> = [];
-  const editSubmissions: Array<{ script: EditScript; key: string }> = [];
+  const editSubmissions: Array<{ script: EditScript; key: string; projectId: string }> = [];
   const tasks = new Map<string, RunTaskView>();
   let current: CreationRun | null = null;
   const ports: RunEnginePorts = {
@@ -65,8 +65,8 @@ function harness(): Harness {
       tasks.set(taskId, { status: 'running', hasOutput: false });
       return taskId;
     },
-    submitEdit: async (script, key) => {
-      editSubmissions.push({ script, key });
+    submitEdit: async (script, key, projectId) => {
+      editSubmissions.push({ script, key, projectId });
       const taskId = `e${editSubmissions.length}`;
       tasks.set(taskId, { status: 'running', hasOutput: false });
       return taskId;
@@ -291,6 +291,19 @@ describe('CreationRunService · 收尾自动合成（S8-C）', () => {
     expect(h.editSubmissions[0]?.key).toBe('run:r1:assembly:a0');
     expect(h.saved.at(-1)?.assembledTaskId).toBe('e1');
     expect(h.saved.at(-1)?.state).toBe('assembling');
+  });
+
+  it('B97：拼接入队带上**会话的业务项目**（不能落回 default）', async () => {
+    const h = harness();
+    const r = twoShotRun();
+    r.projectId = 'proj-lumiere';
+    r.state = 'assembling';
+    h.setRun(r);
+    await h.service.tick('r1');
+    expect(h.editSubmissions).toHaveLength(1);
+    expect(h.editSubmissions[0]?.projectId).toBe('proj-lumiere');
+    // 生成步骤的请求快照也一直带同一个项目
+    expect(buildStepRequest(r, r.steps[1]!).projectId).toBe('proj-lumiere');
   });
 
   it('拼接成功 → succeeded（assembledTaskId 落盘）；拼接失败 → failed（stepId=assembly）', async () => {

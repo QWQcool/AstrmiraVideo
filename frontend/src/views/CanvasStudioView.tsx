@@ -2228,6 +2228,7 @@ export function CanvasStudioView() {
               <CanvasAgentPanel
                 key={doc.projectId}
                 doc={doc}
+                projectId={projectId}
                 {...(selectedIds[0] === undefined ? {} : { selectedNodeId: selectedIds[0] })}
                 onCreateText={createAgentTextNode}
                 onUpdateText={updateAgentTextNode}

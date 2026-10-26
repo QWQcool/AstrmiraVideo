@@ -1,6 +1,13 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.72 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.73 · 已冻结（变更需先改本文，再改代码）**
+> **V2.73 修订（2026-10-26）**：**会话与拼接产物的业务项目归属（§29 / B97）** ——
+>   ① `CreationRun.projectId` 是**业务项目**（与 `/api/generate` 同口径），**不是**画布身份
+>      `CanvasDoc.projectId`；画布助手创建会话时必须传当前业务项目；
+>   ② 自动拼接任务的 `tasks.project_id`、请求快照的 `projectId`、原会话 `run.projectId` 三者一致
+>      （此前拼接任务漏传 projectId，落回 default）；
+>   ③ 会话列表 `?project=` 按业务项目过滤；项目切换清空选中并按新项目重拉，迟到响应不得覆盖；
+>   ④ 无新字段、无新路由、无新错误码；不迁移历史任务归属。
 > **V2.72 修订（2026-10-26）**：**备份纳入画布（§17 / B95）** ——
 >   ① 备份范围 = `app.db` + `data/canvas`（文档/索引/墓碑，**总是包含**）+ `outputs/`（`--no-outputs` 只影响媒体）；
 >   ② manifest 升 **backupVersion 2**：新增 `includeCanvas` / `canvas[]` / `counts.canvases|canvasTombstones`；
@@ -3396,6 +3403,11 @@ interface CreationRun {
 - **参考消费边界（B93 / V2.71）**：会话 v1 **只接一张用户参考**，且最多一个图片依赖。无依赖视频步骤的一张参考作 `firstFrameImage`（i2v）；无依赖图片步骤的一张参考作 ReferenceLatent（t2i + firstFrameImage）；图片步骤的一个上游依赖作定妆锚点。**用户参考 + 图片依赖混用、>1 张参考、>1 个依赖**都明确拒绝（400 / 步骤 failed），不把参考塞进未接线的 last-frame，不静默截断。N9 未拍板前不新增主体锚点、多参考融合或自动切模型。
 - **提交口径**：会话执行器内部复用 `/api/generate` 同一套校验与队列（含能力位拦截、`task:` 引用校验），
   **不走 HTTP 自调用**；无凭据路径（本地轨不需要）。t2i 带参考必须命中声明 `referenceImage` 的模板；没有模板时 provider 在 `/upload/image` 与 `/prompt` 之前拒绝，**不回退普通文生图**。
+- **业务项目归属（B97 / V2.73）**：`projectId` 是**业务项目**（与 `/api/generate` 同口径），**不是画布身份**——
+  `CanvasDoc.projectId` 只回答"这是哪一张画布"，不能拿来填会话/任务的项目。
+  画布助手创建会话必须带当前业务项目（缺省才归一化为 default）；自动拼接任务由会话发起，
+  入队时 `tasks.project_id`、请求快照的 `projectId` 与 `run.projectId` **三者一致**。
+  会话列表按 `?project=` 过滤；项目切换只清空选中并按新项目重拉，迟到响应不得覆盖当前项目。
 - **自动拼接（S8-C / V2.65）**：全部步骤成功且**视频步骤 ≥2** → 进 `assembling`，按**镜头顺序**提交一条
   `concat` 剪辑任务（单一操作；幂等键 `run:<runId>:assembly:a0`，断点回放）；拼接任务成功 → `succeeded`
   并回填 `assembledTaskId`；失败 → `failed`（`failure.stepId = 'assembly'`）。

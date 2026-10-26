@@ -34,8 +34,14 @@ export interface RunEnginePorts {
   getTask(taskId: string): RunTaskView | null;
   /** 返回 taskId；同幂等键命中既有任务时返回那个 taskId（断点续跑）。拒绝时抛错（含人话原因）。 */
   submit(request: VideoGenerateRequest, idempotencyKey: string): Promise<string>;
-  /** S8-C：收尾拼接（/api/edits 同一入队路径；同幂等键回放）。拒绝时抛错。 */
-  submitEdit(script: EditScript, idempotencyKey: string): Promise<string>;
+  /**
+   * S8-C：收尾拼接（/api/edits 同一入队路径；同幂等键回放）。拒绝时抛错。
+   *
+   * B97：第三个参数是**会话的业务项目**（`CreationRun.projectId`）。拼接任务由引擎发起，
+   * 不是用户直接提交的剪辑；入队方必须用它 —— 否则任务记录会落回 default，
+   * 而请求快照还指着原项目，筛选与交付归属就分家了。
+   */
+  submitEdit(script: EditScript, idempotencyKey: string, projectId: string): Promise<string>;
 }
 
 /** 步骤终态判断（refresh 用） */
@@ -314,6 +320,7 @@ export class CreationRunService {
               const taskId = await this.deps.ports.submitEdit(
                 script,
                 creationRunStepKey(run.id, 'assembly', 0),
+                run.projectId,
               );
               run.assembledTaskId = taskId;
               run.updatedAt = now;

@@ -206,6 +206,24 @@ describe('buildCreationRunInput · 分镜展开 → 会话输入（S8-D）', () 
       },
     ]);
   });
+
+  it('B97：业务项目显式透传（不是画布 id）；空串按缺省处理', () => {
+    const withProject = buildCreationRunInput(expansion([{}]), {
+      title: '归属',
+      mode: 'unattended',
+      provider: 'fixture-local',
+      projectId: 'proj-lumiere',
+    });
+    expect(withProject.projectId).toBe('proj-lumiere');
+
+    const blank = buildCreationRunInput(expansion([{}]), {
+      title: '归属',
+      mode: 'unattended',
+      provider: 'fixture-local',
+      projectId: '',
+    });
+    expect(blank.projectId).toBeUndefined();
+  });
 });
 
 describe('buildCreationRunInput · 转场透传（S9 / V2.66）', () => {

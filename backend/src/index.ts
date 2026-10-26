@@ -494,19 +494,30 @@ const app = Fastify({
       return taskId;
     },
     // S8-C：收尾拼接走 /api/edits 的同一入队路径（kind:'edit' + 源片参数快照）
-    submitEdit: async (script, idempotencyKey) => {
+    submitEdit: async (script, idempotencyKey, projectId) => {
       const existing = store.findTaskIdByIdempotencyKey(idempotencyKey);
       if (existing !== null) return existing;
       const source = store.get(script.sourceTaskId);
       if (source === null || source.status !== 'succeeded' || source.outputVideoUrl === undefined) {
         throw new Error(`拼接源任务不可用：${script.sourceTaskId}`);
       }
+      /**
+       * B97 / F7：**任务记录、请求快照、会话业务项目三者必须一致**。
+       *
+       * 此前这里漏传 `projectId` → `tasks.project_id` 落回 default，而请求快照还指着原项目；
+       * 拼接产物因此在项目筛选/交付归属里"消失"（非默认项目尤其明显）。
+       * 归属以会话为准（`run.projectId`）：它是用户创建会话时选的业务项目；
+       * 源任务的 projectId 只是兜底（历史会话 / 直接调用场景）。
+       */
+      const businessProjectId = projectId.trim() === '' ? source.projectId : projectId;
+      const request = { ...source.requestSnapshot, projectId: businessProjectId };
       const taskId = randomUUID();
       await queue.submit({
         taskId,
         track: 'local',
-        request: source.requestSnapshot,
+        request,
         idempotencyKey,
+        projectId: businessProjectId,
         submitting: false,
         kind: 'edit',
         editScript: script,

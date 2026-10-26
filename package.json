@@ -21,6 +21,7 @@
     "test:fixtures": "node scripts/make-fixture-clips.mjs",
     "smoke:ui": "node scripts/smoke-ui.mjs",
     "test:browser:agent": "node tests/browser/agent-unmount.mjs",
+    "test:browser:runs": "node tests/browser/runs-project.mjs",
     "test:backup:canvas": "node tests/integration/backup-canvas.mjs",
     "smoke:comfy": "node scripts/comfyui-acceptance.mjs",
     "smoke:comfy:e2e": "node scripts/smoke-comfyui-e2e.mjs",

@@ -45,6 +45,14 @@ interface CanvasAgentMessage {
 
 export interface CanvasAgentPanelProps {
   doc: CanvasDoc;
+  /**
+   * B97：**业务项目** id（来自项目切换器 / `useShell`），不是画布身份。
+   *
+   * `doc.projectId` 是"这是哪一张画布"；会话的 `projectId` 是"这支片子归哪个业务项目"。
+   * 两者混用会让非默认项目创建的会话落回 default（列表与交付归属随之分家）。
+   * 缺省（未传）时由服务端归一化为默认项目 —— 与 `/api/generate` 同口径。
+   */
+  projectId?: string;
   selectedNodeId?: string;
   /** 用户点击“创建节点”后才调用；返回 false 表示当前文档不可写。 */
   onCreateText(proposal: CanvasNodeProposal): boolean;
@@ -68,6 +76,7 @@ function errorText(caught: unknown): string {
  */
 export function CanvasAgentPanel({
   doc,
+  projectId,
   selectedNodeId,
   onCreateText,
   onUpdateText,
@@ -339,6 +348,8 @@ export function CanvasAgentPanel({
           title: storyboard.title,
           mode: runMode,
           provider: runProvider,
+          // B97：业务项目（不是 doc.projectId —— 那是画布身份）
+          ...(projectId === undefined || projectId === '' ? {} : { projectId }),
           // S9：分镜表的转场文案按镜头序传给会话（自动拼接时映射为 xfade）
           transitions: new Map(
             storyboard.shots

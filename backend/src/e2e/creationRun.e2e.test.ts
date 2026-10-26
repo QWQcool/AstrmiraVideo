@@ -126,4 +126,104 @@ describe('J6：剧本 → 会话 → 拼接 → 成片（全链路 fixture）', 
     expect(media.status).toBe(200);
     expect((await media.arrayBuffer()).byteLength).toBeGreaterThan(10_000);
   }, 180_000);
+
+  it('B97：非默认业务项目——会话、镜头任务与拼接产物同属该项目', async () => {
+    // ① 建一个非默认业务项目（不是画布 id）
+    const createdProject = await fetch(`${baseUrl}/api/projects`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: `B97-${Date.now()}` }),
+    });
+    expect(createdProject.status).toBe(200);
+    const projectId = ((await createdProject.json()) as { project: { projectId: string } }).project
+      .projectId;
+    expect(projectId).not.toBe('default');
+
+    // ② 两镜会话显式归属该项目
+    const created = await fetch(`${baseUrl}/api/agent/runs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        title: 'B97 · 非默认项目双镜头',
+        projectId,
+        mode: 'unattended',
+        provider: 'fixture-local',
+        steps: [
+          {
+            id: 'shot-1',
+            kind: 'video',
+            prompt: 'B97 镜头一',
+            aspectRatio: '16:9',
+            durationSec: 2,
+          },
+          {
+            id: 'shot-2',
+            kind: 'video',
+            prompt: 'B97 镜头二',
+            aspectRatio: '16:9',
+            durationSec: 2,
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const runId = ((await created.json()) as { run: CreationRun }).run.id;
+
+    await fetch(`${baseUrl}/api/agent/runs/${runId}/start`, { method: 'POST' });
+    const done = await pollRun(runId, (run) => run.state === 'succeeded' || run.state === 'failed', 120_000);
+    expect(done.state).toBe('succeeded');
+    expect(done.projectId).toBe(projectId);
+    expect(done.assembledTaskId).toBeDefined();
+
+    // ③ 列表按业务项目过滤（默认项目看不到它）
+    const listed = await fetch(`${baseUrl}/api/agent/runs?project=${encodeURIComponent(projectId)}`);
+    expect(((await listed.json()) as { runs: Array<{ id: string }> }).runs.some((r) => r.id === runId)).toBe(true);
+    const defaultList = await fetch(`${baseUrl}/api/agent/runs?project=default`);
+    expect(((await defaultList.json()) as { runs: Array<{ id: string }> }).runs.some((r) => r.id === runId)).toBe(false);
+
+    // ④ 每条镜头任务的请求快照都带同一个业务项目
+    for (const step of done.steps) {
+      expect(step.taskId).toBeDefined();
+      const task = await fetch(`${baseUrl}/api/tasks/${step.taskId}`);
+      const progress = (await task.json()) as TaskProgress;
+      expect(progress.requestSnapshot.projectId).toBe(projectId);
+    }
+
+    // ⑤ 拼接任务：任务记录（按项目筛选可见）+ 请求快照都在同一项目
+    const assembly = await fetch(`${baseUrl}/api/tasks/${done.assembledTaskId}`);
+    expect(assembly.status).toBe(200);
+    const assemblyProgress = (await assembly.json()) as TaskProgress;
+    expect(assemblyProgress.status).toBe('succeeded');
+    expect(assemblyProgress.outputVideoUrl).toBeDefined();
+    expect(assemblyProgress.requestSnapshot.projectId).toBe(projectId);
+
+    // 生成任务的默认 history 只列生成产物；剪辑任务要 ?kind=edit（§5 路由口径）
+    const projectHistory = await fetch(
+      `${baseUrl}/api/history?project=${encodeURIComponent(projectId)}&limit=50`,
+    );
+    const projectItems = ((await projectHistory.json()) as { items: TaskProgress[] }).items.map(
+      (item) => item.taskId,
+    );
+    for (const step of done.steps) expect(projectItems).toContain(step.taskId);
+
+    const projectEdits = await fetch(
+      `${baseUrl}/api/history?kind=edit&project=${encodeURIComponent(projectId)}&limit=50`,
+    );
+    const projectEditItems = ((await projectEdits.json()) as { items: TaskProgress[] }).items.map(
+      (item) => item.taskId,
+    );
+    expect(projectEditItems).toContain(done.assembledTaskId);
+
+    const defaultHistory = await fetch(`${baseUrl}/api/history?project=default&limit=50`);
+    const defaultItems = ((await defaultHistory.json()) as { items: TaskProgress[] }).items.map(
+      (item) => item.taskId,
+    );
+    for (const step of done.steps) expect(defaultItems).not.toContain(step.taskId);
+
+    const defaultEdits = await fetch(`${baseUrl}/api/history?kind=edit&project=default&limit=50`);
+    const defaultEditItems = ((await defaultEdits.json()) as { items: TaskProgress[] }).items.map(
+      (item) => item.taskId,
+    );
+    expect(defaultEditItems).not.toContain(done.assembledTaskId);
+  }, 180_000);
 });

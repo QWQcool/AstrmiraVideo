@@ -1804,6 +1804,18 @@
 
 <a id="multi-reference-reference-status"></a>
 
+### 2026-10-26 · B97：拼接产物与会话的业务项目归属
+
+- **【契约】** CONTRACT 升 **V2.73**（§29）：`CreationRun.projectId` 是**业务项目**（与 `/api/generate` 同口径），不是画布身份 `CanvasDoc.projectId`；拼接任务的 `tasks.project_id`、请求快照 `projectId`、`run.projectId` 三者一致；列表 `?project=` 过滤、项目切换清空选中并重拉、迟到响应不得覆盖；无新字段/路由/错误码，不迁移历史归属。
+- **【根因】** `index.ts` 的 `runPorts.submitEdit` 入队时**漏传 `projectId`** → `tasks.project_id` 落回 default，而请求快照仍指原项目；非默认项目的拼接产物因此在项目筛选/交付里"消失"（审计 F7）。
+- **【实现】** ① `RunEnginePorts.submitEdit` 增加第三个参数（会话业务项目），引擎传 `run.projectId`；入队时用 `{ ...source.requestSnapshot, projectId }` 并把 `projectId` 写进队列任务，三者同源；② `CanvasAgentPanel` 新增**业务项目** prop（`useShell().projectId`），`CanvasStudioView` 传入 —— 不再用 `doc.projectId`；③ `RunsView` 按当前业务项目拉列表与详情，增加 `projectRef` + 列表/详情请求代次：项目切换立即清空选中并按新项目重拉，迟到响应整包丢弃，详情若不属于当前项目则关闭；④ 缺省（未传）仍归一化为 default，保持既有兼容。
+- **【前端单测】** `storyboardLanding.test.ts` +1：业务项目显式透传；空串按缺省处理（保持 `projectId` 缺省语义）。
+- **【fixture 端到端】** `creationRun.e2e.test.ts` +1（真实 TCP + fixture provider + 真实 ffmpeg）：新建非默认项目 → 两镜会话 → start → 自动拼接 succeeded；断言 `run.projectId`、每条镜头任务的快照 `projectId`、拼接任务快照 `projectId`、`?project=<A>` 的会话列表/生成 history/剪辑 history 均含本次产物，而 `?project=default` 均不含。**防恒真**：临时去掉 `projectId` 传参后该用例精确失败在 `projectEditItems.toContain(assembledTaskId)`，恢复后通过。
+- **【真实浏览器】** 新增 `tests/browser/runs-project.mjs`（`pnpm test:browser:runs`，13 条断言）：默认项目/A 的列表互不可见；切 A 后详情跟随；切回默认后详情关闭；压住 A 的列表/详情响应再切换，释放后不覆盖当前项目；全程 `POST /api/generate`、`/api/agent/runs`、`/start` 均 0 次。会话为 planned 夹具（不 start、不生成）。
+- **【回归】** B107 镜头次数/顺序/时长由 `assemblyMedia.test.ts` 与 J6 基线继续通过（本片未改 EDL 构造）。
+- **【八项门禁】** 逐条 exit 0：lint / type / test:contract / test:coverage（stmts 88.79 / branch 80.1 / funcs 95.4）/ backend **789 passed / 92 文件** / frontend **643 passed / 55 文件** / build / smoke:ui。证据 `.tmp/b97/gates.jsonl`。
+- **【如实边界】** e2e/fixture 证明归属与筛选，不证明真实模型质量；未改历史任务归属、未部署。
+
 ### 2026-10-26 · B95：新画布纳入备份、校验与恢复
 
 - **【契约】** CONTRACT 升 **V2.72**（§17）：备份范围 = `app.db` + `data/canvas`（文档/索引/墓碑，**总是包含**）+ `outputs/`（`--no-outputs` 只影响媒体）；manifest 升 `backupVersion 2`，新增 `includeCanvas` / `canvas[]`（逐份 sha256）/ `counts.canvases|canvasTombstones`；v1 备份可解析且明确报告"不含画布"，恢复保留目标现有画布；无新路由/错误码。

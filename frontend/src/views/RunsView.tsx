@@ -10,6 +10,7 @@ import {
   startCreationRun,
 } from '../lib/api';
 import { useTranslate, type MessageKey } from '../lib/i18n';
+import { useShell } from '../lib/shell';
 
 /**
  * 创作会话视图（S8-D；CONTRACT §29）。
@@ -59,6 +60,7 @@ function errorText(caught: unknown): string {
 
 export function RunsView() {
   const t = useTranslate();
+  const { projectId } = useShell();
   const [summaries, setSummaries] = useState<CreationRunSummary[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<CreationRun | null>(null);
@@ -67,33 +69,73 @@ export function RunsView() {
   const detailRef = useRef<CreationRun | null>(null);
   detailRef.current = detail;
 
+  /**
+   * B97：会话列表与详情都**按当前业务项目**取。
+   *
+   * 两道异步边界（与 B94 同一条纪律）：
+   * 1. `projectRef` 记录"请求发出时属于哪个项目"，返回时不一致就整包丢弃；
+   * 2. 列表/详情各自的请求代次只允许最新一次写状态 —— 项目 A→B→A 的迟到响应
+   *    不能把 B（或回 A 之后）的界面覆盖成旧数据。
+   *
+   * 切换项目**只**重拉列表并清空选中，不创建会话、不触发任何生成。
+   */
+  const projectRef = useRef(projectId);
+  const listSeqRef = useRef(0);
+  const detailSeqRef = useRef(0);
+
   const reload = useCallback(async (): Promise<void> => {
+    const seq = ++listSeqRef.current;
+    const project = projectRef.current;
     try {
-      const list = await fetchCreationRuns();
+      const list = await fetchCreationRuns(project);
+      if (seq !== listSeqRef.current || project !== projectRef.current) return;
       setSummaries(list.runs);
-      // 详情跟随：选中项仍在列表里就续看；不在了（被删/换项目）就清空
-      if (detailRef.current !== null && !list.runs.some((item) => item.id === detailRef.current?.id)) {
+      // 详情跟随：选中项仍属于当前项目且在列表里就续看；否则清空（换项目/被删）
+      const current = detailRef.current;
+      if (
+        current !== null &&
+        (current.projectId !== project || !list.runs.some((item) => item.id === current.id))
+      ) {
         setSelectedId(null);
         setDetail(null);
       }
       setError(null);
     } catch (caught) {
-      setError(errorText(caught));
+      if (seq === listSeqRef.current) setError(errorText(caught));
     }
   }, []);
 
-  const refreshDetail = useCallback(async (id: string): Promise<void> => {
-    try {
-      const result = await fetchCreationRun(id);
-      setDetail(result.run);
-    } catch (caught) {
-      setError(errorText(caught));
-    }
-  }, []);
+  const refreshDetail = useCallback(
+    async (id: string, expectedProject: string = projectRef.current): Promise<void> => {
+      const seq = ++detailSeqRef.current;
+      try {
+        const result = await fetchCreationRun(id);
+        if (seq !== detailSeqRef.current || expectedProject !== projectRef.current) return;
+        if (result.run.projectId !== expectedProject) {
+          // 不属于当前项目：不显示（也不能让旧选中把另一项目的数据带出来）
+          setSelectedId(null);
+          setDetail(null);
+          return;
+        }
+        setDetail(result.run);
+      } catch (caught) {
+        if (seq === detailSeqRef.current) setError(errorText(caught));
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
+    projectRef.current = projectId;
+    // 让在途响应全部失效，再按新项目重拉
+    listSeqRef.current += 1;
+    detailSeqRef.current += 1;
+    setSummaries(null);
+    setSelectedId(null);
+    setDetail(null);
+    setError(null);
     void reload();
-  }, [reload]);
+  }, [projectId, reload]);
 
   // 轮询：有活跃会话（列表或详情）才轮询，全部终态就停——不打无意义的请求
   useEffect(() => {
@@ -125,9 +167,13 @@ export function RunsView() {
   );
 
   const openDetail = (id: string): void => {
+    // 只打开当前项目列表里的会话（列表本身就是按项目取回的；这里再挡一次旧渲染闭包）
+    const summary = summaries?.find((item) => item.id === id);
+    if (summary !== undefined && summary.projectId !== projectRef.current) return;
+    const project = projectRef.current;
     setSelectedId(id);
     setDetail(null);
-    void refreshDetail(id);
+    void refreshDetail(id, project);
   };
 
   return (
