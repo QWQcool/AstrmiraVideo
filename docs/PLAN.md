@@ -1804,6 +1804,18 @@
 
 <a id="multi-reference-reference-status"></a>
 
+### 2026-10-26 · B96：首帧可检查、成片可播放下载
+
+- **【范围】** 只改会话详情（`RunsView`）的媒体展示与关闭行为；复用任务接口取真实媒体，不新增路由/字段，不动确认/启动/重试边界，不自动重出已成功后继（N10 仍开放）。
+- **【真实媒体解析】** 新增 `frontend/src/lib/runMedia.ts`（纯函数）：步骤 → `none / loading / failed / missing / image / video`；地址只认 `resolveMediaUrl` 的同源 `/media/...`。**不从 `outputAssetId` 截断猜 URL**：任务成功但没有可用产物时如实 `missing`，绝不回退旧图或占位假图。成片：单镜取视频步骤产物、多镜（≥2）取 `assembledTaskId`；会话失败返回 `failed`，不拿某个镜头冒充成片。
+- **【异步边界】** 任务详情按 **taskId** 缓存：重出拿到新 taskId 自然显示新图；旧 taskId 的迟到响应只落在旧键上，不回滚。并发取任务且各自落地（一条慢任务不会堵住其它步骤的预览）；只在"无缓存 / 任务仍在跑"时请求。
+- **【关闭详情】** 关闭按钮同时清 `selectedId` 与 `detail`，并在详情回包前校验 `selectedIdRef.current === id` —— 迟到的详情响应与下一轮轮询都不会把详情重新打开（审计 F6 的第二半）。
+- **【UI】** 步骤表产物列显示首帧缩略图 / 视频（`data-testid=runs-step-media-<stepId>`）；成功会话显示成片 `<video controls>` + 下载链接；缺失 / 加载失败 / 生成中 / 失败各有文案（中英同步，`dict/runs.ts`）。375px：媒体铺满一行、表格容器可横向滚动。
+- **【单测】** `runMedia.test.ts` 9 项：未成功不显示旧产物、任务未到 → loading、图片/视频同源地址、无产物 / 非 `/media` → missing、单镜取视频步、多镜取拼接产物、拼接未到 → pending、失败不拿镜头冒充、未成功会话不显示成片。**首轮测试助手漏加 `...overrides` 导致"假绿"自查发现并修正**（测试自身也按"先失败后通过"验证）。
+- **【真实浏览器】** 新增 `tests/browser/run-media.mjs`（`pnpm test:browser:media`，15 条断言全过）：真实 PNG **`decode()` 成功**（2×2）、重出后新图解码、旧图片响应压到重出后才释放且不回滚、单镜/多镜成片来源分别正确、`<video>` 元数据 1280×704 + 实际播放（currentTime 0.36s）、下载 HTTP 200 / 610481 bytes、任务成功无产物显示「产物不可用」、关闭详情跨 2 次轮询不复开、375px 页面/详情均无横向溢出。媒体是真实本地 fixture（夹具视频 + 写入 OUTPUT_DIR 的 PNG），会话 JSON 为受控响应。
+- **【八项门禁】** 逐条 exit 0：lint / type / test:contract / test:coverage（stmts 88.79 / branch 80.11 / funcs 95.4）/ backend **789 passed / 92 文件** / frontend **652 passed / 56 文件** / build / smoke:ui。首轮 frontend 门禁被视觉自检拦下（新增 CSS 里 `#000` 硬编码），改为 `var(--panel-sunken)` 后通过；失败记录保留在 `.tmp/b96/gate-frontend.log`。
+- **【如实边界】** 受控会话 JSON ≠ 真实会话质量；未调用真实模型；未部署；未做 N10（重出后是否传播失效）。
+
 ### 2026-10-26 · B97：拼接产物与会话的业务项目归属
 
 - **【契约】** CONTRACT 升 **V2.73**（§29）：`CreationRun.projectId` 是**业务项目**（与 `/api/generate` 同口径），不是画布身份 `CanvasDoc.projectId`；拼接任务的 `tasks.project_id`、请求快照 `projectId`、`run.projectId` 三者一致；列表 `?project=` 过滤、项目切换清空选中并重拉、迟到响应不得覆盖；无新字段/路由/错误码，不迁移历史归属。

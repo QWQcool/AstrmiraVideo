@@ -2165,7 +2165,7 @@
   gap: 6px;
 }
 
-/* ── S6-A2 技能库：详情面板（不抢卡片的“内容为主”）── */
+/* ── S6-A2 技能库：详情面板（不抢卡片的"内容为主"）── */
 .skills-editor {
   margin: 0 0 14px;
   padding: 16px;
@@ -2961,5 +2961,62 @@
     left: 12px;
     width: auto;
     max-width: none;
+  }
+}
+
+/* ── B96：会话详情的真实媒体（首帧缩略图 / 成片播放器）─────────────────
+   媒体只来自任务接口（/media/...），缩略图固定 16:9 裁切；窄屏铺满一行，
+   表格允许横向滚动而不是把按钮挤出视口。 */
+.runs-step-media {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.runs-thumb {
+  width: 160px;
+  max-width: 100%;
+  height: 90px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-sunken);
+}
+
+.runs-final {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.runs-final-title {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-note);
+}
+
+.runs-final-video {
+  width: 100%;
+  max-width: 640px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-sunken);
+}
+
+.runs-table-scroll {
+  overflow-x: auto;
+}
+
+@media (max-width: 480px) {
+  .runs-thumb {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+
+  .runs-final-video {
+    max-width: 100%;
   }
 }

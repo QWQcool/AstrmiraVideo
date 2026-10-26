@@ -1,16 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CreationRun, CreationRunSummary } from '@astrmira/shared';
+import type {
+  CreationRun,
+  CreationRunStep,
+  CreationRunSummary,
+  TaskProgress,
+} from '@astrmira/shared';
 import {
   ApiError,
   cancelCreationRun,
   confirmCreationRun,
   fetchCreationRun,
   fetchCreationRuns,
+  fetchTask,
   retryCreationRunStep,
   startCreationRun,
 } from '../lib/api';
 import { useTranslate, type MessageKey } from '../lib/i18n';
 import { useShell } from '../lib/shell';
+import { runFinalMedia, stepMedia } from '../lib/runMedia';
 
 /**
  * 创作会话视图（S8-D；CONTRACT §29）。
@@ -68,6 +75,20 @@ export function RunsView() {
   const [busy, setBusy] = useState(false);
   const detailRef = useRef<CreationRun | null>(null);
   detailRef.current = detail;
+  /** B96：关闭详情必须让"当前选中"也失效，否则下一轮轮询会把详情重新打开 */
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
+
+  /**
+   * B96：步骤 / 成片任务详情（真实媒体地址只从任务接口来）。
+   *
+   * 缓存按 **taskId** 存，因此重出首帧拿到新 taskId 时会自然显示新图；
+   * 旧 taskId 的迟到响应即使晚到也只落在旧键上，不会覆盖当前步骤。
+   */
+  const mediaRef = useRef(new Map<string, TaskProgress>());
+  const [mediaRev, setMediaRev] = useState(0);
+  /** 图片解码失败（文件被清理 / 损坏）——如实提示，不把它当成功 */
+  const [brokenUrls, setBrokenUrls] = useState<ReadonlySet<string>>(() => new Set());
 
   /**
    * B97：会话列表与详情都**按当前业务项目**取。
@@ -111,6 +132,8 @@ export function RunsView() {
       try {
         const result = await fetchCreationRun(id);
         if (seq !== detailSeqRef.current || expectedProject !== projectRef.current) return;
+        // B96：用户已经关闭详情 / 换了选中 → 迟到的详情响应不得重新打开它
+        if (selectedIdRef.current !== id) return;
         if (result.run.projectId !== expectedProject) {
           // 不属于当前项目：不显示（也不能让旧选中把另一项目的数据带出来）
           setSelectedId(null);
@@ -149,6 +172,50 @@ export function RunsView() {
     return () => clearInterval(timer);
   }, [reload, refreshDetail, summaries, selectedId, detail]);
 
+  /**
+   * B96：把详情里的步骤任务取成真实媒体。只在"没有缓存 / 任务仍在跑"时请求；
+   * 结果按 taskId 写入，重出后的新 taskId 自然覆盖显示，旧响应不会回滚新图。
+   */
+  useEffect(() => {
+    const current = detailRef.current;
+    if (current === null) return;
+    const ids = new Set<string>();
+    for (const step of current.steps) {
+      if (step.taskId !== undefined) ids.add(step.taskId);
+    }
+    if (current.assembledTaskId !== undefined) ids.add(current.assembledTaskId);
+    const pending = [...ids].filter((id) => {
+      const cached = mediaRef.current.get(id);
+      return cached === undefined || cached.status === 'queued' || cached.status === 'running';
+    });
+    if (pending.length === 0) return;
+    let cancelled = false;
+    // 并发且**各自落地**：一条慢任务（甚至挂住到超时）不能把其它步骤的预览一起堵住
+    for (const id of pending) {
+      void (async () => {
+        try {
+          const task = await fetchTask(id);
+          if (cancelled) return;
+          const before = mediaRef.current.get(id);
+          const differs =
+            before === undefined ||
+            before.status !== task.status ||
+            before.outputVideoUrl !== task.outputVideoUrl ||
+            before.outputImageUrl !== task.outputImageUrl ||
+            before.thumbnailUrl !== task.thumbnailUrl;
+          if (!differs) return;
+          mediaRef.current.set(id, task);
+          setMediaRev((value) => value + 1);
+        } catch {
+          // 单条任务取不到（已清理 / 忙时超时）不阻塞其它步骤；界面按"缺媒体"如实显示
+        }
+      })();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [detail, mediaRev]);
+
   const act = useCallback(
     async (action: () => Promise<unknown>): Promise<void> => {
       setBusy(true);
@@ -171,10 +238,67 @@ export function RunsView() {
     const summary = summaries?.find((item) => item.id === id);
     if (summary !== undefined && summary.projectId !== projectRef.current) return;
     const project = projectRef.current;
+    // 立刻写 ref：详情响应可能在 React 完成这次渲染之前就返回
+    selectedIdRef.current = id;
     setSelectedId(id);
     setDetail(null);
     void refreshDetail(id, project);
   };
+
+  /** B96：任务详情缓存（按 taskId；`mediaRev` 只用来触发重渲染） */
+  const mediaTasks = mediaRef.current;
+  void mediaRev;
+  const finalMedia = detail === null ? null : runFinalMedia(detail, mediaTasks);
+
+  function renderStepMedia(step: CreationRunStep) {
+    const media = stepMedia(
+      step,
+      step.taskId === undefined ? undefined : mediaTasks.get(step.taskId),
+    );
+    const testId = `runs-step-media-${step.id}`;
+    if (media.kind === 'image') {
+      if (brokenUrls.has(media.url)) {
+        return (
+          <span className="wb-note" data-testid={testId}>
+            {t('runs.media.loadFailed')}
+          </span>
+        );
+      }
+      return (
+        <img
+          className="runs-thumb"
+          data-testid={testId}
+          src={media.url}
+          alt={t('runs.media.firstFrameAlt')}
+          onError={() => setBrokenUrls((prev) => new Set(prev).add(media.url))}
+        />
+      );
+    }
+    if (media.kind === 'video') {
+      return (
+        <video
+          className="runs-thumb"
+          data-testid={testId}
+          src={media.url}
+          controls
+          preload="metadata"
+        />
+      );
+    }
+    const label =
+      media.kind === 'loading'
+        ? t('runs.media.loading')
+        : media.kind === 'failed'
+          ? t('runs.media.failed')
+          : media.kind === 'missing'
+            ? t('runs.media.missing')
+            : '';
+    return label === '' ? null : (
+      <span className="wb-note" data-testid={testId}>
+        {label}
+      </span>
+    );
+  }
 
   return (
     <section className="wb-page">
@@ -278,7 +402,18 @@ export function RunsView() {
                   {t('runs.action.cancel')}
                 </button>
               ) : null}
-              <button type="button" className="wb-btn" onClick={() => setDetail(null)}>
+              <button
+                type="button"
+                className="wb-btn"
+                data-testid="runs-detail-close"
+                onClick={() => {
+                  // B96：同时清"选中"，否则下一轮轮询（或迟到详情响应）会把详情重新打开
+                  selectedIdRef.current = null;
+                  setSelectedId(null);
+                  setDetail(null);
+                  setError(null);
+                }}
+              >
                 {t('runs.action.close')}
               </button>
             </div>
@@ -296,6 +431,38 @@ export function RunsView() {
             </p>
           )}
 
+          {finalMedia === null ? null : (
+            <section className="runs-final" data-testid="runs-final">
+              <h4 className="runs-final-title">{t('runs.media.finalTitle')}</h4>
+              {finalMedia.kind === 'video' ? (
+                <>
+                  <video
+                    className="runs-final-video"
+                    data-testid="runs-final-video"
+                    src={finalMedia.url}
+                    controls
+                    preload="metadata"
+                  />
+                  <a
+                    className="wb-btn"
+                    data-testid="runs-final-download"
+                    href={finalMedia.url}
+                    download={`${detail.title}.mp4`}
+                  >
+                    {t('runs.media.download')}
+                  </a>
+                </>
+              ) : finalMedia.kind === 'pending' ? (
+                <p className="wb-note">{t('runs.media.pending')}</p>
+              ) : finalMedia.kind === 'failed' ? (
+                <p className="wb-note cs-agent-proposal-warning">{t('runs.media.finalFailed')}</p>
+              ) : (
+                <p className="wb-note">{t('runs.media.missing')}</p>
+              )}
+            </section>
+          )}
+
+          <div className="runs-table-scroll">
           <table className="ov-table">
             <thead>
               <tr>
@@ -314,8 +481,11 @@ export function RunsView() {
                   <td>{step.kind === 'image' ? t('runs.step.image') : t('runs.step.video')}</td>
                   <td>{t(STEP_STATUS_KEYS[step.status] ?? 'runs.step.pending')}</td>
                   <td>{step.attempt}</td>
-                  <td className="wb-note">
-                    {step.outputAssetId === undefined ? '—' : step.outputAssetId.slice(0, 14)}
+                  <td className="runs-step-media">
+                    {renderStepMedia(step)}
+                    <span className="wb-note">
+                      {step.outputAssetId === undefined ? '—' : step.outputAssetId.slice(0, 14)}
+                    </span>
                   </td>
                   <td className="wb-note">
                     {step.error === undefined
@@ -350,6 +520,7 @@ export function RunsView() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </section>
