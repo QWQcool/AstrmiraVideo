@@ -467,6 +467,12 @@ export function CanvasStudioView() {
         setSaveState('saved');
         setIndex((prev) => (prev === null ? prev : setActiveCanvasProject(prev, project.projectId)));
         writeActiveCanvasProjectId(project.projectId);
+        // B94：切换后同步 URL query，避免旧 `?project=` 的 hash effect 把项目切回去。
+        window.history.replaceState(
+          null,
+          '',
+          `#/canvas?project=${encodeURIComponent(project.projectId)}`,
+        );
         window.setTimeout(() => restoreCanvasViewport(next), 60);
       } catch (caught) {
         setError(describeError(caught));
@@ -2220,6 +2226,7 @@ export function CanvasStudioView() {
             ) : null}
             {agentOpen ? (
               <CanvasAgentPanel
+                key={doc.projectId}
                 doc={doc}
                 {...(selectedIds[0] === undefined ? {} : { selectedNodeId: selectedIds[0] })}
                 onCreateText={createAgentTextNode}

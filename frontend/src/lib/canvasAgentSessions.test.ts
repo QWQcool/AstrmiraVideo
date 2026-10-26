@@ -34,6 +34,15 @@ describe('画布助手会话持久化（S9-B）', () => {
     expect(loadAgentSession('p2').map((m) => m.text)).toEqual(['p2 的问题']);
   });
 
+  it('B94：清除一个画布只清该画布，另一个画布历史保留', () => {
+    store = memoryStore();
+    saveAgentSession('scope-a', [{ role: 'user', text: 'A 历史' }]);
+    saveAgentSession('scope-b', [{ role: 'user', text: 'B 历史' }]);
+    clearAgentSession('scope-a');
+    expect(loadAgentSession('scope-a')).toEqual([]);
+    expect(loadAgentSession('scope-b').map((m) => m.text)).toEqual(['B 历史']);
+  });
+
   it('损坏的 JSON / 非法条目被过滤，不抛错', () => {
     store = memoryStore();
     store.set('astrmira.canvasAgentSession.bad', '{broken');

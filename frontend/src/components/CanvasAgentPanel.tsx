@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   STORYBOARD_SESSION_MAX_SHOTS,
   type AgentPlanUsage,
@@ -101,6 +101,17 @@ export function CanvasAgentPanel({
     model: string;
     usage?: AgentPlanUsage;
   } | null>(null);
+  /**
+   * B94 / F4：异步请求只在“同一画布 + 同一会话代次”内允许回写 UI。
+   * 画布切换由父组件 key 重挂载兜底；这里再防新会话清空后旧响应回填。
+   */
+  const projectIdRef = useRef(doc.projectId);
+  const requestVersionRef = useRef(0);
+  useEffect(() => {
+    projectIdRef.current = doc.projectId;
+  }, [doc.projectId]);
+  const requestStillCurrent = (projectId: string, version: number): boolean =>
+    projectIdRef.current === projectId && requestVersionRef.current === version;
 
   // S9-B：问答变化即落盘（FIFO 上限在 saveAgentSession 内裁剪）
   useEffect(() => {
@@ -144,6 +155,8 @@ export function CanvasAgentPanel({
       openByok();
       return;
     }
+    const requestProjectId = doc.projectId;
+    const requestVersion = requestVersionRef.current;
     setMessage('');
     setError(null);
     setBusy(true);
@@ -163,6 +176,7 @@ export function CanvasAgentPanel({
           },
           { llmKey: apiKey },
         );
+        if (!requestStillCurrent(requestProjectId, requestVersion)) return;
         setStoryboard(result.plan);
         setProposalMeta({
           model: result.model,
@@ -178,6 +192,7 @@ export function CanvasAgentPanel({
           },
           { llmKey: apiKey },
         );
+        if (!requestStillCurrent(requestProjectId, requestVersion)) return;
         setUpdateProposal(result.proposal);
         setProposalMeta({
           model: result.model,
@@ -192,6 +207,7 @@ export function CanvasAgentPanel({
           },
           { llmKey: apiKey },
         );
+        if (!requestStillCurrent(requestProjectId, requestVersion)) return;
         setProposal(result.proposal);
         setProposalMeta({
           model: result.model,
@@ -210,6 +226,7 @@ export function CanvasAgentPanel({
           },
           { llmKey: apiKey },
         );
+        if (!requestStillCurrent(requestProjectId, requestVersion)) return;
         setHistory((prev) => [
           ...prev,
           {
@@ -222,9 +239,11 @@ export function CanvasAgentPanel({
         ]);
       }
     } catch (caught) {
-      setError(t('canvas.agent.failed', { reason: errorText(caught) }));
+      if (requestStillCurrent(requestProjectId, requestVersion)) {
+        setError(t('canvas.agent.failed', { reason: errorText(caught) }));
+      }
     } finally {
-      setBusy(false);
+      if (requestStillCurrent(requestProjectId, requestVersion)) setBusy(false);
     }
   };
 
@@ -241,6 +260,8 @@ export function CanvasAgentPanel({
       openByok();
       return;
     }
+    const requestProjectId = doc.projectId;
+    const requestVersion = requestVersionRef.current;
     setExpansionBusy(true);
     setError(null);
     try {
@@ -252,15 +273,18 @@ export function CanvasAgentPanel({
         },
         { llmKey: apiKey },
       );
+      if (!requestStillCurrent(requestProjectId, requestVersion)) return;
       setExpansion(result.plan);
       setProposalMeta({
         model: result.model,
         ...(result.usage === undefined ? {} : { usage: result.usage }),
       });
     } catch (caught) {
-      setError(t('canvas.agent.storyboard.expandFailed', { reason: errorText(caught) }));
+      if (requestStillCurrent(requestProjectId, requestVersion)) {
+        setError(t('canvas.agent.storyboard.expandFailed', { reason: errorText(caught) }));
+      }
     } finally {
-      setExpansionBusy(false);
+      if (requestStillCurrent(requestProjectId, requestVersion)) setExpansionBusy(false);
     }
   };
 
@@ -283,6 +307,8 @@ export function CanvasAgentPanel({
       setError(t('runs.submit.noProvider'));
       return;
     }
+    const requestProjectId = doc.projectId;
+    const requestVersion = requestVersionRef.current;
     setRunBusy(true);
     setError(null);
     try {
@@ -299,7 +325,10 @@ export function CanvasAgentPanel({
           ),
         }),
       );
+      // B94：A 画布的创建响应迟到时，绝不能到 B 画布再 start 一次生成。
+      if (!requestStillCurrent(requestProjectId, requestVersion)) return;
       await startCreationRun(created.run.id);
+      if (!requestStillCurrent(requestProjectId, requestVersion)) return;
       setHistory((prev) => [
         ...prev,
         { role: 'assistant', text: t('runs.submit.created') },
@@ -308,9 +337,11 @@ export function CanvasAgentPanel({
       setExpansion(null);
       setRunOpen(false);
     } catch (caught) {
-      setError(t('runs.submit.failed', { reason: errorText(caught) }));
+      if (requestStillCurrent(requestProjectId, requestVersion)) {
+        setError(t('runs.submit.failed', { reason: errorText(caught) }));
+      }
     } finally {
-      setRunBusy(false);
+      if (requestStillCurrent(requestProjectId, requestVersion)) setRunBusy(false);
     }
   };
 
@@ -323,6 +354,8 @@ export function CanvasAgentPanel({
       openByok();
       return;
     }
+    const requestProjectId = doc.projectId;
+    const requestVersion = requestVersionRef.current;
     setBusy(true);
     setError(null);
     setProposal(null);
@@ -340,15 +373,18 @@ export function CanvasAgentPanel({
         },
         { llmKey: apiKey },
       );
+      if (!requestStillCurrent(requestProjectId, requestVersion)) return;
       setProposal(result.proposal);
       setProposalMeta({
         model: result.model,
         ...(result.usage === undefined ? {} : { usage: result.usage }),
       });
     } catch (caught) {
-      setError(t('canvas.agent.failed', { reason: errorText(caught) }));
+      if (requestStillCurrent(requestProjectId, requestVersion)) {
+        setError(t('canvas.agent.failed', { reason: errorText(caught) }));
+      }
     } finally {
-      setBusy(false);
+      if (requestStillCurrent(requestProjectId, requestVersion)) setBusy(false);
     }
   };
 
@@ -406,14 +442,21 @@ export function CanvasAgentPanel({
           aria-label={t('canvas.agent.newSession')}
           title={t('canvas.agent.newSession')}
           onClick={() => {
+            // B94：只清当前画布的键；并让当前画布的旧异步响应失效。
+            requestVersionRef.current += 1;
             clearAgentSession(doc.projectId);
             setHistory([]);
+            setMessage('');
+            setError(null);
+            setBusy(false);
+            setExpansionBusy(false);
+            setRunBusy(false);
             setProposal(null);
             setUpdateProposal(null);
             setStoryboard(null);
             setExpansion(null);
             setRunOpen(false);
-            setError(null);
+            setProposalMeta(null);
           }}
         >
           ⟳
