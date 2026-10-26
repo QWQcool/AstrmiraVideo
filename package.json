@@ -20,6 +20,7 @@
     "test:contract": "pnpm --filter backend exec vitest run src/contract.test.ts",
     "test:fixtures": "node scripts/make-fixture-clips.mjs",
     "smoke:ui": "node scripts/smoke-ui.mjs",
+    "test:browser:agent": "node tests/browser/agent-unmount.mjs",
     "smoke:comfy": "node scripts/comfyui-acceptance.mjs",
     "smoke:comfy:e2e": "node scripts/smoke-comfyui-e2e.mjs",
     "capture:shots": "node scripts/capture-docs-shots.mjs",

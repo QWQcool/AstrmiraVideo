@@ -107,11 +107,33 @@ export function CanvasAgentPanel({
    */
   const projectIdRef = useRef(doc.projectId);
   const requestVersionRef = useRef(0);
+  /**
+   * B94 前置收口：**卸载即失效**。
+   *
+   * 父组件按 `key={doc.projectId}` 重挂载本面板，但旧实例里的 ref 不会因此改变 ——
+   * 一个在切换前发出的创建会话请求若在卸载后才返回，`requestStillCurrent` 仍会判 true，
+   * 于是旧闭包继续调用 `/start`：用户已经在另一块画布上，服务端却悄悄开始消耗算力。
+   * 这里在 cleanup 里把代次 +1，让所有在途请求的回写与 start 全部落空。
+   *
+   * 兼容 StrictMode：模拟卸载/重挂载会依次执行 cleanup 与 effect，第二次挂载重新置 true，
+   * 之后的请求取到的是**新代次**，不会误伤。已创建的 planned 会话保持 planned ——
+   * 取消一个客户端请求不等于撤销服务端已接受的操作，也**不**替用户删除它。
+   */
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestVersionRef.current += 1;
+    };
+  }, []);
   useEffect(() => {
     projectIdRef.current = doc.projectId;
   }, [doc.projectId]);
   const requestStillCurrent = (projectId: string, version: number): boolean =>
-    projectIdRef.current === projectId && requestVersionRef.current === version;
+    mountedRef.current &&
+    projectIdRef.current === projectId &&
+    requestVersionRef.current === version;
 
   // S9-B：问答变化即落盘（FIFO 上限在 saveAgentSession 内裁剪）
   useEffect(() => {
