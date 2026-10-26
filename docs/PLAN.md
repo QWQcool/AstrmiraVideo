@@ -1804,6 +1804,18 @@
 
 <a id="multi-reference-reference-status"></a>
 
+### 2026-10-26 · B99：拼接失败只重拼，不重新生成
+
+- **【契约】** CONTRACT 升 **V2.74**（§29）：`CreationRun` 新增 **`assemblyAttempt`**（0 起，旧会话默认 0）；拼接幂等键 `run:<runId>:assembly:a<assemblyAttempt>`；`POST .../steps/:stepId/retry` 接受**伪步骤 id `assembly`**（与 `failure.stepId` 同值）——仅限 failed 会话且失败点就是拼接、全部视频步成功（≥2 镜）；迁移到 `assembling` 并 `assemblyAttempt+1`、清 `assembledTaskId/failure/finishedAt`，**已成功步骤一个字段都不动**；同一 attempt 的重复点击/并发/重启恢复用同一键；镜头产物文件缺失明确报错。无新路由、无新错误码。
+- **【持久化】** `creation_runs` 加列 `assembly_attempt INTEGER NOT NULL DEFAULT 0`（`COLUMN_MIGRATIONS`，旧行为 0 → 与历史 `a0` 键完全兼容，不回填、不改写历史任务）。
+- **【路由守卫】** `stepId='assembly'` 走独立分支（**读→改→写之间没有 await**，并发/连点第二次进来状态已是 assembling → 409）；失败点在镜头/有镜头未成功/单镜会话分别 409 并给人话原因；`assembledTaskId` 已存在时再重试 409。
+- **【UI】** B96 的详情新增「重试拼接」按钮（仅 `failed && failure.stepId==='assembly'` 显示）+ 失败提示「镜头都已成功，只有拼接失败；重试只重新执行拼接，不会重新生成任何镜头」；中英文案同步。
+- **【顺带修复（真实缺陷，B99 验收必须）】** 新测试暴露出 `editExecutor.concatWithTransition` **无条件 `rm(current)`**：转场拼接的第一次迭代把**源任务的成片**删掉（源任务点开没得播、重试必然报"源成片缺失"）。修复为只删**本任务临时目录内**的中间产物；回归断言：同一 EDL 连续三次拼接（含转场）都成功、源片仍在。
+- **【单测/端到端】** 路由 6 项（attempt/清痕迹/步骤不动/连点 409/失败点非拼接 409/镜头未成功 409/单镜 409）；引擎 +1（键随 attempt、恢复同键、EDL 不变）；端到端 2 项（注入首次拼接失败 → 路由重试 → 成功；**生成提交计数全程 0**、`a0→a1`、步骤原样）；真实 ffmpeg +1（三次拼接顺序/时长仍满足 B107，转场容差 2 帧）。
+- **【真实浏览器】** `tests/browser/run-media.mjs` 增 B99 阶段（现共 20 条断言）：拼接失败显示入口与提示、失败会话不拿镜头视频冒充成片、点击后回到 assembling（按钮消失）、重试成功后成片播放器重新出现。
+- **【八项门禁】** 逐条 exit 0：lint / type / test:contract / test:coverage（stmts 88.87 / branch 80.15 / funcs 95.41）/ backend **799 passed / 94 文件** / frontend **652 passed / 56 文件** / build / smoke:ui。首轮 backend/coverage 曾因上面的源片删除缺陷失败（记录保留在 `.tmp/b99/gate-*.log`），修复后复跑全绿。
+- **【如实边界】** 拼接失败是注入的（模拟 ffmpeg 故障），不是真实磁盘故障；未调用真实模型；未部署；N10（重出后是否传播失效）仍开放。
+
 ### 2026-10-26 · B96：首帧可检查、成片可播放下载
 
 - **【范围】** 只改会话详情（`RunsView`）的媒体展示与关闭行为；复用任务接口取真实媒体，不新增路由/字段，不动确认/启动/重试边界，不自动重出已成功后继（N10 仍开放）。

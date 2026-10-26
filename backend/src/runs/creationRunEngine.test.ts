@@ -36,6 +36,7 @@ function run(steps: Array<ReturnType<typeof step>>, overrides: Record<string, un
     provider: 'fixture-local',
     steps,
     state: 'planned' as const,
+    assemblyAttempt: 0,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -291,6 +292,31 @@ describe('CreationRunService · 收尾自动合成（S8-C）', () => {
     expect(h.editSubmissions[0]?.key).toBe('run:r1:assembly:a0');
     expect(h.saved.at(-1)?.assembledTaskId).toBe('e1');
     expect(h.saved.at(-1)?.state).toBe('assembling');
+  });
+
+  it('B99：拼接幂等键跟 assemblyAttempt；同一 attempt 的恢复用同一个键、EDL 不变', async () => {
+    const h = harness();
+    const r = twoShotRun();
+    r.state = 'assembling';
+    r.assemblyAttempt = 2;
+    h.setRun(r);
+    await h.service.tick('r1');
+    expect(h.editSubmissions[0]?.key).toBe('run:r1:assembly:a2');
+    // 重试只换键，不换内容：源片与追加列表必须与上一次完全一致
+    expect(h.editSubmissions[0]?.script).toEqual({
+      sourceTaskId: 't1',
+      operations: [{ type: 'concat', taskIds: ['t2'] }],
+    });
+
+    // 恢复窗口：提交瞬间崩溃（assembledTaskId 未落盘）后重开服务，仍是同一个键
+    const recovery = harness();
+    const pending = twoShotRun();
+    pending.state = 'assembling';
+    pending.assemblyAttempt = 2;
+    recovery.setRun(pending);
+    await recovery.service.tick('r1');
+    await recovery.service.tick('r1');
+    expect(recovery.editSubmissions.every((item) => item.key === 'run:r1:assembly:a2')).toBe(true);
   });
 
   it('B97：拼接入队带上**会话的业务项目**（不能落回 default）', async () => {

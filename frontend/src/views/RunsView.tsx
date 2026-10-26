@@ -392,6 +392,18 @@ export function RunsView() {
                   {t('runs.action.confirm')}
                 </button>
               ) : null}
+              {detail.state === 'failed' && detail.failure?.stepId === 'assembly' ? (
+                <button
+                  type="button"
+                  className="wb-btn"
+                  data-testid="runs-assembly-retry"
+                  disabled={busy}
+                  title={t('runs.action.retryAssemblyHint')}
+                  onClick={() => void act(() => retryCreationRunStep(detail.id, 'assembly'))}
+                >
+                  {t('runs.action.retryAssembly')}
+                </button>
+              ) : null}
               {isLive(detail) ? (
                 <button
                   type="button"
@@ -430,6 +442,9 @@ export function RunsView() {
               })}
             </p>
           )}
+          {detail.state === 'failed' && detail.failure?.stepId === 'assembly' ? (
+            <p className="wb-note">{t('runs.assemblyRetryHint')}</p>
+          ) : null}
 
           {finalMedia === null ? null : (
             <section className="runs-final" data-testid="runs-final">

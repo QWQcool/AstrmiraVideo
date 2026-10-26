@@ -145,6 +145,7 @@ function runFor(colors: readonly Color[]): CreationRun {
       attempt: 0,
     })),
     state: 'assembling',
+    assemblyAttempt: 0,
     startedAt: 1,
     createdAt: 1,
     updatedAt: 1,
@@ -155,10 +156,11 @@ async function assemble(
   store: TaskStore,
   colors: readonly Color[],
   transitions: readonly string[] = [],
+  suffix = '',
 ): Promise<{ script: EditScript; output: string; completed: string[]; failed: string[] }> {
   const script = buildAssemblyScript(runFor(colors), transitions);
   if (script === null) throw new Error('预期产生拼接脚本');
-  const taskId = `assembly-${colors.length}-${transitions.length}`;
+  const taskId = `assembly-${colors.length}-${transitions.length}${suffix}`;
   store.insert({
     taskId,
     track: 'local',
@@ -249,5 +251,31 @@ describe('B107 · 真实 ffmpeg 自动拼接', () => {
 
   it('单镜：buildAssemblyScript 返回 null，不创建拼接任务', () => {
     expect(buildAssemblyScript(runFor(['red']))).toBeNull();
+  });
+
+  it('B99：同一 EDL 在显式重试后重新拼接仍满足顺序与时长（含转场），且**源片不被删**', async () => {
+    // 同一个脚本、两次独立执行（模拟 a0 失败 / a1 重试）：内容与时长必须一样成立。
+    // 用转场分支是因为它会走 concatWithTransition —— 该路径曾无条件 rm(current)，
+    // 第一次拼接就会把源任务的成片删掉（重试必然失败）。这条断言钉住"只删中间产物"。
+    const first = await assemble(store, ['red', 'green', 'blue'], ['叠化', '叠化'], '-a0');
+    const retry = await assemble(store, ['red', 'green', 'blue'], ['叠化', '叠化'], '-a1');
+    expect(retry.script).toEqual(first.script);
+    for (const result of [first, retry]) {
+      expect(result.failed).toEqual([]);
+      expect(existsSync(result.output)).toBe(true);
+      const duration = probeDuration(result.output);
+      const expected = 3 * CLIP_SEC - 2 * 0.5;
+      expect(Math.abs(duration - expected)).toBeLessThanOrEqual(2 * FRAME_SEC + 0.005);
+      expectDominant(result.output, 0.5, 'red');
+      expectDominant(result.output, 2.5, 'green');
+      expectDominant(result.output, 4.0, 'blue');
+    }
+    // 源片必须还在（用户还要能播、还能再次拼接）
+    for (const color of COLORS) {
+      expect(existsSync(path.join(TMP_OUT, `b107-${color}.mp4`))).toBe(true);
+    }
+    // 源任务的 URL 仍可用 → 第三次拼接仍能成功（真正证明"复用已有镜头"）
+    const third = await assemble(store, ['red', 'green', 'blue'], ['叠化', '叠化'], '-a2');
+    expect(third.failed).toEqual([]);
   });
 });

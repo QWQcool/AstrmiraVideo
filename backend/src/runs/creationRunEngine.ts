@@ -319,7 +319,9 @@ export class CreationRunService {
             try {
               const taskId = await this.deps.ports.submitEdit(
                 script,
-                creationRunStepKey(run.id, 'assembly', 0),
+                // B99：**同一 attempt 用同一个键**（恢复/重复点击命中同一任务）；
+                // 只有显式「重试拼接」把 assemblyAttempt +1，才换键 = 真新任务。
+                creationRunStepKey(run.id, 'assembly', run.assemblyAttempt ?? 0),
                 run.projectId,
               );
               run.assembledTaskId = taskId;

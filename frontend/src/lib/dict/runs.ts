@@ -35,6 +35,11 @@ export const RUNS_ZH = {
   'runs.action.retry': '重试这一步',
   'runs.action.redo': '重出这张首帧',
   'runs.action.redoHint': '换一个执行意图重新生成这张首帧图（新任务）；完成后回到确认暂停',
+  'runs.action.retryAssembly': '重试拼接',
+  'runs.action.retryAssemblyHint':
+    '只重新拼接：复用全部已成功镜头，不重新生成图片或视频（新尝试 = 新幂等键）',
+  'runs.assemblyRetryHint':
+    '镜头都已成功，只有拼接失败。点「重试拼接」只会重新执行拼接，不会重新生成任何镜头。',
   'runs.action.close': '关闭详情',
   'runs.awaitingHint': '首帧已全部出图。逐镜检查后点「确认首帧并继续」跑完剩余；不满意的镜头可在会话外单独重出。',
   'runs.failure': '失败步骤 {step}：{message}',
@@ -99,6 +104,11 @@ export const RUNS_EN = {
   'runs.action.retry': 'Retry this step',
   'runs.action.redo': 'Redo this first frame',
   'runs.action.redoHint': 'Regenerate this first frame as a new task (new idempotency key); returns to the confirm pause when done',
+  'runs.action.retryAssembly': 'Retry assembly',
+  'runs.action.retryAssemblyHint':
+    'Only re-assemble: every successful shot is reused, no image or video is regenerated (a new attempt gets a new idempotency key).',
+  'runs.assemblyRetryHint':
+    'Every shot succeeded; only the assembly failed. "Retry assembly" re-runs the concat and never regenerates a shot.',
   'runs.action.close': 'Close detail',
   'runs.awaitingHint': 'All first frames are ready. Review them, then confirm to run the rest; regenerate unsatisfied shots outside the run.',
   'runs.failure': 'Failed step {step}: {message}',

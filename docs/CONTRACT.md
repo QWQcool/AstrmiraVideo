@@ -1,6 +1,15 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.73 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.74 · 已冻结（变更需先改本文，再改代码）**
+> **V2.74 修订（2026-10-26）**：**拼接失败只重拼（§29 / B99）** ——
+>   ① `CreationRun` 新增 `assemblyAttempt`（0 起，旧会话默认 0）；拼接幂等键由
+>      `run:<runId>:assembly:a0` 改为 `run:<runId>:assembly:a<assemblyAttempt>`；
+>   ② `POST .../steps/:stepId/retry` 接受**伪步骤 id `assembly`**（与 `failure.stepId` 同值）：
+>      仅限 failed 会话且失败点就是拼接、且全部视频步已成功（≥2 镜）；迁移到 `assembling`，
+>      `assemblyAttempt+1`，清 `assembledTaskId/failure/finishedAt`，**已成功步骤一个字段都不动**；
+>   ③ 同一 attempt 的重复点击/并发/重启恢复都用同一键（不会开第二个拼接任务、不会自增）；
+>      `assembledTaskId` 已存在时再次重试 → 409；
+>   ④ 镜头产物文件缺失时明确报错，不偷偷重新生成；无新路由、无新错误码。
 > **V2.73 修订（2026-10-26）**：**会话与拼接产物的业务项目归属（§29 / B97）** ——
 >   ① `CreationRun.projectId` 是**业务项目**（与 `/api/generate` 同口径），**不是**画布身份
 >      `CanvasDoc.projectId`；画布助手创建会话时必须传当前业务项目；
@@ -3368,6 +3377,7 @@ interface CreationRun {
   startedAt?: number; finishedAt?: number;
   failure?: { stepId: string; message: string };   // 失败即停：第一个失败步骤
   assembledTaskId?: string;         // S8-C：自动拼接产物（一条普通 edit 任务）
+  assemblyAttempt: number;          // V2.74：拼接尝试代数（0 起；只在显式「重试拼接」时 +1）
 }
 ```
 
@@ -3387,6 +3397,7 @@ interface CreationRun {
 | → succeeded | 拼接任务成功（或未配拼接时全部步骤成功） | `finishedAt` 落盘 |
 | 任意活跃态 → cancelled | `POST .../cancel` | 停止提交后续步骤；**已在途任务让其跑完但结果不被消费**（不虚构"已中止上游"） |
 | failed → running | `POST .../steps/:stepId/retry` | 该步 `attempt+1`（新幂等键）、`pending`；其余已成功步**不重跑** |
+| failed(assembly) → assembling | `POST .../steps/assembly/retry`（V2.74 伪步骤 id） | **只重拼**：`assemblyAttempt+1`、清 `assembledTaskId/failure/finishedAt`；镜头 taskId/产物/attempt **一个都不动**；镜头未全部成功 → 409 |
 
 **启动边界（S10-R1 / B92，V2.70）**：
 
@@ -3409,9 +3420,15 @@ interface CreationRun {
   入队时 `tasks.project_id`、请求快照的 `projectId` 与 `run.projectId` **三者一致**。
   会话列表按 `?project=` 过滤；项目切换只清空选中并按新项目重拉，迟到响应不得覆盖当前项目。
 - **自动拼接（S8-C / V2.65）**：全部步骤成功且**视频步骤 ≥2** → 进 `assembling`，按**镜头顺序**提交一条
-  `concat` 剪辑任务（单一操作；幂等键 `run:<runId>:assembly:a0`，断点回放）；拼接任务成功 → `succeeded`
+  `concat` 剪辑任务（单一操作；幂等键 `run:<runId>:assembly:a<assemblyAttempt>`，断点回放）；拼接任务成功 → `succeeded`
   并回填 `assembledTaskId`；失败 → `failed`（`failure.stepId = 'assembly'`）。
   **单视频步会话跳过拼接**（拼接无信息量），直落 `succeeded`、`assembledTaskId` 缺省。
+- **拼接重试（B99 / V2.74）**：拼接失败后只能在**原会话**里显式重试拼接（`stepId='assembly'`）：
+  - 迁移到 `assembling` 并 `assemblyAttempt+1`（换幂等键 = 真新拼接任务），清 `assembledTaskId` / `failure` / `finishedAt`；
+  - **已成功的生成步骤不重跑**（taskId / 产物 / attempt 不变）；镜头未全部成功、失败点在某个镜头、或单镜会话 → 409 并给人话原因；
+  - 同一 attempt 的重复点击 / 并发 / 重启恢复都用**同一个键**（幂等命中既有拼接任务，不自增、不开第二个任务）；
+  - 镜头视频文件已被清理时**明确报错**（不回退重新生成）；
+  - 服务端**绝不自动重试拼接**（与步骤重试同一条红线）。
 
 **路由（S8-B3 已实现；语义见上方状态机）**
 
@@ -3423,7 +3440,7 @@ interface CreationRun {
 | `POST` | `/api/agent/runs/:id/start` 【规划】 | planned → running，开始执行；非 planned → 409 |
 | `POST` | `/api/agent/runs/:id/confirm` 【规划】 | awaiting-confirmation → running（首帧确认档继续）；非该态 409 |
 | `POST` | `/api/agent/runs/:id/cancel` 【规划】 | 活跃态 → cancelled；已终态 409 |
-| `POST` | `/api/agent/runs/:id/steps/:stepId/retry` 【规划】 | failed 会话的失败步显式重试（attempt+1 换键）；非 failed 会话 / 非失败步 → 409 |
+| `POST` | `/api/agent/runs/:id/steps/:stepId/retry` 【规划】 | failed 会话的失败步显式重试（attempt+1 换键）；`stepId='assembly'` = 只重拼（V2.74，`assemblyAttempt+1`）；非 failed 会话 / 非失败步 / 镜头未全成功 → 409 |
 
 **错误码**：全部复用既有（`INVALID_REQUEST` / `NOT_FOUND` 类 404 / 409 冲突用 `INVALID_REQUEST` 显式消息；
 上游失败按步骤 `error` 记录在会话对象里，不新设错误码）。

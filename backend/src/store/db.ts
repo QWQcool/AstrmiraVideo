@@ -183,6 +183,9 @@ const COLUMN_MIGRATIONS: ReadonlyArray<{ table: string; column: string; ddl: str
   // V2.27（台账 A1 片 A / B11）：任务**实际在哪台机器上跑的**（cloud / host-local / client-worker）。
   // NULL = V2.27 之前的老任务 —— 界面遇到 NULL **不猜**（不按 provider 反推历史事实）。
   { table: 'tasks', column: 'executed_by', ddl: 'TEXT' },
+  // V2.74（B99）：创作会话的**拼接尝试代数**（0 起）。旧行默认 0 —— 与 `assembly:a0` 的
+  // 历史幂等键完全兼容（恢复窗口继续用同一键），不需要回填或改写任何历史任务。
+  { table: 'creation_runs', column: 'assembly_attempt', ddl: 'INTEGER NOT NULL DEFAULT 0' },
 ];
 
 function applyColumnMigrations(db: Db): void {

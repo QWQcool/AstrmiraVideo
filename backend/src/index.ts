@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import Fastify from 'fastify';
@@ -511,6 +512,29 @@ const app = Fastify({
        */
       const businessProjectId = projectId.trim() === '' ? source.projectId : projectId;
       const request = { ...source.requestSnapshot, projectId: businessProjectId };
+      /**
+       * B99：已经成功的镜头文件必须真的在盘上。缺文件时**明确报错**——
+       * 不偷偷重新生成（那会花掉用户没要求的算力），也不拿一个缺片的拼接糊弄过去。
+       * 幂等回放（上面 existing 分支）不受此限：已经存在的拼接任务重查时不该因清理而失败。
+       */
+      const outputsDir = resolveOutputsDir();
+      const requireVideoFile = (id: string, label: string): void => {
+        const mediaUrl = store.get(id)?.outputVideoUrl;
+        if (mediaUrl === undefined || !mediaUrl.startsWith('/media/')) {
+          throw new Error(`${label} 没有可用的视频产物：${id}`);
+        }
+        const relative = decodeURIComponent(mediaUrl.slice('/media/'.length));
+        if (!existsSync(path.join(outputsDir, relative))) {
+          throw new Error(
+            `${label} 的视频文件缺失（${mediaUrl}），可能已被清理：请重跑该镜头；不会为了拼接自动重新生成`,
+          );
+        }
+      };
+      requireVideoFile(script.sourceTaskId, '拼接源镜头');
+      for (const operation of script.operations) {
+        if (operation.type !== 'concat') continue;
+        for (const id of operation.taskIds) requireVideoFile(id, '拼接片段');
+      }
       const taskId = randomUUID();
       await queue.submit({
         taskId,

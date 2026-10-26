@@ -43,6 +43,7 @@ function makeRun(
       },
     ],
     state,
+    assemblyAttempt: 0,
     createdAt: 1,
     updatedAt: 1,
     ...(state === 'running' ? { startedAt: 1 } : {}),

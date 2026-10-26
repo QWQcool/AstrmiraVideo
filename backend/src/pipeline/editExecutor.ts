@@ -126,7 +126,16 @@ async function concatWithTransition(
     const stepDuration = await probeDurationSec(stepOutput);
     if (stepDuration === null) throw new Error('转场失败：无法读取产物时长');
 
-    await rm(current, { force: true }).catch(() => undefined);
+    /**
+     * B99 顺带修复（真实缺陷）：只删**本次任务的中间产物**。
+     * `current` 第一次迭代时是**源任务的成片**（outputs/<taskId>.mp4）—— 之前无条件
+     * `rm(current)` 会把用户的源片删掉：源任务点开就没得播，拼接重试也必然报"源成片缺失"。
+     * 判据用"它是否在本任务的临时目录里"，而不是靠文件名猜。
+     */
+    const workDir = path.dirname(output);
+    if (path.dirname(current) === workDir) {
+      await rm(current, { force: true }).catch(() => undefined);
+    }
     current = stepOutput;
     currentDuration = stepDuration;
   }

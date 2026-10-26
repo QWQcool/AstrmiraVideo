@@ -123,6 +123,14 @@ export const CreationRunSchema = z
       .optional(),
     /** S8-C：自动拼接产物（一条普通 edit 任务） */
     assembledTaskId: z.string().min(1).optional(),
+    /**
+     * B99：拼接尝试代数（0 起）。
+     *
+     * **只在显式「重试拼接」时 +1**（换幂等键 = 真新任务）；服务端绝不自动加。
+     * 与步骤的 `attempt` 同一条纪律：同一 attempt 的恢复/重复点击必须命中同一个拼接任务，
+     * 否则一次网络抖动就会多切一遍片。
+     */
+    assemblyAttempt: z.number().int().min(0).default(0),
   })
   .strict();
 export type CreationRun = z.infer<typeof CreationRunSchema>;

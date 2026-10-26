@@ -286,6 +286,19 @@ try {
     (url) => /^\/api\/agent\/runs\/[^/]+\/steps\/[^/]+\/retry$/.test(url.pathname),
     async (route) => {
       if (route.request().method() !== 'POST') return route.continue();
+      if (route.request().url().endsWith('/steps/assembly/retry')) {
+        // B99：重试拼接 → 回到 assembling；生成步骤与产物一个都不动
+        state.detail = {
+          ...state.detail,
+          state: 'assembling',
+          assemblyAttempt: (state.detail.assemblyAttempt ?? 0) + 1,
+          updatedAt: now + 3000,
+        };
+        delete state.detail.failure;
+        delete state.detail.finishedAt;
+        delete state.detail.assembledTaskId;
+        return fulfillJson(route, { run: state.detail });
+      }
       state.detail = detailRedone();
       return fulfillJson(route, { run: state.detail });
     },
@@ -304,6 +317,9 @@ try {
       }
       if (id === 'img-2-task') {
         return fulfillJson(route, taskJson({ taskId: id, outputImageUrl: '/media/b96-a.png' }));
+      }
+      if (id === 'assembly-failed-task') {
+        return fulfillJson(route, taskJson({ taskId: id, status: 'failed' }));
       }
       if (id === 'shot-1-task' || id === 'shot-2-task' || id === 'assembly-task') {
         return fulfillJson(
@@ -450,6 +466,36 @@ try {
     { timeout: 15_000 },
   );
   assert(true, '任务成功但无产物时如实显示「产物不可用」');
+
+  // ── ④b B99：拼接失败 → 只重拼 → 成功成片 ───────────────────────────────
+  state.detail = {
+    ...detailSucceeded('assembly-failed-task'),
+    state: 'failed',
+    failure: { stepId: 'assembly', message: '注入：ffmpeg 拼接失败' },
+    finishedAt: now + 4000,
+  };
+  await page.waitForSelector('[data-testid="runs-assembly-retry"]', { timeout: 15_000 });
+  assert(true, '拼接失败时显示「重试拼接」入口');
+  const retryHint = await page.textContent('[data-testid="runs-detail"]');
+  assert(retryHint.includes('只会重新执行拼接'), '失败提示写明只重拼、不重新生成');
+  assert(
+    (await page.locator('[data-testid="runs-final-video"]').count()) === 0,
+    '失败会话不拿镜头视频冒充成片',
+  );
+
+  await page.click('[data-testid="runs-assembly-retry"]');
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="runs-assembly-retry"]') === null,
+    { timeout: 15_000 },
+  );
+  assert(true, '点「重试拼接」后会话回到拼接中（按钮消失）');
+
+  state.detail = detailSucceeded('assembly-task');
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="runs-final-video"]') !== null,
+    { timeout: 15_000 },
+  );
+  assert(true, '重试成功后成片播放器重新出现');
 
   // ── ⑤ 关闭详情跨两次轮询仍保持关闭 ──────────────────────────────────────
   await page.click('[data-testid="runs-detail-close"]');

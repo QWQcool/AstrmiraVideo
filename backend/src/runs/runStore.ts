@@ -17,8 +17,8 @@ export class RunStore {
       .prepare(
         `INSERT INTO creation_runs
            (id, project_id, title, mode, provider, state, steps, confirmed_at,
-            failure, assembled_task_id, created_at, updated_at, started_at, finished_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            failure, assembled_task_id, assembly_attempt, created_at, updated_at, started_at, finished_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         run.id,
@@ -31,6 +31,7 @@ export class RunStore {
         run.confirmedAt ?? null,
         run.failure === undefined ? null : JSON.stringify(run.failure),
         run.assembledTaskId ?? null,
+        run.assemblyAttempt ?? 0,
         run.createdAt,
         run.updatedAt,
         run.startedAt ?? null,
@@ -51,7 +52,7 @@ export class RunStore {
       .prepare(
         `UPDATE creation_runs
            SET state = ?, steps = ?, confirmed_at = ?, failure = ?, assembled_task_id = ?,
-               updated_at = ?, started_at = ?, finished_at = ?
+               assembly_attempt = ?, updated_at = ?, started_at = ?, finished_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -60,6 +61,7 @@ export class RunStore {
         run.confirmedAt ?? null,
         run.failure === undefined ? null : JSON.stringify(run.failure),
         run.assembledTaskId ?? null,
+        run.assemblyAttempt ?? 0,
         run.updatedAt,
         run.startedAt ?? null,
         run.finishedAt ?? null,
@@ -106,6 +108,7 @@ interface RunRow {
   confirmed_at: number | null;
   failure: string | null;
   assembled_task_id: string | null;
+  assembly_attempt: number;
   created_at: number;
   updated_at: number;
   started_at: number | null;
@@ -130,6 +133,7 @@ function rowToRun(row: RunRow): CreationRun {
     ...(row.finished_at === null ? {} : { finishedAt: row.finished_at }),
     ...(row.failure === null ? {} : { failure: JSON.parse(row.failure) }),
     ...(row.assembled_task_id === null ? {} : { assembledTaskId: row.assembled_task_id }),
+    assemblyAttempt: row.assembly_attempt ?? 0,
   });
   if (!parsed.success) {
     throw new Error(`creation_runs 行损坏（${row.id}）：${parsed.error.issues[0]?.message ?? ''}`);

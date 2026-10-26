@@ -58,6 +58,8 @@ function toRun(input: CreationRunInput, now: number): CreationRun {
       attempt: 0,
     })),
     state: 'planned',
+    // B99：新建会话从第 0 次拼起（schema 的 default 只在解析时生效，响应序列化要显式给）
+    assemblyAttempt: 0,
     createdAt: now,
     updatedAt: now,
   };
@@ -239,6 +241,57 @@ export const createRunRoutes =
          *    引擎自然回到 awaiting-confirmation（deriveTransition 既有逻辑，零新状态）。
          *    无人值守档**不开放**（没有人盯着，重出只是浪费算力）。
          */
+        /**
+         * B99：`stepId === 'assembly'` 是**伪步骤 id**（与 `failure.stepId` 同值）：
+         * 只重拼、不重生成。
+         *
+         * 允许条件全部满足才迁移到 `assembling`：会话 failed + 失败点就是拼接 +
+         * 全部视频步已成功 + 至少两镜（单镜本来就不拼接）。任何一条不满足给 409 人话原因，
+         * 不偷偷重跑成功的镜头，也不偷偷重拼一个「失败在别处」的会话。
+         *
+         * 这里**没有 await**：读→改→写在同一轮事件循环里完成，并发/连点第二次进来时
+         * 状态已是 assembling，直接 409；不会出现两个拼接任务。
+         */
+        if (stepId === 'assembly') {
+          if (run.state !== 'failed' || run.failure?.stepId !== 'assembly') {
+            return reply.code(409).send(
+              createErrorResponse(
+                'INVALID_REQUEST',
+                `只有「拼接失败」的会话能重试拼接（当前 ${run.state}${run.failure === undefined ? '' : `，失败点 ${run.failure.stepId}`}）`,
+              ),
+            );
+          }
+          const videoSteps = run.steps.filter((step) => step.kind === 'video');
+          if (videoSteps.length < 2) {
+            return reply.code(409).send(
+              createErrorResponse('INVALID_REQUEST', '单镜会话不需要拼接（没有拼接任务可重试）'),
+            );
+          }
+          const unfinished = videoSteps.filter((step) => step.status !== 'succeeded');
+          if (unfinished.length > 0) {
+            return reply.code(409).send(
+              createErrorResponse(
+                'INVALID_REQUEST',
+                `镜头尚未全部成功（${unfinished.map((step) => `${step.id}:${step.status}`).join('、')}）：先重试失败镜头，不会为了拼接重新生成`,
+              ),
+            );
+          }
+          const now = Date.now();
+          const retried: CreationRun = {
+            ...run,
+            state: 'assembling',
+            // 显式新尝试 → 新幂等键（aN+1）；已成功的生成步骤一个字段都不动
+            assemblyAttempt: (run.assemblyAttempt ?? 0) + 1,
+            updatedAt: now,
+          };
+          delete retried.failure;
+          delete retried.finishedAt;
+          delete retried.assembledTaskId;
+          deps.runs.update(retried);
+          await deps.tick(id);
+          return { run: deps.runs.get(id) ?? retried };
+        }
+
         const isConfirmPhase =
           run.state === 'awaiting-confirmation' &&
           run.mode === 'first-frame-confirm';
