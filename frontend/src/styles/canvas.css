@@ -1349,8 +1349,52 @@
   --xy-attribution-background-color: transparent;
 }
 
+/* B109 / D76：事实引用线 = 1–1.5px 白色实线；计划边 = 灰白虚线；默认无箭头、无标签。
+   白线在浅色画布上靠一圈极淡的暗晕保证可见（颜色仍是白，不改成灰）。 */
+.cs-canvas .react-flow__edge.cs-edge--lineage .react-flow__edge-path {
+  stroke: var(--edge-fact);
+  stroke-width: 1.25px;
+  filter: drop-shadow(0 0 0.6px var(--edge-fact-halo));
+}
+
+.cs-canvas .react-flow__edge.cs-edge--dependency .react-flow__edge-path {
+  stroke: var(--edge-plan);
+  stroke-width: 1.25px;
+  stroke-dasharray: 6 4;
+}
+
+/* 选中只加粗，不改语义；计划边选中时提亮到白色，便于和事实边区分"这是同一条被选中的线" */
+.cs-canvas .react-flow__edge.selected.cs-edge--lineage .react-flow__edge-path {
+  stroke-width: 1.75px;
+}
+
+.cs-canvas .react-flow__edge.selected.cs-edge--dependency .react-flow__edge-path {
+  stroke: var(--edge-fact);
+  stroke-width: 1.5px;
+}
+
+/* 说明默认隐藏（**不是删除**）：DOM 仍有 aria-label，悬停 / 选中 / 键盘焦点才显示 */
+.cs-canvas .react-flow__edge .react-flow__edge-textwrapper {
+  opacity: 0;
+  transition: opacity 120ms var(--ease-ui);
+  pointer-events: none;
+}
+
+.cs-canvas .react-flow__edge:hover .react-flow__edge-textwrapper,
+.cs-canvas .react-flow__edge:focus .react-flow__edge-textwrapper,
+.cs-canvas .react-flow__edge:focus-within .react-flow__edge-textwrapper,
+.cs-canvas .react-flow__edge.selected .react-flow__edge-textwrapper {
+  opacity: 1;
+}
+
 .cs-canvas .react-flow__edge-text {
+  fill: var(--text);
   font-size: var(--fs-micro);
+}
+
+.cs-canvas .react-flow__edge-textbg {
+  fill: var(--panel);
+  opacity: 0.94;
 }
 
 .cs-card {

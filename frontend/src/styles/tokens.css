@@ -114,6 +114,11 @@
      写在组件里会**绕过主题**（日间模式下仍是暗色的黑，深得不自然）。 */
   --shadow-pop: 0 18px 40px rgba(0, 0, 0, 0.45);
   --canvas-veil: rgba(5, 7, 8, 0.6);
+  /* B109 / D76：画布引用线。事实边 = 白色细实线（既定规格），计划边 = 灰白虚线。
+     白线在浅色画布上需要一圈极淡的暗边才看得见 —— 用 token 而不是在 canvas.css 里写死。 */
+  --edge-fact: rgba(255, 255, 255, 0.96);
+  --edge-fact-halo: rgba(0, 0, 0, 0.5);
+  --edge-plan: rgba(226, 232, 240, 0.72);
 
   /* 几何与缓动 */
   --radius-control: 8px;
@@ -215,6 +220,10 @@
   --danger-line-strong: rgba(192, 57, 43, 0.35);
   --line-strong: rgba(22, 25, 27, 0.2);
   --canvas-veil: rgba(15, 17, 19, 0.55);
+  /* B109：浅色画布上事实边仍是白线（规格），靠暗晕保证可见；计划边用偏冷的灰白。 */
+  --edge-fact: rgba(255, 255, 255, 0.98);
+  --edge-fact-halo: rgba(15, 23, 42, 0.45);
+  --edge-plan: rgba(71, 85, 105, 0.55);
 }
 
 /* ── V9 · B6 追加的 3 个 keyframes（**已同步登记**进 frontend/scripts/visual-selfcheck.mjs）──

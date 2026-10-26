@@ -10,7 +10,6 @@ import {
   Background,
   Controls,
   MiniMap,
-  MarkerType,
   ReactFlow,
   useNodesState,
   type Connection,
@@ -119,6 +118,12 @@ import {
   type CanvasLineageProblem,
 } from '../lib/canvasLineage';
 import { reconcileReferenceLineage } from '../lib/canvasReferenceLineage';
+import {
+  canvasEdgeSummary,
+  edgeShortId,
+  type CanvasEdgeEndpoint,
+  type CanvasEdgeSummary,
+} from '../lib/canvasEdgeSummary';
 import {
   appendStoryboardLanding,
   buildStoryboardLanding,
@@ -287,6 +292,8 @@ export function CanvasStudioView() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  /** B109：受控边的选中态（见 handleSelectionChange 的说明） */
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState<ReadonlySet<string>>(() => new Set());
   const [live, setLive] = useState<Record<string, TaskProgress>>({});
   const [submitting, setSubmitting] = useState<ReadonlySet<string>>(new Set());
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1579,8 +1586,18 @@ export function CanvasStudioView() {
 
   // ── 选择 / 菜单 / 快捷键 ────────────────────────────────────────────────
   const handleSelectionChange = useCallback(
-    ({ nodes: selected }: { nodes: StudioRfNode[] }): void => {
+    ({ nodes: selected, edges }: { nodes: StudioRfNode[]; edges?: Array<{ id: string }> }): void => {
       setSelectedIds(selected.map((node) => node.id));
+      /**
+       * B109：边是**受控**的（rfEdges 由 doc 派生）。选中的 `selected` 标记必须自己记住，
+       * 否则任何一次重渲染（任务轮询 2s 一次）都会把 React Flow 的选中态重置掉 ——
+       * 表现是"点一下边，说明闪一下又没了"。只在集合真的变化时更新，避免自激循环。
+       */
+      const next = new Set((edges ?? []).map((edge) => edge.id));
+      setSelectedEdgeIds((prev) => {
+        if (prev.size === next.size && [...next].every((id) => prev.has(id))) return prev;
+        return next;
+      });
     },
     [],
   );
@@ -1862,19 +1879,66 @@ export function CanvasStudioView() {
     [referencePreviews],
   );
 
+  /**
+   * B109 / D76：边的说明只在**悬停 / 选中 / 键盘焦点**出现（CSS 控制显隐），
+   * 默认没有常驻箭头与标签；文字里带来源、目标、用途与"连接那一刻的版本"。
+   * 版本缺失时写「版本未记录」，不拿当前最新产物冒充历史引用。
+   */
+  const edgeLabelText = (summary: CanvasEdgeSummary): string => {
+    const endpoint = (end: CanvasEdgeEndpoint): string => {
+      if (end.missing) return t('canvas.edge.nodeMissing');
+      if (end.label !== undefined) return end.label;
+      const typeKey = `canvas.node.type.${end.type ?? 'text'}` as MessageKey;
+      return `${t(typeKey)} ${edgeShortId(end.id)}`;
+    };
+    const parts = [
+      `${endpoint(summary.source)} → ${endpoint(summary.target)}`,
+      t(summary.kind === 'lineage' ? 'canvas.edge.lineage' : 'canvas.edge.dependency'),
+    ];
+    if (summary.role !== undefined) parts.push(t(ROLE_KEYS[summary.role]));
+    parts.push(
+      summary.version === undefined
+        ? t('canvas.edge.versionMissing')
+        : t('canvas.edge.version', {
+            version:
+              summary.version.length > 18
+                ? `${summary.version.slice(0, 18)}…`
+                : summary.version,
+          }),
+    );
+    return parts.join(' · ');
+  };
+
+  const edgeNodeSource = doc?.nodes ?? null;
   const rfEdges = useMemo<Edge[]>(() => {
     if (edgeSource === null) return NO_EDGES;
-    return edgeSource.map((edge) => ({
-      id: edge.id,
-      source: edge.from,
-      target: edge.to,
-      type: 'smoothstep',
-      animated: edge.kind === 'dependency',
-      className: `cs-edge cs-edge--${edge.kind}`,
-      ...(edge.role === undefined ? {} : { label: t(ROLE_KEYS[edge.role]) }),
-      markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-    }));
-  }, [edgeSource, t]);
+    const nodes = edgeNodeSource ?? [];
+    return edgeSource.map((edge) => {
+      const summary = canvasEdgeSummary(edge, nodes);
+      const label = summary === null ? undefined : edgeLabelText(summary);
+      return {
+        id: edge.id,
+        source: edge.from,
+        target: edge.to,
+        // 自然曲线（不是折线），端点锚定节点边缘；默认无箭头
+        type: 'default',
+        animated: edge.kind === 'dependency',
+        className: `cs-edge cs-edge--${edge.kind}`,
+        selected: selectedEdgeIds.has(edge.id),
+        // 命中区比线宽大：1px 的线也要能 hover / 选中
+        interactionWidth: 24,
+        ...(label === undefined
+          ? {}
+          : {
+              label,
+              labelShowBg: true,
+              labelBgPadding: [6, 4] as [number, number],
+              labelBgBorderRadius: 4,
+            }),
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edgeSource, edgeNodeSource, selectedEdgeIds, t]);
 
   const menuItems: CanvasMenuItem[] =
     menu === null
@@ -2190,6 +2254,23 @@ export function CanvasStudioView() {
                 onConnect={handleConnect}
                 isValidConnection={isValidConnection}
                 onSelectionChange={handleSelectionChange}
+                onEdgesChange={(changes) => {
+                  // B109：边是受控的（doc 派生）。React Flow 的选中变化只回传到这里，
+                  // 不接的话选中态会被下一次轮询刷新掉（点一下闪一下）。
+                  const selection = changes.filter((change) => change.type === 'select');
+                  if (selection.length === 0) return;
+                  setSelectedEdgeIds((prev) => {
+                    const next = new Set(prev);
+                    for (const change of selection) {
+                      if (change.selected) next.add(change.id);
+                      else next.delete(change.id);
+                    }
+                    if (prev.size === next.size && [...next].every((id) => prev.has(id))) {
+                      return prev;
+                    }
+                    return next;
+                  });
+                }}
                 onNodeContextMenu={(event, node) => openMenu(event, node.id)}
                 onEdgeContextMenu={openEdgeMenu}
                 onPaneContextMenu={(event) => openMenu(event, null)}

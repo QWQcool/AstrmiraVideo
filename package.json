@@ -23,6 +23,7 @@
     "test:browser:agent": "node tests/browser/agent-unmount.mjs",
     "test:browser:runs": "node tests/browser/runs-project.mjs",
     "test:browser:media": "node tests/browser/run-media.mjs",
+    "test:browser:edges": "node tests/browser/edge-lines.mjs",
     "test:backup:canvas": "node tests/integration/backup-canvas.mjs",
     "smoke:comfy": "node scripts/comfyui-acceptance.mjs",
     "smoke:comfy:e2e": "node scripts/smoke-comfyui-e2e.mjs",
