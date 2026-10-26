@@ -58,6 +58,45 @@ describe('创作会话输入校验（S8-B1 / §29）', () => {
     ]))).toContain('图片步骤');
   });
 
+  it('B93：用户参考 + 图片依赖 / 多参考 / 多依赖 → 明确拒绝', () => {
+    expect(
+      validateCreationRunInput(
+        input([
+          step('img-1', 'image'),
+          step('shot-1', 'video', {
+            dependsOn: ['img-1'],
+            durationSec: 5,
+            referenceAssetIds: ['asset-user'],
+          }),
+        ]),
+      ),
+    ).toContain('参考');
+
+    expect(
+      validateCreationRunInput(
+        input([
+          step('shot-1', 'video', {
+            durationSec: 5,
+            referenceAssetIds: ['asset-a', 'asset-b'],
+          }),
+        ]),
+      ),
+    ).toContain('参考');
+
+    expect(
+      validateCreationRunInput(
+        input([
+          step('img-1', 'image'),
+          step('img-2', 'image'),
+          step('shot-1', 'video', {
+            dependsOn: ['img-1', 'img-2'],
+            durationSec: 5,
+          }),
+        ]),
+      ),
+    ).toContain('依赖');
+  });
+
   it('依赖成环 → 拒绝并给出路径', () => {
     // 图片步骤互依构环（video→video 会被"只能依赖图片步骤"先拦住，到不了环检测）
     const bad = input([

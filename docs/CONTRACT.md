@@ -1,6 +1,10 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.70 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.71 · 已冻结（变更需先改本文，再改代码）**
+> **V2.71 修订（2026-10-26）**：**参考能力缺失明确拒绝（B93）** ——
+>   ① t2i 带参考图时没有 `referenceImage` 模板 → 明确拒绝，不回退普通文生图、不调用 `/prompt`；
+>   ② 会话 v1 只支持一张用户参考、最多一个图片依赖；用户参考与依赖混用、多参考/多依赖在创建和提交构造层拒绝；
+>   ③ 不打开 N9（主体锚点/多参考融合），无新字段/路由/错误码。
 > **V2.70 修订（2026-10-26）**：**创作会话显式启动护栏（§29 / S10-R1·B92）** ——
 >   `planned` 仅草稿；定时 tick、直接 tick、重启恢复均不得执行或写 `startedAt`；
 >   活跃扫描不含 planned；只有 `POST .../start` 可迁移到 running，重复 start 仍 409。
@@ -3285,7 +3289,7 @@ interface CreationRun {
     aspectRatio: '16:9' | '9:16' | '1:1';
     resolutionTier?: '480p' | '720p' | '1080p';  // 提交时映射为 resolution
     durationSec?: number;           // 1–10，仅 video
-    referenceAssetIds: string[];    // ≤4；用户已有资产：第一张 first-frame、第二张 last-frame
+    referenceAssetIds: string[];    // v1：≤1 张；无依赖视频作 first-frame、无依赖图片作 ReferenceLatent
     dependsOn: string[];            // ≤4；**只能依赖 image 步骤**（首帧语义）
     transition?: string;            // V2.66：与下一镜接缝的转场文案（拼接时白名单映射，非生成字段）
     status: 'pending' | 'submitting' | 'running' | 'succeeded' | 'failed';
@@ -3332,8 +3336,9 @@ interface CreationRun {
 - **下游等待**：video 步只等 `dependsOn` 里 image 步的产物（`task:<taskId>` 作 `assets.firstFrameImage`；
   第二个依赖进 `lastFrameImage`）——不等全图，不等无关步骤；
 - **无依赖的 video 步**：`first-frame-confirm` 档下也要等确认（"确认"的对象是整批首帧，不区分有无依赖）；
+- **参考消费边界（B93 / V2.71）**：会话 v1 **只接一张用户参考**，且最多一个图片依赖。无依赖视频步骤的一张参考作 `firstFrameImage`（i2v）；无依赖图片步骤的一张参考作 ReferenceLatent（t2i + firstFrameImage）；图片步骤的一个上游依赖作定妆锚点。**用户参考 + 图片依赖混用、>1 张参考、>1 个依赖**都明确拒绝（400 / 步骤 failed），不把参考塞进未接线的 last-frame，不静默截断。N9 未拍板前不新增主体锚点、多参考融合或自动切模型。
 - **提交口径**：会话执行器内部复用 `/api/generate` 同一套校验与队列（含能力位拦截、`task:` 引用校验），
-  **不走 HTTP 自调用**；无凭据路径（本地轨不需要）。
+  **不走 HTTP 自调用**；无凭据路径（本地轨不需要）。t2i 带参考必须命中声明 `referenceImage` 的模板；没有模板时 provider 在 `/upload/image` 与 `/prompt` 之前拒绝，**不回退普通文生图**。
 - **自动拼接（S8-C / V2.65）**：全部步骤成功且**视频步骤 ≥2** → 进 `assembling`，按**镜头顺序**提交一条
   `concat` 剪辑任务（单一操作；幂等键 `run:<runId>:assembly:a0`，断点回放）；拼接任务成功 → `succeeded`
   并回填 `assembledTaskId`；失败 → `failed`（`failure.stepId = 'assembly'`）。

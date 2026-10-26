@@ -1,4 +1,5 @@
 import {
+  creationRunReferenceProblem,
   creationRunStepKey,
   type CreationRun,
   type CreationRunStep,
@@ -205,6 +206,9 @@ function resolutionOf(tier: '480p' | '720p' | '1080p', aspect: '16:9' | '9:16' |
 
 /** ④ 步骤 → 生成请求（纯）。依赖产物按序作首帧/尾帧；用户参考图排在其后同规则。 */
 export function buildStepRequest(run: CreationRun, step: CreationRunStep): VideoGenerateRequest {
+  // B93/F3：旧会话或绕过创建校验的输入也不能静默丢参考/把参考挤进未接线的尾帧。
+  const referenceProblem = creationRunReferenceProblem(step);
+  if (referenceProblem !== null) throw new Error(referenceProblem);
   const firstFrameImage =
     step.dependsOn.length === 0
       ? step.referenceAssetIds[0]

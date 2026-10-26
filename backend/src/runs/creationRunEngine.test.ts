@@ -218,21 +218,50 @@ describe('CreationRunService · 拓扑执行（S8-B2）', () => {
 });
 
 describe('buildStepRequest · 请求构造（纯函数）', () => {
-  it('视频步无依赖：用户参考图第一张首帧、第二张尾帧；有依赖：上游产物作首帧', () => {
+  it('视频步无依赖：单张用户参考作首帧；有依赖：上游产物作首帧', () => {
     const r = run([
       step('img-1', 'image', { status: 'succeeded', outputAssetId: 'task:t9' } as Record<string, unknown>),
-      step('shot-1', 'video', { referenceAssetIds: ['asset-a', 'asset-b'] }),
+      step('shot-1', 'video', { referenceAssetIds: ['asset-a'] }),
       step('shot-2', 'video', { dependsOn: ['img-1'] }),
     ]);
     const free = buildStepRequest(r, r.steps[1]!);
     expect(free.mode).toBe('i2v');
-    expect(free.assets).toEqual({ firstFrameImage: 'asset-a', lastFrameImage: 'asset-b' });
+    expect(free.assets).toEqual({ firstFrameImage: 'asset-a' });
 
     const dep = buildStepRequest(r, r.steps[2]!);
     expect(dep.mode).toBe('i2v');
     expect(dep.assets?.firstFrameImage).toBe('task:t9');
     expect(dep.params?.durationSec).toBe(5);
     expect(dep.resolution).toEqual({ width: 1280, height: 720 });
+  });
+
+  it('B93：多张用户参考 / 多依赖在请求构造层也拒绝', () => {
+    const multiRef = run([
+      step('shot-1', 'video', { referenceAssetIds: ['asset-a', 'asset-b'] }),
+    ]);
+    expect(() => buildStepRequest(multiRef, multiRef.steps[0]!)).toThrow(/参考/);
+
+    const multiDep = run([
+      step('img-1', 'image', { status: 'succeeded', outputAssetId: 'task:t1' } as Record<string, unknown>),
+      step('img-2', 'image', { status: 'succeeded', outputAssetId: 'task:t2' } as Record<string, unknown>),
+      step('shot-1', 'video', { dependsOn: ['img-1', 'img-2'] }),
+    ]);
+    expect(() => buildStepRequest(multiDep, multiDep.steps[2]!)).toThrow(/依赖/);
+  });
+
+  it('B93：有图片依赖时用户参考会被挤入尾帧 → 提交构造明确拒绝', () => {
+    const r = run([
+      step('img-1', 'image', {
+        status: 'succeeded',
+        taskId: 't9',
+        outputAssetId: 'task:t9',
+      } as Record<string, unknown>),
+      step('shot-1', 'video', {
+        dependsOn: ['img-1'],
+        referenceAssetIds: ['asset-user'],
+      } as Record<string, unknown>),
+    ]);
+    expect(() => buildStepRequest(r, r.steps[1]!)).toThrow(/参考|尾帧|依赖/);
   });
 });
 

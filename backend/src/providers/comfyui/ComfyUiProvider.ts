@@ -255,10 +255,24 @@ export class ComfyUiProvider implements VideoProvider {
   ): TemplateRuntime | undefined {
     const candidates = runtimes.filter((item) => item.capabilities.modes.includes(mode));
     if (candidates.length === 0) return undefined;
-    const byReference = candidates.filter(
-      (item) => (item.loaded.declaration?.referenceImage ?? false) === wantsReference,
+    if (wantsReference) {
+      // B93/F2：带参考图时必须命中声明 referenceImage 的模板。
+      // 绝不能回退普通 t2i —— 那会上传成功、/prompt 成功，但参考图被静默丢弃。
+      const referenceCandidates = candidates.filter(
+        (item) => item.loaded.declaration?.referenceImage === true,
+      );
+      if (referenceCandidates.length === 0) return undefined;
+      const loaded = this.templates();
+      const preferredName = loaded.templates[loaded.defaultIndex]?.name;
+      return (
+        referenceCandidates.find((item) => item.loaded.name === preferredName) ??
+        referenceCandidates[0]
+      );
+    }
+    const plainCandidates = candidates.filter(
+      (item) => item.loaded.declaration?.referenceImage !== true,
     );
-    const pool = byReference.length > 0 ? byReference : candidates;
+    const pool = plainCandidates.length > 0 ? plainCandidates : candidates;
     const loaded = this.templates();
     const preferredName = loaded.templates[loaded.defaultIndex]?.name;
     return pool.find((item) => item.loaded.name === preferredName) ?? pool[0];
@@ -399,6 +413,15 @@ export class ComfyUiProvider implements VideoProvider {
           multi ? `${item.loaded.name}：${reason}` : reason,
         ),
       );
+      if (wantsReference) {
+        // B93/F2：参考图请求没有 referenceImage 模板时，明确拒绝；
+        // 这里发生在 upload 和 /prompt 之前，不允许静默降级成普通文生图。
+        throw new Error(
+          `本地 ComfyUI 没有声明 referenceImage 的 ${request.mode} 模板，` +
+            `无法消费参考图；已拒绝提交，不会回退普通文生图。` +
+            `当前支持：${supported.join(' / ') || '无'}；原因：${reasons.join('；')}`,
+        );
+      }
       throw new Error(
         `本地 ComfyUI 当前不支持 ${request.mode}（支持：${supported.join(' / ') || '无'}）。` +
           `原因：${reasons.join('；')}`,

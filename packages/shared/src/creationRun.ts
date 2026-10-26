@@ -54,7 +54,7 @@ export const CreationRunStepSchema = z
     resolutionTier: z.enum(['480p', '720p', '1080p']).optional(),
     /** 仅 video 步骤有意义；缺省引擎默认 */
     durationSec: DurationSecSchema.optional(),
-    /** 用户已有资产 id（≤4）；第一张接 first-frame、第二张 last-frame（与画布落地同规则） */
+    /** 用户已有资产 id；v1 只接受一张（无依赖视频作 first-frame / 图片作 ReferenceLatent） */
     referenceAssetIds: z.array(z.string().min(1)).max(4).default([]),
     /** 上游 step id（≤4）。执行语义：其**产物**作本步骤的 first-frame（按依赖序首个），其余进 last-frame */
     dependsOn: z.array(z.string().min(1)).max(4).default([]),
@@ -133,6 +133,44 @@ export function creationRunVideoStepCount(steps: readonly CreationRunInputStep[]
   return steps.filter((step) => step.kind === 'video').length;
 }
 
+/**
+ * B93 / F3：会话 v1 的参考消费边界（N9 未拍板，不新增主体锚点/多参考融合）。
+ *
+ * 当前真正接线的位置只有：
+ * - 无依赖视频/图片步骤的**一张**用户参考（视频作 first-frame，图片作 ReferenceLatent）；
+ * - 图片步骤的**一个**上游图片依赖（定妆锚点）。
+ *
+ * last-frame、多参考、用户参考与图片依赖混用都没有完整消费链；
+ * 返回人话错误，不做静默截断/丢弃。
+ */
+export function creationRunReferenceProblem(step: {
+  id: string;
+  kind: 'image' | 'video';
+  referenceAssetIds?: string[];
+  dependsOn?: string[];
+}): string | null {
+  const references = step.referenceAssetIds ?? [];
+  const dependencies = step.dependsOn ?? [];
+  if (references.length > 1) {
+    return (
+      `步骤 ${step.id} 带 ${references.length} 张用户参考图；` +
+      '当前只支持一张参考图（尾帧/多参考尚未接线），请移除多余参考或等待 N9 决策'
+    );
+  }
+  if (dependencies.length > 1) {
+    return (
+      `步骤 ${step.id} 依赖 ${dependencies.length} 个图片步骤；` +
+      '当前只支持一个首帧依赖（尾帧/多依赖尚未接线），请移除非首依赖'
+    );
+  }
+  if (dependencies.length > 0 && references.length > 0) {
+    return step.kind === 'image'
+      ? `图片步骤 ${step.id} 已有首帧依赖，用户参考图没有可消费位置；当前不支持把上游首帧和用户参考混用`
+      : `视频步骤 ${step.id} 已有生成首帧，用户参考图会被挤到尾帧位置而当前不消费；请移除参考图或改用单参考图 i2v`;
+  }
+  return null;
+}
+
 /** create 时的结构校验（schema 管不了的跨字段事实）；返回人话错误或 null */
 export function validateCreationRunInput(input: CreationRunInput): string | null {
   const videoCount = creationRunVideoStepCount(input.steps);
@@ -147,6 +185,8 @@ export function validateCreationRunInput(input: CreationRunInput): string | null
     if (step.kind === 'image' && step.durationSec !== undefined) {
       return `图片步骤 ${step.id} 不应带 durationSec`;
     }
+    const referenceProblem = creationRunReferenceProblem(step);
+    if (referenceProblem !== null) return referenceProblem;
   }
   for (const step of input.steps) {
     // 裸输入可能没过 zod default（dependsOn/referenceAssetIds 缺省）：这里按空数组处理

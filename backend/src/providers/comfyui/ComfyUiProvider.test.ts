@@ -6,6 +6,8 @@ import type { VideoGenerateRequest } from '@astrmira/shared';
 import { ComfyUiProvider } from './ComfyUiProvider.js';
 import {
   FLUX2_KLEIN_T2I_DECLARATION,
+  FLUX2_KLEIN_T2I_REF_DECLARATION,
+  FLUX2_KLEIN_T2I_REF_TEMPLATE,
   FLUX2_KLEIN_T2I_TEMPLATE,
   templateNodeTypes,
   WAN22_TI2V_5B_TEMPLATE,
@@ -70,6 +72,10 @@ const FLUX_OBJECT_INFO: unknown = (() => {
     VAELoader: { input: { required: { vae_name: [['flux2-vae.safetensors']] } } },
   };
   for (const type of templateNodeTypes(FLUX2_KLEIN_T2I_TEMPLATE)) {
+    if (info[type] === undefined) info[type] = { input: { required: {} } };
+  }
+  // B93：参考图变体还引用 LoadImage / VAEEncode / ReferenceLatent；假 /object_info 也要有这些节点。
+  for (const type of templateNodeTypes(FLUX2_KLEIN_T2I_REF_TEMPLATE)) {
     if (info[type] === undefined) info[type] = { input: { required: {} } };
   }
   return info;
@@ -400,6 +406,45 @@ describe('ComfyUiProvider · 查状态', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('B93/F2 回归：带参考图的 t2i 在只有普通模板时明确拒绝，不回退文生图', async () => {
+    const { provider, fake } = setup(
+      { queued: false, objectInfo: FLUX_OBJECT_INFO },
+      {
+        template: FLUX2_KLEIN_T2I_TEMPLATE,
+        declaration: FLUX2_KLEIN_T2I_DECLARATION,
+        resolveAssetUrl: async (id) => `http://127.0.0.1:9/media/${id}.png`,
+      },
+    );
+    await expect(
+      provider.submit(
+        request({ mode: 't2i', assets: { firstFrameImage: 'asset-ref' } }),
+      ),
+    ).rejects.toThrow(/参考图|referenceImage|ReferenceLatent/);
+    expect(fake.calls.some((call) => call.includes('/prompt'))).toBe(false);
+    expect(fake.bodies.uploadCount).toBe(0);
+  });
+
+  it('B93 支持路径：referenceImage 模板仍上传参考图并带 ReferenceLatent', async () => {
+    const { provider, fake } = setup(
+      { queued: false, objectInfo: FLUX_OBJECT_INFO },
+      {
+        template: FLUX2_KLEIN_T2I_REF_TEMPLATE,
+        declaration: FLUX2_KLEIN_T2I_REF_DECLARATION,
+        resolveAssetUrl: async (id) => `http://127.0.0.1:9/media/${id}.png`,
+      },
+    );
+    await provider.submit(
+      request({ mode: 't2i', assets: { firstFrameImage: 'asset-ref' } }),
+    );
+    expect(fake.bodies.uploadCount).toBe(1);
+    const body = fake.bodies.prompt as {
+      prompt: Record<string, { class_type: string }>;
+    };
+    expect(
+      Object.values(body.prompt).some((node) => node.class_type === 'ReferenceLatent'),
+    ).toBe(true);
   });
 
   it('t2i 幂等：重复查询返回同一产物，且写的是 **outputImageUrl**（不是 outputVideoUrl）', async () => {
