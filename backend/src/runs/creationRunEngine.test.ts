@@ -94,10 +94,25 @@ function harness(): Harness {
 }
 
 describe('CreationRunService · 拓扑执行（S8-B2）', () => {
-  it('planned → running：先提交图片步，依赖未满足的视频步不提交', async () => {
+  it('S10-R1：planned 会话被直接 tick 时保持 planned，不提交、不写 startedAt', async () => {
     const h = harness();
     h.setRun(
       run([step('img-1', 'image'), step('shot-1', 'video', { dependsOn: ['img-1'] })]),
+    );
+    const after = await h.service.tick('r1');
+    expect(after?.state).toBe('planned');
+    expect(after?.startedAt).toBeUndefined();
+    expect(h.submissions).toHaveLength(0);
+    expect(h.saved).toHaveLength(0);
+  });
+
+  it('已显式启动的 running 会话：先提交图片步，依赖未满足的视频步不提交', async () => {
+    const h = harness();
+    h.setRun(
+      run([step('img-1', 'image'), step('shot-1', 'video', { dependsOn: ['img-1'] })], {
+        state: 'running',
+        startedAt: 12345,
+      }),
     );
     await h.service.tick('r1');
     expect(h.submissions).toHaveLength(1);
@@ -113,7 +128,10 @@ describe('CreationRunService · 拓扑执行（S8-B2）', () => {
   it('图片成功后：下一 tick 提交视频步（i2v + task: 首帧引用）；再成功 → 会话 succeeded', async () => {
     const h = harness();
     h.setRun(
-      run([step('img-1', 'image'), step('shot-1', 'video', { dependsOn: ['img-1'] })]),
+      run([step('img-1', 'image'), step('shot-1', 'video', { dependsOn: ['img-1'] })], {
+        state: 'running',
+        startedAt: 1,
+      }),
     );
     await h.service.tick('r1');
     h.tasks.set('t1', { status: 'succeeded', hasOutput: true });
@@ -135,7 +153,10 @@ describe('CreationRunService · 拓扑执行（S8-B2）', () => {
   it('失败即停：任务失败 → 会话 failed + failure 记录，后续步骤零提交', async () => {
     const h = harness();
     h.setRun(
-      run([step('img-1', 'image'), step('shot-1', 'video', { dependsOn: ['img-1'] })]),
+      run([step('img-1', 'image'), step('shot-1', 'video', { dependsOn: ['img-1'] })], {
+        state: 'running',
+        startedAt: 1,
+      }),
     );
     await h.service.tick('r1');
     h.tasks.set('t1', { status: 'failed', hasOutput: false, message: '上游拒绝' });

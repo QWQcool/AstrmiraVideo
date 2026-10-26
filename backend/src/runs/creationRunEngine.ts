@@ -273,12 +273,10 @@ export class CreationRunService {
     try {
       const run = this.deps.load(runId);
       if (run === null) return null;
+      // S10-R1 / B92：planned 只是草稿，定时扫描/重启/直接 tick 都不能执行。
+      // 只有 POST /start 才允许把 planned 迁移到 running（路由显式写入）。
+      if (run.state === 'planned') return run;
       const now = this.deps.now?.() ?? Date.now();
-
-      if (run.state === 'planned') {
-        run.state = 'running';
-        run.startedAt = now;
-      }
 
       // S8-C：assembling = 已提交（或待提交）自动拼接任务；等它终态
       if (run.state === 'assembling') {

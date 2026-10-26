@@ -1,6 +1,10 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.69 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.70 · 已冻结（变更需先改本文，再改代码）**
+> **V2.70 修订（2026-10-26）**：**创作会话显式启动护栏（§29 / S10-R1·B92）** ——
+>   `planned` 仅草稿；定时 tick、直接 tick、重启恢复均不得执行或写 `startedAt`；
+>   活跃扫描不含 planned；只有 `POST .../start` 可迁移到 running，重复 start 仍 409。
+>   无新路由、无新字段、无新错误码。
 > **V2.69 修订（2026-10-25）**：**画布图片派生编辑（§21-11 / S9-A3）** ——
 >   连接规则增"图片 → 图片"：role=`reference-image`（**单参考**，已占用即拒），语义 = 以该图作
 >   参考继续出图（provider 走 ReferenceLatent 变体模板，S9-A1）；视频产物作图片参考仍无通道；
@@ -3315,6 +3319,14 @@ interface CreationRun {
 | → succeeded | 拼接任务成功（或未配拼接时全部步骤成功） | `finishedAt` 落盘 |
 | 任意活跃态 → cancelled | `POST .../cancel` | 停止提交后续步骤；**已在途任务让其跑完但结果不被消费**（不虚构"已中止上游"） |
 | failed → running | `POST .../steps/:stepId/retry` | 该步 `attempt+1`（新幂等键）、`pending`；其余已成功步**不重跑** |
+
+**启动边界（S10-R1 / B92，V2.70）**：
+
+- `planned` 只是**草稿**；创建会话不等于开始执行。
+- 定时扫描、直接调用 `tick`、服务重启后的恢复**都不能**把 `planned` 改成 `running`，也不能设置 `startedAt` 或提交任务。
+- 调度器的活跃集合只包含 `running` / `awaiting-confirmation` / `assembling`，不包含 `planned`。
+- 只有 `POST /api/agent/runs/:id/start` 可以把 `planned` 迁移到 `running`；重复 `start` → **409**。
+- `running` 会话重启后按确定性幂等键找回已有任务，不重复调用 provider；已提交但未回填 taskId 的残留步骤用同一键重提。
 
 - **幂等键**：`run:<runId>:<stepId>:a<attempt>`（确定性）。重启/断线后按键找回既有任务，不重复计费；
 - **下游等待**：video 步只等 `dependsOn` 里 image 步的产物（`task:<taskId>` 作 `assets.firstFrameImage`；

@@ -1637,8 +1637,8 @@
 
 | 顺序 | 分片 / 台账指针 | 用户价值 ÷ 工作量判断 |
 |---|---|---|
-| 1 | **S10-R1 显式启动护栏 / B92** | 阻止意外消耗算力；极高 / S，建议下一片 |
-| 2 | 自动拼接不重复首镜 / B107 | 成片镜头与计划相符；极高 / S；真模型媒体暴露，紧接启动护栏 |
+| 1 | **S10-R1 显式启动护栏 / B92** | **已完成 2026-10-26**；计划态不再被定时/重启执行，证据见 §5 |
+| 2 | 自动拼接不重复首镜 / B107 | **下一片**；成片镜头与计划相符；极高 / S；真模型媒体暴露，紧接启动护栏 |
 | 3 | 参考能力缺失明确拒绝 / B93 | 避免生成成功却无视输入；极高 / S；主体扩展另等 N9 |
 | 4 | 助手历史跨画布隔离 / B94 | 阻止历史覆盖；高 / S；双入口共享上下文的前置 |
 | 5 | **S10-U1 细白引用线 / B109** | 直接改善高频画布操作；高 / S；只改渲染与交互反馈，建议第一片体验改动 |
@@ -1758,6 +1758,16 @@
 <a id="creation-experience-status"></a>
 
 <a id="multi-reference-reference-status"></a>
+
+### 2026-10-26 · S10-R1 / B92：planned 显式启动护栏
+
+- **【契约】** CONTRACT 升 **V2.70**：§29 明确 `planned` 只是草稿；定时扫描、直接 tick、服务重启恢复均不得迁移到 running、不得写 `startedAt`、不得提交任务。只有 `POST /api/agent/runs/:id/start` 可以启动；重复 start 仍 409；无新路由/字段/错误码。
+- **【实现】** ① `CreationRunService.tick` 对 planned 直接返回，不保存、不生成；② `RunStore.listActive` 只取 `running / awaiting-confirmation / assembling`，定时器不再把 planned 放进调度；③ start 路由的状态迁移和 tick 入口保持不变。
+- **【隔离验收】** 新增 `creationRunStartGuard.test.ts`：临时 SQLite 数据目录，创建 planned 后模拟两个 5s 调度周期 + 直接 tick + 关闭重开同一数据目录；结果始终 `planned`、`startedAt` 缺省、`tasks` 0、`provider.submit` 0。另测 running 重启时已有 taskId 的步骤不再提交。
+- **【兼容行为】** 显式 start、重复 start 409、确认、重试、取消、无人值守/首帧确认两档由既有 `runs.test.ts` 与引擎测试覆盖并经全量回归；修正原先把 planned tick 自动执行当作预期的旧测试。
+- **【八项门禁】** 逐项 exit 0：`pnpm lint`、`pnpm type`、`pnpm test:contract`、`pnpm test:coverage`、`pnpm --filter backend test`、`pnpm --filter frontend test`、`pnpm build`、`pnpm smoke:ui`。后端 **769 passed / 91 文件**；前端 **641 passed**；契约 **11/11**；coverage statements/lines **88.86%**、branches **79.97%**、functions **95.14%**；UI smoke 通过。命令/退出码/日志见 `.tmp/s10r1/gates.jsonl`（不入库）。
+- **【如实边界】** 未修改调度器以外的执行语义；未开始 B107 首镜重复拼接；未运行真实模型/付费云；未部署。下一片为 **B107**。
+- **【指针回检】** README 的 CONTRACT 徽章不重复维护版本号，NEXT 只指向 PLAN §5；两处无需新增状态副本，未改。§4 首行与 §9 B92 已标完成，下一片 B107。
 
 ### 2026-10-25 · 多素材 / 双入口 / 细白连线开发参照（文档与离线 HTML 片）
 
@@ -4907,7 +4917,7 @@
 
 | # | 项 | 来源 | 何时必须做 |
 |---|---|---|---|
-| B92 | 会话 planned 显式启动护栏 | 交接审计 F1 | 建议下一片；AC 见 §4 S10-R1 |
+| B92 | 会话 planned 显式启动护栏 | 交接审计 F1 | **已完成 2026-10-26**；AC 见 §4 S10-R1；证据见 §5 |
 | B93 | 参考能力缺失拒绝、用户参考消费完整性 | F2/F3 | 扩像素编辑/主体库前；缺能力拒绝按现有契约修，新增主体语义等 PENDING N9 |
 | B94 | 画布切换隔离助手状态与历史 | F4 / S9-B 浏览器边界 | 下一轮 UI 修复前；A→B→A、刷新、关闭/重开、新会话均须浏览器断言 |
 | B95 | 新画布纳入备份、校验与恢复 | F5 / CONTRACT §17 与 §21 | B 端交付或换机前；临时目录完整恢复、墓碑/引用一致性、旧备份兼容 |

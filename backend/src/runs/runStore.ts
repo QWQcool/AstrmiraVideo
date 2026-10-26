@@ -79,11 +79,16 @@ export class RunStore {
     });
   }
 
-  /** 重启恢复：所有需要执行器继续照看的会话。 */
+  /**
+   * 重启恢复：所有需要执行器继续照看的会话。
+   *
+   * S10-R1 / B92：**不包括 planned**。planned 只是草稿，只有显式 start
+   * 才允许执行；把它放进定时扫描会在重启后自动消耗算力。
+   */
   listActive(): CreationRun[] {
     const rows = this.db
       .prepare(
-        "SELECT * FROM creation_runs WHERE state IN ('planned', 'running', 'awaiting-confirmation', 'assembling')",
+        "SELECT * FROM creation_runs WHERE state IN ('running', 'awaiting-confirmation', 'assembling')",
       )
       .all() as RunRow[];
     return rows.map(rowToRun);
