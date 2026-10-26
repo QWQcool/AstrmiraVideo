@@ -1763,10 +1763,12 @@
 
 - **【契约】** CONTRACT 升 **V2.70**：§29 明确 `planned` 只是草稿；定时扫描、直接 tick、服务重启恢复均不得迁移到 running、不得写 `startedAt`、不得提交任务。只有 `POST /api/agent/runs/:id/start` 可以启动；重复 start 仍 409；无新路由/字段/错误码。
 - **【实现】** ① `CreationRunService.tick` 对 planned 直接返回，不保存、不生成；② `RunStore.listActive` 只取 `running / awaiting-confirmation / assembling`，定时器不再把 planned 放进调度；③ start 路由的状态迁移和 tick 入口保持不变。
-- **【隔离验收】** 新增 `creationRunStartGuard.test.ts`：临时 SQLite 数据目录，创建 planned 后模拟两个 5s 调度周期 + 直接 tick + 关闭重开同一数据目录；结果始终 `planned`、`startedAt` 缺省、`tasks` 0、`provider.submit` 0。另测 running 重启时已有 taskId 的步骤不再提交。
+- **【隔离验收】** `creationRunStartGuard.test.ts` 使用临时 SQLite 数据目录：创建 planned 后模拟两个 5s 调度 pass + 直接 tick，然后关闭数据库、重开同一路径、重建 `RunStore` / `CreationRunService` 再调度；始终 `planned`、`startedAt` 缺省、`tasks=0`、`provider.submit=0`。**这是数据库重开 + 应用对象重建，不是操作系统进程/HTTP 服务整体重启，也不是真实墙钟 5 秒等待。**
+- **【running 重启】** 先落盘 running 会话、已有 taskId 的 submitting 步骤和对应任务，关闭并重开同一数据库，重建 store/service 后调度；原 `taskId` 保留、任务数仍 1、提交计数 0、幂等映射不变。
+- **【恢复窗口】** 任务已入库但步骤尚未回填 taskId 时，重开后接入**实际 `TaskStore` + `SqliteJobQueue`**：同一幂等键找到原 taskId，步骤回填原任务，任务数与幂等键数均不增加；不是只断言 mock 收到相同字符串。
 - **【兼容行为】** 显式 start、重复 start 409、确认、重试、取消、无人值守/首帧确认两档由既有 `runs.test.ts` 与引擎测试覆盖并经全量回归；修正原先把 planned tick 自动执行当作预期的旧测试。
-- **【八项门禁】** 逐项 exit 0：`pnpm lint`、`pnpm type`、`pnpm test:contract`、`pnpm test:coverage`、`pnpm --filter backend test`、`pnpm --filter frontend test`、`pnpm build`、`pnpm smoke:ui`。后端 **769 passed / 91 文件**；前端 **641 passed**；契约 **11/11**；coverage statements/lines **88.86%**、branches **79.97%**、functions **95.14%**；UI smoke 通过。命令/退出码/日志见 `.tmp/s10r1/gates.jsonl`（不入库）。
-- **【部署】** 手动 CI/CD `40279468770`：verify 3m17s、deploy 1m36s，均成功；线上 `/api/health` 200。HEAD `657f6ea`。
+- **【八项门禁】** 逐项 exit 0：`pnpm lint`、`pnpm type`、`pnpm test:contract`、`pnpm test:coverage`、`pnpm --filter backend test`、`pnpm --filter frontend test`、`pnpm build`、`pnpm smoke:ui`。后端 **770 passed / 91 文件**；前端 **641 passed**；契约 **11/11**；coverage statements/lines **88.88%**、branches **80.01%**、functions **95.14%**；UI smoke 通过。命令/退出码/日志见 `.tmp/s10r1/gates.jsonl`（不入库）。
+- **【部署】** 手动 CI/CD `40279468770`：verify 3m17s、deploy 1m36s，均成功；线上 `/api/health` 200。运行时代码 `657f6ea`；本验收补丁只改测试/文档，不改变生产行为。
 - **【如实边界】** 未修改调度器以外的执行语义；未开始 B107 首镜重复拼接；未运行真实模型/付费云。下一片为 **B107**。
 - **【指针回检】** README 的 CONTRACT 徽章不重复维护版本号，NEXT 只指向 PLAN §5；两处无需新增状态副本，未改。§4 首行与 §9 B92 已标完成，下一片 B107。
 
