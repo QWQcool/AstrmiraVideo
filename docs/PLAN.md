@@ -1804,6 +1804,18 @@
 
 <a id="multi-reference-reference-status"></a>
 
+### 2026-10-26 · B95：新画布纳入备份、校验与恢复
+
+- **【契约】** CONTRACT 升 **V2.72**（§17）：备份范围 = `app.db` + `data/canvas`（文档/索引/墓碑，**总是包含**）+ `outputs/`（`--no-outputs` 只影响媒体）；manifest 升 `backupVersion 2`，新增 `includeCanvas` / `canvas[]`（逐份 sha256）/ `counts.canvases|canvasTombstones`；v1 备份可解析且明确报告"不含画布"，恢复保留目标现有画布；无新路由/错误码。
+- **【一致性策略（核心）】** 先取**画布写锁** `data/canvas/.backup.lock` → 再 `VACUUM INTO` → 再拷画布 → 放锁 → 拷 outputs → 最后写 manifest。备份窗口内画布保存/删除返回 **409 `DOC_CONFLICT`**（人话说明"备份进行中、编辑不会丢、稍后重试"），不是静默丢弃；只改 `activeProjectId` 不拦。由此得到可对账事实：**画布集合在窗口内不变 ⇒ 画布引用的任务一定早于数据库快照**。陈旧锁（>10 分钟）可被下次备份接管，避免异常退出把画布永久锁死。
+- **【显式边界】** 浏览器 `localStorage`（便签/助手会话/BYOK/偏好/上次打开画布）**不在**服务端备份范围，契约已写明，不声称"恢复了全部工作状态"。
+- **【校验】** 画布文件逐份字节数 + sha256；引用关系 = 文档内 `projectId` 与文件名/规范转义一致、必须是合法 `CanvasDoc`、`index.json` 列出的画布必须有文档且无墓碑、同一画布不能"文档 + 墓碑"并存、`counts.canvases` 与实际文档数一致。旧备份（v1）通过但带 note；`includeCanvas=false` 却列了画布文件 → 失败（自相矛盾）。
+- **【恢复】** 含画布时整体替换 `canvas/`；**旧备份不删除目标现有画布**（静默清空是数据丢失，不是恢复），`canvasRestored=false` 并在 CLI 如实打印。恢复前保护备份（`pre-restore-*`）同样含画布。
+- **【单元测试】** `backup.test.ts` 21 项（+6）：两画布+节点+墓碑全链路恢复后经 `CanvasDocStore` 读回；空画布集 note；缺失/等长篡改（只有 sha256 能发现）/索引指向幽灵画布/文档与墓碑并存四类失败；旧备份识别与"保留目标画布"；损坏备份被拒且现场画布/任务不变 + 保护备份含画布；写锁拒绝与陈旧锁接管。
+- **【跨进程验收】** 新增 `tests/integration/backup-canvas.mjs`（`pnpm test:backup:canvas`，23 条断言全过）：真服务 A 经 HTTP 建两画布（含 2 节点 + 1 条 `lineage` 边与 `assetId`）+ 建一张再删 → 停服 → CLI `backup --no-outputs` → `verify` → CLI `restore` 到**另一个** DATA_DIR → 真服务 B 经 `/api/canvas/projects`、`/api/canvas/docs/:id` 核对名称/节点数/边字段/墓碑 404/恢复后可继续保存。只操作临时目录。
+- **【八项门禁】** 逐条 exit 0：lint / type / test:contract / test:coverage / backend **787 passed / 92 文件** / frontend **642 passed / 55 文件** / build / smoke:ui。coverage statements/lines **88.78%**、branches **79.99%**、functions **95.4%**（覆盖率门限通过；分支较上片 -0.09 个百分点是新增备份分支的实测值）。证据 `.tmp/b95/gates.jsonl`。
+- **【如实边界】** 未对用户现有数据执行恢复或清理；未验证超大 outputs 的备份耗时（与本片无关，只放锁后拷贝）；未部署。
+
 ### 2026-10-26 · B94 前置收口：卸载后迟到创建响应
 
 - **【范围】** 只修 `CanvasAgentPanel` 的卸载/会话代次失效；不动创建协议、不改后端、不删除已创建的 planned 会话。证据目录 `.tmp/b94-followup/`。

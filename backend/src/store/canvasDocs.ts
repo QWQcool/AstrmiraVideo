@@ -18,6 +18,7 @@ import {
   type CanvasProjectIndex,
   type CanvasProjectRef,
 } from '@astrmira/shared';
+import { canvasWriteBlockedReason } from './canvasWriteBarrier.js';
 
 /**
  * 画布文档存储（CONTRACT §21-8；Step 11-S3 / 台账 B78）。
@@ -52,8 +53,33 @@ export class CanvasDocConflictError extends Error {
   }
 }
 
+/**
+ * B95：备份窗口内拒绝画布写入。
+ *
+ * 继承冲突错误是刻意的 —— 路由已有 409 `DOC_CONFLICT` 的映射与人话消息通道，
+ * 不为这个**临时只读窗口**新增错误码（客户端读到的是"没写进去 + 为什么 + 何时再试"）。
+ */
+export class CanvasDocBusyError extends CanvasDocConflictError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CanvasDocBusyError';
+  }
+}
+
 export class CanvasDocStore {
   constructor(private readonly dir: string) {}
+
+  /**
+   * B95 / CONTRACT §17：备份期间画布只读。
+   *
+   * 只挡**文档写入与删除**：二者改变"有哪些画布/画布内容"，会破坏备份的一致性声明。
+   * `setActive` 只动索引里的"上次打开"，不改变画布集合（且用户还在正常切画布），
+   * 因此不挡 —— 用一个小窗口换一条"连导航都报错"的体验并不划算。
+   */
+  private assertWritable(): void {
+    const reason = canvasWriteBlockedReason(this.dir);
+    if (reason !== null) throw new CanvasDocBusyError(reason);
+  }
 
   private indexPath(): string {
     return path.join(this.dir, 'index.json');
@@ -119,6 +145,7 @@ export class CanvasDocStore {
     input: unknown,
     expectedRevision?: number,
   ): { summary: CanvasProjectRef; revision: number } {
+    this.assertWritable();
     const doc = CanvasDocSchema.parse(input);
     if (existsSync(this.tombstonePath(doc.projectId))) {
       throw new CanvasDocConflictError('这个画布已被删除，不能通过迟到的保存复活');
@@ -151,6 +178,7 @@ export class CanvasDocStore {
   }
 
   deleteDoc(projectId: string): boolean {
+    this.assertWritable();
     if (!existsSync(this.docPath(projectId))) return false;
 
     // 先写墓碑再删文档：即使删文件失败，也可回滚墓碑；

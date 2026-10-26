@@ -32,7 +32,10 @@ const USAGE = `用法：
   node backend/dist/ops/cli.js verify  <backupDir>
   node backend/dist/ops/cli.js restore <backupDir> --yes
 
-环境：DATA_DIR（数据目录，默认 ./data）、OUTPUT_DIR（成片目录，默认 ./outputs）`;
+环境：DATA_DIR（数据目录，默认 ./data）、OUTPUT_DIR（成片目录，默认 ./outputs）
+
+范围：app.db + data/canvas（文档/索引/墓碑，总是包含）+ outputs（--no-outputs 只影响媒体）。
+备份期间画布保存会被明确拒绝（409），以保证数据库快照与画布集合是同一时点。`;
 
 function readFlag(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
@@ -47,18 +50,29 @@ function readFlag(args: string[], name: string): string | undefined {
 async function runBackup(args: string[]): Promise<number> {
   const dataDir = path.dirname(resolveDatabasePath());
   const outputsDir = resolveOutputsDir();
+  const canvasDir = path.join(dataDir, 'canvas');
   const target =
     readFlag(args, '--out') ?? path.join(dataDir, 'backups', backupDirName('backup', Date.now()));
   const includeOutputs = !args.includes('--no-outputs');
 
   const db = openDatabase();
   try {
-    const manifest = await createBackup({ db, outputsDir, targetDir: target, includeOutputs });
+    const manifest = await createBackup({
+      db,
+      outputsDir,
+      canvasDir,
+      targetDir: target,
+      includeOutputs,
+    });
     console.log(`✓ 备份完成：${target}`);
     console.log(
       `  库：${(manifest.database.bytes / 1024).toFixed(1)}KB · 任务 ${manifest.counts.tasks} 条 · ` +
         `项目 ${manifest.counts.projects} 个 · 成片文件 ${manifest.outputs.length} 个` +
         (includeOutputs ? '' : '（本次不含 outputs）'),
+    );
+    console.log(
+      `  画布：${manifest.counts.canvases} 张 · 墓碑 ${manifest.counts.canvasTombstones} 个 · ` +
+        `画布文件 ${manifest.canvas.length} 个（--no-outputs 不影响画布）`,
     );
     console.log('  ⚠️ 备份可在服务运行时进行（VACUUM INTO 是一致性快照）；**恢复**必须在服务停止后做。');
     return 0;
@@ -76,15 +90,17 @@ async function runVerify(args: string[]): Promise<number> {
     const manifest = result.manifest;
     console.log(
       `备份时间 ${new Date(manifest.createdAt).toLocaleString()} · 服务版本 ${manifest.appVersion} · ` +
-        `任务 ${manifest.counts.tasks} 条 · 成片 ${manifest.outputs.length} 个`,
+        `任务 ${manifest.counts.tasks} 条 · 成片 ${manifest.outputs.length} 个 · ` +
+        `画布 ${manifest.includeCanvas ? `${manifest.counts.canvases} 张` : '未包含'}`,
     );
   }
+  for (const note of result.notes) console.warn(`⚠️ ${note}`);
   if (!result.ok) {
     console.error('✗ 校验不通过：');
     for (const problem of result.problems) console.error(`  - ${problem}`);
     return 1;
   }
-  console.log('✓ 校验通过（sha256 与逐文件字节数都对得上）');
+  console.log('✓ 校验通过（sha256 与逐文件字节数都对得上；画布索引↔文档↔墓碑关系一致）');
   return 0;
 }
 
@@ -97,6 +113,7 @@ async function runRestore(args: string[]): Promise<number> {
 
   const dataDir = path.dirname(resolveDatabasePath());
   const outputsDir = resolveOutputsDir();
+  const canvasDir = path.join(dataDir, 'canvas');
 
   // 三道闸门（顺序是安全性的全部）：
   //   ① **服务进程锁**（权威判据：服务自己声明的"我在跑"）；
@@ -125,7 +142,7 @@ async function runRestore(args: string[]): Promise<number> {
         '数据库正被写入（另一个进程正在写）：请先停止它再恢复 —— 半途被写会得到一个坏库。',
       );
     }
-    prepared = await prepareRestore({ backupDir: dir, outputsDir, db });
+    prepared = await prepareRestore({ backupDir: dir, outputsDir, canvasDir, db });
   } finally {
     db.close();
   }
@@ -134,10 +151,16 @@ async function runRestore(args: string[]): Promise<number> {
     backupDir: dir,
     dataDir,
     outputsDir,
+    canvasDir,
     manifest: prepared.manifest,
   });
   console.log(
     `✓ 已恢复：任务 ${result.counts.tasks} 条 · 项目 ${result.counts.projects} 个 · 成片 ${result.restoredFiles} 个`,
+  );
+  console.log(
+    result.canvasRestored
+      ? `  画布：已恢复 ${result.restoredCanvasFiles} 个文件（${result.counts.canvases} 张 · 墓碑 ${result.counts.canvasTombstones} 个）`
+      : '  画布：⚠️ 这份备份不含画布 —— 目标现有画布保持原样，不能声称完成了完整画布恢复',
   );
   if (prepared.preRestoreBackupDir !== null) {
     console.log(`  恢复前的状态已备份到：${prepared.preRestoreBackupDir}`);
