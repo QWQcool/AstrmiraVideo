@@ -56,7 +56,11 @@ export const CreationRunStepSchema = z
     durationSec: DurationSecSchema.optional(),
     /** 用户已有资产 id；v1 只接受一张（无依赖视频作 first-frame / 图片作 ReferenceLatent） */
     referenceAssetIds: z.array(z.string().min(1)).max(4).default([]),
-    /** 上游 step id（≤4）。执行语义：其**产物**作本步骤的 first-frame（按依赖序首个），其余进 last-frame */
+    /**
+     * 上游 step id。结构兼容上限 ≤4（旧文档/未来扩展可存）；
+     * 当前执行只支持 1 个 image 依赖（首帧/定妆锚点），>1 在 B93 明确拒绝。
+     * 不要把结构上限当成当前消费能力，也不要把第二个依赖塞进未接线的 last-frame。
+     */
     dependsOn: z.array(z.string().min(1)).max(4).default([]),
     /**
      * V2.66（S9）：本镜头与**下一镜头**接缝处的转场文案（来自分镜表 transition 原文）。

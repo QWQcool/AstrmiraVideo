@@ -4,7 +4,8 @@
 > **V2.71 修订（2026-10-26）**：**参考能力缺失明确拒绝（B93）** ——
 >   ① t2i 带参考图时没有 `referenceImage` 模板 → 明确拒绝，不回退普通文生图、不调用 `/prompt`；
 >   ② 会话 v1 只支持一张用户参考、最多一个图片依赖；用户参考与依赖混用、多参考/多依赖在创建和提交构造层拒绝；
->   ③ 不打开 N9（主体锚点/多参考融合），无新字段/路由/错误码。
+>   ③ 不打开 N9（主体锚点/多参考融合），无新字段/路由/错误码；
+>   ④ 2026-10-26 文档收口：schema 的 `referenceAssetIds`/`dependsOn` ≤4 是**结构兼容上限**，当前执行只消费 1 张参考/1 个 image 依赖；不改变运行时行为。
 > **V2.70 修订（2026-10-26）**：**创作会话显式启动护栏（§29 / S10-R1·B92）** ——
 >   `planned` 仅草稿；定时 tick、直接 tick、重启恢复均不得执行或写 `startedAt`；
 >   活跃扫描不含 planned；只有 `POST .../start` 可迁移到 running，重复 start 仍 409。
@@ -3289,8 +3290,8 @@ interface CreationRun {
     aspectRatio: '16:9' | '9:16' | '1:1';
     resolutionTier?: '480p' | '720p' | '1080p';  // 提交时映射为 resolution
     durationSec?: number;           // 1–10，仅 video
-    referenceAssetIds: string[];    // v1：≤1 张；无依赖视频作 first-frame、无依赖图片作 ReferenceLatent
-    dependsOn: string[];            // ≤4；**只能依赖 image 步骤**（首帧语义）
+    referenceAssetIds: string[];    // 结构兼容上限 ≤4；当前执行只支持 1 张（无依赖视频 first-frame / 图片 ReferenceLatent）
+    dependsOn: string[];            // 结构兼容上限 ≤4；当前执行只支持 1 个 image 依赖（首帧/定妆锚点）
     transition?: string;            // V2.66：与下一镜接缝的转场文案（拼接时白名单映射，非生成字段）
     status: 'pending' | 'submitting' | 'running' | 'succeeded' | 'failed';
     taskId?: string;                // 提交后回填
@@ -3333,8 +3334,8 @@ interface CreationRun {
 - `running` 会话重启后按确定性幂等键找回已有任务，不重复调用 provider；已提交但未回填 taskId 的残留步骤用同一键重提。
 
 - **幂等键**：`run:<runId>:<stepId>:a<attempt>`（确定性）。重启/断线后按键找回既有任务，不重复计费；
-- **下游等待**：video 步只等 `dependsOn` 里 image 步的产物（`task:<taskId>` 作 `assets.firstFrameImage`；
-  第二个依赖进 `lastFrameImage`）——不等全图，不等无关步骤；
+- **结构上限与执行限制（不要混为一谈）**：`referenceAssetIds` / `dependsOn` 的 schema 仍保留 ≤4 的结构兼容上限（旧文档/未来扩展可存），**当前执行只消费一张用户参考、最多一个 image 依赖**；>1 在创建校验和 `buildStepRequest` 明确拒绝（B93），不会把第二个依赖塞进未接线的 `lastFrameImage`。不要把“结构能存 4 个”当成“现在能消费 4 个”。
+- **下游等待**：video 步只等 `dependsOn` 中**唯一**的 image 步产物（`task:<taskId>` 作 `assets.firstFrameImage`）；当前不接第二个依赖/尾帧，不等全图，不等无关步骤；
 - **无依赖的 video 步**：`first-frame-confirm` 档下也要等确认（"确认"的对象是整批首帧，不区分有无依赖）；
 - **参考消费边界（B93 / V2.71）**：会话 v1 **只接一张用户参考**，且最多一个图片依赖。无依赖视频步骤的一张参考作 `firstFrameImage`（i2v）；无依赖图片步骤的一张参考作 ReferenceLatent（t2i + firstFrameImage）；图片步骤的一个上游依赖作定妆锚点。**用户参考 + 图片依赖混用、>1 张参考、>1 个依赖**都明确拒绝（400 / 步骤 failed），不把参考塞进未接线的 last-frame，不静默截断。N9 未拍板前不新增主体锚点、多参考融合或自动切模型。
 - **提交口径**：会话执行器内部复用 `/api/generate` 同一套校验与队列（含能力位拦截、`task:` 引用校验），

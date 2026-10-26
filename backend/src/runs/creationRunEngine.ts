@@ -204,7 +204,14 @@ function resolutionOf(tier: '480p' | '720p' | '1080p', aspect: '16:9' | '9:16' |
     : { width: base, height: Math.round((base * 16) / 9) };
 }
 
-/** ④ 步骤 → 生成请求（纯）。依赖产物按序作首帧/尾帧；用户参考图排在其后同规则。 */
+/**
+ * ④ 步骤 → 生成请求（纯）。
+ *
+ * 结构兼容允许 dependsOn/referenceAssetIds 存到 4 个，但当前执行只消费：
+ * - 1 个 image 依赖（first-frame / 定妆锚点）或 1 张无依赖用户参考；
+ * - 第二个依赖/尾帧/多参考没有接线，B93 已在创建和本函数入口明确拒绝。
+ * 不要把结构兼容上限写成执行能力。
+ */
 export function buildStepRequest(run: CreationRun, step: CreationRunStep): VideoGenerateRequest {
   // B93/F3：旧会话或绕过创建校验的输入也不能静默丢参考/把参考挤进未接线的尾帧。
   const referenceProblem = creationRunReferenceProblem(step);
