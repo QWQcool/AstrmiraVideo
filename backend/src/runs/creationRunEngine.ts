@@ -155,17 +155,24 @@ export function buildAssemblyScript(
   const taskIds = videoSteps.map((step) => step.taskId as string);
   if (taskIds.length < 2) return null;
 
-  const operations: EditScript['operations'] = [{ type: 'concat', taskIds }];
-  // transitions[i] = 第 i 段与第 i+1 段之间的转场文案（镜头序）；取第一个可映射值作为全片接缝转场
+  const [sourceTaskId, ...appendTaskIds] = taskIds;
+  const operations: EditScript['operations'] = [
+    // CONTRACT §11：concat 只追加到 sourceTaskId 之后，**不含源片自身**。
+    // 首镜已经作为 sourceTaskId，不能再进这里，否则成片会多出一整段首镜（F10）。
+    { type: 'concat', taskIds: appendTaskIds },
+  ];
+  // transitions[i] = 第 i 段与第 i+1 段之间的转场文案（镜头序）。
+  // 接缝数由**镜头总数**决定（N−1），不能拿 concat 的 append 列表长度（N−1）再算错一层。
+  const seamCount = taskIds.length - 1;
   const seam = transitions
-    .slice(0, taskIds.length - 1)
+    .slice(0, seamCount)
     .map((raw) => raw?.trim())
     .find((raw) => raw !== undefined && raw !== '' && TRANSITION_MAP[raw] !== undefined);
   if (seam !== undefined) {
     operations.push({ type: 'xfade', transition: TRANSITION_MAP[seam]!, durationSec: 0.5 });
   }
   return {
-    sourceTaskId: taskIds[0]!,
+    sourceTaskId: sourceTaskId!,
     operations,
   };
 }

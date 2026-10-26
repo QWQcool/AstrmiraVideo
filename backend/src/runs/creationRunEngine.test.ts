@@ -257,7 +257,7 @@ describe('CreationRunService · 收尾自动合成（S8-C）', () => {
     expect(h.editSubmissions).toHaveLength(1);
     expect(h.editSubmissions[0]?.script).toEqual({
       sourceTaskId: 't1',
-      operations: [{ type: 'concat', taskIds: ['t1', 't2'] }],
+      operations: [{ type: 'concat', taskIds: ['t2'] }],
     });
     expect(h.editSubmissions[0]?.key).toBe('run:r1:assembly:a0');
     expect(h.saved.at(-1)?.assembledTaskId).toBe('e1');
@@ -313,10 +313,21 @@ describe('buildAssemblyScript · 转场映射（S9 / V2.66）', () => {
     ], { state: 'assembling', startedAt: 1 });
   }
 
+  it('B107 回归：首镜只作 source，concat 只追加后续镜头', () => {
+    const script = buildAssemblyScript(videoRun());
+    expect(script?.sourceTaskId).toBe('t1');
+    expect(script?.operations[0]).toEqual({
+      type: 'concat',
+      taskIds: ['t2', 't3'],
+    });
+    const concat = script?.operations[0];
+    expect(concat?.type === 'concat' ? concat.taskIds : []).not.toContain('t1');
+  });
+
   it('transition 白名单命中 → concat 后追加单一 xfade（0.5s）', () => {
     const script = buildAssemblyScript(videoRun(), ['切', '叠化']);
     expect(script?.operations).toEqual([
-      { type: 'concat', taskIds: ['t1', 't2', 't3'] },
+      { type: 'concat', taskIds: ['t2', 't3'] },
       { type: 'xfade', transition: 'fade', durationSec: 0.5 },
     ]);
   });
@@ -327,6 +338,21 @@ describe('buildAssemblyScript · 转场映射（S9 / V2.66）', () => {
     expect(
       buildAssemblyScript(videoRun(), ['左移', '右移'])?.operations?.[1],
     ).toEqual({ type: 'xfade', transition: 'wipeleft', durationSec: 0.5 });
+  });
+
+  it('两镜转场：接缝数 N−1=1；append 列表长度为 1 不应把转场裁掉', () => {
+    const two = run(
+      [
+        step('shot-1', 'video', { status: 'succeeded', taskId: 't1' } as Record<string, unknown>),
+        step('shot-2', 'video', { status: 'succeeded', taskId: 't2' } as Record<string, unknown>),
+      ],
+      { state: 'assembling', startedAt: 1 },
+    );
+    const script = buildAssemblyScript(two, ['叠化']);
+    expect(script?.operations).toEqual([
+      { type: 'concat', taskIds: ['t2'] },
+      { type: 'xfade', transition: 'fade', durationSec: 0.5 },
+    ]);
   });
 });
 
