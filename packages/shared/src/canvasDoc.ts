@@ -192,6 +192,27 @@ export const CanvasViewportSchema = z.object({
   zoom: z.number().min(0.1).max(4),
 });
 
+/**
+ * V2.81：画布分组（P3）。
+ *
+ * **只存"谁属于这一组 + 标题"，不存矩形坐标**：矩形由成员节点的包围盒实时算。
+ * 存第二份坐标就得同步（拖一个成员要改组框、改组框又要回写成员），迟早漂；
+ * 而"组"在产品语义上本来就是"这几个节点是一伙的"，不是一块固定大小的画板。
+ *
+ * `nodeIds` 允许为空（成员被删光）—— 由 `pruneCanvasGroups` 收拾，而不是在这里强制不变量，
+ * 否则删除节点要先查组、删除组又要查节点，两步之间必然出现半状态。
+ */
+export const CanvasGroupSchema = z.object({
+  id: z.string().min(1),
+  title: z.string(),
+  nodeIds: z.array(z.string().min(1)),
+  /** 边框色（缺省用主题色）；只在界面上用，不进请求 */
+  color: z.string().optional(),
+  createdAt: z.number(),
+});
+
+export type CanvasGroup = z.infer<typeof CanvasGroupSchema>;
+
 export const CanvasDocSchema = z.object({
   version: z.literal(CANVAS_DOC_VERSION),
   projectId: z.string().min(1),
@@ -201,6 +222,8 @@ export const CanvasDocSchema = z.object({
   viewport: CanvasViewportSchema,
   nodes: z.array(CanvasDocNodeSchema),
   edges: z.array(CanvasDocEdgeSchema),
+  /** V2.81：分组（旧文档缺省 = 没有组） */
+  groups: z.array(CanvasGroupSchema).default([]),
   /**
    * V2.48（§21-8）：并发写入的修订号（不是格式版本；`version` 仍是格式版本）。
    * 旧文档没有该字段 → 读作 1；服务端每次成功写入 +1，客户端保存时必须带回读取时的值。
@@ -308,6 +331,7 @@ export function createEmptyCanvasDoc(
     viewport: { x: 0, y: 0, zoom: 1 },
     nodes: [],
     edges: [],
+    groups: [],
     revision: 1,
   };
 }

@@ -39,6 +39,12 @@ export interface StudioServices {
    * 上传与尺寸校验都在实现侧，组件只负责画笔。
    */
   onInpaint(nodeId: string, mask: Blob, size: { width: number; height: number }): void;
+  /** V2.81（分组）：点组标题 → 选中全部成员 */
+  onSelectGroup(groupId: string): void;
+  /** 双击标题改名 */
+  onRenameGroup(groupId: string, title: string): void;
+  /** 解散分组（**只删组，不删节点**） */
+  onRemoveGroup(groupId: string): void;
   /**
    * V2.79：扩图（`mode:'outpaint'`）。`size` 是底图真实宽高，`expand` 是四边外扩像素
    * （调用方已按 8 对齐；服务端会再校验一次）。

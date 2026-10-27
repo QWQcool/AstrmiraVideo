@@ -11,6 +11,7 @@ import {
   type CanvasOutput,
   type TaskProgress,
 } from '@astrmira/shared';
+import { pruneCanvasGroups } from './canvasGroups';
 
 /**
  * 画布文档的纯编辑操作（Step 11-S3 片 B2）。
@@ -85,7 +86,8 @@ export function removeCanvasNodes(
   const nodes = doc.nodes.filter((n) => !remove.has(n.id));
   if (nodes.length === doc.nodes.length) return doc;
   const edges = doc.edges.filter((e) => !remove.has(e.from) && !remove.has(e.to));
-  return { ...doc, nodes, edges, updatedAt: now };
+  // V2.81：组不会自己知道成员没了 —— 顺手收拾，避免留下空框或悬空 id
+  return pruneCanvasGroups({ ...doc, nodes, edges, updatedAt: now }, now);
 }
 
 export function removeCanvasNode(

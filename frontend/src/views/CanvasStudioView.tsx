@@ -156,7 +156,14 @@ import type { ReferenceSourceItem } from '../lib/referenceSources';
 import { CanvasContextMenu, type CanvasMenuItem } from '../canvas/studio/CanvasContextMenu';
 import { CanvasAgentPanel } from '../components/CanvasAgentPanel';
 import { CanvasNodeInspector } from '../components/CanvasNodeInspector';
+import { CanvasGroupNode } from '../canvas/studio/CanvasGroupNode';
 import { StudioNode } from '../canvas/studio/StudioNode';
+import {
+  canvasGroupBounds,
+  createCanvasGroup,
+  removeCanvasGroup,
+  renameCanvasGroup,
+} from '../lib/canvasGroups';
 import { StudioProvider, type ReferencePreview } from '../canvas/studio/StudioContext';
 
 /**
@@ -171,10 +178,10 @@ import { StudioProvider, type ReferencePreview } from '../canvas/studio/StudioCo
  * 旧只读血缘图仍在隐藏路由 `#/lineage`，等 B4 把来源边做进新画布后下线。
  */
 
-type StudioRfNode = RFNode<Record<string, unknown>, 'studio'>;
+type StudioRfNode = RFNode<Record<string, unknown>, 'studio' | 'canvasGroup'>;
 
 /** 必须模块级：内联对象会让 React Flow 每渲染一次就重建节点类型（节点卡会被卸载重挂） */
-const NODE_TYPES: NodeTypes = { studio: StudioNode };
+const NODE_TYPES: NodeTypes = { studio: StudioNode, canvasGroup: CanvasGroupNode };
 
 const ADDABLE: readonly CanvasNodeType[] = ['text', 'image', 'video', 'audio'];
 
@@ -243,6 +250,39 @@ const DEPENDENCY_PROBLEM_KEYS: Record<CanvasDependencyProblem, MessageKey> = {
   'source-not-media': 'canvas.studio.lineage.sourceNotMedia',
   'target-not-video': 'canvas.studio.lineage.targetNotVideo',
 };
+
+/**
+ * V2.81：把分组渲染成**只读的框**（`draggable/selectable = false`）。
+ *
+ * 框的位置由成员包围盒算出来，所以拖动成员时框会跟着变；
+ * 反过来"拖框移动成员"这一版不做 —— 那需要一个真正的容器模型（父子坐标），
+ * 而现在的节点坐标是绝对的，硬做会让撤销/粘贴/外部导入都要跟着改一遍。
+ */
+function toGroupRfNodes(doc: CanvasDoc): StudioRfNode[] {
+  return (doc.groups ?? [])
+    .map((group) => {
+      const bounds = canvasGroupBounds(group, doc.nodes);
+      if (bounds === null) return null;
+      const node: StudioRfNode = {
+        id: `group:${group.id}`,
+        type: 'canvasGroup',
+        position: { x: bounds.x, y: bounds.y },
+        style: { width: bounds.width, height: bounds.height },
+        draggable: false,
+        selectable: false,
+        connectable: false,
+        deletable: false,
+        data: {
+          groupId: group.id,
+          title: group.title,
+          memberCount: group.nodeIds.length,
+          ...(group.color === undefined ? {} : { color: group.color }),
+        },
+      };
+      return node;
+    })
+    .filter((node): node is StudioRfNode => node !== null);
+}
 
 function toRfNode(node: CanvasDocNode, selected: boolean): StudioRfNode {
   return {
@@ -611,12 +651,14 @@ export function CanvasStudioView() {
   const layoutKey =
     doc === null
       ? ''
-      : doc.nodes
+      : `${doc.nodes
           .map(
             (node) =>
               `${node.id}:${node.layout.x}:${node.layout.y}:${node.layout.width}:${node.layout.height}`,
           )
-          .join('|');
+          .join('|')}#${(doc.groups ?? [])
+          .map((group) => `${group.id}:${group.title}:${group.nodeIds.join(',')}`)
+          .join('|')}`;
 
   useEffect(() => {
     if (doc === null) {
@@ -632,7 +674,8 @@ export function CanvasStudioView() {
         selected.clear();
         selected.add(pending);
       }
-      return source.map((node) => toRfNode(node, selected.has(node.id)));
+      // 组框在前（先渲染 = 层级更低），节点卡在后
+      return [...toGroupRfNodes(doc), ...source.map((node) => toRfNode(node, selected.has(node.id)))];
     });
     if (pending !== null) {
       const target = source.find((node) => node.id === pending);
@@ -1707,6 +1750,44 @@ export function CanvasStudioView() {
     [applyDoc],
   );
 
+  /** V2.81：把当前选中的节点编成一组（组框按包围盒自动算，不需要用户框选区域） */
+  const createGroupFromSelection = useCallback(
+    (nodeIds: readonly string[]): void => {
+      if (nodeIds.length === 0) return;
+      const id = `group-${newCanvasProjectId()}`;
+      const count = nodeIds.length;
+      applyDoc((d) =>
+        createCanvasGroup(d, { id, title: t('canvas.group.defaultTitle', { count }), nodeIds }),
+      );
+      setNotice(t('canvas.group.created', { count }));
+    },
+    [applyDoc, t],
+  );
+
+  const selectGroup = useCallback((groupId: string): void => {
+    const current = docRef.current;
+    if (current === null) return;
+    const group = (current.groups ?? []).find((item) => item.id === groupId);
+    if (group === undefined) return;
+    const members = new Set(group.nodeIds);
+    setSelectedIds(group.nodeIds);
+    setNodes((prev) => prev.map((node) => ({ ...node, selected: members.has(node.id) })));
+  }, []);
+
+  const renameGroup = useCallback(
+    (groupId: string, title: string): void => {
+      applyDoc((d) => renameCanvasGroup(d, groupId, title));
+    },
+    [applyDoc],
+  );
+
+  const removeGroup = useCallback(
+    (groupId: string): void => {
+      applyDoc((d) => removeCanvasGroup(d, groupId));
+    },
+    [applyDoc],
+  );
+
   const isValidConnection = useCallback(
     (connection: Connection | Edge): boolean => connection.source !== connection.target,
     [],
@@ -2042,6 +2123,12 @@ export function CanvasStudioView() {
                 label: t('canvas.studio.newNode', { type: labels[type] }),
                 onSelect: () => addNode(type, menu.flow),
               })),
+              {
+                id: 'group',
+                label: t('canvas.studio.groupSelected', { count: selectedIds.length }),
+                disabled: selectedIds.length < 2,
+                onSelect: () => createGroupFromSelection(selectedIds),
+              },
               'separator',
               {
                 id: 'paste',
@@ -2316,6 +2403,9 @@ export function CanvasStudioView() {
               };
               void submitNode(id, request);
             },
+            onSelectGroup: selectGroup,
+            onRenameGroup: renameGroup,
+            onRemoveGroup: removeGroup,
             onRecover: (id, batchId) => void recoverSubmit(id, batchId),
             onAddReference: (id) => {
               setPickerReferenceNodeId(id);
