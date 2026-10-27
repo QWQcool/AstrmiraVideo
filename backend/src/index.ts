@@ -53,6 +53,7 @@ import { createKeyVerifyRoutes } from './routes/keysVerify.js';
 import { createLogRoutes } from './routes/logs.js';
 import { createProjectRoutes } from './routes/projects.js';
 import { createCanvasRoutes } from './routes/canvas.js';
+import { createSubjectRoutes } from './routes/subjects.js';
 import { providerRoutes } from './routes/providers.js';
 import { createTaskRoutes } from './routes/tasks.js';
 import { createUploadRoutes, MAX_FILE_BYTES } from './routes/upload.js';
@@ -447,6 +448,8 @@ const app = Fastify({
   await app.register(createProjectRoutes({ projects }));
   // V2.42（Step 11-S3 片 A）：创作画布文档（整份读写，单用户无归属字段）
   await app.register(createCanvasRoutes());
+  // V2.86（D-3）：主体库（跨画布复用；只做溯源，不参与生成参数）
+  await app.register(createSubjectRoutes());
   await app.register(createUploadRoutes({ projects }));
   // V2.7（B41）：资产库清单（只读；`@` 提及素材弹层用）
   await app.register(createAssetRoutes());

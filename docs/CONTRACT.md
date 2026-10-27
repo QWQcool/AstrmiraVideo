@@ -1,6 +1,16 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.85 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.86 · 已冻结（变更需先改本文，再改代码）**
+> **V2.86 修订（2026-10-27 · D-3 主体库）** ——
+>   ① 新增**主体库**（§21-18）：`subject = { id, name, description?, assetIds[], createdAt }`，
+>      存在 `data/subjects.json`（单文件数组，原子整份写），**跨画布复用**，不属于任何画布；
+>   ② 新增四条路由 `GET/POST/PATCH/DELETE /api/subjects`（§5 已登记）；
+>   ③ 请求体 `assets.references[]` 每项新增**可选** `subjectId`（§1）；画布文档
+>      `draft.references[]` 同样新增可选 `subjectId`（§21-3）。**只做溯源标注**：
+>      服务端不校验主体是否存在、不用它改变生成参数 —— 主体被删后旧任务/旧文档仍可读，
+>      界面显示"未知主体"而不是崩；
+>   ④ **不做**：从图里自动认人、跨主体一致性保证、主体版本历史（那是模型能力，不是契约能保证的）；
+>   ⑤ 无新错误码（复用 `INVALID_REQUEST` / `PROJECT_NOT_FOUND`）。
 > **V2.85 修订（2026-10-27 · D-6 素材体验）** ——
 >   ① `POST /api/upload`：单批文件数 **4 → 12**，并新增**单批总量 ≤400MB**
 >      （只限个数不限总量时，12×100MB 会把内存/临时盘撑爆）；超限仍是 **413 + 可读原因**，不静默少收；
@@ -701,6 +711,7 @@ export interface VideoGenerateRequest {
       assetId: string;              // 资产 ID 或 `task:<taskId>`（与 firstFrameImage 同口径）
       role: 'reference-image';      // 本版只开放这一种；其余 role 在 schema 层拒绝
       order: number;                // 0..63，同一次提交内不得重复
+      subjectId?: string;           // V2.86：这条参考来自哪个主体（**只做溯源**，见 §21-18）
     }>;
 
     // V2.78（局部重绘）：蒙版图 —— **白 = 要重画**、黑 = 保留。
@@ -1028,6 +1039,10 @@ export interface AssetListResponse {
 | `GET` | `/api/canvas/docs/:projectId` | **V2.42 新增**：整份画布文档。**200 → `CanvasDoc`**；未保存过 / 已删除 → **404 `PROJECT_NOT_FOUND`**（**不**返回空文档 —— "新建"与"打错 id"必须能区分） |
 | `PUT` | `/api/canvas/docs/:projectId` | **V2.42 新增；V2.48 加并发保护**：保存画布文档（body = `CanvasDoc`，整份覆盖）。**200 → `{ ok: true, summary: CanvasProjectRef, revision }`**；体里的 `projectId` 与路径不一致 → **400 `INVALID_REQUEST`**（否则会覆盖另一个画布）；`version` / 节点类型不认识 → **400**（schema 拒绝，不落盘）；已有文档缺 `X-Canvas-Revision`、修订不匹配或已删除 → **409 `DOC_CONFLICT`**（不静默覆盖） |
 | `DELETE` | `/api/canvas/docs/:projectId` | **V2.44 新增**：删除画布（文档 + 索引条目一起删）。**200 → `{ deleted: true, projectId }`**；不存在 → **404 `PROJECT_NOT_FOUND`**。只删文档与索引，**不删产物资产**（资产由 §7 的生命周期管理） |
+| `GET` | `/api/subjects` | **V2.86 新增（§21-18 / D-3）**：**主体库清单（只读）**。**200 → `{ subjects: Subject[] }`**（按 `createdAt` 升序；空库返回空数组，**不是 404**）。主体的 `assetIds` 指向资产库里的素材（资产被清理后 id 仍原样返回，界面显示"素材缺失"而不是静默删条目） |
+| `POST` | `/api/subjects` | **V2.86 新增**：新建主体（body `{ name, description?, assetIds? }`，`name` 1~60 字符、`assetIds` ≤9）。**200 → `{ subject }`**（id 由服务端生成，`createdAt` = 服务端时间）。`name` 空白 → **400 `INVALID_REQUEST`**；数量达上限（500）→ **400 `INVALID_REQUEST`**（不静默丢） |
+| `PATCH` | `/api/subjects/:id` | **V2.86 新增**：改主体（body `{ name?, description?, assetIds? }`，至少一项）。**200 → `{ subject }`**；不存在 → **404 `PROJECT_NOT_FOUND`**；`description` 传空串 = **清除描述**（不保留空字符串）；`assetIds` 传 `[]` = **清空参考素材** |
+| `DELETE` | `/api/subjects/:id` | **V2.86 新增**：删除主体。**200 → `{ deleted: true, subjectId }`**；不存在 → **404 `PROJECT_NOT_FOUND`**。**只删主体记录，不删它的素材资产**（资产由 §7 的生命周期管理）；已引用它的画布节点保持原样（`subjectId` 不会被回写清空，界面显示"未知主体"） |
 | `GET` | `/api/webhooks` | **V2.15 新增（台账 B51 片 A）**：**Webhook 订阅清单**（只读）。`?project=` —— **省略 = 默认项目**（与全站同口径）；项目不存在 → **404 `PROJECT_NOT_FOUND`**。**200 → `{ webhooks: WebhookView[] }`** —— **永远不含明文 secret**（只有 `secretMasked`，形如 `whsec_01…cdef`）。用途：客户系统自检"我的订阅还在不在" |
 | `POST` | `/api/webhooks` | **V2.15 新增**：新建订阅（body `{ projectId?, url, secret?, events? }`）。**201 → `{ webhook: WebhookView, secret }`** —— ⚠️ **明文 `secret` 只在这唯一一次响应里出现**（之后任何接口都只有掩码），客户必须自己存好；省略 `secret` 由服务端生成（推荐，手填弱 secret 是这条链路上最容易出的安全问题）；`events` 省略 = `['task.terminal']`。**URL 过 SSRF 准入**（只允许 http/https、不许带用户名密码、**默认拒绝环回 / 私网 / 链路本地 / 云元数据**，理由见 §15）→ 不通过 **400 `INVALID_REQUEST`**（文案含"部署者设 `WEBHOOK_ALLOW_PRIVATE=1` 可放行"）；项目不存在 → **404 `PROJECT_NOT_FOUND`** |
 | `PATCH` | `/api/webhooks/:webhookId` | **V2.15 新增**：改地址 / 启停（body `{ url?, enabled? }`，至少给一项）。**200 → `{ webhook: WebhookView }`**（同样**不回显**明文 secret）；订阅不存在 → **404 `WEBHOOK_NOT_FOUND`**；新 URL 不过 SSRF 准入 → **400 `INVALID_REQUEST`** |
@@ -2523,6 +2538,7 @@ interface CanvasNodeDraft {
     assetId: string;                          // 上传资产 id，或模型产物的 `task:<taskId>`（V2.45）；不存临时 URL
     role: 'first-frame' | 'last-frame' | 'reference-image' | 'reference-video' | 'reference-audio';
     order: number;                            // 同一用途内排序
+    subjectId?: string;                       // V2.86：来自哪个主体（只做溯源；主体被删后读作"未知主体"）
   }>;
   updatedAt?: number;
 }
@@ -2883,6 +2899,55 @@ interface CanvasGroup {
 
 **E. 本版不做**：拖动组框整体移动成员、嵌套分组、按组批量运行。
 它们都需要**容器坐标模型**（父子节点），与当前"节点坐标是绝对的"这套实现冲突，属独立决策。
+
+### 21-18 主体库 `subjects`（V2.86 / D-3）
+
+> 目标：把"同一个人/同一件商品"在**多张画布之间**复用成一份可命名的实体，而不是每个节点各自挑图。
+> 用户 2026-10-27 拍板：**做主体库**（原计划里的"不做主体库"作废）。
+
+**A. 数据结构**
+
+```ts
+interface Subject {
+  id: string;            // 服务端生成的 uuid
+  name: string;          // 1..60 字符（切换/拖拽时唯一可读标识）
+  description?: string;  // ≤500 字符；空串按"没有"处理
+  assetIds: string[];    // ≤9；第一个是"加进节点时默认用哪张"
+  createdAt: number;     // 服务端时间
+}
+```
+
+**B. 存储与生命周期**
+
+- 存在 `data/subjects.json`：**单个 JSON 数组**，整份读、整份原子写（临时文件 + rename），
+  与 `data/canvas/*.json` 同风格。极端规模（≤500 条）下不需要 SQLite。
+- **主体不属于任何画布**（跨画布复用）；删除画布**不删主体**，删除主体**不删资产**。
+- 读到损坏的 JSON：**先备份**成 `subjects.json.broken-<时间戳>` 再写新文件 —— 不静默覆盖用户数据；
+  读取侧按空库返回（界面显示"没有主体"，不是报错弹窗）。
+
+**C. 进节点的形态（关键：不新增请求字段语义）**
+
+主体**不是**一种新的参考类型，它只是"一条普通参考 + 一个溯源标签"：
+
+```ts
+// draft.references[] / request.assets.references[] 各多一个可选字段
+{ assetId: subject.assetIds[0], role: 'reference-image' | 'first-frame', order: n, subjectId: subject.id }
+```
+
+- 角色仍由**节点类型与参考模式**决定（图片节点 `omni-reference` → `reference-image`；视频节点按首/尾帧规则）；
+- 同一条参考重复加入时**不新建条目**，只补上 `subjectId`（不产生重复素材）；
+- `assetIds` 为空的主体**不能加进节点**（没有素材就没有参考可用），界面给可执行提示。
+
+**D. 服务端只用它做溯源**
+
+`subjectId` **不参与**生成参数、不进 provider 请求、不影响校验通过与否。
+理由：主体的"一致性"是模型能力，契约能保证的只有"这条参考从哪来"。所以：
+
+- 主体被删除后，旧任务的 `request_snapshot` 与旧画布里仍有该 `subjectId`（**不级联清洗**）；
+- 界面读到库里没有的 `subjectId` → 显示「未知主体」（如实，不崩）。
+
+**E. 本版不做**：从图里自动认人、跨主体一致性保证、主体版本历史、主体别名/标签。
+
 
 ## 22. 配置型 HTTP 任务服务 `http-service:<name>`（V2.47 新增；D67 / D71）
 

@@ -44,6 +44,7 @@ export * from './webhooks.js';
 export * from './metrics.js';
 export * from './canvasPlan.js';
 export * from './canvasDoc.js';
+export * from './subject.js';
 export * from './canvasReferenceRules.js';
 export * from './modelCapability.js';
 // `canvasPlanFile`（编排文件的读/写/校验）**已搬去前端** `frontend/src/lib/canvasPlanFile.ts`

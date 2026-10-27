@@ -169,6 +169,13 @@ export const GenerationReferenceSchema = z.object({
   assetId: z.string().min(1),
   role: ReferenceRoleSchema,
   order: z.number().int().min(0).max(63),
+  /**
+   * V2.86（§21-18）：这条参考来自哪个**主体**。
+   *
+   * ⚠️ **只做溯源**：服务端不校验主体是否存在（删了也要能重放旧请求）、不读它改参数、
+   * 不传给 provider。缺省 = 不是从主体库加的。
+   */
+  subjectId: z.string().min(1).optional(),
 });
 
 /** 多参考的结构上限（与画布 `CANVAS_MAX_REFERENCES` 同值；真实上限由能力目录决定） */

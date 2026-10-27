@@ -86,6 +86,13 @@ export const CanvasReferenceSchema = z.object({
   role: CanvasReferenceRoleSchema,
   /** 同一用途内的顺序（首帧/尾帧只有一个，多图参考按此排序） */
   order: z.number().int().min(0).max(64),
+  /**
+   * V2.86（§21-18）：这条参考是从哪个**主体**加进来的。
+   *
+   * 缺省 = 直接从资产库/连线加的。主体被删除后这里**不清洗** ——
+   * 旧文档仍能打开，界面显示「未知主体」而不是把用户的参考悄悄改掉。
+   */
+  subjectId: z.string().min(1).optional(),
 });
 
 export const CanvasNodeDraftSchema = z.object({
