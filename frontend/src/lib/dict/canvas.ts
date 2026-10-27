@@ -229,6 +229,12 @@ export const CANVAS_ZH = {
     '提示词里引用了不存在的素材（{{image:N}} 的 N 从 0 开始，且不能超过已连参考数）',
   'canvas.studio.issue.referencesOverLimit':
     '这张节点连的参考超过了本机实例的能力上限 —— 少连几张，或换一台算力更强的实例',
+  // ── V2.87（D-2）：视频轨没有多图条件通道，给替代路径而不是假装能跑 ──
+  'canvas.studio.videoMultiImage.title':
+    '这个节点连了 {count} 张图，但本机视频轨一次只吃 1 张条件图',
+  'canvas.studio.videoMultiImage.hint':
+    '替代路径：先用图片节点的「全能参考」把这几张合成一张，再把那张图连成这里的首帧。' +
+    '现在点生成会被明确拒绝（reference-unsupported）—— 不会丢图，也不会偷偷只发一张。',
   'canvas.mask.title': '局部重绘',
   'canvas.mask.hint': '在要重画的地方涂抹（白=重画，其余保留）',
   'canvas.mask.brush': '笔刷',
@@ -873,6 +879,11 @@ export const CANVAS_EN = {
     'The prompt references a material that does not exist ({{image:N}}: N starts at 0 and must stay below the reference count)',
   'canvas.studio.issue.referencesOverLimit':
     'This node has more references than the local instance can handle — remove some or use a bigger GPU',
+  'canvas.studio.videoMultiImage.title':
+    'This node has {count} images, but the local video track takes only one conditioning image',
+  'canvas.studio.videoMultiImage.hint':
+    'Workaround: first use the "omni reference" mode on an image node to combine them into one image, then connect that image as the first frame here. ' +
+    'Submitting now is refused explicitly (reference-unsupported) - nothing is dropped and nothing is silently sent as a single image.',
   'canvas.mask.title': 'Inpaint',
   'canvas.mask.hint': 'Paint over what should change (white = repaint, everything else is kept)',
   'canvas.mask.brush': 'Brush',

@@ -222,6 +222,33 @@ function dedupe(roles: CanvasReferenceRole[]): CanvasReferenceRole[] {
 }
 
 /**
+ * V2.87（D-2）：视频节点上的"多图参考"没有通道。
+ *
+ * ## 为什么是提示而不是能力
+ * 本地视频轨（Wan TI2V）只有 **1 张条件图**的入口；即梦那套"多图全能参考"是模型侧能力，
+ * 我们没有对应模板。所以这里**不假装能跑**：返回"这个节点有几张图、用不了"，
+ * 界面据此给一条**可执行的替代路径**，提交时仍按 `reference-unsupported` 明确拒绝。
+ *
+ * 判据（三条都算"多图"）：
+ * - 图片参考总数 > 2（首帧 + 尾帧已是最多的合法组合）；
+ * - 出现 `reference-image`（视频节点上它没有通道，即使只有 1 张）。
+ *
+ * 返回 `null` = 没有这个问题（0~2 张且都是首/尾帧 —— 正常可提交）。
+ */
+export function videoMultiImageAdvice(node: CanvasDocNode): { images: number } | null {
+  if (node.type !== 'video') return null;
+  const references = node.data.draft.references;
+  const images = references.filter(
+    (item) =>
+      item.role === 'first-frame' || item.role === 'last-frame' || item.role === 'reference-image',
+  ).length;
+  const hasOmniStyle = references.some((item) => item.role === 'reference-image');
+  if (images <= 2 && !hasOmniStyle) return null;
+  if (images === 0) return null;
+  return { images };
+}
+
+/**
  * S5-B1b：画布首尾帧交换。
  *
  * 只交换 `first-frame` 与 `last-frame` 的 role/order；参考视频和其它引用原位不动。

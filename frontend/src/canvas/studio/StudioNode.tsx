@@ -35,6 +35,7 @@ import {
   canvasSubmitIssueText,
   estimateCanvasNodeCost,
   swapFirstLastReferences,
+  videoMultiImageAdvice,
 } from '../../lib/canvasNodeSubmit';
 import { comfyUiEngineOptions, httpServiceEngineOptions } from '../../lib/engineOptions';
 import { modesAllowReferences } from '../../lib/referenceSources';
@@ -346,6 +347,7 @@ export function StudioNode({ id, selected }: NodeProps) {
   };
   const provider = canvasDefaultProvider(node, context);
   const issue = canvasSubmitIssue(node, provider, context);
+  const videoMultiImage = videoMultiImageAdvice(node);
   const estimate = estimateCanvasNodeCost(node, provider, byok.model);
 
   const isHttpProvider = provider.startsWith('http-service:');
@@ -878,6 +880,16 @@ export function StudioNode({ id, selected }: NodeProps) {
                     </button>
                   ) : null}
                 </p>
+              )}
+
+              {/* V2.87（D-2）：视频轨没有多图条件通道 —— 给"怎么办"，而不是让用户自己猜 */}
+              {videoMultiImage === null ? null : (
+                <div className="cs-toolbar-advice" role="note">
+                  <p className="cs-toolbar-advice-title">
+                    {t('canvas.studio.videoMultiImage.title', { count: videoMultiImage.images })}
+                  </p>
+                  <p className="cs-toolbar-advice-body">{t('canvas.studio.videoMultiImage.hint')}</p>
+                </div>
               )}
 
               {issue === 'active-task' && unknown !== undefined ? (

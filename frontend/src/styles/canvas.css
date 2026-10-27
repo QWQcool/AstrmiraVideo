@@ -2417,6 +2417,33 @@ audio.cs-card-media {
   gap: 8px;
 }
 
+/* ── 视频多图替代路径（V2.87 / D-2）────────────────────────────────
+   不是错误样式，是"怎么办"的说明块：视频轨只吃 1 张条件图，
+   用户需要一条能照着做的路径，而不是一句"不支持"。 */
+.cs-toolbar-advice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--gold);
+  border-radius: 8px;
+  background: var(--panel2);
+}
+
+.cs-toolbar-advice-title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-note);
+}
+
+.cs-toolbar-advice-body {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+}
+
 /* ── 主体库面板（V2.86 / D-3；CONTRACT §21-18）────────────────────────
    它是**跨画布**的实体库，所以是左轨旁边的一栏，而不是节点里的一个控件。
    窄屏（≤768px）改成覆盖层：375px 下再加一栏会直接把画布挤到 0 宽。 */

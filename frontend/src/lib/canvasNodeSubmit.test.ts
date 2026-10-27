@@ -19,6 +19,7 @@ import {
   estimateCanvasNodeCost,
   stripCanvasMentions,
   swapFirstLastReferences,
+  videoMultiImageAdvice,
 } from './canvasNodeSubmit';
 
 const CLOUD = { cloud: false, comfy: true } as const;
@@ -492,5 +493,52 @@ describe('B 路线：全能参考的提交映射（V2.76）', () => {
         hasCloudKey: false,
       }),
     ).not.toBe('mention-out-of-range');
+  });
+});
+
+describe('V2.87：视频多图（D-2，只提示不假装能跑）', () => {
+  it('3 张图 → 给替代路径；0~2 张首/尾帧 → 没有提示', () => {
+    const three = node('video', [
+      ref('a1', 'first-frame', 0),
+      ref('a2', 'last-frame', 1),
+      ref('a3', 'reference-image', 2),
+    ]);
+    expect(videoMultiImageAdvice(three)).toEqual({ images: 3 });
+
+    const one = node('video', [ref('a1', 'first-frame')]);
+    expect(videoMultiImageAdvice(one)).toBeNull();
+
+    const two = node('video', [ref('a1', 'first-frame'), ref('a2', 'last-frame', 1)]);
+    expect(videoMultiImageAdvice(two)).toBeNull();
+  });
+
+  it('视频节点上的 reference-image 即使只有 1 张也算（它没有通道）', () => {
+    const one = node('video', [ref('a1', 'reference-image')]);
+    expect(videoMultiImageAdvice(one)).toEqual({ images: 1 });
+  });
+
+  it('图片节点不受此限（全能参考本来就允许多张）', () => {
+    const image = node('image', [
+      ref('a1', 'reference-image', 0),
+      ref('a2', 'reference-image', 1),
+      ref('a3', 'reference-image', 2),
+    ]);
+    image.data.draft.settings.referenceMode = 'omni-reference';
+    expect(videoMultiImageAdvice(image)).toBeNull();
+  });
+
+  it('提交仍被明确拒绝（reference-unsupported），不是静默只发一张', () => {
+    const three = node('video', [
+      ref('a1', 'first-frame', 0),
+      ref('a2', 'last-frame', 1),
+      ref('a3', 'reference-image', 2),
+    ]);
+    three.data.draft.prompt = '镜头';
+    expect(
+      canvasSubmitIssue(three, 'cloud-volcano-seedance', {
+        providerStatus: status({ cloud: true, comfy: true }),
+        hasCloudKey: true,
+      }),
+    ).toBe('reference-unsupported');
   });
 });
