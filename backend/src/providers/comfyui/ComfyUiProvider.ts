@@ -184,6 +184,82 @@ export function readUpscaleScaleBy(request: VideoGenerateRequest): number {
   return Math.min(1, Math.max(0.05, scale / 4));
 }
 
+export interface OutpaintPad {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  feathering: number;
+}
+
+/** 单边外扩上限（像素）。超过这个数基本等于"重新画一张"，不该算扩图 */
+const MAX_PAD_PIXELS = 2048;
+/** 外扩后的画布上限（像素）。10GB 卡上再大就只剩换页了 */
+const MAX_OUTPAINT_DIMENSION = 4096;
+
+/**
+ * V2.79：`options.expand` → 四边外扩像素。
+ *
+ * 三条硬规则（都**报错**，不静默改数）：
+ * 1. 必须是 **8 的整数倍**（VAE 的潜空间步长；差几个像素就被下采样吃掉，蒙版会对不齐）；
+ * 2. 至少有一边 > 0（四边全 0 的"扩图"没有意义，直接拒）；
+ * 3. 外扩后的画布不超过 `MAX_OUTPAINT_DIMENSION`。
+ */
+export function readOutpaintPad(
+  request: VideoGenerateRequest,
+): { ok: true; pad: OutpaintPad } | { ok: false; reason: string } {
+  const raw = request.options?.['expand'];
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, reason: '扩图需要 options.expand：{ left, top, right, bottom }（像素，8 的整数倍）' };
+  }
+  const record = raw as Record<string, unknown>;
+  const readSide = (key: string): number | string => {
+    const value = record[key];
+    if (value === undefined) return 0;
+    if (typeof value !== 'number' || !Number.isInteger(value)) return `${key} 必须是整数`;
+    if (value < 0) return `${key} 不能是负数`;
+    if (value > MAX_PAD_PIXELS) return `${key} 最大 ${MAX_PAD_PIXELS} 像素`;
+    if (value % 8 !== 0) return `${key} 必须是 8 的整数倍（VAE 潜空间步长），收到 ${value}`;
+    return value;
+  };
+
+  const sides: Record<'left' | 'top' | 'right' | 'bottom', number> = {
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+  };
+  for (const key of ['left', 'top', 'right', 'bottom'] as const) {
+    const value = readSide(key);
+    if (typeof value === 'string') return { ok: false, reason: `options.expand.${value}` };
+    sides[key] = value;
+  }
+  if (sides.left + sides.top + sides.right + sides.bottom === 0) {
+    return { ok: false, reason: 'options.expand 四边都是 0：这不是扩图' };
+  }
+
+  const base = request.resolution;
+  if (base === undefined) return { ok: false, reason: '扩图需要 resolution（底图真实宽高）' };
+  const width = base.width + sides.left + sides.right;
+  const height = base.height + sides.top + sides.bottom;
+  if (width > MAX_OUTPAINT_DIMENSION || height > MAX_OUTPAINT_DIMENSION) {
+    return {
+      ok: false,
+      reason:
+        `外扩后画布 ${width}×${height} 超过上限 ${MAX_OUTPAINT_DIMENSION}（10GB 卡的实际能力），` +
+        '请减小外扩像素或先缩小底图',
+    };
+  }
+
+  const featheringRaw = record['feathering'];
+  const feathering =
+    typeof featheringRaw === 'number' && Number.isInteger(featheringRaw) && featheringRaw >= 0
+      ? Math.min(256, featheringRaw)
+      : 40;
+
+  return { ok: true, pad: { ...sides, feathering } };
+}
+
 export class ComfyUiProvider implements VideoProvider {
   /**
    * V2.36：具名实例时是 `host-comfyui:<name>` —— 任务的 `provider` 字段据此能回答
@@ -456,12 +532,22 @@ export class ComfyUiProvider implements VideoProvider {
         throw new Error('局部重绘需要蒙版：assets.maskImage（白=重画区、黑=保留）');
       }
     }
+    // V2.79：扩图要底图 + 四边外扩像素（规则见 readOutpaintPad）
+    let pad: OutpaintPad | undefined;
+    if (request.mode === 'outpaint') {
+      if ((request.assets?.firstFrameImage ?? '') === '') {
+        throw new Error('扩图需要底图：assets.firstFrameImage');
+      }
+      const parsed = readOutpaintPad(request);
+      if (!parsed.ok) throw new Error(parsed.reason);
+      pad = parsed.pad;
+    }
     const target = this.pickTemplateForMode(
       runtimes,
       request.mode,
       wantsReference,
-      // 放大/重绘都要一个输入槽；t2i 参考按张数要 1~2 个静态槽（>2 张由追加链补齐）
-      request.mode === 'upscale' || request.mode === 'inpaint'
+      // 放大/重绘/扩图都要一个输入槽；t2i 参考按张数要 1~2 个静态槽（>2 张由追加链补齐）
+      request.mode === 'upscale' || request.mode === 'inpaint' || request.mode === 'outpaint'
         ? 1
         : Math.min(2, referenceCount),
     );
@@ -498,12 +584,24 @@ export class ComfyUiProvider implements VideoProvider {
      * `SetLatentNoiseMask` 的潜空间与蒙版就对不上（要么崩，要么糊到别处）。
      * 所以重绘直接用请求里的 `resolution`（前面 schema 已保证它有值）。
      */
+    const baseWidth = request.resolution?.width ?? 0;
+    const baseHeight = request.resolution?.height ?? 0;
     const dimensions =
       request.mode === 'inpaint'
-        ? { width: request.resolution?.width ?? 0, height: request.resolution?.height ?? 0, warnings: [] }
-        : planComfyDimensions(request, this.tuning.maxPixels);
+        ? { width: baseWidth, height: baseHeight, warnings: [] }
+        : request.mode === 'outpaint'
+          ? {
+              // 外扩后的画布 = 底图 + 四边（与 ImagePadForOutpaint 的入参严格一致）
+              width: baseWidth + (pad?.left ?? 0) + (pad?.right ?? 0),
+              height: baseHeight + (pad?.top ?? 0) + (pad?.bottom ?? 0),
+              warnings: [],
+            }
+          : planComfyDimensions(request, this.tuning.maxPixels);
     if (request.mode === 'inpaint' && (dimensions.width <= 0 || dimensions.height <= 0)) {
       throw new Error('局部重绘需要有效的 resolution（底图真实宽高）：蒙版必须与底图同尺寸');
+    }
+    if (request.mode === 'outpaint' && (baseWidth <= 0 || baseHeight <= 0)) {
+      throw new Error('扩图需要有效的 resolution（底图真实宽高）');
     }
     const frames = planComfyFrames(request.params?.durationSec, this.tuning.fps);
     // 参考图逐个下载再上传给 ComfyUI（它只认自己 input 目录里的文件）
@@ -514,6 +612,7 @@ export class ComfyUiProvider implements VideoProvider {
         : request.mode === 'i2v' ||
             request.mode === 'upscale' ||
             request.mode === 'inpaint' ||
+            request.mode === 'outpaint' ||
             wantsReference
           ? [await this.uploadReferenceImage(request.assets?.firstFrameImage ?? '')]
           : [];
@@ -546,6 +645,7 @@ export class ComfyUiProvider implements VideoProvider {
         ? { upscaleModel: this.tuning.upscaleModel, upscaleScaleBy: readUpscaleScaleBy(request) }
         : {}),
       ...(maskImageName === undefined ? {} : { maskImageName }),
+      ...(pad === undefined ? {} : { pad }),
     }, loaded.template);
 
     const response = await this.fetchImpl(`${this.baseUrl}/prompt`, {
@@ -757,7 +857,8 @@ export class ComfyUiProvider implements VideoProvider {
       const isImage =
         requestSnapshot.mode === 't2i' ||
         requestSnapshot.mode === 'upscale' ||
-        requestSnapshot.mode === 'inpaint';
+        requestSnapshot.mode === 'inpaint' ||
+        requestSnapshot.mode === 'outpaint';
       const artifact = isImage ? pickComfyImageArtifact(outputs) : pickComfyVideoArtifact(outputs);
       if (artifact === undefined) {
         const names = outputs.map((item) => item.filename).join('、');

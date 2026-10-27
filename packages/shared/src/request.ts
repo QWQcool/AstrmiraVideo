@@ -33,6 +33,8 @@ export const GenerationModeSchema = z.enum([
   'upscale',
   // V2.78：局部重绘（底图 + 蒙版 + 提示词；只重画蒙版内）
   'inpaint',
+  // V2.79：扩图（底图 + 四边外扩像素；新区域由模型补画）
+  'outpaint',
 ]);
 
 /** 画面比例。1:1 仅云端可选，本地 H3 支持度【待验证】 */
@@ -321,6 +323,29 @@ export const VideoGenerateRequestSchema = z.object({
       path: ['assets', 'maskImage'],
       message: `assets.maskImage 只用于 inpaint（当前 mode=${value.mode}）`,
     });
+  }
+
+  /**
+   * V2.79：`outpaint` 需要底图 + 原始尺寸。
+   *
+   * 不要求蒙版（那由服务端按 `options.expand` 生成）；但**必须**知道底图真实宽高，
+   * 否则算不出"外扩之后画布多大"，也就无法对齐 8 的整数倍。
+   */
+  if (value.mode === 'outpaint') {
+    if (value.assets?.firstFrameImage === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['assets', 'firstFrameImage'],
+        message: 'outpaint 需要底图：assets.firstFrameImage',
+      });
+    }
+    if (value.resolution === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['resolution'],
+        message: 'outpaint 需要 resolution：底图真实宽高（服务端据此算外扩后的画布）',
+      });
+    }
   }
 });
 

@@ -1,0 +1,11 @@
+{
+  "modes": ["outpaint"],
+  "modelMatch": {
+    "unet": "klein",
+    "clip": "qwen_3",
+    "vae": "flux2",
+    "clipType": "flux2"
+  },
+  "label": "FLUX.2 Klein · 扩图（外扩补画）",
+  "notes": "底图走 {{START_IMAGE_NAME}}；四边外扩像素来自请求的 options.expand（8 的整数倍）。流程：ImagePadForOutpaint（同时产出蒙版）→ VAEEncode → SetLatentNoiseMask → 采样 → VAEDecode → ImageCompositeMasked 回贴（原图区域不动，只补新画布）。需要 diffusion_models/flux-2-klein-4b、text_encoders/qwen_3_4b、vae/flux2-vae。"
+}

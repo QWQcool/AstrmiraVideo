@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { VideoGenerateRequest } from '@astrmira/shared';
-import { ComfyUiProvider, readUpscaleScaleBy } from './ComfyUiProvider.js';
+import { ComfyUiProvider, readOutpaintPad, readUpscaleScaleBy } from './ComfyUiProvider.js';
 import {
   FLUX2_KLEIN_T2I_DECLARATION,
   FLUX2_KLEIN_T2I_REF_DECLARATION,
@@ -605,7 +605,47 @@ describe('ComfyUiProvider · 取消', () => {
   });
 });
 
-/** V2.77：`options.scale` → 4x 模型的降采样系数（4x 模型跑完之后再缩） */
+/** V2.79：`options.expand` → 四边外扩像素（8 的整数倍、至少一边 > 0、画布不超 4096） */
+describe('ComfyUiProvider · 扩图外扩像素', () => {
+  const withExpand = (expand: unknown, resolution = { width: 1024, height: 576 }): VideoGenerateRequest => ({
+    ...request(),
+    mode: 'outpaint',
+    resolution,
+    options: { expand },
+  });
+
+  it('右扩 256：通过，feathering 默认 40', () => {
+    const parsed = readOutpaintPad(withExpand({ right: 256 }));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.pad).toEqual({ left: 0, top: 0, right: 256, bottom: 0, feathering: 40 });
+  });
+
+  it('不是 8 的整数倍 → 明确报错（不悄悄改数）', () => {
+    const parsed = readOutpaintPad(withExpand({ right: 100 }));
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.reason).toMatch(/8 的整数倍/);
+  });
+
+  it('四边全 0 / 缺 expand / 非整数 → 三种都拒绝', () => {
+    expect(readOutpaintPad(withExpand({ left: 0, right: 0 })).ok).toBe(false);
+    expect(readOutpaintPad(withExpand(undefined)).ok).toBe(false);
+    expect(readOutpaintPad(withExpand({ right: 12.5 })).ok).toBe(false);
+  });
+
+  it('外扩后超过 4096 → 拒绝并说清上限', () => {
+    const parsed = readOutpaintPad(withExpand({ left: 2048, right: 2048 }));
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.reason).toMatch(/4096/);
+  });
+
+  it('feathering 越界被夹紧（不是报错项）', () => {
+    const parsed = readOutpaintPad({ ...withExpand({ top: 64 }), options: { expand: { top: 64, feathering: 9999 } } });
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.pad.feathering).toBe(256);
+  });
+});
+
+/** V2.77：`options.scale` → 4x 模型的降采样系数（4x 模型跑完之后的缩小系数） */
 describe('ComfyUiProvider · 放大倍率', () => {
   const withScale = (scale: unknown): VideoGenerateRequest => ({
     ...request(),

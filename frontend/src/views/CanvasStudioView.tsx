@@ -2265,6 +2265,34 @@ export function CanvasStudioView() {
                 }
               })();
             },
+            onOutpaint: (id, expand, size) => {
+              const current = docRef.current;
+              const node = current === null ? null : findCanvasNode(current, id);
+              if (current === null || node === null) return;
+              const visible = canvasNodeVisibleOutput(node);
+              if (visible.state !== 'selected' && visible.state !== 'latest') {
+                setNotice(t('canvas.studio.issue.imageUnavailable'));
+                return;
+              }
+              const provider = canvasDefaultProvider(node, {
+                providerStatus,
+                hasCloudKey: resolveProviderKey(byok) !== undefined,
+              });
+              const request: VideoGenerateRequest = {
+                prompt: stripCanvasMentions(node.data.draft.prompt),
+                mode: 'outpaint',
+                assets: { firstFrameImage: visible.output.assetId },
+                aspectRatio: canvasAspectRatio(node),
+                // 底图真实宽高：服务端据此算外扩后的画布
+                resolution: size,
+                provider,
+                projectId,
+                origin: 'canvas',
+                canvasProjectId: current.projectId,
+                options: { expand },
+              };
+              void submitNode(id, request);
+            },
             onRecover: (id, batchId) => void recoverSubmit(id, batchId),
             onAddReference: (id) => {
               setPickerReferenceNodeId(id);

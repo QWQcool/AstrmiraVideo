@@ -56,6 +56,7 @@ import {
   removeCanvasReference,
 } from '../../lib/canvasReferences';
 import { MaskEditor } from './MaskEditor';
+import { OutpaintDialog } from './OutpaintDialog';
 import { useShell } from '../../lib/shell';
 import { useStudio, type ReferencePreview } from './StudioContext';
 
@@ -234,6 +235,8 @@ export function StudioNode({ id, selected }: NodeProps) {
   const promptRef = useRef<StructuredPromptHandle | null>(null);
   /** V2.78：蒙版编辑器开关（只有当前节点自己需要，所以放在节点内） */
   const [maskOpen, setMaskOpen] = useState(false);
+  /** V2.79：扩图设置开关 */
+  const [outpaintOpen, setOutpaintOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const versionToggleRef = useRef<HTMLButtonElement | null>(null);
   const versionListRef = useRef<HTMLDivElement | null>(null);
@@ -679,6 +682,13 @@ export function StudioNode({ id, selected }: NodeProps) {
               >
                 {t('canvas.studio.inpaint')}
               </button>
+              <button
+                type="button"
+                className="cs-toolbar-link"
+                onClick={() => setOutpaintOpen(true)}
+              >
+                {t('canvas.studio.outpaint')}
+              </button>
             </div>
           ) : null}
 
@@ -914,6 +924,21 @@ export function StudioNode({ id, selected }: NodeProps) {
               onConfirm={(mask, size) => {
                 setMaskOpen(false);
                 studio.onInpaint(id, mask, size);
+              }}
+            />,
+            document.body,
+          )
+        : null}
+
+      {outpaintOpen && preview?.output.url !== undefined
+        ? createPortal(
+            <OutpaintDialog
+              imageUrl={preview.output.url}
+              canSubmit={draft.prompt.trim() !== ''}
+              onCancel={() => setOutpaintOpen(false)}
+              onConfirm={(expand, size) => {
+                setOutpaintOpen(false);
+                studio.onOutpaint(id, expand, size);
               }}
             />,
             document.body,

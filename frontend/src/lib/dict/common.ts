@@ -20,6 +20,7 @@ export const COMMON_ZH = {
   'common.mode.t2i': '文生图',
   'common.mode.upscale': '超清放大',
   'common.mode.inpaint': '局部重绘',
+  'common.mode.outpaint': '扩图',
 
   // ── 任务状态（`TaskProgress['status']`）──
   'common.status.queued': '排队中',
@@ -183,6 +184,7 @@ export const COMMON_EN = {
   'common.mode.t2i': 'Text to image',
   'common.mode.upscale': 'Upscale',
   'common.mode.inpaint': 'Inpaint',
+  'common.mode.outpaint': 'Outpaint',
 
   'common.status.queued': 'Queued',
   'common.status.running': 'Generating',

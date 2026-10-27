@@ -117,6 +117,7 @@ export const COMFY_WIRED_MODES: readonly GenerationMode[] = [
   't2i',
   'upscale',
   'inpaint',
+  'outpaint',
 ];
 
 /** sidecar 里"挑哪个模型文件"的关键词（大小写不敏感的子串匹配） */
@@ -437,6 +438,11 @@ function resolveDeclaredModes(
     // V2.78：局部重绘还要一份蒙版（没有 MASK_IMAGE_NAME 就没地方塞蒙版）
     if (mode === 'inpaint' && !placeholders.has('MASK_IMAGE_NAME')) {
       rejected.push('inpaint（模板里没有 MASK_IMAGE_NAME 占位，蒙版塞不进去）');
+      continue;
+    }
+    // V2.79：扩图要有四边外扩的旋钮（没有 PAD_LEFT 说明这套图不是按扩图搭的）
+    if (mode === 'outpaint' && !placeholders.has('PAD_LEFT')) {
+      rejected.push('outpaint（模板里没有 PAD_LEFT 等外扩占位，画布撑不开）');
       continue;
     }
     usable.push(mode);
@@ -976,6 +982,11 @@ export interface ComfyWorkflowInput {
   maskImageName?: string;
   /** V2.78：蒙版向外扩张的像素（默认 0，给"边缘太硬"留个旋钮） */
   maskGrow?: number;
+  /**
+   * V2.79：扩图的四边外扩像素（8 的整数倍）。
+   * 只对 `outpaint` 有意义；缺省时模板里的 `ImagePadForOutpaint` 会拿到 0（等于不扩）。
+   */
+  pad?: { left: number; top: number; right: number; bottom: number; feathering: number };
   /** 产物前缀（默认带 `astrmira/` 子目录） */
   outputPrefix: string;
 }
@@ -1020,6 +1031,12 @@ export function buildComfyWorkflow(
     // V2.78：局部重绘的两张输入（底图走 START_IMAGE_NAME，蒙版走这里）
     MASK_IMAGE_NAME: input.maskImageName,
     MASK_GROW: input.maskGrow ?? 0,
+    // V2.79：扩图的四边外扩
+    PAD_LEFT: input.pad?.left ?? 0,
+    PAD_TOP: input.pad?.top ?? 0,
+    PAD_RIGHT: input.pad?.right ?? 0,
+    PAD_BOTTOM: input.pad?.bottom ?? 0,
+    PAD_FEATHERING: input.pad?.feathering ?? 40,
     // ⚠️ `56` 是**内置模板里 LoadImage 的节点 id** —— 写自定义模板的人只要保证"有一个输入图节点"
     // 并把它的连接写进模板（本行只在 i2v 时给内置模板用）
     START_IMAGE: (references[0] ?? input.startImageName) === undefined ? undefined : ['56', 0],

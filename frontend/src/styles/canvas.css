@@ -1963,6 +1963,41 @@ audio.cs-card-media {
   gap: 8px;
 }
 
+/* V2.79：扩图设置（左图右参，窄屏堆叠） */
+.cs-outpaint-body {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.cs-outpaint-thumb {
+  display: block;
+  width: min(360px, 100%);
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.cs-outpaint-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: flex-end;
+  min-width: 220px;
+}
+
+.cs-outpaint-fields input[type='number'] {
+  width: 84px;
+}
+
+.cs-outpaint-presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
 .cs-toolbar-issue {
   display: flex;
   flex-wrap: wrap;

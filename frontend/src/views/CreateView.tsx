@@ -131,6 +131,7 @@ const MODE_KEYS: Record<GenerationMode, MessageKey> = {
   t2i: 'common.mode.t2i',
   upscale: 'common.mode.upscale',
   inpaint: 'common.mode.inpaint',
+  outpaint: 'common.mode.outpaint',
 };
 
 const STATUS_KEYS: Record<TaskProgress['status'], MessageKey> = {

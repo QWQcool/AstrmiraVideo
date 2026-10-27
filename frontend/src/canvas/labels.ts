@@ -33,6 +33,7 @@ const CANVAS_MODE_LABEL_KEYS: Record<GenerationMode, MessageKey> = {
   t2i: 'common.mode.t2i',
   upscale: 'common.mode.upscale',
   inpaint: 'common.mode.inpaint',
+  outpaint: 'common.mode.outpaint',
 };
 
 /**

@@ -1,6 +1,14 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.78 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.79 · 已冻结（变更需先改本文，再改代码）**
+> **V2.79 修订（2026-10-27）**：**`outpaint` 扩图模式（§1 / P2-2）** ——
+>   ① `GenerationMode` 新增 `outpaint`：底图 + 四边外扩像素，新区域由模型补画、**原画面不动**；
+>   ② 外扩参数走 `options.expand: { left?, top?, right?, bottom? }`（像素），三条硬规则
+>      **一律报错不静默改数**：每边是 **8 的整数倍**（VAE 潜空间步长）、至少一边 > 0、
+>      外扩后画布不超过 **4096**（10GB 卡实测能力）；`options.expand.feathering` 可选（0..256，默认 40）；
+>   ③ 请求层强校验：`outpaint` 必须有 `assets.firstFrameImage` + `resolution`（底图真实宽高，
+>      服务端据此算外扩后的画布与调度器尺寸）；`prompt` 必填（描述新区域怎么接上）；
+>   ④ 无新字段、无新路由、无新错误码；产物是图片。
 > **V2.78 修订（2026-10-27）**：**`inpaint` 局部重绘模式（§1 / P2-3）** ——
 >   ① `GenerationMode` 新增 `inpaint`；`assets` 新增 `maskImage`（白=重画、黑=保留，尺寸须与底图一致）；
 >   ② 请求层强校验（`VideoGenerateRequestSchema` 的 superRefine）：`inpaint` **必须**同时有
@@ -636,7 +644,8 @@ export interface VideoGenerateRequest {
   // 核心文本描述（可配合 LLM 扩写）
   prompt: string;
 
-  // 生成模式：文生视频 | 首帧图生 | 首尾帧 | 视频参考 | 文生图（V2.40） | 放大（V2.77） | **局部重绘（V2.78）**
+  // 生成模式：文生视频 | 首帧图生 | 首尾帧 | 视频参考 | 文生图（V2.40） | 放大（V2.77）
+  //          | 局部重绘（V2.78） | **扩图（V2.79）**
   mode: GenerationMode;
 
   // 参考资产（服务端分配的资产 ID，见 §7 资产生命周期）

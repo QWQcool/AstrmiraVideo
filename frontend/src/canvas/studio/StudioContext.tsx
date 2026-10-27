@@ -40,6 +40,15 @@ export interface StudioServices {
    */
   onInpaint(nodeId: string, mask: Blob, size: { width: number; height: number }): void;
   /**
+   * V2.79：扩图（`mode:'outpaint'`）。`size` 是底图真实宽高，`expand` 是四边外扩像素
+   * （调用方已按 8 对齐；服务端会再校验一次）。
+   */
+  onOutpaint(
+    nodeId: string,
+    expand: { left: number; top: number; right: number; bottom: number },
+    size: { width: number; height: number },
+  ): void;
+  /**
    * 按 assetId 取参考缩略图；**取不到就返回 null**（上传素材、抽帧失败、外部导入都可能没有）。
    * 组件层必须能退化回纯文字标签 —— 不假装有图。
    */
