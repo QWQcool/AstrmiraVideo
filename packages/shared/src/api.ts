@@ -99,6 +99,15 @@ export const AssetListEntrySchema = UploadedAssetSchema.extend({
 /** `GET /api/assets` 的 200 响应（最近 200 个，新的在前；空目录 → 空数组，不是 404） */
 export const AssetListResponseSchema = z.object({
   assets: z.array(AssetListEntrySchema),
+  /**
+   * V2.85（D-6）：是否因为条数上限被截断。
+   *
+   * 服务端一次最多返回 `MAX_LISTED_ASSETS` 条（新在前）。老客户端不认这个字段也没关系，
+   * 但界面必须能说"只显示了前 N 个"—— 否则用户以为素材丢了。
+   */
+  truncated: z.boolean().optional(),
+  /** 目录里实际有多少条（含未返回的），便于界面提示 */
+  total: z.number().int().nonnegative().optional(),
 });
 
 export type GenerateResponse = z.infer<typeof GenerateResponseSchema>;

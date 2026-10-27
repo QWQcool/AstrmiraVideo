@@ -49,6 +49,8 @@ export function AssetPickerDialog({
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [reloadNonce, setReloadNonce] = useState(0);
+  /** V2.85（D-6）：素材被服务端按条数上限截断时，必须说出来（否则用户以为素材丢了） */
+  const [truncated, setTruncated] = useState<{ shown: number; total: number } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -67,6 +69,11 @@ export function AssetPickerDialog({
             ...referenceSourcesFromTasks(canvas.items, 'canvas'),
           ]);
           setError(null);
+          setTruncated(
+            assetList.truncated === true
+              ? { shown: assetList.assets.length, total: assetList.total ?? assetList.assets.length }
+              : null,
+          );
         }
       } catch (caught) {
         if (alive) setError(caught instanceof Error ? caught.message : String(caught));
@@ -196,6 +203,15 @@ export function AssetPickerDialog({
           {!loading && error === null && visible.length === 0 ? (
             <p className="cs-modal-note">{t('canvas.studio.pickerEmpty')}</p>
           ) : null}
+          {/* V2.85（D-6）：被条数上限截断时如实说，别让用户以为素材丢了 */}
+          {truncated === null ? null : (
+            <p className="cs-modal-note">
+              {t('canvas.studio.pickerTruncated', {
+                shown: truncated.shown,
+                total: truncated.total,
+              })}
+            </p>
+          )}
 
           <div className="cs-asset-grid">
             {visible.map((source) => {

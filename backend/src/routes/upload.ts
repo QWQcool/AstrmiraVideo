@@ -42,7 +42,20 @@ import { resolveOutputsDir } from '../server/staticOutputs.js';
 // V2.6（台账 B36）：20MB → 100MB。与 MAX_RENDER_BYTES、反代 `request_body.max_size` 同口径，
 // 三处必须同改（PLAN §7-9）；再大就该走分片上传，不在本常量上继续加。
 export const MAX_FILE_BYTES = 100 * 1024 * 1024;
-export const MAX_FILES = 4;
+/**
+ * V2.85（D-6）：单批文件数 4 → **12**。
+ *
+ * 为什么：一次迁移几百个素材时，4 个一批意味着几百次请求（34 个素材就发了 9 次）。
+ * 12 是"够用且不至于把 multipart 撑爆"的折中；再大就该做分片上传，不在这个常量上继续加。
+ */
+export const MAX_FILES = 12;
+/**
+ * V2.85：**单批总字节**上限（400MB）。
+ *
+ * 只限"个数"不限"总量"是个坑：12 × 100MB = 1.2GB 会被读进内存/临时盘。
+ * 超限显式拒绝（而不是悄悄少收几个）。
+ */
+export const MAX_BATCH_BYTES = 400 * 1024 * 1024;
 
 // V2.10（台账 B57）：音频素材的体积上限。BGM 通常几 MB，20MB 已足够宽裕；
 // 它与视频共用 multipart 的流式上限（100MB），因此这一层是**类型确定之后的二次闸门**。
@@ -188,6 +201,8 @@ export const createUploadRoutes =
         await mkdir(assetsDir, { recursive: true });
         const assets: UploadedAsset[] = [];
         let fileCount = 0;
+        /** V2.85（D-6）：单批累计字节，配合 `MAX_BATCH_BYTES` 防止"个数达标但总量爆掉" */
+        let batchBytes = 0;
 
         // V2.11（B47）：项目归属。
         //  ① 字段可能在文件**之后**到达（multipart 顺序由客户端决定）→ 不边读边写 sidecar，
@@ -218,6 +233,17 @@ export const createUploadRoutes =
             }
 
             const buffer = await part.toBuffer();
+            batchBytes += buffer.length;
+            if (batchBytes > MAX_BATCH_BYTES) {
+              return reply
+                .code(413)
+                .send(
+                  createErrorResponse(
+                    'INVALID_ASSET',
+                    `单批总量超过 ${Math.round(MAX_BATCH_BYTES / 1024 / 1024)}MB —— 请分几批上传`,
+                  ),
+                );
+            }
 
             // 双保险：@fastify/multipart 默认在超限时抛错，这里再确认截断标志
             if (part.file.truncated) {

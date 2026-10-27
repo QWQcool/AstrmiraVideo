@@ -165,6 +165,7 @@ import {
   removeCanvasGroup,
   renameCanvasGroup,
 } from '../lib/canvasGroups';
+import { layoutCanvasNodes } from '../lib/canvasLayout';
 import { StudioProvider, type ReferencePreview } from '../canvas/studio/StudioContext';
 
 /**
@@ -190,6 +191,8 @@ const ADDABLE: readonly CanvasNodeType[] = ['text', 'image', 'video', 'audio'];
 const NO_EDGES: Edge[] = [];
 /** 画布轮询并发上限：任务多时不要每 2s 同时打出几十个 /api/tasks 请求 */
 const CANVAS_TASK_POLL_CONCURRENCY = 4;
+/** V2.85（D-6）：上传分块大小 —— 必须与后端 `MAX_FILES`（12）一致 */
+const UPLOAD_CHUNK = 12;
 
 const ROLE_KEYS: Record<CanvasReferenceRole, MessageKey> = {
   'first-frame': 'canvas.studio.role.firstFrame',
@@ -328,6 +331,10 @@ export function CanvasStudioView() {
   const [agentOpen, setAgentOpen] = useState(false);
   /** P6：只读节点检查器；不改变 CanvasDoc。 */
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  /** V2.84（D-5）：连线显示开关（只影响渲染，不改文档） */
+  const [edgesVisible, setEdgesVisible] = useState(true);
+  /** V2.84（D-5）：节点搜索（标题/提示词子串） */
+  const [search, setSearch] = useState('');
   const [doc, setDoc] = useState<CanvasDoc | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<StudioRfNode>([]);
   const [saveState, setSaveState] = useState<CanvasSaveState>('saved');
@@ -1227,8 +1234,9 @@ export function CanvasStudioView() {
       setNotice(null);
       try {
         const uploadedIds: string[] = [];
-        for (let offset = 0; offset < files.length; offset += 4) {
-          const chunk = files.slice(offset, offset + 4);
+        // V2.85（D-6）：服务端单批上限 4 → 12，前端跟着放大（少发 2/3 的请求）
+        for (let offset = 0; offset < files.length; offset += UPLOAD_CHUNK) {
+          const chunk = files.slice(offset, offset + UPLOAD_CHUNK);
           const result = await uploadAssets(chunk, projectId);
           uploadedIds.push(...result.assets.map((asset) => asset.assetId));
         }
@@ -1890,6 +1898,38 @@ export function CanvasStudioView() {
     [applyDoc],
   );
 
+  /** V2.84（D-5）：搜索命中（标题 / 提示词子串，大小写不敏感） */
+  const searchMatches = useMemo((): CanvasDocNode[] => {
+    const query = search.trim().toLowerCase();
+    if (query === '' || doc === null) return [];
+    return doc.nodes.filter((node) => {
+      const haystack = `${node.data.title ?? ''}\n${node.data.draft.prompt}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [doc, search]);
+
+  /** 定位到某节点：居中 + 选中（用户下一眼就知道找的是哪个） */
+  const focusNode = useCallback(
+    (nodeId: string): void => {
+      const current = docRef.current;
+      const target = current === null ? null : findCanvasNode(current, nodeId);
+      if (current === null || target === null) return;
+      setSearch('');
+      setSelectedIds([nodeId]);
+      setNodes((prev) =>
+        prev.map((node) => ({ ...node, selected: node.id === nodeId ? true : node.selected })),
+      );
+      const instance = rfRef.current;
+      if (instance === null) return;
+      instance.setCenter(
+        target.layout.x + target.layout.width / 2,
+        target.layout.y + target.layout.height / 2,
+        { zoom: instance.getZoom(), duration: 220 },
+      );
+    },
+    [],
+  );
+
   const isValidConnection = useCallback(
     (connection: Connection | Edge): boolean => connection.source !== connection.target,
     [],
@@ -2231,6 +2271,18 @@ export function CanvasStudioView() {
                 disabled: selectedIds.length < 2,
                 onSelect: () => createGroupFromSelection(selectedIds),
               },
+              {
+                id: 'tidy',
+                label: t('canvas.studio.tidy'),
+                disabled: (doc?.nodes.length ?? 0) === 0,
+                onSelect: () => {
+                  const current = docRef.current;
+                  if (current === null) return;
+                  const moves = layoutCanvasNodes(current);
+                  applyDoc((d) => moveCanvasNodes(d, moves));
+                  setNotice(t('canvas.studio.tidyDone', { count: moves.length }));
+                },
+              },
               'separator',
               {
                 id: 'paste',
@@ -2322,6 +2374,45 @@ export function CanvasStudioView() {
           ) : null}
         </div>
         <div className="cs-top-right">
+          {/* V2.84（D-5）：节点搜索 —— 34 个节点的画布上靠肉眼找太费劲 */}
+          <div className="cs-search">
+            <input
+              className="cs-search-input"
+              value={search}
+              placeholder={t('canvas.studio.search')}
+              aria-label={t('canvas.studio.search')}
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                const first = searchMatches[0];
+                if (first !== undefined) focusNode(first.id);
+              }}
+            />
+            {search.trim() !== '' && searchMatches.length > 0 ? (
+              <div className="cs-search-list">
+                {searchMatches.slice(0, 8).map((match) => (
+                  <button
+                    key={match.id}
+                    type="button"
+                    className="cs-search-item"
+                    onClick={() => focusNode(match.id)}
+                  >
+                    {match.data.title ?? match.id}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="wb-btn cs-icon-btn"
+            aria-label={t('canvas.studio.toggleEdges')}
+            aria-pressed={edgesVisible}
+            title={t('canvas.studio.toggleEdges')}
+            onClick={() => setEdgesVisible((value) => !value)}
+          >
+            {edgesVisible ? '⇄' : '⊘'}
+          </button>
           <button
             type="button"
             className="wb-btn"
@@ -2609,7 +2700,7 @@ export function CanvasStudioView() {
               ) : null}
               <ReactFlow
                 nodes={nodes}
-                edges={rfEdges}
+                edges={edgesVisible ? rfEdges : NO_EDGES}
                 nodeTypes={NODE_TYPES}
                 onNodesChange={onNodesChange}
                 onNodeDragStart={handleDragStart}

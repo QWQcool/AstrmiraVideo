@@ -907,7 +907,12 @@ export function StudioNode({ id, selected }: NodeProps) {
       {node.type === 'image' || node.type === 'video' ? (
         <Handle type="source" position={Position.Right} className="cs-handle" />
       ) : null}
-      {node.type === 'video' ? (
+      {/*
+        V2.84 修正：图片节点**也要有左侧入口**。
+        多参考（图→图）从 P1-2c 起就在契约里允许了，但这里只给视频画了 target handle，
+        结果是"能连的语义、连不上的界面"：拖线到图片节点没有落点，边也不会渲染。
+      */}
+      {node.type === 'image' || node.type === 'video' ? (
         <Handle type="target" position={Position.Left} className="cs-handle" />
       ) : null}
 

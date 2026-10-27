@@ -24,8 +24,14 @@ import { isSafeAssetId } from '../store/assets.js';
  * 资产量级到千级之前不值得加缓存；届时参照 `server/storageUsage.ts` 的 5s 缓存套路。
  */
 
-/** 单次返回的资产上限（新在前）——弹层不需要全量，也避免超大目录把响应喂爆 */
-export const MAX_LISTED_ASSETS = 200;
+/**
+ * 单次返回的资产上限（新在前）。
+ *
+ * V2.85（D-6）：200 → **1000**。200 在"迁移一个项目"的量级下会直接看不全
+ * （《故乡》那次 34 个没事，但千级素材就会漏）；1000 条响应约几百 KB，仍可接受。
+ * 超过时响应带 `truncated: true` + `total`，界面要说出来，而不是让用户以为素材丢了。
+ */
+export const MAX_LISTED_ASSETS = 1000;
 
 export interface AssetRoutesDeps {
   /** assets 根目录（默认 `OUTPUT_DIR` / `outputs`）；测试注入临时目录用 */
@@ -193,7 +199,12 @@ export const createAssetRoutes =
         }
 
         entries.sort((a, b) => b.createdAt - a.createdAt);
-        return { assets: entries.slice(0, MAX_LISTED_ASSETS) };
+        // V2.85：截断要**说出来**（`truncated` + `total`），不让用户以为素材丢了
+        return {
+          assets: entries.slice(0, MAX_LISTED_ASSETS),
+          truncated: entries.length > MAX_LISTED_ASSETS,
+          total: entries.length,
+        };
       },
     );
   };
