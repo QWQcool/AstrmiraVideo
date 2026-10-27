@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import { parseTaskRef, TASK_REF_PREFIX } from '@astrmira/shared';
-import { createTaskVideoUrlResolver, type TaskVideoResolverOptions } from './assets.js';
+import {
+  createAssetUrlResolver,
+  createTaskVideoUrlResolver,
+  type TaskVideoResolverOptions,
+} from './assets.js';
 import type { TaskRecord } from './taskStore.js';
 
 /**
@@ -117,5 +124,47 @@ describe('createTaskVideoUrlResolver', () => {
       ok: true,
       url: 'http://127.0.0.1:3100/media/clip.mp4',
     });
+  });
+});
+
+/**
+ * V2.78 修正：资产目录里同时存在 `<id>.png` 与 `<id>.json`（sidecar），
+ * 解析器**必须拿到媒体文件** —— 早先用 `startsWith('<id>.')` 会随机命中 sidecar。
+ * 实测症状：局部重绘把 83 字节的 `{"name":"mask.png",…}` 当图片发给 ComfyUI，
+ * 上游报 `cannot identify image file`。
+ */
+describe('参考资产 URL 解析（侧车文件不能当成资产）', () => {
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  const makeAssetsDir = (): string => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'astrmira-assets-'));
+    dirs.push(dir);
+    return dir;
+  };
+
+  it('同名 sidecar 存在时仍返回 PNG（不是 .json）', async () => {
+    const dir = makeAssetsDir();
+    const assetId = '625b0f3d-b042-4013-90c8-1d130d576633';
+    // 故意让 .json 排在前面（readdir 顺序在不同机器上不一样，这里把"最坏顺序"钉死）
+    writeFileSync(path.join(dir, `${assetId}.json`), '{"name":"mask.png"}');
+    writeFileSync(path.join(dir, `${assetId}.png`), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+    const resolve = createAssetUrlResolver({ assetsDir: dir, publicBaseUrl: 'http://127.0.0.1:3100' });
+    await expect(resolve(assetId)).resolves.toBe(
+      `http://127.0.0.1:3100/media/assets/${assetId}.png`,
+    );
+  });
+
+  it('只有 sidecar、没有媒体文件 → null（不把 JSON 当资产）', async () => {
+    const dir = makeAssetsDir();
+    const assetId = 'no-media-1';
+    writeFileSync(path.join(dir, `${assetId}.json`), '{}');
+
+    const resolve = createAssetUrlResolver({ assetsDir: dir });
+    await expect(resolve(assetId)).resolves.toBeNull();
   });
 });

@@ -1880,6 +1880,89 @@ audio.cs-card-media {
   outline-offset: 1px;
 }
 
+/* V2.78：局部重绘的蒙版画笔（全屏对话框；画布与底图逐像素对齐） */
+.cs-mask-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+
+.cs-mask-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(920px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 35%);
+}
+
+.cs-mask-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cs-mask-hint,
+.cs-mask-size {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.cs-mask-stage {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+  line-height: 0;
+}
+
+.cs-mask-image,
+.cs-mask-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.cs-mask-canvas {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+  opacity: 0.55;
+  mix-blend-mode: screen;
+}
+
+.cs-mask-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cs-mask-warn {
+  margin: 0;
+  color: var(--warn, #d97706);
+  font-size: var(--fs-micro);
+}
+
+.cs-mask-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .cs-toolbar-issue {
   display: flex;
   flex-wrap: wrap;

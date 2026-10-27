@@ -1,6 +1,15 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.77 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.78 · 已冻结（变更需先改本文，再改代码）**
+> **V2.78 修订（2026-10-27）**：**`inpaint` 局部重绘模式（§1 / P2-3）** ——
+>   ① `GenerationMode` 新增 `inpaint`；`assets` 新增 `maskImage`（白=重画、黑=保留，尺寸须与底图一致）；
+>   ② 请求层强校验（`VideoGenerateRequestSchema` 的 superRefine）：`inpaint` **必须**同时有
+>      `assets.firstFrameImage` + `assets.maskImage` + `resolution`；`maskImage` **只能**用于 `inpaint`；
+>      `prompt` 仍必填（描述"这块要变成什么"）；
+>   ③ 服务端**不缩放**重绘输入：`resolution` 就是底图真实宽高（缩放会让蒙版与潜空间错位），
+>      缺省或非法直接拒绝；
+>   ④ 无新路由、无新错误码；产物是图片。**同时修正**资产解析器把 `<assetId>.json` sidecar
+>      当成资产返回的缺陷（详见 §7 备注）—— 它会让上游收到 83 字节的 JSON 并报"无法识别图片"。
 > **V2.77 修订（2026-10-27）**：**`upscale` 放大模式（§1 / P2-1）** ——
 >   ① `GenerationMode` 新增 `upscale`：输入一张图（`assets.firstFrameImage`），输出同一张图的放大版；
 >      **不吃提示词**——空 `prompt` 对它是合法输入（服务端对 `upscale` 放行空提示词校验），
@@ -627,7 +636,7 @@ export interface VideoGenerateRequest {
   // 核心文本描述（可配合 LLM 扩写）
   prompt: string;
 
-  // 生成模式：文生视频 | 首帧图生 | 首尾帧 | 视频参考 | 文生图（V2.40） | **放大（V2.77）**
+  // 生成模式：文生视频 | 首帧图生 | 首尾帧 | 视频参考 | 文生图（V2.40） | 放大（V2.77） | **局部重绘（V2.78）**
   mode: GenerationMode;
 
   // 参考资产（服务端分配的资产 ID，见 §7 资产生命周期）
@@ -656,6 +665,11 @@ export interface VideoGenerateRequest {
       role: 'reference-image';      // 本版只开放这一种；其余 role 在 schema 层拒绝
       order: number;                // 0..63，同一次提交内不得重复
     }>;
+
+    // V2.78（局部重绘）：蒙版图 —— **白 = 要重画**、黑 = 保留。
+    // 尺寸必须与 `firstFrameImage` 一致；服务端**不缩放**（缩放会让蒙版与潜空间错位）。
+    // 只允许出现在 `inpaint` 模式；其它模式给了它 = 配置错误（请求层直接拒绝）。
+    maskImage?: string;
   };
 
   // 画面规格（自动对齐为 32 的整数倍）

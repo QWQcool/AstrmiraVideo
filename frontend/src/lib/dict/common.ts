@@ -19,6 +19,7 @@ export const COMMON_ZH = {
   'common.mode.v2v': '视频参考',
   'common.mode.t2i': '文生图',
   'common.mode.upscale': '超清放大',
+  'common.mode.inpaint': '局部重绘',
 
   // ── 任务状态（`TaskProgress['status']`）──
   'common.status.queued': '排队中',
@@ -161,6 +162,7 @@ export const COMMON_ZH = {
   'common.draftRestored': '已恢复覆盖前的草稿',
   'common.restoreDraftMissing': '没有可恢复的上一草稿',
   'common.close': '关闭',
+  'common.cancel': '取消',
   'common.preview': '作品预览',
   'common.fullscreen': '全屏',
   'common.asReference': '作为参考',
@@ -180,6 +182,7 @@ export const COMMON_EN = {
   'common.mode.v2v': 'Video reference',
   'common.mode.t2i': 'Text to image',
   'common.mode.upscale': 'Upscale',
+  'common.mode.inpaint': 'Inpaint',
 
   'common.status.queued': 'Queued',
   'common.status.running': 'Generating',
@@ -288,6 +291,7 @@ export const COMMON_EN = {
   'common.draftRestored': 'Restored the draft overwritten by reuse',
   'common.restoreDraftMissing': 'No previous draft to restore',
   'common.close': 'Close',
+  'common.cancel': 'Cancel',
   'common.preview': 'Preview',
   'common.fullscreen': 'Full screen',
   'common.asReference': 'Use as reference',

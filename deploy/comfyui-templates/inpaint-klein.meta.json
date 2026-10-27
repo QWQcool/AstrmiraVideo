@@ -1,0 +1,11 @@
+{
+  "modes": ["inpaint"],
+  "modelMatch": {
+    "unet": "klein",
+    "clip": "qwen_3",
+    "vae": "flux2",
+    "clipType": "flux2"
+  },
+  "label": "FLUX.2 Klein · 局部重绘（蒙版）",
+  "notes": "底图走 {{START_IMAGE_NAME}}、蒙版走 {{MASK_IMAGE_NAME}}（白=重画、黑=保留，尺寸必须与底图一致）。流程：VAEEncode → SetLatentNoiseMask → 采样 → VAEDecode → ImageCompositeMasked 回贴原图（蒙版外逐像素保留）。{{MASK_GROW}} 是蒙版外扩像素（默认 0）。需要 diffusion_models/flux-2-klein-4b、text_encoders/qwen_3_4b、vae/flux2-vae。"
+}

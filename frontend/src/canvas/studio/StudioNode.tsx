@@ -55,6 +55,7 @@ import {
   moveCanvasReference,
   removeCanvasReference,
 } from '../../lib/canvasReferences';
+import { MaskEditor } from './MaskEditor';
 import { useShell } from '../../lib/shell';
 import { useStudio, type ReferencePreview } from './StudioContext';
 
@@ -231,6 +232,8 @@ export function StudioNode({ id, selected }: NodeProps) {
   const referenceCatalog = useRef<Map<string, CanvasReference>>(new Map());
   /** 从素材条删参考时，同步摘掉提示词里那颗 token（否则会留下"幽灵 chip"） */
   const promptRef = useRef<StructuredPromptHandle | null>(null);
+  /** V2.78：蒙版编辑器开关（只有当前节点自己需要，所以放在节点内） */
+  const [maskOpen, setMaskOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const versionToggleRef = useRef<HTMLButtonElement | null>(null);
   const versionListRef = useRef<HTMLDivElement | null>(null);
@@ -669,6 +672,13 @@ export function StudioNode({ id, selected }: NodeProps) {
               >
                 {t('canvas.studio.upscale2x')}
               </button>
+              <button
+                type="button"
+                className="cs-toolbar-link"
+                onClick={() => setMaskOpen(true)}
+              >
+                {t('canvas.studio.inpaint')}
+              </button>
             </div>
           ) : null}
 
@@ -890,6 +900,25 @@ export function StudioNode({ id, selected }: NodeProps) {
       {node.type === 'video' ? (
         <Handle type="target" position={Position.Left} className="cs-handle" />
       ) : null}
+
+      {/*
+        V2.78：蒙版编辑器走 portal 挂到 body —— 节点卡在 React Flow 的 transform 里，
+        直接渲染会让 `position: fixed` 相对被变换的祖先定位，整块飘走。
+      */}
+      {maskOpen && preview?.output.url !== undefined
+        ? createPortal(
+            <MaskEditor
+              imageUrl={preview.output.url}
+              canSubmit={draft.prompt.trim() !== ''}
+              onCancel={() => setMaskOpen(false)}
+              onConfirm={(mask, size) => {
+                setMaskOpen(false);
+                studio.onInpaint(id, mask, size);
+              }}
+            />,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

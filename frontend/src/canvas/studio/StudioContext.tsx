@@ -35,6 +35,11 @@ export interface StudioServices {
    */
   onUpscale(nodeId: string, scale: 2 | 4): void;
   /**
+   * V2.78：拿蒙版做局部重绘。`mask` 是**原图尺寸**的 PNG（白=重画），
+   * 上传与尺寸校验都在实现侧，组件只负责画笔。
+   */
+  onInpaint(nodeId: string, mask: Blob, size: { width: number; height: number }): void;
+  /**
    * 按 assetId 取参考缩略图；**取不到就返回 null**（上传素材、抽帧失败、外部导入都可能没有）。
    * 组件层必须能退化回纯文字标签 —— 不假装有图。
    */

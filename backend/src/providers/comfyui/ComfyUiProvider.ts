@@ -447,12 +447,23 @@ export class ComfyUiProvider implements VideoProvider {
     if (request.mode === 'upscale' && (request.assets?.firstFrameImage ?? '') === '') {
       throw new Error('放大需要一张输入图：请选一张图片（或对一个已有产物的节点点"超清"）');
     }
+    // V2.78：局部重绘要底图 + 蒙版，缺一个都不许提交
+    if (request.mode === 'inpaint') {
+      if ((request.assets?.firstFrameImage ?? '') === '') {
+        throw new Error('局部重绘需要底图：assets.firstFrameImage');
+      }
+      if ((request.assets?.maskImage ?? '') === '') {
+        throw new Error('局部重绘需要蒙版：assets.maskImage（白=重画区、黑=保留）');
+      }
+    }
     const target = this.pickTemplateForMode(
       runtimes,
       request.mode,
       wantsReference,
-      // 放大要一个输入槽；t2i 参考按张数要 1~2 个静态槽（>2 张由追加链补齐）
-      request.mode === 'upscale' ? 1 : Math.min(2, referenceCount),
+      // 放大/重绘都要一个输入槽；t2i 参考按张数要 1~2 个静态槽（>2 张由追加链补齐）
+      request.mode === 'upscale' || request.mode === 'inpaint'
+        ? 1
+        : Math.min(2, referenceCount),
     );
 
     if (target === undefined) {
@@ -480,17 +491,38 @@ export class ComfyUiProvider implements VideoProvider {
     }
 
     const { models, loaded } = target;
-    const dimensions = planComfyDimensions(request, this.tuning.maxPixels);
+    /**
+     * V2.78：局部重绘**不许缩放**。
+     *
+     * 蒙版是按底图尺寸画的；一旦这里的宽高被像素预算或 32 对齐改掉，
+     * `SetLatentNoiseMask` 的潜空间与蒙版就对不上（要么崩，要么糊到别处）。
+     * 所以重绘直接用请求里的 `resolution`（前面 schema 已保证它有值）。
+     */
+    const dimensions =
+      request.mode === 'inpaint'
+        ? { width: request.resolution?.width ?? 0, height: request.resolution?.height ?? 0, warnings: [] }
+        : planComfyDimensions(request, this.tuning.maxPixels);
+    if (request.mode === 'inpaint' && (dimensions.width <= 0 || dimensions.height <= 0)) {
+      throw new Error('局部重绘需要有效的 resolution（底图真实宽高）：蒙版必须与底图同尺寸');
+    }
     const frames = planComfyFrames(request.params?.durationSec, this.tuning.fps);
     // 参考图逐个下载再上传给 ComfyUI（它只认自己 input 目录里的文件）
     // V2.77：`upscale` 也走这条通道（输入是一张图，不是 prompt）
     const imageNames =
       referenceAssets.length > 0
         ? await Promise.all(referenceAssets.map((assetId) => this.uploadReferenceImage(assetId)))
-        : request.mode === 'i2v' || request.mode === 'upscale' || wantsReference
+        : request.mode === 'i2v' ||
+            request.mode === 'upscale' ||
+            request.mode === 'inpaint' ||
+            wantsReference
           ? [await this.uploadReferenceImage(request.assets?.firstFrameImage ?? '')]
           : [];
     const startImageName = imageNames[0];
+    // V2.78：蒙版与底图同一条上传通道（同一份 input 目录，ComfyUI 才读得到）
+    const maskImageName =
+      request.mode === 'inpaint'
+        ? await this.uploadReferenceImage(request.assets?.maskImage ?? '')
+        : undefined;
 
     const workflow = buildComfyWorkflow({
       models,
@@ -513,6 +545,7 @@ export class ComfyUiProvider implements VideoProvider {
       ...(request.mode === 'upscale'
         ? { upscaleModel: this.tuning.upscaleModel, upscaleScaleBy: readUpscaleScaleBy(request) }
         : {}),
+      ...(maskImageName === undefined ? {} : { maskImageName }),
     }, loaded.template);
 
     const response = await this.fetchImpl(`${this.baseUrl}/prompt`, {
@@ -720,8 +753,11 @@ export class ComfyUiProvider implements VideoProvider {
       // V2.39 / V2.40：**按产物类型挑**而不是"取第一个"（顺序取决于节点 id）。
       // 视频模式挑视频（H3 这类模板可能视频 + 音频同时输出，取到音频会把音频字节写成 .mp4）；
       // 图片模式（`t2i`）挑图片。
-      // V2.77：放大产出的也是图片
-      const isImage = requestSnapshot.mode === 't2i' || requestSnapshot.mode === 'upscale';
+      // V2.77/78：放大与局部重绘产出的都是图片
+      const isImage =
+        requestSnapshot.mode === 't2i' ||
+        requestSnapshot.mode === 'upscale' ||
+        requestSnapshot.mode === 'inpaint';
       const artifact = isImage ? pickComfyImageArtifact(outputs) : pickComfyVideoArtifact(outputs);
       if (artifact === undefined) {
         const names = outputs.map((item) => item.filename).join('、');

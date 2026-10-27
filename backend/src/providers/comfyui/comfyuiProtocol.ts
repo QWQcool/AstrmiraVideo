@@ -111,7 +111,13 @@ export interface ComfyModels {
  * 而 fl2v / v2v 的**首尾帧 / 参考视频我们还没接**（契约 §19-8 明写不做）。
  * 两者取交集才是"真的能用"：声明了却没接线的模式会被**剔除并说明**，不报成可用。
  */
-export const COMFY_WIRED_MODES: readonly GenerationMode[] = ['t2v', 'i2v', 't2i', 'upscale'];
+export const COMFY_WIRED_MODES: readonly GenerationMode[] = [
+  't2v',
+  'i2v',
+  't2i',
+  'upscale',
+  'inpaint',
+];
 
 /** sidecar 里"挑哪个模型文件"的关键词（大小写不敏感的子串匹配） */
 export interface ComfyModelMatch {
@@ -419,9 +425,18 @@ function resolveDeclaredModes(
     if (!COMFY_WIRED_MODES.includes(mode)) continue;
     // V2.77：`upscale` 也要一张输入图（模板里必须有 START_IMAGE_NAME 才塞得进去）
     const needsFirstFrame =
-      mode === 'i2v' || mode === 'fl2v' || mode === 'v2v' || mode === 'upscale';
+      mode === 'i2v' ||
+      mode === 'fl2v' ||
+      mode === 'v2v' ||
+      mode === 'upscale' ||
+      mode === 'inpaint';
     if (needsFirstFrame && !placeholders.has('START_IMAGE') && !placeholders.has('START_IMAGE_NAME')) {
       rejected.push(`${mode}（模板里没有 START_IMAGE / START_IMAGE_NAME 占位，我们没有地方塞首帧）`);
+      continue;
+    }
+    // V2.78：局部重绘还要一份蒙版（没有 MASK_IMAGE_NAME 就没地方塞蒙版）
+    if (mode === 'inpaint' && !placeholders.has('MASK_IMAGE_NAME')) {
+      rejected.push('inpaint（模板里没有 MASK_IMAGE_NAME 占位，蒙版塞不进去）');
       continue;
     }
     usable.push(mode);
@@ -954,6 +969,13 @@ export interface ComfyWorkflowInput {
    * 4x 模型跑完之后：4x → 1、2x → 0.5（先吃满模型再降采样，比直接要 2x 干净）。
    */
   upscaleScaleBy?: number;
+  /**
+   * V2.78：局部重绘的蒙版在 ComfyUI 里的名字（`LoadImageMask.image`）。
+   * 只有 `inpaint` 模式会用到；缺省 = 模板里的 `LoadImageMask` 会被删掉（t2v/t2i 不该出现它）。
+   */
+  maskImageName?: string;
+  /** V2.78：蒙版向外扩张的像素（默认 0，给"边缘太硬"留个旋钮） */
+  maskGrow?: number;
   /** 产物前缀（默认带 `astrmira/` 子目录） */
   outputPrefix: string;
 }
@@ -995,6 +1017,9 @@ export function buildComfyWorkflow(
     // V2.77：放大模板的两个旋钮（别的模板里没有这两个占位符，值会被忽略）
     UPSCALE_MODEL: input.upscaleModel,
     UPSCALE_SCALE_BY: input.upscaleScaleBy,
+    // V2.78：局部重绘的两张输入（底图走 START_IMAGE_NAME，蒙版走这里）
+    MASK_IMAGE_NAME: input.maskImageName,
+    MASK_GROW: input.maskGrow ?? 0,
     // ⚠️ `56` 是**内置模板里 LoadImage 的节点 id** —— 写自定义模板的人只要保证"有一个输入图节点"
     // 并把它的连接写进模板（本行只在 i2v 时给内置模板用）
     START_IMAGE: (references[0] ?? input.startImageName) === undefined ? undefined : ['56', 0],

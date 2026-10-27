@@ -85,9 +85,11 @@ import {
 import {
   buildCanvasGenerateRequest,
   buildCanvasUpscaleRequest,
+  canvasAspectRatio,
   canvasDefaultProvider,
   canvasSubmitIssue,
   canvasSubmitIssueText,
+  stripCanvasMentions,
 } from '../lib/canvasNodeSubmit';
 import { resolveProviderKey } from '../lib/byok';
 import { comfyUiEngineOptions, httpServiceEngineOptions } from '../lib/engineOptions';
@@ -2221,6 +2223,47 @@ export function CanvasStudioView() {
                 return;
               }
               void submitNode(id, request);
+            },
+            onInpaint: (id, mask, size) => {
+              const current = docRef.current;
+              const node = current === null ? null : findCanvasNode(current, id);
+              if (current === null || node === null) return;
+              const visible = canvasNodeVisibleOutput(node);
+              if (visible.state !== 'selected' && visible.state !== 'latest') {
+                setNotice(t('canvas.studio.issue.imageUnavailable'));
+                return;
+              }
+              const provider = canvasDefaultProvider(node, {
+                providerStatus,
+                hasCloudKey: resolveProviderKey(byok) !== undefined,
+              });
+              void (async () => {
+                try {
+                  // 蒙版走普通上传通道（与服务端同一套清洗/落盘），拿回 assetId 再提交
+                  const uploaded = await uploadAssets(
+                    [new File([mask], 'mask.png', { type: 'image/png' })],
+                    projectId,
+                  );
+                  const maskId = uploaded.assets[0]?.assetId;
+                  if (maskId === undefined) throw new Error('蒙版上传失败：服务端没有返回 assetId');
+                  const request: VideoGenerateRequest = {
+                    // 提示词仍是"要画成什么"的描述；`{{image:N}}` 这类占位符发上游前剥掉
+                    prompt: stripCanvasMentions(node.data.draft.prompt),
+                    mode: 'inpaint',
+                    assets: { firstFrameImage: visible.output.assetId, maskImage: maskId },
+                    aspectRatio: canvasAspectRatio(node),
+                    // 蒙版与底图同尺寸：这里必须用图片的真实宽高，不能走像素预算缩放
+                    resolution: size,
+                    provider,
+                    projectId,
+                    origin: 'canvas',
+                    canvasProjectId: current.projectId,
+                  };
+                  await submitNode(id, request);
+                } catch (caught) {
+                  setNotice(describeError(caught));
+                }
+              })();
             },
             onRecover: (id, batchId) => void recoverSubmit(id, batchId),
             onAddReference: (id) => {

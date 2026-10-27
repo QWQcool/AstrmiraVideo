@@ -54,7 +54,20 @@ async function locateAsset(assetsDir: string, assetId: string): Promise<string |
     return null;
   }
 
-  const hit = entries.find((name) => name.startsWith(`${assetId}.`));
+  /**
+   * V2.78 修正：**必须排除 sidecar**。
+   *
+   * 每个上传资产旁边都有一个 `<assetId>.json` 元数据（V2.9 起），而 `startsWith('<id>.')`
+   * 对 `.json` 同样成立 —— readdir 顺序一变就会把 sidecar 当成资产返回，
+   * 上层拿到 `{"name":"mask.png",…}` 的 83 字节去当图片用。
+   * 实测症状：局部重绘提交后 ComfyUI 报 `cannot identify image file …/xxx.png`。
+   *
+   * 只认 `EXT_MIME` 里的媒体扩展名；`.json`（以及 `locateAsset` 不认识的其它扩展）一律跳过。
+   */
+  const hit = entries.find((name) => {
+    if (!name.startsWith(`${assetId}.`)) return false;
+    return EXT_MIME[path.extname(name).toLowerCase()] !== undefined;
+  });
   return hit === undefined ? null : path.join(assetsDir, hit);
 }
 

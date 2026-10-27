@@ -24,7 +24,16 @@ import { z } from 'zod';
  * 为什么单独立一个模式而不是塞进 `options`：塞进 options 时**别的 provider 会静默忽略**
  * （契约允许忽略未识别键），结果就是"用户要了超清、拿到一张原图"。独立模式才能被能力位拦。
  */
-export const GenerationModeSchema = z.enum(['t2v', 'i2v', 'fl2v', 'v2v', 't2i', 'upscale']);
+export const GenerationModeSchema = z.enum([
+  't2v',
+  'i2v',
+  'fl2v',
+  'v2v',
+  't2i',
+  'upscale',
+  // V2.78：局部重绘（底图 + 蒙版 + 提示词；只重画蒙版内）
+  'inpaint',
+]);
 
 /** 画面比例。1:1 仅云端可选，本地 H3 支持度【待验证】 */
 export const AspectRatioSchema = z.enum(['16:9', '9:16', '1:1']);
@@ -179,6 +188,13 @@ export const GenerationAssetsSchema = z
     lastFrameImage: z.string().optional(), // fl2v 专用尾帧
     referenceVideo: z.string().optional(), // v2v 风格/动作迁移参考（资产 ID 或 `task:<taskId>`，V2.6）
     references: z.array(GenerationReferenceSchema).max(MAX_GENERATION_REFERENCES).optional(), // V2.76 多参考
+    /**
+     * V2.78（局部重绘）：蒙版图资产 —— **白 = 要重画**、黑 = 保留。
+     *
+     * 尺寸必须与底图（`firstFrameImage`）一致（服务端不替你缩放：蒙版错位比报错更糟）。
+     * 只允许出现在 `inpaint` 模式；其它模式给了它是配置错误，不是"顺便用一下"。
+     */
+    maskImage: z.string().optional(),
   })
   .superRefine((value, ctx) => {
     const references = value.references ?? [];
@@ -268,6 +284,44 @@ export const VideoGenerateRequestSchema = z.object({
   origin: z.enum(['create', 'canvas']).optional(),
   /** 画布来源时建议带上，便于按项目回查（与 `projectId` 是两个维度：项目是资产归属，画布是工作区） */
   canvasProjectId: z.string().min(1).optional(),
+}).superRefine((value, ctx) => {
+  /**
+   * V2.78：`inpaint` 的必需项与排他项。
+   *
+   * 为什么放在请求层而不是 assets 层：assets 不知道 `mode`，
+   * 而"没有蒙版的重绘"和"带了蒙版的文生图"都必须在**入口**就拒掉 ——
+   * 让它们走到 provider 再失败，用户看到的会是一句上游报错。
+   */
+  const mask = value.assets?.maskImage;
+  if (value.mode === 'inpaint') {
+    if (value.assets?.firstFrameImage === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['assets', 'firstFrameImage'],
+        message: 'inpaint 需要底图：assets.firstFrameImage',
+      });
+    }
+    if (mask === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['assets', 'maskImage'],
+        message: 'inpaint 需要蒙版：assets.maskImage（白=重绘区）',
+      });
+    }
+    if (value.resolution === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['resolution'],
+        message: 'inpaint 需要 resolution：蒙版必须与底图同尺寸，服务端不替你缩放',
+      });
+    }
+  } else if (mask !== undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['assets', 'maskImage'],
+      message: `assets.maskImage 只用于 inpaint（当前 mode=${value.mode}）`,
+    });
+  }
 });
 
 export type GenerationMode = z.infer<typeof GenerationModeSchema>;
