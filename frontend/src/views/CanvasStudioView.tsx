@@ -223,7 +223,14 @@ interface CanvasAssetInput {
   name?: string;
 }
 
-/** V2.49：提交/核对失败的归类；只有 terminal 才能把批次判死并显式换新键 */
+/**
+ * V2.49：提交/核对失败的归类；只有"确定没提交"才能把批次判死并显式换新键。
+ *
+ * V2.90（实测补的一条）：**429（冷却）也算确定没提交** —— 它由本服务的防线在
+ * "建任务之前"返回，上游根本没被调用。此前把它归进"结果未知"，界面上会给用户
+ * 一个"可能需要核对是否已提交"的提示，而事实是"压根没提交、等 N 秒再点"。
+ * 这不是保守，这是把用户往错的方向引。
+ */
 function describeSubmitFailure(caught: unknown): {
   code: string;
   message: string;
@@ -233,7 +240,7 @@ function describeSubmitFailure(caught: unknown): {
     return {
       code: caught.failure.code ?? 'UPSTREAM_ERROR',
       message: caught.failure.message,
-      definitive: caught.failure.disposition === 'terminal',
+      definitive: caught.failure.disposition === 'terminal' || caught.failure.status === 429,
     };
   }
   return {

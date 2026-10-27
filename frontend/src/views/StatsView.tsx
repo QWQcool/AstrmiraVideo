@@ -65,7 +65,7 @@ export function StatsView(): ReactNode {
   }, [reload]);
 
   return (
-    <section className="wb-page">
+    <section className="wb-page stats-page">
       <div className="wb-page-head wb-page-head-row">
         <div>
           <h1 className="wb-page-title">{t('stats.title')}</h1>

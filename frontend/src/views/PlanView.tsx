@@ -263,7 +263,7 @@ export function PlanView(): ReactNode {
     outcome?.results.find((item) => item.nodeId === nodeId) ?? null;
 
   return (
-    <section className="plan-page">
+    <section className="wb-page plan-page">
       <header className="plan-head">
         <div>
           <h1 className="plan-title">{t('plan.title')}</h1>

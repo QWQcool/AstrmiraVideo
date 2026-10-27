@@ -653,6 +653,17 @@ export function StudioNode({ id, selected }: NodeProps) {
             </div>
           ) : null}
 
+          {/* V2.87（D-2）：视频轨没有多图条件通道 —— 紧跟在参考 chips 后面。
+              放在面板底部会被浮动工具栏裁掉（用户要滚才看得到），而这条提示正是"现在为什么点不了生成"。 */}
+          {videoMultiImage === null ? null : (
+            <div className="cs-toolbar-advice" role="note">
+              <p className="cs-toolbar-advice-title">
+                {t('canvas.studio.videoMultiImage.title', { count: videoMultiImage.images })}
+              </p>
+              <p className="cs-toolbar-advice-body">{t('canvas.studio.videoMultiImage.hint')}</p>
+            </div>
+          )}
+
           {canAddReference ? (
             <button
               type="button"
@@ -880,16 +891,6 @@ export function StudioNode({ id, selected }: NodeProps) {
                     </button>
                   ) : null}
                 </p>
-              )}
-
-              {/* V2.87（D-2）：视频轨没有多图条件通道 —— 给"怎么办"，而不是让用户自己猜 */}
-              {videoMultiImage === null ? null : (
-                <div className="cs-toolbar-advice" role="note">
-                  <p className="cs-toolbar-advice-title">
-                    {t('canvas.studio.videoMultiImage.title', { count: videoMultiImage.images })}
-                  </p>
-                  <p className="cs-toolbar-advice-body">{t('canvas.studio.videoMultiImage.hint')}</p>
-                </div>
               )}
 
               {issue === 'active-task' && unknown !== undefined ? (

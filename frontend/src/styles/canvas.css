@@ -2594,7 +2594,7 @@ audio.cs-card-media {
 .cs-subject-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 6px 12px;
 }
 
 .cs-subject-link {
@@ -2603,7 +2603,12 @@ audio.cs-card-media {
   background: transparent;
   color: var(--gold);
   font-size: var(--fs-micro);
+  white-space: nowrap;
   cursor: pointer;
+}
+
+.cs-subject-link:hover:not(:disabled) {
+  text-decoration: underline;
 }
 
 .cs-subject-link:disabled {
@@ -2631,12 +2636,12 @@ audio.cs-card-media {
 /* ── 编排独立页（V2.88 / D-1；CONTRACT §11-6）────────────────────────
    与画布的视觉分工：编排是**表单/清单**（执行语义），不是可拖拽的画板。
    栅格用 minmax(0, 1fr)：375px 下子项不会把页面撑出横向滚动。 */
+/* 与 `.wb-page` 叠加：这里只补布局，不覆盖它的页边距（否则 375px 下文字贴边） */
 .plan-page {
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-width: 0;
-  padding: 12px 0 24px;
 }
 
 .plan-head {
