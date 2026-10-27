@@ -40,3 +40,14 @@ COMFYUI_TEMPLATE_DIR=/path/to/deploy/comfyui-templates
 - 它不是默认模型，不做自动回退；
 - 满血 BF16 的 50 步耗时/显存需要在租到的 48GB+ 机器上实测；
 - 中文文字/版式明显强于当前 FLUX.2 Klein，但仍是生成模型，文字不保证逐字正确。
+
+## experiments/ 子目录：未接线的实验模板
+
+`experiments/flux2-klein-t2i-ref2.*` 是 **P1-1 双参考图实验**用的模板：两张图各走
+`LoadImage → VAEEncode → ReferenceLatent`，两条 ReferenceLatent 串联。
+
+- **放在子目录 = 不会被模板扫描加载**（`readdirSync(dir).filter(endsWith('.api.json'))` 只认第一层），
+  所以它**不会**被误当成生产 t2i 模板挑中；
+- 为什么不能直接接线：provider 目前只上传一张参考图（`{{START_IMAGE_NAME}}`），
+  第二张的占位符 `{{REFERENCE_IMAGE_NAME}}` 没人填 —— 直接挂上去就是"有按钮没能力"；
+- 手工跑对照实验用 `node scripts/multiref-experiment.mjs`（固定 seed，A / A+B / A+B2 三组）。

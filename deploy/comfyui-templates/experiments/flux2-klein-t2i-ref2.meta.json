@@ -1,0 +1,12 @@
+{
+  "modes": ["t2i"],
+  "modelMatch": {
+    "unet": "klein",
+    "clip": "qwen_3",
+    "vae": "flux2",
+    "clipType": "flux2"
+  },
+  "label": "FLUX.2 Klein 4B · 双参考图（实验，未接线）",
+  "referenceImage": true,
+  "notes": "两张输入：{{START_IMAGE_NAME}} 为第一张，{{REFERENCE_IMAGE_NAME}} 为第二张；两条 ReferenceLatent 串联（cond → ref1 → ref2）。当前 provider 只上传一张图，因此本模板在 P1-2 接线前不参与自动挑选：文件放在 experiments/ 子目录，而模板扫描只认目录第一层的 *.api.json。要手工跑用 scripts/multiref-experiment.mjs。"
+}
