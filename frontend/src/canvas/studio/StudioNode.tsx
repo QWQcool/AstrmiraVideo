@@ -338,8 +338,17 @@ export function StudioNode({ id, selected }: NodeProps) {
     : provider === 'cloud-volcano-seedance'
       ? undefined
       : comfyUiEngineOptions(providerStatus).find((item) => item.id === provider)?.modes;
+  /**
+   * B 路线（V2.76）：图片节点声明「全能参考」后也能加参考图。
+   *
+   * 这里不看 `modesAllowReferences`：那个函数判的是"视频轨能不能吃参考"，
+   * t2i 的参考能力由模板声明（`referenceImage`）决定，模板缺失时 B93 会在提交前明确拒绝。
+   */
+  const omniReferences =
+    node.type === 'image' && draft.settings.referenceMode === 'omni-reference';
   /** S5-Ac：未自检 = 未知，不据此藏入口；明确只支持 t2v/t2i 时不显示参考入口 */
-  const canAddReference = node.type === 'video' && modesAllowReferences(engineModes);
+  const canAddReference =
+    (node.type === 'video' && modesAllowReferences(engineModes)) || omniReferences;
   const priceText =
     node.type === 'text'
       ? null
@@ -574,7 +583,12 @@ export function StudioNode({ id, selected }: NodeProps) {
                 .map((item, index) => (
                   <ReferenceChip
                     key={`${item.role}-${item.assetId}-${index}`}
-                    label={t(REFERENCE_LABEL_KEYS[item.role])}
+                    // 全能参考下槽位号就是提示词里 {{image:N}} 的 N，必须露出来
+                    label={
+                      omniReferences
+                        ? `#${index} ${t(REFERENCE_LABEL_KEYS[item.role])}`
+                        : t(REFERENCE_LABEL_KEYS[item.role])
+                    }
                     preview={studio.referencePreview(item.assetId)}
                   />
                 ))}
@@ -609,6 +623,37 @@ export function StudioNode({ id, selected }: NodeProps) {
             <p className="cs-toolbar-issue">{t('canvas.studio.textNodeHint')}</p>
           ) : (
             <>
+              {node.type === 'image' ? (
+                <div className="cs-toolbar-row">
+                  <label className="cs-toolbar-field">
+                    <span>{t('canvas.studio.referenceMode')}</span>
+                    <select
+                      className="cs-toolbar-select"
+                      value={omniReferences ? 'omni-reference' : 'none'}
+                      onChange={(event) => {
+                        // 不清空已连的参考图：改主意时不该丢素材；多张而没开模式时提交会被明确挡住
+                        const referenceMode =
+                          event.target.value === 'omni-reference'
+                            ? ('omni-reference' as const)
+                            : undefined;
+                        studio.onDraftChange(id, { settings: { referenceMode } });
+                      }}
+                    >
+                      <option value="none">{t('canvas.studio.referenceMode.none')}</option>
+                      <option value="omni-reference">{t('canvas.studio.referenceMode.omni')}</option>
+                    </select>
+                  </label>
+                  {omniReferences ? (
+                    <span className="cs-toolbar-static">
+                      {draft.references.length === 0
+                        ? t('canvas.studio.referenceMode.omniEmpty')
+                        : t('canvas.studio.referenceMode.mentionHint', {
+                            count: draft.references.length - 1,
+                          })}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="cs-toolbar-row">
                 <label className="cs-toolbar-field">
                   <span>{t('create.more.aspect')}</span>

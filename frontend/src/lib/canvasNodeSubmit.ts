@@ -1,5 +1,6 @@
 import {
   estimateCostFromRequest,
+  scanCanvasMentions,
   type AspectRatio,
   type CanvasDocNode,
   type CanvasReference,
@@ -48,7 +49,9 @@ export type CanvasSubmitIssue =
   | 'image-unavailable'
   | 'mode-unsupported'
   | 'cloud-key-missing'
-  | 'provider-unavailable';
+  | 'provider-unavailable'
+  /** B 路线：提示词里的 `{{image:N}}` 越界（引用了不存在的素材） */
+  | 'mention-out-of-range';
 
 export interface CanvasSubmitContext {
   providerStatus: ProviderStatus | null;
@@ -67,6 +70,7 @@ const ISSUE_KEYS: Record<CanvasSubmitIssue, MessageKey> = {
   'mode-unsupported': 'canvas.studio.issue.modeUnsupported',
   'cloud-key-missing': 'canvas.studio.issue.cloudKey',
   'provider-unavailable': 'canvas.studio.issue.provider',
+  'mention-out-of-range': 'canvas.studio.issue.mentionOutOfRange',
 };
 
 /** 按当前语言翻成一句可执行的中文/英文（与 `engineOptions` 同一手法：非 React 上下文取文案） */
@@ -98,6 +102,35 @@ function firstByRole(
 export function canvasDraftMode(node: CanvasDocNode): CanvasDraftMode {
   const references = node.data.draft.references;
   const unsupportedRoles: CanvasReferenceRole[] = [];
+
+  // B 路线（V2.76）：图片节点的「全能参考」= N 张 reference-image 按 order 进槽位。
+  // `order` 在这里**重新编号成 0..n-1**：schema 要求不重复，画布上删过中间那张后会出现空洞。
+  if (
+    node.type === 'image' &&
+    node.data.draft.settings.referenceMode === 'omni-reference'
+  ) {
+    const slots = [...references]
+      .filter((item) => item.role === 'reference-image')
+      .sort((left, right) => left.order - right.order);
+    unsupportedRoles.push(
+      ...references.filter((item) => item.role !== 'reference-image').map((item) => item.role),
+    );
+    return {
+      mode: 't2i',
+      ...(slots.length === 0
+        ? {}
+        : {
+            assets: {
+              references: slots.map((item, index) => ({
+                assetId: item.assetId,
+                role: 'reference-image' as const,
+                order: index,
+              })),
+            },
+          }),
+      unsupportedRoles: dedupe(unsupportedRoles),
+    };
+  }
 
   if (node.type === 'image') {
     // S9-A3：图片节点支持**单张** reference-image（派生编辑——以它图为底参考出图，
@@ -274,6 +307,12 @@ export function canvasSubmitIssue(
 
   const draft = canvasDraftMode(node);
   if (draft.unsupportedRoles.length > 0) return 'reference-unsupported';
+
+  // B 路线：`{{image:N}}` 越界时提交前就拦住（不静默改用户的提示词）
+  if (draft.assets?.references !== undefined) {
+    const scan = scanCanvasMentions(node.data.draft.prompt, draft.assets.references.length);
+    if (scan.problems.length > 0) return 'mention-out-of-range';
+  }
   const wantedMode = draft.mode;
 
   if (node.type === 'image') {
@@ -327,6 +366,21 @@ export function canvasSubmitIssue(
   return 'provider-unavailable';
 }
 
+/**
+ * 发上游前剥掉 `{{image:N}}`（V2.76 / B 路线）。
+ *
+ * 这个语法是**我们的槽位标注**：画布靠它说清"第几张素材"，但**目前没有任何 provider 消费它**
+ * ——ComfyUI 的 ReferenceLatent 是全局条件，没有"文中提及"这种机制（即梦的 `{{image:N}}`
+ * 是他们服务端的私有协议）。把大括号原样喂给模型只会变成噪声，所以发送前清掉；
+ * 草稿里**保留原文**，用户仍能看到、编辑、并靠它对齐 `#0/#1` 的槽位号。
+ */
+export function stripCanvasMentions(prompt: string): string {
+  return prompt
+    .replace(/\{\{image:\d{1,3}\}\}/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
 /** 组装 `POST /api/generate` 的请求体（画布来源；`origin` / `canvasProjectId` 见 V2.43） */
 export function buildCanvasGenerateRequest(input: {
   node: CanvasDocNode;
@@ -343,7 +397,7 @@ export function buildCanvasGenerateRequest(input: {
   const video = node.type === 'video';
 
   return {
-    prompt: node.data.draft.prompt.trim(),
+    prompt: stripCanvasMentions(node.data.draft.prompt),
     mode: draftMode.mode,
     ...(draftMode.assets === undefined ? {} : { assets: draftMode.assets }),
     aspectRatio: canvasAspectRatio(node),

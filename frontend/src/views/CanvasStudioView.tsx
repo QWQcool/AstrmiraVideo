@@ -1570,6 +1570,7 @@ export function CanvasStudioView() {
         node.data.draft.references,
         sources.map((source) => ({ ref: source.ref, kind: source.kind })),
         node.type,
+        { referenceMode: node.data.draft.settings.referenceMode },
       );
       if (result.added === 0) {
         setNotice(t('canvas.studio.referenceLimited', { count: result.ignored }));

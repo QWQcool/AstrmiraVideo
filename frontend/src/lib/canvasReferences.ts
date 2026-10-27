@@ -1,4 +1,5 @@
-import type { CanvasNodeType, CanvasReference } from '@astrmira/shared';
+import { CANVAS_MAX_REFERENCES } from '@astrmira/shared';
+import type { CanvasNodeType, CanvasReference, CanvasReferenceMode } from '@astrmira/shared';
 import type { ReferenceKind } from './referenceSources';
 
 /**
@@ -55,11 +56,49 @@ export function allowedKindsForReferenceTarget(
   return ['image', 'video'];
 }
 
+export interface AddReferencesOptions {
+  /** B 路线（V2.76）：图片节点声明 `omni-reference` 时允许追加 N 张 reference-image */
+  referenceMode?: CanvasReferenceMode;
+}
+
 export function addReferencesToDraft(
   existing: readonly CanvasReference[],
   candidates: readonly ReferenceCandidate[],
   nodeType: CanvasNodeType,
+  options: AddReferencesOptions = {},
 ): AddReferencesResult {
+  /**
+   * B 路线：图片节点的「全能参考」。
+   *
+   * 与视频节点不同，这里**只收图片**且**不占首尾帧**——用途统一 `reference-image`，
+   * 顺序由 `order` 决定（提示词的 `{{image:N}}` 就是它）。视频节点仍走下面那套首帧/尾帧逻辑。
+   */
+  if (nodeType === 'image') {
+    if (options.referenceMode !== 'omni-reference' || candidates.length === 0) {
+      return { references: [...existing], added: 0, ignored: candidates.length };
+    }
+    const references = [...existing];
+    const seen = new Set(references.map((item) => item.assetId));
+    let order = references.reduce((max, item) => Math.max(max, item.order), -1) + 1;
+    let added = 0;
+    let ignored = 0;
+    for (const candidate of candidates) {
+      if (candidate.kind !== 'image' || seen.has(candidate.ref)) {
+        ignored += 1;
+        continue;
+      }
+      if (references.length >= CANVAS_MAX_REFERENCES) {
+        ignored += 1;
+        continue;
+      }
+      references.push({ assetId: candidate.ref, role: 'reference-image', order });
+      seen.add(candidate.ref);
+      order += 1;
+      added += 1;
+    }
+    return { references, added, ignored };
+  }
+
   if (nodeType !== 'video' || candidates.length === 0) {
     return { references: [...existing], added: 0, ignored: candidates.length };
   }

@@ -16,6 +16,7 @@ import {
   canvasResolutionTier,
   canvasSubmitIssue,
   estimateCanvasNodeCost,
+  stripCanvasMentions,
   swapFirstLastReferences,
 } from './canvasNodeSubmit';
 
@@ -332,5 +333,80 @@ describe('图片节点派生编辑请求（S9-A3 / V2.69）', () => {
     expect(mode.mode).toBe('t2i');
     expect(mode.assets).toBeUndefined();
     expect(mode.unsupportedRoles).toEqual([]);
+  });
+});
+
+describe('B 路线：全能参考的提交映射（V2.76）', () => {
+  const omniImage = (references: Array<{ assetId: string; order: number }>) => {
+    const node = createCanvasNode({ id: 'img', type: 'image', x: 0, y: 0, now: 1 });
+    node.data.draft.settings.referenceMode = 'omni-reference';
+    node.data.draft.references = references.map((item) => ({
+      assetId: item.assetId,
+      role: 'reference-image' as const,
+      order: item.order,
+    }));
+    return node;
+  };
+
+  it('N 张按 order 排序并**重新编号**成 0..n-1（删过中间那张也不会留空洞）', () => {
+    const node = omniImage([
+      { assetId: 'task:c', order: 5 },
+      { assetId: 'task:a', order: 2 },
+      { assetId: 'task:b', order: 9 },
+    ]);
+    expect(canvasDraftMode(node).assets).toEqual({
+      references: [
+        { assetId: 'task:a', role: 'reference-image', order: 0 },
+        { assetId: 'task:c', role: 'reference-image', order: 1 },
+        { assetId: 'task:b', role: 'reference-image', order: 2 },
+      ],
+    });
+  });
+
+  it('全能参考里混进首帧 → 仍然按"用途没通道"拒绝（不静默丢）', () => {
+    const node = omniImage([{ assetId: 'task:a', order: 0 }]);
+    node.data.draft.references.push({ assetId: 'task:f', role: 'first-frame', order: 1 });
+    const mode = canvasDraftMode(node);
+    expect(mode.unsupportedRoles).toEqual(['first-frame']);
+  });
+
+  it('视频节点声明全能参考也没有通道（本地视频轨要多参考工作流）', () => {
+    const node = createCanvasNode({ id: 'v', type: 'video', x: 0, y: 0, now: 1 });
+    node.data.draft.settings.referenceMode = 'omni-reference';
+    node.data.draft.references = [
+      { assetId: 'task:a', role: 'reference-image', order: 0 },
+      { assetId: 'task:b', role: 'reference-image', order: 1 },
+    ];
+    const mode = canvasDraftMode(node);
+    expect(mode.unsupportedRoles).toEqual(['reference-image']);
+  });
+
+  it('提示词里 {{image:N}} 越界 → 问题码 mention-out-of-range（不静默改文案）', () => {
+    const node = omniImage([{ assetId: 'task:a', order: 0 }]);
+    node.data.draft.prompt = '把 {{image:0}} 放进 {{image:3}}';
+    expect(
+      canvasSubmitIssue(node, 'host-comfyui', {
+        providerStatus: null,
+        hasCloudKey: false,
+      }),
+    ).toBe('mention-out-of-range');
+  });
+
+  it('发上游前剥掉 `{{image:N}}`，但草稿里的原文不动', () => {
+    expect(stripCanvasMentions('把 {{image:0}} 的人物放进 {{image:1}} 的场景')).toBe(
+      '把 的人物放进 的场景',
+    );
+    expect(stripCanvasMentions('纯净提示词，没有占位符')).toBe('纯净提示词，没有占位符');
+  });
+
+  it('提及在范围内则不拦（继续走后面的引擎判定）', () => {
+    const node = omniImage([{ assetId: 'task:a', order: 0 }]);
+    node.data.draft.prompt = '把 {{image:0}} 放进画面';
+    expect(
+      canvasSubmitIssue(node, 'host-comfyui', {
+        providerStatus: null,
+        hasCloudKey: false,
+      }),
+    ).not.toBe('mention-out-of-range');
   });
 });

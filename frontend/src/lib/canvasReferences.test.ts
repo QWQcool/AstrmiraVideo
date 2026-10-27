@@ -86,3 +86,46 @@ describe('S5-Ac 节点参考添加', () => {
     ).toBe(1);
   });
 });
+
+describe('B 路线：图片节点的全能参考（V2.76）', () => {
+  it('开了 omni-reference 后按 order 追加，role 统一 reference-image', () => {
+    const result = addReferencesToDraft(
+      [],
+      [
+        { ref: 'a1', kind: 'image' },
+        { ref: 'a2', kind: 'image' },
+      ],
+      'image',
+      { referenceMode: 'omni-reference' },
+    );
+    expect(result.added).toBe(2);
+    expect(result.references).toEqual([
+      { assetId: 'a1', role: 'reference-image', order: 0 },
+      { assetId: 'a2', role: 'reference-image', order: 1 },
+    ]);
+  });
+
+  it('非图片素材与重复素材被忽略，且不占槽位', () => {
+    const existing = [{ assetId: 'a1', role: 'reference-image' as const, order: 0 }];
+    const result = addReferencesToDraft(
+      existing,
+      [
+        { ref: 'a1', kind: 'image' },
+        { ref: 'v1', kind: 'video' },
+        { ref: 'a2', kind: 'image' },
+      ],
+      'image',
+      { referenceMode: 'omni-reference' },
+    );
+    expect(result.added).toBe(1);
+    expect(result.ignored).toBe(2);
+    expect(result.references.map((item) => item.assetId)).toEqual(['a1', 'a2']);
+    expect(result.references[1]!.order).toBe(1);
+  });
+
+  it('没有声明模式时仍然忽略（旧行为不变）', () => {
+    const result = addReferencesToDraft([], [{ ref: 'a1', kind: 'image' }], 'image');
+    expect(result.added).toBe(0);
+    expect(result.ignored).toBe(1);
+  });
+});

@@ -225,6 +225,13 @@ export const CANVAS_ZH = {
   'canvas.studio.lineage.targetNotVideo': '只有图片或视频节点能接收参考',
   'canvas.studio.lineage.roleTaken': '首帧 / 尾帧 / 参考视频已经占满',
   'canvas.studio.lineage.referencesFull': '这个节点已连满 12 张参考 —— 先移除一张再连',
+  'canvas.studio.issue.mentionOutOfRange':
+    '提示词里引用了不存在的素材（{{image:N}} 的 N 从 0 开始，且不能超过已连参考数）',
+  'canvas.studio.referenceMode': '参考模式',
+  'canvas.studio.referenceMode.none': '纯文生',
+  'canvas.studio.referenceMode.omni': '全能参考（多图）',
+  'canvas.studio.referenceMode.omniEmpty': '先连素材，最多 12 张',
+  'canvas.studio.referenceMode.mentionHint': '提示词可用 {{image:0}}…{{image:{count}}} 指代素材',
   'canvas.studio.lineage.plannedEdgeCreated':
     '上游还没有产物 —— 已建为计划依赖边（虚线）。上游出片后删掉它重连来源边，或交给会话执行自动转换',
   // ── 旧血缘图下线（S3-B4）──
@@ -757,6 +764,13 @@ export const CANVAS_EN = {
   'canvas.studio.lineage.targetNotVideo': 'Only image or video nodes can receive references',
   'canvas.studio.lineage.roleTaken': 'First frame / last frame / reference video are already taken',
   'canvas.studio.lineage.referencesFull': 'This node already has 12 references — remove one before connecting',
+  'canvas.studio.issue.mentionOutOfRange':
+    'The prompt references a material that does not exist ({{image:N}}: N starts at 0 and must stay below the reference count)',
+  'canvas.studio.referenceMode': 'Reference mode',
+  'canvas.studio.referenceMode.none': 'Text only',
+  'canvas.studio.referenceMode.omni': 'Omni reference (multi-image)',
+  'canvas.studio.referenceMode.omniEmpty': 'Connect materials first — up to 12',
+  'canvas.studio.referenceMode.mentionHint': 'Use {{image:0}}…{{image:{count}}} in the prompt to point at materials',
   'canvas.studio.lineage.plannedEdgeCreated':
     'Upstream has no output yet — created a planned dependency edge (dashed). Remove it and reconnect as a source edge after the upstream generates, or let a session run convert it',
   'canvas.legacy.title': 'The lineage view is now part of the studio canvas',
