@@ -1,5 +1,8 @@
 # 即梦画布/资产/分镜差距审计
 
+> 数据形状与真实生成请求体见 [JIMENG-PROTOCOL-2026-10-27](JIMENG-PROTOCOL-2026-10-27.md)（实测抓包）；
+> 本文只谈能力差距与优先级。
+
 <a id="multi-reference-observation"></a>
 
 ## 2026-10-25 补充观察：多素材与双入口

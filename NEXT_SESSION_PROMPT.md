@@ -13,6 +13,7 @@
 7. 按需查 [GUIDE](docs/GUIDE.md)、[FRONTEND-REVIEW](docs/FRONTEND-REVIEW.md)、[N8N-REFERENCE](docs/N8N-REFERENCE.md) 及对应验收记录，不重新维护一份计划。
 8. 交接审计从 [证据报告](docs/HANDOFF-AUDIT-2026-10-25.md)、[下一片 AC](docs/PLAN.md#handoff-next-slice) 与 [开放选择](docs/PENDING-DECISIONS.md#handoff-open-decisions) 继续；门禁与真模型核验只看 [PLAN §5](docs/PLAN.md#handoff-audit-status)。
 9. UI 开发参照使用 [详情图 HTML](docs/design/creation-v1/development-reference.html) 与 [交互规格](docs/CREATION-EXPERIENCE-DESIGN.md#multi-reference-entry-design)。双入口、细白连线方向见 D76，多素材接线按 [新分片 AC](docs/PLAN.md#multi-reference-entry-plan)；N9/N10/N12 未决语义不由示意图代为拍板。REA 本日观察与当前状态只看 [PLAN §5](docs/PLAN.md#multi-reference-reference-status)。
+10. **即梦协议原始观测（2026-10-27 实测抓包）**：[JIMENG-PROTOCOL](docs/JIMENG-PROTOCOL-2026-10-27.md) —— 画布节点/边对象、图片与视频两条真实生成请求体、字段语义、未观测清单与复现方法。做多参考（B 路线）前必须先读它，不要凭印象重推一遍。
 
 ## 继续工作
 
