@@ -76,6 +76,9 @@
   /* 语义色（T5）：状态点 / 危险态 / 实心按钮与分段控件上的文字色 */
   --success: #34d399;
   --danger: #f87171;
+  /* V2.91：提示级（不比 danger 刺眼）。此前只在 canvas.css 里写成硬编码兜底值，
+     换主题时漏掉；收进 token 后两套主题各有一份。 */
+  --warn: #d97706;
   --on-action: #0b1114;
   --on-segment: #111315;
   --canvas: #0b0d0e;
@@ -197,6 +200,8 @@
   --panel-raised: #ffffff;
   --success: #0f7a45;
   --danger: #c0392b;
+  /* 日间底上 amber-600 亮度不足，用更深一档保证 4.5:1 以上的对比 */
+  --warn: #b45309;
   --on-action: #ffffff;
   --on-segment: #ffffff;
   --canvas: #0f1113;

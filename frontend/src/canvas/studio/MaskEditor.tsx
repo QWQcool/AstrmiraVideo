@@ -47,7 +47,8 @@ export function MaskEditor({
       canvas.height = height;
       const context = canvas.getContext('2d');
       if (context !== null) {
-        context.fillStyle = '#000';
+        // 蒙版协议要求**纯黑 = 保留**（这是像素语义，不是主题色；换主题也不该变色）
+        context.fillStyle = 'black';
         context.fillRect(0, 0, width, height);
       }
       setDirty(false);
@@ -81,8 +82,9 @@ export function MaskEditor({
   const paint = (from: { x: number; y: number }, to: { x: number; y: number }) => {
     const context = canvasRef.current?.getContext('2d');
     if (context === null || context === undefined) return;
-    context.strokeStyle = '#fff';
-    context.fillStyle = '#fff';
+    // 纯白 = 要重画（像素语义，见上）
+    context.strokeStyle = 'white';
+    context.fillStyle = 'white';
     context.lineCap = 'round';
     context.lineJoin = 'round';
     context.lineWidth = brush;
@@ -160,7 +162,8 @@ export function MaskEditor({
               const canvas = canvasRef.current;
               const context = canvas?.getContext('2d');
               if (canvas === null || context === null || context === undefined) return;
-              context.fillStyle = '#000';
+              // 同上：纯黑 = 保留（像素语义）
+              context.fillStyle = 'black';
               context.fillRect(0, 0, canvas.width, canvas.height);
               setDirty(false);
             }}
