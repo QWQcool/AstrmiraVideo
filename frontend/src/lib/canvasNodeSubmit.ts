@@ -129,6 +129,8 @@ export function canvasDraftMode(node: CanvasDocNode): CanvasDraftMode {
                 assetId: item.assetId,
                 role: 'reference-image' as const,
                 order: index,
+                // V2.86：溯源标签原样带上（服务端只存不用；缺省时整键省略）
+                ...(item.subjectId === undefined ? {} : { subjectId: item.subjectId }),
               })),
             },
           }),

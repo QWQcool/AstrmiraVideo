@@ -2416,3 +2416,187 @@ audio.cs-card-media {
   display: flex;
   gap: 8px;
 }
+
+/* ── 主体库面板（V2.86 / D-3；CONTRACT §21-18）────────────────────────
+   它是**跨画布**的实体库，所以是左轨旁边的一栏，而不是节点里的一个控件。
+   窄屏（≤768px）改成覆盖层：375px 下再加一栏会直接把画布挤到 0 宽。 */
+.cs-subjects {
+  display: flex;
+  flex: 0 0 224px;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.cs-subjects-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cs-subjects-title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-note);
+  font-weight: 600;
+}
+
+.cs-subjects-hint,
+.cs-subjects-note {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+}
+
+.cs-subjects-error {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--gold);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: var(--fs-micro);
+}
+
+.cs-subject-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cs-subject-input {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+  color: var(--text);
+  font-size: var(--fs-micro);
+}
+
+.cs-subject-create {
+  padding: 6px 8px;
+  border: 1px solid var(--line-gold);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--gold);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
+.cs-subject-create:disabled {
+  border-color: var(--line);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+.cs-subject-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cs-subject-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel2);
+}
+
+.cs-subject-card[draggable='true'] {
+  cursor: grab;
+}
+
+.cs-subject-main {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cs-subject-thumb {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--panel-raised);
+}
+
+.cs-subject-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.cs-subject-name,
+.cs-subject-desc,
+.cs-subject-count {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cs-subject-name {
+  color: var(--text);
+  font-size: var(--fs-note);
+}
+
+.cs-subject-desc,
+.cs-subject-count {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.cs-subject-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cs-subject-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--gold);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
+.cs-subject-link:disabled {
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+.cs-subject-danger {
+  color: var(--text-dim);
+}
+
+@media (max-width: 768px) {
+  .cs-subjects {
+    position: fixed;
+    top: calc(64px + var(--safe-top));
+    bottom: var(--safe-bottom);
+    left: calc(72px + var(--safe-left));
+    z-index: 60;
+    width: min(260px, calc(100vw - var(--safe-left) - 84px));
+    border-radius: 0 12px 12px 0;
+    box-shadow: var(--shadow-pop);
+  }
+}

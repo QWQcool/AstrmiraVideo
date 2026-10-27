@@ -598,12 +598,15 @@ export function StudioNode({ id, selected }: NodeProps) {
               {sortedReferences.map((item, index) => (
                 <ReferenceChip
                   key={`${item.role}-${item.assetId}-${index}`}
-                  // 全能参考下槽位号就是提示词里 {{image:N}} 的 N，必须露出来
-                  label={
+                  // 全能参考下槽位号就是提示词里 {{image:N}} 的 N，必须露出来；
+                  // V2.86：来自主体库的参考额外带主体名（未知主体也如实显示，不吞掉溯源）
+                  label={`${
                     omniReferences
                       ? `#${index} ${t(REFERENCE_LABEL_KEYS[item.role])}`
                       : t(REFERENCE_LABEL_KEYS[item.role])
-                  }
+                  }${
+                    item.subjectId === undefined ? '' : ` · ${studio.subjectLabel(item.subjectId)}`
+                  }`}
                   preview={studio.referencePreview(item.assetId)}
                   // 边界处不出现按钮：能点的按钮才该存在，点了没反应的箭头是噪音
                   onMoveLeft={

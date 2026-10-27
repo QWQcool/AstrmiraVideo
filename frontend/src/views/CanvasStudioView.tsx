@@ -32,6 +32,7 @@ import {
   type CanvasProjectIndex,
   type CanvasReferenceRole,
   type StoryboardExpansion,
+  type Subject,
   type TaskProgress,
   type VideoGenerateRequest,
 } from '@astrmira/shared';
@@ -148,10 +149,22 @@ import {
 } from '../lib/canvasProjects';
 import { AssetPickerDialog } from '../canvas/studio/AssetPickerDialog';
 import {
+  CanvasSubjectPanel,
+  SUBJECT_DRAG_TYPE,
+} from '../canvas/studio/CanvasSubjectPanel';
+import {
   addReferencesToDraft,
   allowedKindsForReferenceTarget,
   referenceThumbnailPath,
 } from '../lib/canvasReferences';
+import {
+  attachSubjectToReferences,
+  createSubject,
+  deleteSubject,
+  fetchSubjects,
+  patchSubject,
+  subjectName,
+} from '../lib/subjects';
 import { reuseFromBatch } from '../lib/canvasNodeReuse';
 import type { ReferenceSourceItem } from '../lib/referenceSources';
 import { CanvasContextMenu, type CanvasMenuItem } from '../canvas/studio/CanvasContextMenu';
@@ -366,6 +379,17 @@ export function CanvasStudioView() {
   } | null>(null);
   const [clipboardCount, setClipboardCount] = useState(0);
   const [historyRev, setHistoryRev] = useState(0);
+  /**
+   * V2.86（D-3）：主体库。它与画布文档**互不影响** ——
+   * 主体是跨画布实体，画布只记 `subjectId` 溯源，所以这份状态不进撤销栈、不落画布文档。
+   */
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [subjectsLoading, setSubjectsLoading] = useState(true);
+  const [subjectsError, setSubjectsError] = useState<string | null>(null);
+  const [subjectsBusy, setSubjectsBusy] = useState(false);
+  const [subjectPanelOpen, setSubjectPanelOpen] = useState(false);
+  /** 非 null = 正在给这个主体挑素材（复用资产弹层） */
+  const [subjectPickerId, setSubjectPickerId] = useState<string | null>(null);
 
   const docRef = useRef<CanvasDoc | null>(null);
   const saveQueueRef = useRef<ReturnType<typeof createCanvasSaveQueue> | null>(null);
@@ -632,6 +656,32 @@ export function CanvasStudioView() {
       alive = false;
     };
   }, [openProject]);
+
+  /**
+   * V2.86（D-3）：主体库只读一次（跨画布共享，与当前打开的画布无关）。
+   *
+   * 为什么放在挂载期而不是打开画布时：主体面板可以在一块空画布上打开，
+   * 而它列的是**全库**；跟着画布切来切去会白拉一轮。
+   */
+  const loadSubjects = useCallback(async (signal?: AbortSignal): Promise<void> => {
+    try {
+      const data = await fetchSubjects(signal);
+      if (signal?.aborted === true) return;
+      setSubjects(data.subjects);
+      setSubjectsError(null);
+    } catch (caught) {
+      if (signal?.aborted === true) return;
+      setSubjectsError(describeError(caught));
+    } finally {
+      if (signal?.aborted !== true) setSubjectsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadSubjects(controller.signal);
+    return () => controller.abort();
+  }, [loadSubjects]);
 
   /**
    * S5-A：资产页的画布卡可以带着 `?project=<id>` 进来。
@@ -1701,6 +1751,94 @@ export function CanvasStudioView() {
     [handleDraftChange, t],
   );
 
+  /**
+   * V2.86（D-3）：把一个主体加到节点。
+   *
+   * 三条如实分支（都是用户在界面上真会遇到的状态）：
+   * - 没选节点 → 说清"先选中一个节点"（不是静默什么都不做）；
+   * - 主体没素材 → 先让用户加素材；
+   * - 节点收不下（图片节点不是全能参考 / 首尾帧已占满）→ 给具体动作，不丢素材。
+   */
+  const attachSubject = useCallback(
+    (subjectId: string, nodeId: string | null): void => {
+      const current = docRef.current;
+      const subject = subjects.find((item) => item.id === subjectId);
+      if (current === null || subject === undefined) return;
+      if (nodeId === null) {
+        setNotice(t('canvas.subject.needSelection'));
+        return;
+      }
+      const node = findCanvasNode(current, nodeId);
+      if (node === null) return;
+
+      const result = attachSubjectToReferences(
+        node.data.draft.references,
+        subject,
+        node.type,
+        node.data.draft.settings.referenceMode,
+      );
+      if (result.reason === 'no-asset') {
+        setNotice(t('canvas.subject.needAssets'));
+        return;
+      }
+      if (result.reason === 'unsupported') {
+        setNotice(t('canvas.subject.unsupported'));
+        return;
+      }
+      handleDraftChange(nodeId, { references: result.references });
+      setNotice(
+        result.linked
+          ? t('canvas.subject.linked', { name: subject.name })
+          : t('canvas.subject.added', { name: subject.name }),
+      );
+    },
+    [handleDraftChange, subjects, t],
+  );
+
+  const handleCreateSubject = useCallback(
+    async (input: { name: string; description?: string }): Promise<void> => {
+      setSubjectsBusy(true);
+      try {
+        const created = await createSubject(input);
+        setSubjects((prev) => [...prev, created.subject]);
+        setSubjectsError(null);
+      } catch (caught) {
+        setSubjectsError(describeError(caught));
+      } finally {
+        setSubjectsBusy(false);
+      }
+    },
+    [],
+  );
+
+  const handleDeleteSubject = useCallback(
+    (subjectId: string): void => {
+      void deleteSubject(subjectId)
+        .then(() => {
+          // 只从库里摘掉：节点上的 `subjectId` 不清洗（引用变"未知主体"，参考本身还在）
+          setSubjects((prev) => prev.filter((item) => item.id !== subjectId));
+        })
+        .catch((caught: unknown) => setSubjectsError(describeError(caught)));
+    },
+    [],
+  );
+
+  /** 给主体追加素材（保留已有顺序；服务端去重并封顶 9 张） */
+  const handleSubjectPickAssets = useCallback(
+    (sources: readonly ReferenceSourceItem[]): void => {
+      const subjectId = subjectPickerId;
+      const subject = subjects.find((item) => item.id === subjectId);
+      setSubjectPickerId(null);
+      if (subjectId === null || subject === undefined) return;
+      // 只收图片：主体是"同一人物/商品"的参考图；视频/音频在这里没有语义
+      const assetIds = sources.filter((source) => source.kind === 'image').map((source) => source.ref);
+      void patchSubject(subjectId, { assetIds: [...subject.assetIds, ...assetIds] })
+        .then((saved) => setSubjects((prev) => prev.map((item) => (item.id === subjectId ? saved.subject : item))))
+        .catch((caught: unknown) => setSubjectsError(describeError(caught)));
+    },
+    [subjectPickerId, subjects],
+  );
+
   // ── 选择 / 菜单 / 快捷键 ────────────────────────────────────────────────
   const handleSelectionChange = useCallback(
     ({ nodes: selected, edges }: { nodes: StudioRfNode[]; edges?: Array<{ id: string }> }): void => {
@@ -2609,6 +2747,10 @@ export function CanvasStudioView() {
             onContinueFromVersion: continueFromVersion,
             onReuseBatch: reuseBatch,
             onDeselect: handleDeselect,
+            // V2.86（D-3）：参考上的主体标签。库里找不到就读作「未知主体」——
+            // 主体被删后旧画布仍要能打开，不能因为一个溯源字段崩掉
+            subjectLabel: (subjectId) =>
+              subjectName(subjects, subjectId) ?? t('canvas.subject.unknown'),
           }}
         >
           <div className="cs-workspace">
@@ -2656,7 +2798,36 @@ export function CanvasStudioView() {
                   void handleUpload(picked);
                 }}
               />
+              {/* V2.86（D-3）：主体面板是"跨画布"的，所以入口在左轨而不是节点里 */}
+              <button
+                type="button"
+                className="cs-rail-btn"
+                aria-pressed={subjectPanelOpen}
+                onClick={() => setSubjectPanelOpen((open) => !open)}
+                title={t('canvas.subject.title')}
+              >
+                {t('canvas.subject.rail')}
+              </button>
             </nav>
+
+            {subjectPanelOpen ? (
+              <CanvasSubjectPanel
+                subjects={subjects}
+                loading={subjectsLoading}
+                error={subjectsError}
+                selectedNodeId={selectedIds.length === 1 ? (selectedIds[0] as string) : null}
+                busy={subjectsBusy}
+                onRetry={() => {
+                  setSubjectsLoading(true);
+                  void loadSubjects();
+                }}
+                onClose={() => setSubjectPanelOpen(false)}
+                onCreate={handleCreateSubject}
+                onDelete={handleDeleteSubject}
+                onPickAssets={(subject) => setSubjectPickerId(subject.id)}
+                onAttach={attachSubject}
+              />
+            ) : null}
 
             <div
               className={dragActive ? 'cs-canvas is-drop' : 'cs-canvas'}
@@ -2672,6 +2843,12 @@ export function CanvasStudioView() {
                 openMenu(event, null);
               }}
               onDragOver={(event) => {
+                // 主体拖拽也要放行（否则 drop 根本不会触发）
+                if (Array.from(event.dataTransfer.types).includes(SUBJECT_DRAG_TYPE)) {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = 'copy';
+                  return;
+                }
                 if (!Array.from(event.dataTransfer.types).includes('Files')) return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = 'copy';
@@ -2686,6 +2863,21 @@ export function CanvasStudioView() {
                 if (
                   (event.target as HTMLElement).closest('.cs-toolbar, .cs-modal, .cs-menu') !== null
                 ) {
+                  return;
+                }
+                const subjectId = event.dataTransfer.getData(SUBJECT_DRAG_TYPE);
+                if (subjectId !== '') {
+                  event.preventDefault();
+                  // 落在节点上才算"加进这个节点"；落空白处如实提示（不猜一个目标节点）
+                  const nodeId =
+                    (event.target as HTMLElement)
+                      .closest('.react-flow__node')
+                      ?.getAttribute('data-id') ?? null;
+                  if (nodeId === null) {
+                    setNotice(t('canvas.subject.dropOutside'));
+                    return;
+                  }
+                  attachSubject(subjectId, nodeId);
                   return;
                 }
                 const files = Array.from(event.dataTransfer.files);
@@ -2814,6 +3006,16 @@ export function CanvasStudioView() {
           }}
         />
       ) : null}
+
+      {subjectPickerId === null ? null : (
+        <AssetPickerDialog
+          projectId={projectId}
+          allowedKinds={['image']}
+          mode="reference"
+          onClose={() => setSubjectPickerId(null)}
+          onConfirm={(sources) => handleSubjectPickAssets(sources)}
+        />
+      )}
     </section>
   );
 }

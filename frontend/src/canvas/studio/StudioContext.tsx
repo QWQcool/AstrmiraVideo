@@ -61,6 +61,13 @@ export interface StudioServices {
    * 组件层必须能退化回纯文字标签 —— 不假装有图。
    */
   referencePreview(assetId: string): ReferencePreview | null;
+  /**
+   * V2.86（D-3）：参考上的主体溯源标签（`references[].subjectId`）。
+   *
+   * 库里找不到时返回「未知主体」—— 主体被删后旧画布仍要能打开，
+   * 而"这条参考来自某个已删除的主体"本身是用户需要看见的事实。
+   */
+  subjectLabel(subjectId: string): string;
   /** V2.49：核对“提交结果未知”的批次（用原请求 + 原幂等键重放） */
   onRecover(nodeId: string, batchId: string): void;
   /** S5-Ac：从资产库给节点添加参考（不新建节点、不复制文件） */
