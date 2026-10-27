@@ -20,6 +20,7 @@ import {
   pickComfyVideoArtifact,
   planComfyDimensions,
   planComfyFrames,
+  pruneDanglingNodes,
   resolveComfyTuning,
   templateNodeTypes,
   templatePlaceholders,
@@ -27,6 +28,7 @@ import {
   WAN22_TI2V_5B_TEMPLATE,
   type ComfyModels,
   type ComfyWorkflowInput,
+  type ComfyWorkflow,
   type WorkflowTemplate,
 } from './comfyuiProtocol.js';
 
@@ -681,3 +683,85 @@ describe('多参考：模板槽位与动态参考链（V2.76）', () => {
     ).toThrow(/节点 id/);
   });
 });
+
+/**
+ * V2.88（D-1 真机发现）：**参考比模板槽位少**时的工作流剪枝。
+ *
+ * 症状：双槽模板 + 只给 1 张参考 → 第二槽 `LoadImage` 没有 `image` →
+ * ComfyUI 报 `Exception when validating inner node`，任务整条失败。
+ * 这条路径是「画布单参考派生编辑」与「编排图片链的第一个下游」的常态。
+ */
+describe('工作流剪枝（参考少于模板槽位）', () => {
+  const twoSlotChain = (): ComfyWorkflow => ({
+    '74': { class_type: 'CLIPTextEncode', inputs: { text: 'x' } },
+    '56': { class_type: 'LoadImage', inputs: { image: 'a.png' } },
+    '57': { class_type: 'LoadImage', inputs: {} },
+    '77': { class_type: 'VAEEncode', inputs: { pixels: ['56', 0] } },
+    '78': { class_type: 'ReferenceLatent', inputs: { conditioning: ['74', 0], latent: ['77', 0] } },
+    '79': { class_type: 'VAEEncode', inputs: { pixels: ['57', 0] } },
+    '80': { class_type: 'ReferenceLatent', inputs: { conditioning: ['78', 0], latent: ['79', 0] } },
+    '63': { class_type: 'CFGGuider', inputs: { positive: ['80', 0], negative: ['74', 0] } },
+  });
+
+  it('删掉缺图的槽位，并把 ReferenceLatent 链短路到上一级', () => {
+    const pruned = pruneDanglingNodes(twoSlotChain());
+    // 第二槽整条消失
+    expect(Object.keys(pruned).sort()).toEqual(['56', '63', '74', '77', '78']);
+    // guider 从"第二级参考"退到"第一级参考"（参考还在，只是少了一级）
+    expect(pruned['63']?.inputs['positive']).toEqual(['78', 0]);
+    // 第一槽原样
+    expect(pruned['56']?.inputs['image']).toBe('a.png');
+  });
+
+  it('两张参考齐全时**不动**工作流（同一个对象内容，不走剪枝）', () => {
+    const full = twoSlotChain();
+    (full['57'] as { inputs: Record<string, unknown> }).inputs['image'] = 'b.png';
+    expect(pruneDanglingNodes(full)).toEqual(full);
+  });
+
+  it('找不到可替代上游时**抛错**（不交一份坏图给上游）', () => {
+    const broken: ComfyWorkflow = {
+      '57': { class_type: 'LoadImage', inputs: {} },
+      '99': { class_type: 'VAEEncode', inputs: { pixels: ['57', 0] } },
+      '63': { class_type: 'CFGGuider', inputs: { positive: ['99', 0] } },
+    };
+    expect(() => pruneDanglingNodes(broken)).toThrow(/剪空|没有可替代的上游/);
+  });
+
+  it('端到端形状：双槽模板 + 1 张参考 → guider 指向第一级参考', () => {
+    const base = JSON.parse(JSON.stringify(FLUX2_KLEIN_T2I_REF_TEMPLATE)) as WorkflowTemplate;
+    base['57'] = { class_type: 'LoadImage', inputs: { image: '{{REFERENCE_IMAGE_NAME}}' } };
+    base['79'] = { class_type: 'VAEEncode', inputs: { pixels: ['57', 0], vae: ['72', 0] } };
+    base['80'] = { class_type: 'ReferenceLatent', inputs: { conditioning: ['78', 0], latent: ['79', 0] } };
+    (base['63'] as { inputs: Record<string, unknown> }).inputs['positive'] = ['80', 0];
+
+    const workflow = pruneDanglingNodes(
+      buildComfyWorkflow(
+        {
+          models: {
+            unet: 'flux-2-klein-4b.safetensors',
+            clip: 'qwen_3_4b.safetensors',
+            clipType: 'flux2',
+            vae: 'flux2-vae.safetensors',
+          },
+          prompt: '测试',
+          negativePrompt: '',
+          mode: 't2i',
+          width: 1024,
+          height: 576,
+          frames: 1,
+          seed: 12345,
+          dtype: 'default',
+          outputPrefix: 'astrmira/test',
+          referenceImageNames: ['only.png'],
+        },
+        base,
+      ),
+    );
+
+    expect(workflow['63']?.inputs['positive']).toEqual(['78', 0]);
+    expect(workflow['57']).toBeUndefined();
+    expect(workflow['56']?.inputs['image']).toBe('only.png');
+  });
+});
+

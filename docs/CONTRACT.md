@@ -1,6 +1,15 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.90 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.91 · 已冻结（变更需先改本文，再改代码）**
+> **V2.91 修订（2026-10-27 · D-1 真机验收发现的两处缺陷）** ——
+>   ① **参考少于模板槽位**：双槽模板只给 1 张参考时，第二槽 `LoadImage` 没有 `image`，
+>      ComfyUI 报 `Exception when validating inner node` 整条失败。现在提交前做**图剪枝**：
+>      缺图的 `LoadImage` 与其下游一起删掉，`ReferenceLatent` 的上游把 `conditioning` 接回去
+>      （跳过这一级参考）；找不到替代 → **抛错**（不交坏图给上游）。见 §19-3 附；
+>   ② **429 是"确定没提交"**：它由本服务防线在**建任务之前**返回，上游未被调用。
+>      画布此前把它归进"结果未知"并保留 `queued` 待核对 —— 那会把用户引向错误动作。
+>      现在按 `failed` + `RATE_LIMITED` 落库，界面直接说"等 N 秒再点"。
+>   两处都不新增字段/路由/错误码。
 > **V2.90 修订（2026-10-27 · D-8 运行观测）** ——
 >   ① 新增 `GET /api/stats/summary`（§16 附）：按 provider 的
 >      `{count, succeeded, failed, unfinished, p50Ms, p95Ms}`、失败码分布、
@@ -2455,6 +2464,23 @@ export interface BackupManifest {
 - **帧数**：`durationSec × 24`（fps 与模板一致）后**取最近的 `4n+1`** —— Wan 的时序要求，
   5 秒 → **121 帧**（与官方模板一致）；等距时向上（宁可略长，也不让成片比请求的时长少一截）；
 - **seed**：`params.seed` 优先，缺省随机；**负向提示词**：`options.negativePrompt` 优先，否则内置中文默认。
+
+**附：参考张数少于模板静态槽位时的剪枝（V2.91 / D-1 真机发现）**
+
+模板可能声明了 **2 个静态参考槽**（`{{START_IMAGE_NAME}}` + `{{REFERENCE_IMAGE_NAME}}`），
+而一次提交只给 **1 张**参考（这是"画布单参考派生编辑"与"编排图片链第一个下游"的常态）。
+此时第二槽的 `LoadImage` 没有值 → ComfyUI 报 `Exception when validating inner node`，整条任务失败。
+
+提交前的处理（`pruneDanglingNodes`，纯函数）：
+
+1. `LoadImage` 没有 `image` → **该节点无效**；
+2. 引用无效节点、且该节点**不能短路**的下游 → 也无效（传播到不动点）；
+3. `ReferenceLatent` 属于**可短路**节点：删掉它之后，引用它的一方改接它的 `conditioning`
+   （等于"少用一级参考"，而不是把同一张图偷偷填两次 —— 后者会翻倍参考权重）；
+4. 找不到可替代上游 / 整份图被剪空 → **抛错**（宁可失败，也不把坏图交给上游）。
+
+**如实边界**：剪枝只处理"因为没给图而断掉"的参考级；模板的其它缺参（写错节点名等）
+仍然由 ComfyUI 的校验报错原样透出（`describeComfySubmissionError` 会带出节点 id）。
 
 ### 19-4 状态机（ComfyUI 自己就是异步队列，所以形态很自然）
 

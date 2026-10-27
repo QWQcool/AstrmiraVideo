@@ -683,6 +683,97 @@ function renderValue(value: unknown, values: WorkflowValues): unknown {
   return value;
 }
 
+/**
+ * V2.88（D-1 实测发现）：**参考张数少于模板静态槽位时，把整条断掉的参考链接剪掉**。
+ *
+ * ## 症状
+ * 用户模板 `flux2-klein-t2i-ref2` 有两个静态参考槽（`56` / `57` + `77/78` + `79/80` 两级
+ * `ReferenceLatent`）。只给 **1 张**参考时，第二槽的 `LoadImage.image` 没有值 →
+ * `renderWorkflow` 按规则 2 删掉这个键 → ComfyUI 报
+ * `节点 57：Exception when validating inner node`，整条任务失败。
+ * 这条路径不是边角：**画布单参考派生编辑**与**编排图片链的第一个下游**都是"只给 1 张"。
+ *
+ * ## 为什么不是"把同一张图填两次"
+ * 那会悄悄把同一份参考的权重翻倍（等于改了用户的参数），而且换模板就失效。
+ *
+ * ## 做法（图手术，可判定）
+ * 1. `LoadImage` 没有 `image` → 无效；
+ * 2. 引用了无效节点的 → 也无效（传播到不动点）；
+ * 3. 删掉无效节点后，**`ReferenceLatent` 的上游把它的 `conditioning` 接回去**
+ *    （跳过这一级参考，链自然短路）；其余找不到替代的引用 → **抛错**（不交一份坏图给上游）。
+ *
+ * 用到的都是 ComfyUI 图的基本形状（`[nodeId, slot]`），不引入模板新语法。
+ */
+export function pruneDanglingNodes(workflow: ComfyWorkflow): ComfyWorkflow {
+  const work = JSON.parse(JSON.stringify(workflow)) as ComfyWorkflow;
+  const invalid = new Set<string>();
+  for (const [id, node] of Object.entries(work)) {
+    if (node.class_type === 'LoadImage' && typeof node.inputs['image'] !== 'string') {
+      invalid.add(id);
+    }
+  }
+  if (invalid.size === 0) return work;
+
+  const canBypass = (id: string): boolean => work[id]?.class_type === 'ReferenceLatent';
+
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const [id, node] of Object.entries(work)) {
+      if (invalid.has(id)) continue;
+      // 引用了一个**可短路**的 ReferenceLatent 不算坏：它会在改写阶段接到上一级
+      const broken = Object.values(node.inputs).some((value) => {
+        const link = asNodeLink(value);
+        return link !== null && invalid.has(link[0]) && !canBypass(link[0]);
+      });
+      if (broken) {
+        invalid.add(id);
+        changed = true;
+      }
+    }
+  }
+
+  const bypass = (id: string): [string, number] | null => {
+    const node = work[id];
+    if (node === undefined) return null;
+    // 参考级联：跳过这一级 ReferenceLatent，接到它的条件输入上
+    if (node.class_type === 'ReferenceLatent') return asNodeLink(node.inputs['conditioning']);
+    return null;
+  };
+
+  const resolve = (link: [string, number], depth = 0): [string, number] => {
+    if (depth > 16) throw new Error('参考链过深，无法重建工作流');
+    if (!invalid.has(link[0])) return link;
+    const fallback = bypass(link[0]);
+    if (fallback === null) {
+      throw new Error(`模板节点 ${link[0]} 缺少输入且没有可替代的上游 —— 请检查模板或减少参考张数`);
+    }
+    return resolve(fallback, depth + 1);
+  };
+
+  const pruned: ComfyWorkflow = {};
+  for (const [id, node] of Object.entries(work)) {
+    if (invalid.has(id)) continue;
+    const inputs: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node.inputs)) {
+      const link = asNodeLink(value);
+      inputs[key] = link === null ? value : resolve(link);
+    }
+    pruned[id] = { class_type: node.class_type, inputs };
+  }
+  // 剪空了说明整条链都靠那张缺失的图 —— 交空图给上游只会得到一句更难懂的报错
+  if (Object.keys(pruned).length === 0) {
+    throw new Error('工作流被剪空：模板节点缺少必要输入且没有可替代的上游 —— 请检查模板或减少参考张数');
+  }
+  return pruned;
+}
+
+/** `[nodeId, slot]` 形状的引用（ComfyUI API 格式里唯一的一种连接写法） */
+function asNodeLink(value: unknown): [string, number] | null {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const [id, slot] = value;
+  return typeof id === 'string' && typeof slot === 'number' ? [id, slot] : null;
+}
+
 export function renderWorkflow(template: WorkflowTemplate, values: WorkflowValues): ComfyWorkflow {
   const workflow: ComfyWorkflow = {};
   for (const [nodeId, node] of Object.entries(template)) {

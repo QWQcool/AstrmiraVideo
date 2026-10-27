@@ -26,6 +26,7 @@ import {
   pickComfyVideoArtifact,
   planComfyDimensions,
   planComfyFrames,
+  pruneDanglingNodes,
   resolveComfyTuning,
   WAN22_TI2V_5B_TEMPLATE,
   type ComfyCapabilities,
@@ -634,7 +635,7 @@ export class ComfyUiProvider implements VideoProvider {
         ? await this.uploadReferenceImage(request.assets?.maskImage ?? '')
         : undefined;
 
-    const workflow = buildComfyWorkflow({
+    const workflow = pruneDanglingNodes(buildComfyWorkflow({
       models,
       prompt: request.prompt,
       negativePrompt: readNegativePrompt(request),
@@ -657,7 +658,7 @@ export class ComfyUiProvider implements VideoProvider {
         : {}),
       ...(maskImageName === undefined ? {} : { maskImageName }),
       ...(pad === undefined ? {} : { pad }),
-    }, loaded.template);
+    }, loaded.template));
 
     const response = await this.fetchImpl(`${this.baseUrl}/prompt`, {
       method: 'POST',
