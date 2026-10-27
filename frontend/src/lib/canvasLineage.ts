@@ -1,3 +1,4 @@
+import { CANVAS_MAX_REFERENCES } from '@astrmira/shared';
 import type { CanvasDoc, CanvasDocEdge, CanvasReferenceRole } from '@astrmira/shared';
 import { canvasNodeVisibleOutput } from './canvasDocOps';
 
@@ -22,7 +23,9 @@ export type CanvasLineageProblem =
   | 'source-audio'
   | 'source-not-media'
   | 'target-not-video'
-  | 'role-taken';
+  | 'role-taken'
+  /** 全能参考模式下槽位已满（结构上限 12；能力上限由提交前校验再收一次） */
+  | 'references-full';
 
 export type CanvasLineagePlan =
   | { ok: true; role: CanvasReferenceRole; assetId: string; order: number }
@@ -78,7 +81,19 @@ export function planCanvasLineage(doc: CanvasDoc, from: string, to: string): Can
   // 视频产物当图片参考没有通道，仍然拒绝。
   if (target.type === 'image') {
     if (output.kind !== 'image') return { ok: false, problem: 'source-not-media' };
-    if (target.data.draft.references.some((ref) => ref.role === 'reference-image')) {
+    const targetRefs = target.data.draft.references;
+    // B 路线（2026-10-27）：声明 `omni-reference` 的图片节点按槽位收多张；
+    // 未声明模式（旧文档）保持 S9-A3 的单张派生编辑，行为不变。
+    if (target.data.draft.settings.referenceMode === 'omni-reference') {
+      if (targetRefs.some((ref) => ref.assetId === output.assetId)) {
+        return { ok: false, problem: 'duplicate' };
+      }
+      const slots = targetRefs.filter((ref) => ref.role === 'reference-image');
+      if (slots.length >= CANVAS_MAX_REFERENCES) return { ok: false, problem: 'references-full' };
+      const order = slots.reduce((max, ref) => Math.max(max, ref.order), -1) + 1;
+      return { ok: true, role: 'reference-image', assetId: output.assetId, order };
+    }
+    if (targetRefs.some((ref) => ref.role === 'reference-image')) {
       return { ok: false, problem: 'role-taken' };
     }
     return { ok: true, role: 'reference-image', assetId: output.assetId, order: 0 };
@@ -105,7 +120,15 @@ export function planCanvasLineage(doc: CanvasDoc, from: string, to: string): Can
   const roles = target.data.draft.references.map((ref) => ref.role);
   let role: CanvasReferenceRole;
   if (output.kind === 'image') {
-    if (!roles.includes('first-frame')) role = 'first-frame';
+    if (target.data.draft.settings.referenceMode === 'omni-reference') {
+      // 全能参考：图源一律进 reference-image 槽位，不和首尾帧混
+      if (roles.some((item) => item === 'first-frame' || item === 'last-frame' || item === 'reference-video')) {
+        return { ok: false, problem: 'role-taken' };
+      }
+      const slots = target.data.draft.references.filter((ref) => ref.role === 'reference-image');
+      if (slots.length >= CANVAS_MAX_REFERENCES) return { ok: false, problem: 'references-full' };
+      role = 'reference-image';
+    } else if (!roles.includes('first-frame')) role = 'first-frame';
     else if (!roles.includes('last-frame')) role = 'last-frame';
     else return { ok: false, problem: 'role-taken' };
   } else {

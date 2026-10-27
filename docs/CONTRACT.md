@@ -1,6 +1,14 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.74 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.75 · 已冻结（变更需先改本文，再改代码）**
+> **V2.75 修订（2026-10-27）**：**画布参考组成与提示词提及（§21-16 / B 路线）** ——
+>   ① `referenceMode` 三档语义冻结：缺省（旧文档不判）/ `none` / `first-last-frame` / `omni-reference`；
+>      图片与视频节点同规则，`omni-reference` 下只收 `reference-image`（`order` 定槽位），不许混首尾帧；
+>   ② 结构上限 `CANVAS_MAX_REFERENCES = 12`，真实上限 = `min(12, ModelCapability.maxReferences)`；
+>   ③ 问题码 `mode-conflict / too-many / missing-first-frame / duplicate-asset / duplicate-order`，
+>      连线侧新增 `references-full`；
+>   ④ 提示词提及 `{{image:N}}`：0 起、按 `order` 下标、只认小写、越界提交前拒绝、**不改写原文**；
+>   ⑤ 无新路由、无新错误码、无新字段；旧文档（`referenceMode` 缺省）行为不变；不打开 N9 角色语义。
 > **V2.74 修订（2026-10-26）**：**拼接失败只重拼（§29 / B99）** ——
 >   ① `CreationRun` 新增 `assemblyAttempt`（0 起，旧会话默认 0）；拼接幂等键由
 >      `run:<runId>:assembly:a0` 改为 `run:<runId>:assembly:a<assemblyAttempt>`；
@@ -2722,6 +2730,45 @@ interface ModelCapability {
   - 图片态**不显示** 480p/720p/1080p 下拉，避免"显示 480、实际 1024"的分叉。
 - **数量**：当前一个任务一个产物，`count` 固定 1；未接多输出前不提供数量控件。
 - **无新字段、无新路由、无新错误码**；`count` 保留在 `CanvasNodeSettings` 只为兼容旧文档，不驱动请求。
+
+### 21-16 参考组成与提示词提及（V2.75；B 路线，用户 2026-10-27 拍板）
+
+> 背景：即梦画布的多参考是「边即集合 + 生成模式（`mode`）裁决」，实测抓包见
+> [JIMENG-PROTOCOL-2026-10-27](JIMENG-PROTOCOL-2026-10-27.md)。本仓 `settings.referenceMode`
+> 与 `ModelCapability` 早已在契约里（§21-3 / §21-9），本节把**组成规则**冻结下来并接到画布上。
+
+**A. 三档模式的合法组成**（`settings.referenceMode`）
+
+| mode | 允许的 role | 数量 | 备注 |
+|---|---|---|---|
+| 缺省（旧文档） | 不判 | ≤12 | 沿用既有连线规则（首帧/尾帧/单张 `reference-image`/参考视频） |
+| `none` | 无 | 0 | 有任何参考即 `mode-conflict` |
+| `first-last-frame` | `first-frame` / `last-frame` | 首≤1、尾≤1、合计≤2 | 只有尾帧 → `missing-first-frame` |
+| `omni-reference` | `reference-image` | 1..limit，`order` 定槽位 | 混入首帧/尾帧/参考视频 → `mode-conflict` |
+
+`reference-video` / `reference-audio` 目前**不属于任何模式**（仍走既有 v2v 通道）；声明了模式就不得混入。
+
+**B. 数量上限**
+
+- 结构上限 `CANVAS_MAX_REFERENCES = 12`（与即梦同款，**产品上限**）；
+- **真实可用上限 = `min(12, ModelCapability.maxReferences)`** —— 由模板/实例声明。
+  跑不动的实例应把能力值调低（例如 10GB 卡现阶段只验到 2 张），**不是让用户连满 12 张再在提交时失败**；
+- 图片节点与视频节点**同一套规则**（B 路线：两边都允许多图）。
+
+**C. 问题码**（闭合枚举，前端翻成一句可执行中文）
+
+`mode-conflict` / `too-many` / `missing-first-frame` / `duplicate-asset` / `duplicate-order`；
+连线侧另有 `references-full`（槽位已满）。判定顺序：上限 → role 归属 → 数量/槽位。
+
+**D. 提示词提及 `{{image:N}}`**
+
+- **0 起**编号；N = `references` 按 `order` 升序后的下标（与即梦实测一致，便于互相迁移）；
+- 只认**小写** `image`；`{{Image 4}}`、`{{image:x}}` 一律**不解析也不改写**（原文保留，静默"帮你纠正"更难排查）；
+- 越界（N ≥ 参考数）记为问题，**提交前拒绝**，不就地删字；
+- 本契约只定义**语法与语义**；替换成目标格式是 provider 的事（各引擎占位符不同）。
+
+**E. 边界**：无新路由、无新错误码、无新字段（复用 `settings.referenceMode` 与 `references[].order`）；
+`referenceMode` 缺省的旧文档行为**不变**；本节不打开"角色语义（主体/场景/风格）"，那仍是 N9。
 
 ## 22. 配置型 HTTP 任务服务 `http-service:<name>`（V2.47 新增；D67 / D71）
 

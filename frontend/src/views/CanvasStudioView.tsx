@@ -226,6 +226,7 @@ const LINEAGE_PROBLEM_KEYS: Record<CanvasLineageProblem, MessageKey> = {
   'source-not-media': 'canvas.studio.lineage.sourceNotMedia',
   'target-not-video': 'canvas.studio.lineage.targetNotVideo',
   'role-taken': 'canvas.studio.lineage.roleTaken',
+  'references-full': 'canvas.studio.lineage.referencesFull',
 };
 
 /** 计划依赖边的拒绝理由（V2.61）：是来源边那批理由的子集，共用同一组文案键。 */

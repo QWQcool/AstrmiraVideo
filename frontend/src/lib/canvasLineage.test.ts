@@ -338,3 +338,65 @@ describe('图片派生编辑（S9-A3 / V2.69）', () => {
     expect(planCanvasLineage(doc0, 'v', 'b')).toEqual({ ok: false, problem: 'source-not-media' });
   });
 });
+
+describe('B 路线：全能参考（omni-reference）允许多图', () => {
+  it('图片节点声明 omni-reference 后：第二、第三条都能连，order 递增', () => {
+    const b = makeNode('b', 'image');
+    b.data.draft.settings.referenceMode = 'omni-reference';
+    const doc = makeDoc(makeNode('a', 'image'), b, makeNode('c', 'image'), makeNode('d', 'image'));
+
+    expect(planCanvasLineage(doc, 'a', 'b')).toEqual({
+      ok: true,
+      role: 'reference-image',
+      assetId: 'task:a-t1',
+      order: 0,
+    });
+    const first = addCanvasLineageEdge(doc, 'a', 'b', 'e1', 10);
+    expect(first.problem).toBeNull();
+
+    const second = addCanvasLineageEdge(first.doc, 'c', 'b', 'e2', 11);
+    expect(second.problem).toBeNull();
+    const third = addCanvasLineageEdge(second.doc, 'd', 'b', 'e3', 12);
+    expect(third.problem).toBeNull();
+    expect(third.doc.nodes[1]!.data.draft.references.map((ref) => ref.order)).toEqual([0, 1, 2]);
+  });
+
+  it('同一张素材重复连接 → duplicate（不是默默多一条）', () => {
+    const b = makeNode('b', 'image');
+    b.data.draft.settings.referenceMode = 'omni-reference';
+    const doc = makeDoc(makeNode('a', 'image'), b);
+    const linked = addCanvasLineageEdge(doc, 'a', 'b', 'e1', 10);
+    // 上游重跑后产物变化仍算同一张（同边）→ 由 duplicate 分支挡住
+    expect(planCanvasLineage(linked.doc, 'a', 'b')).toEqual({ ok: false, problem: 'duplicate' });
+  });
+
+  it('槽位连满 12 张后拒绝（references-full）', () => {
+    const b = makeNode('b', 'image');
+    b.data.draft.settings.referenceMode = 'omni-reference';
+    b.data.draft.references = Array.from({ length: 12 }, (_, index) => ({
+      assetId: `task:x${index}-t1`,
+      role: 'reference-image' as const,
+      order: index,
+    }));
+    const doc = makeDoc(makeNode('a', 'image'), b);
+    expect(planCanvasLineage(doc, 'a', 'b')).toEqual({ ok: false, problem: 'references-full' });
+  });
+
+  it('视频节点 omni-reference：图源进 reference-image 槽位，不和首尾帧混', () => {
+    const v = makeNode('v', 'video');
+    v.data.draft.settings.referenceMode = 'omni-reference';
+    const doc = makeDoc(makeNode('a', 'image'), v);
+    expect(planCanvasLineage(doc, 'a', 'v')).toEqual({
+      ok: true,
+      role: 'reference-image',
+      assetId: 'task:a-t1',
+      order: 0,
+    });
+
+    const withFirst = makeNode('v2', 'video');
+    withFirst.data.draft.settings.referenceMode = 'omni-reference';
+    withFirst.data.draft.references = [{ assetId: 'task:z-t1', role: 'first-frame', order: 0 }];
+    const doc2 = makeDoc(makeNode('a', 'image'), withFirst);
+    expect(planCanvasLineage(doc2, 'a', 'v2')).toEqual({ ok: false, problem: 'role-taken' });
+  });
+});

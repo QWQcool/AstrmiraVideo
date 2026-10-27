@@ -222,8 +222,9 @@ export const CANVAS_ZH = {
     '上游当前选中的版本已失效 —— 先选一个成功版本，再连来源',
   'canvas.studio.lineage.sourceAudio': '音频上游当前没有参考通道',
   'canvas.studio.lineage.sourceNotMedia': '上游产物不是图片或视频',
-  'canvas.studio.lineage.targetNotVideo': '只有视频节点能接收参考',
+  'canvas.studio.lineage.targetNotVideo': '只有图片或视频节点能接收参考',
   'canvas.studio.lineage.roleTaken': '首帧 / 尾帧 / 参考视频已经占满',
+  'canvas.studio.lineage.referencesFull': '这个节点已连满 12 张参考 —— 先移除一张再连',
   'canvas.studio.lineage.plannedEdgeCreated':
     '上游还没有产物 —— 已建为计划依赖边（虚线）。上游出片后删掉它重连来源边，或交给会话执行自动转换',
   // ── 旧血缘图下线（S3-B4）──
@@ -753,8 +754,9 @@ export const CANVAS_EN = {
     'The upstream selected version is invalid — choose a successful version before connecting',
   'canvas.studio.lineage.sourceAudio': 'Audio sources have no reference channel right now',
   'canvas.studio.lineage.sourceNotMedia': 'The upstream output is neither image nor video',
-  'canvas.studio.lineage.targetNotVideo': 'Only video nodes can receive references',
+  'canvas.studio.lineage.targetNotVideo': 'Only image or video nodes can receive references',
   'canvas.studio.lineage.roleTaken': 'First frame / last frame / reference video are already taken',
+  'canvas.studio.lineage.referencesFull': 'This node already has 12 references — remove one before connecting',
   'canvas.studio.lineage.plannedEdgeCreated':
     'Upstream has no output yet — created a planned dependency edge (dashed). Remove it and reconnect as a source edge after the upstream generates, or let a session run convert it',
   'canvas.legacy.title': 'The lineage view is now part of the studio canvas',
