@@ -382,14 +382,25 @@ try {
   assert(await page.locator('.sidebar').isVisible(), '侧栏渲染出来了');
   const bootRail = await page.locator('.sidebar').getAttribute('data-rail');
   assert(bootRail === '1', `工作台默认收起侧栏（data-rail=${bootRail}，期望 1）`);
-  // D62（2026-10-19）：工作台 / 成本台账从侧栏移除；S8-D（2026-10-25）新增「创作会话」→ 七个一级入口。
-  const NAV_HASHES = ['#/create', '#/overview', '#/library', '#/canvas', '#/skills', '#/runs', '#/logs'];
+  // D62（2026-10-19）：工作台 / 成本台账从侧栏移除；S8-D（2026-10-25）新增「创作会话」
+  // → 七个一级入口；V2.88/V2.90 再新增「编排」与「运行观测」→ 九个。
+  const NAV_HASHES = [
+    '#/create',
+    '#/overview',
+    '#/library',
+    '#/canvas',
+    '#/plan',
+    '#/stats',
+    '#/skills',
+    '#/runs',
+    '#/logs',
+  ];
   assert(
     (await page.locator('.sidebar .nav-item').count()) === NAV_HASHES.length,
-    `侧栏有七个一级视图入口（创作/总览/视频库/画布/技能库/创作会话/日志；工作台与成本台账已退场；实际 ${await page.locator('.sidebar .nav-item').count()}）`,
+    `侧栏有九个一级视图入口（创作/总览/视频库/画布/编排/运行观测/技能库/创作会话/日志；工作台与成本台账已退场；实际 ${await page.locator('.sidebar .nav-item').count()}）`,
   );
 
-  // 七个一级视图可切换，且侧栏 aria-current 跟随（剪辑台是 hidden 视图，单独验）
+  // 九个一级视图可切换，且侧栏 aria-current 跟随（剪辑台是 hidden 视图，单独验）
   for (const hash of NAV_HASHES) {
     await page.evaluate((h) => { location.hash = h; }, hash);
     await page.waitForFunction(
@@ -398,7 +409,7 @@ try {
       { timeout: 5_000 },
     );
   }
-  assert(true, '七个一级视图可切换，侧栏 aria-current 跟随');
+  assert(true, '九个一级视图可切换，侧栏 aria-current 跟随');
 
   // 退场路由仍可直达（D62：保留一版），但不再要求出现在侧栏 / aria-current
   for (const hash of ['#/costs', '#/workbench', '#/lineage']) {
