@@ -8,6 +8,7 @@ import { EditView } from './EditView';
 import { LibraryView } from './LibraryView';
 import { LogsView } from './LogsView';
 import { OverviewView } from './OverviewView';
+import { PlanView } from './PlanView';
 import { RunsView } from './RunsView';
 import { SkillsView } from './SkillsView';
 import { WorkbenchView } from './WorkbenchView';
@@ -34,7 +35,9 @@ export type ViewIconKey =
   | 'scissors'
   | 'graph'
   /** V2.12（B48）：成本台账 —— 铜钱/账本意象 */
-  | 'coins';
+  | 'coins'
+  /** V2.88（D-1）：编排 —— 一串依序执行的节点 */
+  | 'route';
 
 export interface ViewDef {
   /** hash 路径（不含查询参数），如 `#/overview` */
@@ -72,6 +75,10 @@ export const VIEW_REGISTRY: readonly ViewDef[] = [
   // S3-B4：来源边已做进新画布 → 旧只读血缘图**下线**；`#/lineage` 只留一个可读的说明页
   // （旧书签不会掉进"未知视图"），代码保留一个版本周期后再清理。
   { path: '#/canvas', titleKey: 'shell.nav.canvas', eyebrow: 'Canvas', icon: 'graph', component: CanvasStudioView },
+  // V2.88（D-1）：**编排是一级视图** —— 与画布并列而不是塞进画布的工具栏。
+  // 理由：画布是"编辑与生成"，编排是"执行与依赖"，两种心智混在一个工具栏里
+  // 用户会分不清"我改的是这张图"还是"我改的是这条流水线"。
+  { path: '#/plan', titleKey: 'shell.nav.plan', eyebrow: 'Plan', icon: 'route', component: PlanView },
   { path: '#/lineage', titleKey: 'shell.nav.canvas', eyebrow: 'Lineage', icon: 'graph', component: LegacyLineageView, hidden: true },
   // V2.12（台账 B48）：成本台账 —— D62（2026-10-19）**下线**：不做支付/积分，成本只保留"估算"，
   // 入口从侧栏移除；路由保留一个版本周期（旧链接不直接 404）。

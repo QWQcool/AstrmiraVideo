@@ -44,8 +44,29 @@ export const PLAN_NODE_DEFAULTS = {
   durationSec: 5,
 } as const satisfies Pick<CanvasPlanNode, 'mode' | 'aspectRatio' | 'provider' | 'durationSec'>;
 
-/** 片 A 的编排**只支持两种模式**（i2v / fl2v 需要素材槽 —— 编排里没有素材选择，如实不支持） */
-export const PLAN_SUPPORTED_MODES: ReadonlyArray<CanvasPlanNode['mode']> = ['t2v', 'v2v'];
+/**
+ * V2.88（D-1）：图片节点的默认档。
+ *
+ * 图片只能走本地 ComfyUI（云端 seedance 没有 t2i 通道），所以默认值**不同**：
+ * 沿用视频那套会让新节点一建出来就不可提交。
+ */
+export const PLAN_IMAGE_NODE_DEFAULTS = {
+  mode: 't2i',
+  aspectRatio: '1:1',
+  provider: 'host-comfyui',
+} as const satisfies Pick<CanvasPlanNode, 'mode' | 'aspectRatio' | 'provider'>;
+
+/**
+ * 编排支持的模式。
+ *
+ * 片 A 只有 t2v / v2v（i2v / fl2v 需要素材槽，编排里没有素材选择）。
+ * V2.88：新增 **t2i** —— 它有一个真实的上游通道（上游出图 → 本节点以它为参考继续出图，
+ * 与画布的"图片派生编辑"同一条链路），所以「3 个图片节点 2 条边」是可执行的，而不是画着好看。
+ */
+export const PLAN_SUPPORTED_MODES: ReadonlyArray<CanvasPlanNode['mode']> = ['t2v', 'v2v', 't2i'];
+
+/** 这些模式**能消费上游产物**（其余模式带入边 = 阻断，不猜） */
+export const PLAN_UPSTREAM_MODES: ReadonlyArray<CanvasPlanNode['mode']> = ['v2v', 't2i'];
 
 export function canvasPlanKey(projectId: string): string {
   return `${STORAGE_KEYS.canvasPlanPrefix}${projectId}`;
@@ -64,6 +85,19 @@ export function newPlanNode(position: { x: number; y: number }, now = Date.now()
     id: `pnode-${now}-${Math.random().toString(36).slice(2, 8)}`,
     prompt: '',
     ...PLAN_NODE_DEFAULTS,
+    position,
+  };
+}
+
+/** V2.88：新建一个**图片**节点（t2i + 本地 ComfyUI，见 `PLAN_IMAGE_NODE_DEFAULTS`） */
+export function newPlanImageNode(
+  position: { x: number; y: number },
+  now = Date.now(),
+): CanvasPlanNode {
+  return {
+    id: `pnode-${now}-${Math.random().toString(36).slice(2, 8)}`,
+    prompt: '',
+    ...PLAN_IMAGE_NODE_DEFAULTS,
     position,
   };
 }
@@ -187,7 +221,8 @@ export function planNodeBlockReason(plan: CanvasPlan, nodeId: string): string | 
   if (incoming.length > 1) {
     return translate(getLanguage(), 'canvas.plan.block.tooManyUpstream', { count: incoming.length });
   }
-  if (incoming.length === 1 && node.mode !== 'v2v') {
+  // V2.88：t2i（图片派生）与 v2v（视频参考）各有一条真实的上游通道；其余模式带入边一律阻断
+  if (incoming.length === 1 && !PLAN_UPSTREAM_MODES.includes(node.mode)) {
     return translate(getLanguage(), 'canvas.plan.block.t2vWithUpstream');
   }
   return null;
@@ -364,13 +399,26 @@ export function withRunTaskIds(
 }
 
 /**
- * 组装提交体。`upstreamTaskId` 由执行器按拓扑序传入（v2v 节点用它作 `task:` 引用）。
- * 未传 = 无上游引用（t2v 的正常形态）。
+ * 组装提交体。`upstreamTaskId` 由执行器按拓扑序传入。
+ *
+ * 两种上游通道（V2.88 / D-1）：
+ * - `v2v`：上游成片作 `assets.referenceVideo`；
+ * - `t2i`：上游**图片**作 `assets.firstFrameImage`（与画布的"图片派生编辑"同一条链路）。
+ *
+ * 其余模式不会拿到上游（`planNodeBlockReason` 已挡），所以这里无需再判一次；
+ * 但万一被调用方传进来，**不猜**：只有这两个模式才写入 assets。
  */
 export function toGenerateRequest(node: CanvasPlanNode, upstreamTaskId?: string): VideoGenerateRequest {
   const params: NonNullable<VideoGenerateRequest['params']> = {};
   if (node.durationSec !== undefined) params.durationSec = node.durationSec;
   if (node.seed !== undefined) params.seed = node.seed;
+
+  const assets: VideoGenerateRequest['assets'] =
+    upstreamTaskId === undefined || !PLAN_UPSTREAM_MODES.includes(node.mode)
+      ? undefined
+      : node.mode === 't2i'
+        ? { firstFrameImage: `${TASK_REF_PREFIX}${upstreamTaskId}` }
+        : { referenceVideo: `${TASK_REF_PREFIX}${upstreamTaskId}` };
 
   return {
     prompt: node.prompt,
@@ -379,9 +427,7 @@ export function toGenerateRequest(node: CanvasPlanNode, upstreamTaskId?: string)
     provider: node.provider,
     ...(Object.keys(params).length === 0 ? {} : { params }),
     ...(node.resolution === undefined ? {} : { resolution: node.resolution }),
-    ...(upstreamTaskId === undefined
-      ? {}
-      : { assets: { referenceVideo: `${TASK_REF_PREFIX}${upstreamTaskId}` } }),
+    ...(assets === undefined ? {} : { assets }),
   };
 }
 

@@ -378,10 +378,12 @@ export const CANVAS_ZH = {
   'canvas.plan.block.notFound': '节点不存在（图刚被改过？）',
   'canvas.plan.block.emptyPrompt': '提示词为空',
   'canvas.plan.block.unsupportedMode':
-    '模式 {mode} 不受编排支持（i2v / fl2v 需要素材槽，片 A 只支持 t2v / v2v）',
+    '模式 {mode} 不受编排支持（i2v / fl2v 需要素材槽；可用：t2v / v2v / t2i）',
   'canvas.plan.block.tooManyUpstream':
-    '有 {count} 条入边：v2v 只能接一个上游（不猜哪一个 —— 猜错就是拿错误输入烧钱）',
-  'canvas.plan.block.t2vWithUpstream': '模式是 t2v 但接了一个上游：只有 v2v（视频参考）能引用上游产物',
+    '有 {count} 条入边：只有 t2i（图片派生）与 v2v（视频参考）能接**一个**上游' +
+    '（不猜哪一个 —— 猜错就是拿错误输入烧钱）',
+  'canvas.plan.block.t2vWithUpstream':
+    '这个模式不消费上游产物：只有 t2i（图片派生）与 v2v（视频参考）能引用上游',
 
   // ── 编排运行结果里的原因（`lib/canvasPlanRunner.ts`）──
   // `{short}` 是任务 id 的前 8 位（卡片上一行放不下完整 id）。
@@ -674,6 +676,22 @@ export const CANVAS_ZH = {
   'plan.mode.t2i': '文生图',
   'plan.mode.t2v': '文生视频',
   'plan.mode.v2v': '视频参考',
+  'plan.addVideo': '＋ 视频节点',
+  'plan.addImage': '＋ 图片节点',
+  'plan.node.connectTo': '连接到',
+  'plan.node.connectPlaceholder': '选一个下游节点',
+  'plan.node.noTargets': '没有可连的节点（先加第二个）',
+  'plan.node.upstream': '上游：{count} 条',
+  'plan.edges': '连线',
+  'plan.loadBroken': '这份编排读不出来（本机存储损坏）—— 没有覆盖原文；可以刷新重试',
+  'plan.run.error': '运行没能开始：{reason}',
+  'plan.run.done': '本轮提交 {count} 条',
+  'plan.results.retryHint': '重试会换一代幂等键（真的新建任务）',
+  'plan.node.duration': '时长',
+  'plan.status.submitted': '已提交',
+  'plan.status.failed': '失败',
+  'plan.status.skipped': '跳过',
+  'plan.status.kept': '保留',
 };
 
 export const CANVAS_EN = {
@@ -1022,11 +1040,12 @@ export const CANVAS_EN = {
   'canvas.plan.block.notFound': 'Node not found (was the graph just edited?)',
   'canvas.plan.block.emptyPrompt': 'Prompt is empty',
   'canvas.plan.block.unsupportedMode':
-    'Mode {mode} is not supported by the plan (i2v / fl2v need an asset slot; slice A supports only t2v / v2v)',
+    'Mode {mode} is not supported by the plan (i2v / fl2v need an asset slot; available: t2v / v2v / t2i)',
   'canvas.plan.block.tooManyUpstream':
-    '{count} incoming edges: v2v accepts only one upstream (we do not guess which — guessing means burning money on wrong input)',
+    '{count} incoming edges: only t2i (image derivative) and v2v (video reference) accept one upstream ' +
+    '(we do not guess which — guessing means burning money on wrong input)',
   'canvas.plan.block.t2vWithUpstream':
-    'Mode is t2v but an upstream is connected: only v2v (video reference) can reference an upstream output',
+    'This mode does not consume an upstream output: only t2i (image derivative) and v2v (video reference) can reference one',
 
   'canvas.run.upstreamMissing':
     'Referenced output {short} does not exist on this deployment (came from an imported plan, or the task record was cleaned up) — ' +
@@ -1300,4 +1319,20 @@ export const CANVAS_EN = {
   'plan.mode.t2i': 'Text to image',
   'plan.mode.t2v': 'Text to video',
   'plan.mode.v2v': 'Video reference',
+  'plan.addVideo': '+ Video node',
+  'plan.addImage': '+ Image node',
+  'plan.node.connectTo': 'Connect to',
+  'plan.node.connectPlaceholder': 'Pick a downstream node',
+  'plan.node.noTargets': 'Nothing to connect to (add a second node first)',
+  'plan.node.upstream': 'Upstream: {count}',
+  'plan.edges': 'Connections',
+  'plan.loadBroken': 'This plan cannot be read (local storage is damaged) - the original was not overwritten; reload to retry',
+  'plan.run.error': 'Run could not start: {reason}',
+  'plan.run.done': 'Submitted {count} this round',
+  'plan.results.retryHint': 'Retrying bumps the idempotency generation (really creates new tasks)',
+  'plan.node.duration': 'Duration',
+  'plan.status.submitted': 'Submitted',
+  'plan.status.failed': 'Failed',
+  'plan.status.skipped': 'Skipped',
+  'plan.status.kept': 'Kept',
 };

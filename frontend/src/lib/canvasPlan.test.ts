@@ -15,6 +15,7 @@ import {
   createEmptyPlan,
   loadCanvasPlan,
   movePlanNode,
+  newPlanImageNode,
   newPlanNode,
   pinPlanNode,
   planDownstreamClosure,
@@ -199,8 +200,8 @@ describe('画布编排 · 执行序与阻断', () => {
 
     expect(planNodeBlockReason(graph, 'empty')).toContain('提示词为空');
     expect(planNodeBlockReason(graph, 'bad-mode')).toContain('不受编排支持');
-    expect(planNodeBlockReason(graph, 't2v-with-in')).toContain('只有 v2v');
-    expect(planNodeBlockReason(graph, 'v2v-with-two')).toContain('只能接一个上游');
+    expect(planNodeBlockReason(graph, 't2v-with-in')).toContain('不消费上游');
+    expect(planNodeBlockReason(graph, 'v2v-with-two')).toContain('接**一个**上游');
     expect(planNodeBlockReason(graph, 'up1')).toBeNull();
   });
 
@@ -586,5 +587,68 @@ describe('画布编排 · 重跑与部分重跑（A5 片 B）', () => {
     });
 
     expect(calls).toBe(1);
+  });
+});
+
+describe('V2.88：图片节点接上游（D-1，3 节点 2 边可真的跑）', () => {
+  it('t2i 默认档是本地 ComfyUI + 1:1（云端没有 t2i 通道，默认给云端就是一建就不可提交）', () => {
+    const created = newPlanImageNode({ x: 0, y: 0 }, 7);
+    expect(created).toMatchObject({ mode: 't2i', aspectRatio: '1:1', provider: 'host-comfyui' });
+    expect(created.durationSec).toBeUndefined();
+  });
+
+  it('t2i 允许一个上游；两个上游仍然拒绝（不猜）', () => {
+    const ok = plan([node('a'), node('b', { mode: 't2i', provider: 'host-comfyui' })], [edge('a', 'b')]);
+    expect(planNodeBlockReason(ok, 'b')).toBeNull();
+
+    const two = plan(
+      [node('a'), node('x'), node('b', { mode: 't2i' })],
+      [edge('a', 'b'), edge('x', 'b')],
+    );
+    expect(planNodeBlockReason(two, 'b')).toContain('接**一个**上游');
+  });
+
+  it('t2i 的上游走 assets.firstFrameImage（图片派生编辑），不是 referenceVideo', () => {
+    const request = toGenerateRequest(
+      node('b', { mode: 't2i', provider: 'host-comfyui' }),
+      'task-9',
+    );
+    expect(request.assets).toEqual({ firstFrameImage: 'task:task-9' });
+    expect(request.mode).toBe('t2i');
+  });
+
+  it('上游出图（只有 outputImageUrl）也算"有产物"——否则图片链永远等不到', async () => {
+    const graph = plan(
+      [
+        node('a', { mode: 't2i', provider: 'host-comfyui' }),
+        node('b', { mode: 't2i', provider: 'host-comfyui' }),
+      ],
+      [edge('a', 'b')],
+    );
+    const { calls, deps } = recorder(undefined, async () => ({
+      status: 'succeeded',
+      outputImageUrl: '/media/a.png',
+    }));
+    const outcome = await runCanvasPlan(graph, deps);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.body.assets).toEqual({ firstFrameImage: 'task:task-0' });
+    expect(outcome.results.every((item) => item.state === 'submitted')).toBe(true);
+  });
+
+  it('上游成功了但没有图（只有视频产物）→ 下游 skipped，不带着空引用去提交', async () => {
+    const graph = plan(
+      [
+        node('a', { mode: 't2i' }),
+        node('b', { mode: 't2i' }),
+      ],
+      [edge('a', 'b')],
+    );
+    const { calls, deps } = recorder(undefined, async () => ({ status: 'succeeded' }));
+    const outcome = await runCanvasPlan(graph, deps);
+
+    expect(calls).toHaveLength(1);
+    expect(outcome.results[1]).toMatchObject({ nodeId: 'b', state: 'skipped' });
+    expect(outcome.results[1]?.message).toContain('没有成片');
   });
 });

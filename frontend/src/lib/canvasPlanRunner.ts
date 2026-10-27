@@ -90,7 +90,17 @@ export interface PlanRunnerDeps {
    * V2.29 起它还有第二个用途：**校验"保留 / 固定"的产物是否还在**（被容量淘汰的成片
    * 不能拿来当引用 —— 那会在提交那一刻被服务端拒，不如在这里就说清）。
    */
-  queryTask?: (taskId: string) => Promise<{ status: string; outputVideoUrl?: string | null }>;
+  queryTask?: (taskId: string) => Promise<{
+    status: string;
+    outputVideoUrl?: string | null;
+    /**
+     * V2.88（D-1）：图片任务的产物在 `outputImageUrl` 上。
+     *
+     * 不合并成一个字段：`TaskProgress` 本来就把两者分开，这里如实接住，
+     * 免得把"这张图有没有出来"误判成"没有成片"。
+     */
+    outputImageUrl?: string | null;
+  }>;
   /**
    * 本轮**要重跑的节点**（B68 部分重跑）。省略 = 全部（「运行 / 重跑全部」的语义）。
    *
@@ -217,7 +227,7 @@ async function waitForTaskReady(
   const lang = deps.language ?? getLanguage();
 
   for (;;) {
-    let task: { status: string; outputVideoUrl?: string | null };
+    let task: { status: string; outputVideoUrl?: string | null; outputImageUrl?: string | null };
     try {
       task = await deps.queryTask(taskId);
     } catch (caught) {
@@ -241,7 +251,9 @@ async function waitForTaskReady(
       };
     }
     if (task.status === 'succeeded') {
-      if (typeof task.outputVideoUrl === 'string' && task.outputVideoUrl !== '') return { ok: true };
+      // 图片任务只有 outputImageUrl，视频任务只有 outputVideoUrl —— 两者都算"有产物"
+      const output = task.outputVideoUrl ?? task.outputImageUrl;
+      if (typeof output === 'string' && output !== '') return { ok: true };
       return { ok: false, message: translate(lang, 'canvas.run.upstreamNoOutput', { short }) };
     }
     if (SETTLED_FAILURE.has(task.status)) {

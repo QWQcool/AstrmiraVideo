@@ -2627,3 +2627,245 @@ audio.cs-card-media {
     box-shadow: var(--shadow-pop);
   }
 }
+
+/* ── 编排独立页（V2.88 / D-1；CONTRACT §11-6）────────────────────────
+   与画布的视觉分工：编排是**表单/清单**（执行语义），不是可拖拽的画板。
+   栅格用 minmax(0, 1fr)：375px 下子项不会把页面撑出横向滚动。 */
+.plan-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 0 24px;
+}
+
+.plan-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plan-title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+
+.plan-subtitle {
+  max-width: 720px;
+}
+
+.plan-actions,
+.plan-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-meta {
+  color: var(--text-dim);
+  font-size: var(--fs-note);
+}
+
+.plan-broken {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--danger);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: var(--fs-note);
+}
+
+.plan-notice {
+  margin: 0;
+}
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+  gap: 12px;
+  align-items: start;
+}
+
+.plan-nodes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.plan-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.plan-card-id {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-prompt {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-note);
+  resize: vertical;
+}
+
+.plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.plan-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.plan-field select {
+  min-width: 0;
+  max-width: 220px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  color: var(--text);
+  font-size: var(--fs-note);
+}
+
+.plan-field-grow {
+  flex: 1 1 160px;
+}
+
+.plan-hint {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  overflow-wrap: anywhere;
+}
+
+.plan-block {
+  margin: 0;
+  color: var(--gold);
+  font-size: var(--fs-micro);
+  overflow-wrap: anywhere;
+}
+
+.plan-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+  font-size: var(--fs-micro);
+}
+
+.plan-result-state {
+  color: var(--text);
+}
+
+.plan-result-msg,
+.plan-result-task {
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.plan-result-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.plan-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.plan-side-title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-note);
+  font-weight: 600;
+}
+
+.plan-order,
+.plan-edges,
+.plan-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  font-size: var(--fs-micro);
+}
+
+.plan-edges,
+.plan-results {
+  padding-left: 0;
+  list-style: none;
+}
+
+.plan-order-item,
+.plan-edge-item,
+.plan-result-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.plan-order-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .plan-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

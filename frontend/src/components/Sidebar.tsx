@@ -71,6 +71,16 @@ const ICONS: Record<ViewIconKey, ReactNode> = {
       <path d="M20 4 8.1 13.1M20 20 8.1 10.9" />
     </>
   ),
+  // 编排（V2.88 / D-1）：三个节点顺着一条折线往下走 —— "按顺序执行"的最小示意
+  route: (
+    <>
+      <circle cx="5" cy="5" r="2.2" />
+      <circle cx="19" cy="12" r="2.2" />
+      <circle cx="5" cy="19" r="2.2" />
+      <path d="M7.2 5H12a2 2 0 0 1 2 2v3a2 2 0 0 0 2 2h0.8" />
+      <path d="M7.2 19H12a2 2 0 0 0 2-2v-3a2 2 0 0 1 2-2h0.8" />
+    </>
+  ),
 };
 
 const KEY_ICON = (
