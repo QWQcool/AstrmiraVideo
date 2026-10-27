@@ -173,3 +173,49 @@ export function addReferencesToDraft(
 
   return { references, added, ignored };
 }
+
+/**
+ * 把 `order` 重排成 0..n-1（V2.78 / P1-2d）。
+ *
+ * 为什么要重排：`order` 是**槽位**，也是提示词 `{{image:N}}` 的 N。
+ * 删掉中间一张后如果留着空洞（0,2,3），用户看到的 `#0 #2 #3` 与"第 2 张"永远对不上，
+ * 提交时前端还会再编号一次 —— 两处各自编号就会漂。这里统一成"紧凑且连续"。
+ */
+function renumberReferences(references: readonly CanvasReference[]): CanvasReference[] {
+  // **不排序**：调用方已经排好序（挪位后的数组顺序就是要的顺序）。
+  // 早先在这里又排了一次，结果"交换过的两条按旧 order 排回去"，挪位等于没动。
+  return references.map((item, index) => (item.order === index ? item : { ...item, order: index }));
+}
+
+/** 移除一条参考（按 assetId），并把剩余槽位重排（见 `renumberReferences`） */
+export function removeCanvasReference(
+  references: readonly CanvasReference[],
+  assetId: string,
+): CanvasReference[] {
+  const rest = references.filter((item) => item.assetId !== assetId);
+  if (rest.length === references.length) return [...references];
+  return renumberReferences([...rest].sort((left, right) => left.order - right.order));
+}
+
+/**
+ * 把一条参考往前/往后挪一位（`delta` 只取 ±1）。
+ *
+ * 排序按当前 `order`；越界（已经是第一张/最后一张）保持原样，不报错也不"绕回去"——
+ * 界面上的箭头在边界处会被禁用，这里的兜底只是不制造意外。
+ */
+export function moveCanvasReference(
+  references: readonly CanvasReference[],
+  assetId: string,
+  delta: -1 | 1,
+): CanvasReference[] {
+  const sorted = [...references].sort((left, right) => left.order - right.order);
+  const index = sorted.findIndex((item) => item.assetId === assetId);
+  if (index === -1) return [...references];
+  const target = index + delta;
+  if (target < 0 || target >= sorted.length) return [...references];
+  const swapped = [...sorted];
+  const current = swapped[index]!;
+  swapped[index] = swapped[target]!;
+  swapped[target] = current;
+  return renumberReferences(swapped);
+}

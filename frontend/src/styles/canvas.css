@@ -1844,6 +1844,42 @@ audio.cs-card-media {
   white-space: nowrap;
 }
 
+/* P1-2d：素材条直接操作（挪槽位 / 移除）。按钮只在边界内出现，不做"点了没反应"的禁用态。 */
+.cs-ref-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: 1px;
+  padding-left: 4px;
+  border-left: 1px solid var(--line);
+}
+
+.cs-ref-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cs-ref-action:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.cs-ref-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .cs-toolbar-issue {
   display: flex;
   flex-wrap: wrap;

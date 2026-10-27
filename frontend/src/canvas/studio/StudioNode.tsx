@@ -49,7 +49,12 @@ import { useTranslate, type MessageKey, type Translate } from '../../lib/i18n';
 import {
   StructuredPromptInput,
   type InlinePromptToken,
+  type StructuredPromptHandle,
 } from '../../components/StructuredPromptInput';
+import {
+  moveCanvasReference,
+  removeCanvasReference,
+} from '../../lib/canvasReferences';
 import { useShell } from '../../lib/shell';
 import { useStudio, type ReferencePreview } from './StudioContext';
 
@@ -224,6 +229,8 @@ export function StudioNode({ id, selected }: NodeProps) {
 
   /** 引用目录：删除行内 token 后原生撤销时找回 reference（只增不删） */
   const referenceCatalog = useRef<Map<string, CanvasReference>>(new Map());
+  /** 从素材条删参考时，同步摘掉提示词里那颗 token（否则会留下"幽灵 chip"） */
+  const promptRef = useRef<StructuredPromptHandle | null>(null);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const versionToggleRef = useRef<HTMLButtonElement | null>(null);
   const versionListRef = useRef<HTMLDivElement | null>(null);
@@ -306,6 +313,9 @@ export function StudioNode({ id, selected }: NodeProps) {
           };
     })
     .filter((item): item is InlinePromptToken => item !== null);
+  /** 按槽位排好的参考（P1-2d：素材条的顺序、上下移动、边界判断都基于它） */
+  const sortedReferences = [...draft.references].sort((left, right) => left.order - right.order);
+
   const visible = canvasNodeVisibleOutput(node);
   const preview =
     visible.state === 'selected' || visible.state === 'latest' ? visible : null;
@@ -549,6 +559,7 @@ export function StudioNode({ id, selected }: NodeProps) {
             />
           ) : (
             <StructuredPromptInput
+              ref={promptRef}
               initialText={draft.prompt}
               text={draft.prompt}
               initialTokens={inlineTokens}
@@ -578,20 +589,42 @@ export function StudioNode({ id, selected }: NodeProps) {
 
           {node.type !== 'text' && draft.references.length > 0 ? (
             <div className="cs-toolbar-refs">
-              {[...draft.references]
-                .sort((a, b) => a.order - b.order)
-                .map((item, index) => (
-                  <ReferenceChip
-                    key={`${item.role}-${item.assetId}-${index}`}
-                    // 全能参考下槽位号就是提示词里 {{image:N}} 的 N，必须露出来
-                    label={
-                      omniReferences
-                        ? `#${index} ${t(REFERENCE_LABEL_KEYS[item.role])}`
-                        : t(REFERENCE_LABEL_KEYS[item.role])
-                    }
-                    preview={studio.referencePreview(item.assetId)}
-                  />
-                ))}
+              {sortedReferences.map((item, index) => (
+                <ReferenceChip
+                  key={`${item.role}-${item.assetId}-${index}`}
+                  // 全能参考下槽位号就是提示词里 {{image:N}} 的 N，必须露出来
+                  label={
+                    omniReferences
+                      ? `#${index} ${t(REFERENCE_LABEL_KEYS[item.role])}`
+                      : t(REFERENCE_LABEL_KEYS[item.role])
+                  }
+                  preview={studio.referencePreview(item.assetId)}
+                  // 边界处不出现按钮：能点的按钮才该存在，点了没反应的箭头是噪音
+                  onMoveLeft={
+                    index === 0
+                      ? undefined
+                      : () =>
+                          studio.onDraftChange(id, {
+                            references: moveCanvasReference(draft.references, item.assetId, -1),
+                          })
+                  }
+                  onMoveRight={
+                    index === sortedReferences.length - 1
+                      ? undefined
+                      : () =>
+                          studio.onDraftChange(id, {
+                            references: moveCanvasReference(draft.references, item.assetId, 1),
+                          })
+                  }
+                  onRemove={() => {
+                    // 先摘提示词里的 token，再改 references：顺序反过来会让 token 短暂指向已删的素材
+                    promptRef.current?.removeToken(item.assetId);
+                    studio.onDraftChange(id, {
+                      references: removeCanvasReference(draft.references, item.assetId),
+                    });
+                  }}
+                />
+              ))}
               {draft.references.some((item) => item.role === 'first-frame') &&
               draft.references.some((item) => item.role === 'last-frame') ? (
                 <button
@@ -851,13 +884,46 @@ export function StudioNode({ id, selected }: NodeProps) {
 function ReferenceChip({
   label,
   preview,
+  onRemove,
+  onMoveLeft,
+  onMoveRight,
 }: {
   label: string;
   preview: ReferencePreview | null;
+  /** P1-2d：直接摘掉这张参考（等价于删掉提示词里的 token / 删来源边） */
+  onRemove?: (() => void) | undefined;
+  /** P1-2d：往前/往后挪一位；已经在边界时由调用方传 undefined（按钮不出现） */
+  onMoveLeft?: (() => void) | undefined;
+  onMoveRight?: (() => void) | undefined;
 }): ReactNode {
+  const t = useTranslate();
   const [broken, setBroken] = useState(false);
   const src = preview === null ? null : resolveMediaUrl(preview.url);
   const showThumb = src !== null && !broken;
+
+  /**
+   * 动作按钮必须 `stopPropagation`：chip 长在可拖拽的节点卡里，
+   * 冒泡上去会变成"拖动节点"或"取消选中"，点一下按钮连带把面板关掉。
+   */
+  const action = (
+    onClick: () => void,
+    labelKey: MessageKey,
+    glyph: string,
+  ): ReactNode => (
+    <button
+      type="button"
+      className="cs-ref-action"
+      aria-label={t(labelKey)}
+      title={t(labelKey)}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {glyph}
+    </button>
+  );
 
   return (
     <span className={`cs-ref${showThumb ? ' cs-ref--media' : ''}`} title={label}>
@@ -871,6 +937,15 @@ function ReferenceChip({
         />
       ) : null}
       <span className="cs-ref-label">{label}</span>
+      {onMoveLeft === undefined && onMoveRight === undefined && onRemove === undefined ? null : (
+        <span className="cs-ref-actions">
+          {onMoveLeft === undefined ? null : action(onMoveLeft, 'canvas.studio.referenceMoveLeft', '←')}
+          {onMoveRight === undefined
+            ? null
+            : action(onMoveRight, 'canvas.studio.referenceMoveRight', '→')}
+          {onRemove === undefined ? null : action(onRemove, 'canvas.studio.referenceRemove', '×')}
+        </span>
+      )}
     </span>
   );
 }

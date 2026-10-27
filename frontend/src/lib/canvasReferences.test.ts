@@ -3,6 +3,8 @@ import type { CanvasReference } from '@astrmira/shared';
 import {
   addReferencesToDraft,
   allowedKindsForReferenceTarget,
+  moveCanvasReference,
+  removeCanvasReference,
 } from './canvasReferences';
 
 const image = (assetId: string): CanvasReference => ({
@@ -127,5 +129,56 @@ describe('B 路线：图片节点的全能参考（V2.76）', () => {
     const result = addReferencesToDraft([], [{ ref: 'a1', kind: 'image' }], 'image');
     expect(result.added).toBe(0);
     expect(result.ignored).toBe(1);
+  });
+});
+
+/** P1-2d：素材条的"直接操作"（移除 / 挪槽位）——纯函数，槽位号必须始终连续 */
+describe('素材条操作：移除与挪位', () => {
+  const omni = (ids: string[]): CanvasReference[] =>
+    ids.map((assetId, order) => ({ assetId, role: 'reference-image' as const, order }));
+
+  it('移除中间一张后槽位重排成 0..n-1（不留空洞）', () => {
+    const next = removeCanvasReference(omni(['a', 'b', 'c']), 'b');
+    expect(next.map((item) => item.assetId)).toEqual(['a', 'c']);
+    expect(next.map((item) => item.order)).toEqual([0, 1]);
+  });
+
+  it('移除不存在的素材：内容不变（不报错、不乱序）', () => {
+    const next = removeCanvasReference(omni(['a', 'b']), 'zzz');
+    expect(next.map((item) => item.assetId)).toEqual(['a', 'b']);
+  });
+
+  it('往后挪一位：与后一个交换并保持槽位连续', () => {
+    const next = moveCanvasReference(omni(['a', 'b', 'c']), 'a', 1);
+    expect(next.map((item) => item.assetId)).toEqual(['b', 'a', 'c']);
+    expect(next.map((item) => item.order)).toEqual([0, 1, 2]);
+  });
+
+  it('已在边界：原样返回（不绕回、不报错）', () => {
+    const next = moveCanvasReference(omni(['a', 'b']), 'a', -1);
+    expect(next.map((item) => item.assetId)).toEqual(['a', 'b']);
+    const last = moveCanvasReference(omni(['a', 'b']), 'b', 1);
+    expect(last.map((item) => item.assetId)).toEqual(['a', 'b']);
+  });
+
+  it('挪位不动 role（首尾帧交换请用 swapFirstLastReferences）', () => {
+    const refs: CanvasReference[] = [
+      { assetId: 'a', role: 'first-frame', order: 0 },
+      { assetId: 'b', role: 'last-frame', order: 1 },
+    ];
+    const next = moveCanvasReference(refs, 'b', -1);
+    expect(next).toEqual([
+      { assetId: 'b', role: 'last-frame', order: 0 },
+      { assetId: 'a', role: 'first-frame', order: 1 },
+    ]);
+  });
+
+  it('带空洞的旧数据在挪位后也被紧凑化', () => {
+    const refs: CanvasReference[] = [
+      { assetId: 'a', role: 'reference-image', order: 0 },
+      { assetId: 'b', role: 'reference-image', order: 5 },
+    ];
+    const next = moveCanvasReference(refs, 'b', -1);
+    expect(next.map((item) => item.order)).toEqual([0, 1]);
   });
 });
