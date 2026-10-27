@@ -14,6 +14,8 @@
  * 3. **单例按地址共享**：provider 是每请求新建的，WS 必须挂在进程级（`getComfyProgressTracker`）。
  */
 
+import type { ComfyLinkStats } from '@astrmira/shared';
+
 /** 一次进度事件的语义化结果（纯函数产出，便于单测） */
 export type ComfyEventReduction =
   | { kind: 'progress'; promptId: string; percent: number }
@@ -106,6 +108,13 @@ export class ComfyProgressTracker implements ComfyProgressSource {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly entries = new Map<string, { percent: number; updatedAt: number }>();
   private stopped = false;
+  /**
+   * V2.90（D-8）：连接事实。只做**计数**，不影响任何行为 ——
+   * 观测不该改变被观测对象的时序（例如为统计而提前/延后重连）。
+   */
+  private state: ComfyLinkStats['state'] = 'connecting';
+  private opens = 0;
+  private reconnects = 0;
 
   constructor(options: ComfyProgressTrackerOptions) {
     this.options = {
@@ -153,6 +162,9 @@ export class ComfyProgressTracker implements ComfyProgressSource {
     const reconnect = () => {
       this.socket = null;
       if (this.stopped || this.timer !== null) return;
+      this.state = 'closed';
+      // 只有**真的排了一次重连**才 +1（error 与 close 可能先后到达，不能各算一次）
+      this.reconnects += 1;
       this.timer = setTimeout(() => {
         this.timer = null;
         this.start();
@@ -160,10 +172,25 @@ export class ComfyProgressTracker implements ComfyProgressSource {
       // 别让重连定时器把进程钉住（测试里尤其明显）
       this.timer.unref?.();
     };
+    // `open` 只有真连上才会触发（构造出不等于连上）—— 计数只认它
+    socket.addEventListener('open', () => {
+      this.opens += 1;
+      this.state = 'connected';
+    });
     socket.addEventListener('close', reconnect);
     socket.addEventListener('error', reconnect);
 
     this.socket = socket;
+  }
+
+  /** V2.90（D-8）：连接事实快照（`/api/stats/summary` 用） */
+  stats(): ComfyLinkStats {
+    return {
+      baseUrl: this.options.baseUrl,
+      state: this.stopped ? 'closed' : this.state,
+      opens: this.opens,
+      reconnects: this.reconnects,
+    };
   }
 
   progress(promptId: string): { percent: number } | null {
@@ -198,4 +225,13 @@ export function getComfyProgressTracker(baseUrl: string): ComfyProgressTracker {
   trackers.set(baseUrl, tracker);
   tracker.start();
   return tracker;
+}
+
+/**
+ * V2.90（D-8）：已建立的 ComfyUI 进度通道快照。
+ *
+ * 没有实例 → 空数组（**不造一条"已连接"** —— 那会让运维以为通道正常）。
+ */
+export function comfyProgressStats(): ComfyLinkStats[] {
+  return [...trackers.values()].map((tracker) => tracker.stats());
 }

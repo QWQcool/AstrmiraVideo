@@ -54,6 +54,8 @@ import { createLogRoutes } from './routes/logs.js';
 import { createProjectRoutes } from './routes/projects.js';
 import { createCanvasRoutes } from './routes/canvas.js';
 import { createSubjectRoutes } from './routes/subjects.js';
+import { createStatsRoutes } from './routes/stats.js';
+import { comfyProgressStats } from './providers/comfyui/comfyuiProgress.js';
 import { providerRoutes } from './routes/providers.js';
 import { createTaskRoutes } from './routes/tasks.js';
 import { createUploadRoutes, MAX_FILE_BYTES } from './routes/upload.js';
@@ -600,6 +602,8 @@ const app = Fastify({
   await app.register(createHistoryImportRoutes({ store, projects }));
   // V2.12（B48）：成本台账汇总（只读；金额为预估，口径见 COST_DISCLAIMER）
   await app.register(createCostRoutes({ store, projects }));
+  // V2.90（D-8）：运行观测（耗时 p50/p95、失败码分布、ComfyUI WS 连接事实）
+  await app.register(createStatsRoutes({ store, comfyLinks: comfyProgressStats }));
   // V2.15（B51 片 A）：Webhook 订阅管理（终态回调；secret 只回显一次，URL 过 SSRF 准入）
   await app.register(createWebhookRoutes({ webhooks, projects }));
   // V2.16（B53）：可观测 —— live/ready 分级 + 运维快照（告警阈值可 env 覆盖）

@@ -136,6 +136,16 @@ function rowToRecord(row: TaskRow): TaskRecord {
   };
 }
 
+/** 运行观测的一行（V2.90 / D-8）：只取聚合需要的列 */
+export interface StatRow {
+  provider: string;
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+  /** `error.code`（成功/未失败时为 null） */
+  errorCode: string | null;
+}
+
 /** 成本汇总的一行（V2.12 / B48；只取聚合需要的列，不拉整条快照） */
 export interface CostRow {
   projectId: string;
@@ -389,6 +399,41 @@ export class TaskStore {
       .all(params) as CostRow[];
 
     return rows;
+  }
+
+  /**
+   * 运行观测的行集（V2.90 / D-8）。
+   *
+   * 只取聚合需要的列，不拉请求快照 —— 统计是"看趋势"，不是"看单条"。
+   * 范围按 `created_at` 过滤（与成本汇总同口径：一个任务属于它被创建的那一天）。
+   *
+   * 耗时用 `updated_at - created_at`：终态写入时 `updated_at` 被更新，
+   * 它与真实完成时刻可能有秒级差（见 CONTRACT §16 附的口径说明）——
+   * 这里不另建埋点表，也不假装是上游精确耗时。
+   */
+  listStatRows(options: { from?: number; to?: number; limit: number }): StatRow[] {
+    const where: string[] = [];
+    const params: Record<string, unknown> = { limit: options.limit };
+    if (options.from !== undefined) {
+      where.push('created_at >= @from');
+      params['from'] = options.from;
+    }
+    if (options.to !== undefined) {
+      where.push('created_at <= @to');
+      params['to'] = options.to;
+    }
+    const clause = where.length === 0 ? '' : `WHERE ${where.join(' AND ')}`;
+
+    return this.db
+      .prepare(
+        `SELECT provider, status, created_at AS createdAt, updated_at AS updatedAt,
+                json_extract(error, '$.code') AS errorCode
+           FROM tasks
+           ${clause}
+          ORDER BY created_at DESC
+          LIMIT @limit`,
+      )
+      .all(params) as StatRow[];
   }
 
   /**

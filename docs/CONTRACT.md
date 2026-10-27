@@ -1,6 +1,16 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.89 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.90 · 已冻结（变更需先改本文，再改代码）**
+> **V2.90 修订（2026-10-27 · D-8 运行观测）** ——
+>   ① 新增 `GET /api/stats/summary`（§16 附）：按 provider 的
+>      `{count, succeeded, failed, unfinished, p50Ms, p95Ms}`、失败码分布、
+>      ComfyUI 进度通道（WS）的连接事实；
+>   ② **数据只来自已有 `tasks` 表**：不新增埋点表、不改上报通道（观测不该给主链路加失败面）；
+>   ③ **耗时是近似的**：`updated_at - created_at`（含排队与轮询间隔），
+>      口径句由服务端随响应下发，界面不自己写一版；没有样本 → `null`，**不写 0**；
+>   ④ `comfyuiProgress.ts` 增加连接计数（`opens` / `reconnects` / `state`）——
+>      **只计数，不改变重连时序**；没有实例 → 空数组，不造一条假连接；
+>   ⑤ 无新错误码、无新写入路由。
 > **V2.89 修订（2026-10-27 · D-10 编排与画布的边界）** ——
 >   ① 结论：`CanvasPlan`（执行与依赖）与 `CanvasDoc`（编辑与生成）**保持两套模型**，
 >      边界写进 §11-6「边界」段（plan 只引用 doc 的快照、**不反向写 doc**）；
@@ -1061,6 +1071,7 @@ export interface AssetListResponse {
 | `GET` | `/api/canvas/docs/:projectId` | **V2.42 新增**：整份画布文档。**200 → `CanvasDoc`**；未保存过 / 已删除 → **404 `PROJECT_NOT_FOUND`**（**不**返回空文档 —— "新建"与"打错 id"必须能区分） |
 | `PUT` | `/api/canvas/docs/:projectId` | **V2.42 新增；V2.48 加并发保护**：保存画布文档（body = `CanvasDoc`，整份覆盖）。**200 → `{ ok: true, summary: CanvasProjectRef, revision }`**；体里的 `projectId` 与路径不一致 → **400 `INVALID_REQUEST`**（否则会覆盖另一个画布）；`version` / 节点类型不认识 → **400**（schema 拒绝，不落盘）；已有文档缺 `X-Canvas-Revision`、修订不匹配或已删除 → **409 `DOC_CONFLICT`**（不静默覆盖） |
 | `DELETE` | `/api/canvas/docs/:projectId` | **V2.44 新增**：删除画布（文档 + 索引条目一起删）。**200 → `{ deleted: true, projectId }`**；不存在 → **404 `PROJECT_NOT_FOUND`**。只删文档与索引，**不删产物资产**（资产由 §7 的生命周期管理） |
+| `GET` | `/api/stats/summary` | **V2.90 新增（§16 附 / D-8）**：**运行观测汇总（只读）**。`?from=` / `?to=`（epoch ms，按 `created_at`，含端点）。**200 → `StatsSummaryResponse`**：按 provider 的 `{count, succeeded, failed, unfinished, p50Ms, p95Ms}` + 失败码分布 + ComfyUI 进度通道连接事实 + `durationNote`（耗时口径句）+ `truncated`。扫描上界 20000 行，触界时 `truncated: true`（只是部分样本）；空库 → 200 + 空数组（**不是 404**）；参数非法 → **400 `INVALID_REQUEST`** |
 | `GET` | `/api/subjects` | **V2.86 新增（§21-18 / D-3）**：**主体库清单（只读）**。**200 → `{ subjects: Subject[] }`**（按 `createdAt` 升序；空库返回空数组，**不是 404**）。主体的 `assetIds` 指向资产库里的素材（资产被清理后 id 仍原样返回，界面显示"素材缺失"而不是静默删条目） |
 | `POST` | `/api/subjects` | **V2.86 新增**：新建主体（body `{ name, description?, assetIds? }`，`name` 1~60 字符、`assetIds` ≤9）。**200 → `{ subject }`**（id 由服务端生成，`createdAt` = 服务端时间）。`name` 空白 → **400 `INVALID_REQUEST`**；数量达上限（500）→ **400 `INVALID_REQUEST`**（不静默丢） |
 | `PATCH` | `/api/subjects/:id` | **V2.86 新增**：改主体（body `{ name?, description?, assetIds? }`，至少一项）。**200 → `{ subject }`**；不存在 → **404 `PROJECT_NOT_FOUND`**；`description` 传空串 = **清除描述**（不保留空字符串）；`assetIds` 传 `[]` = **清空参考素材** |
@@ -2100,6 +2111,52 @@ export interface MetricsResponse {
 ② **告警外发通道**（邮件 / IM / 再发一条 Webhook）—— 本版只把"越线的事实"暴露在快照里；
 ③ **历史趋势**（时序库）—— 本版是**当前快照**，趋势由调用方自己存；
 ④ **链路追踪**（OpenTelemetry）—— 操作日志（§10）+ `requestId` 已能回答"这一次请求发生了什么"。
+
+### 16 附：运行观测 `GET /api/stats/summary`（V2.90 / D-8）
+
+> 目标：回答三个**运维真的会问**的问题 —— 哪个引擎跑得多、多快；失败集中在哪些码上；
+> 本地 ComfyUI 的进度通道还活着吗。不做通用 APM。
+
+```ts
+interface StatsSummaryResponse {
+  range: { from: number | null; to: number | null };
+  total: number;                     // 参与统计的任务条数
+  byProvider: Array<{
+    provider: string;
+    count: number;                   // 含在飞
+    succeeded: number;
+    failed: number;                  // failed + cancelled
+    unfinished: number;              // 其余（queued / running / submitting）
+    p50Ms: number | null;            // 终态任务的 nearest-rank 中位数
+    p95Ms: number | null;
+  }>;
+  failureCodes: Array<{ code: string; count: number }>;   // 只数 failed/cancelled
+  comfyLinks: Array<{ baseUrl: string; state: 'connecting' | 'connected' | 'closed'; opens: number; reconnects: number }>;
+  truncated: boolean;                // 扫描触到 20000 行上界
+  durationNote: string;              // 耗时口径句（服务端下发，界面直接显示）
+}
+```
+
+**三条硬口径**：
+
+1. **只用已有 `tasks` 表**：不新增埋点表、不改上报通道。理由：观测端点若依赖第二条写入路径，
+   主链路出问题时它也会跟着失真 —— 而且没有人会去核对两侧数字。
+2. **耗时是近似的**：`updated_at - created_at`（终态写入那一刻），**含排队与轮询间隔**，
+   不是模型推理耗时。`durationNote` 由服务端下发，界面**不要**自己再写一版。
+   负值夹成 0（时钟回拨不产生负耗时）。
+3. **没有样本就是 `null`**：`p50Ms` / `p95Ms` 为空时界面显示「—」，**不写 0**
+   （"0 毫秒"是假数据）。在飞任务**不进**耗时样本（否则一条刚开始的任务会把 p50 拉低）。
+
+**ComfyUI 进度通道**：`comfyuiProgress.ts` 只增加计数（`opens` 由 `open` 事件 +1、
+`reconnects` 在**真的排了一次重连**时 +1 —— error 与 close 先后到达只算一次）。
+**没有实例 → 空数组**：不造一条"已连接"。
+
+**成本口径**：本端点**不下发金额**。本地轨成本恒为 0 是真实值（自建算力、无按次计费），
+把电费/折旧折算成金额属于编造；云端金额仍在 `GET /api/costs/summary`（§13）。
+界面（`#/stats`）必须把这条原因写出来，否则"0 元"会被读成"没数据"。
+
+**本版不做**：直方图/分位数时间序列（趋势由调用方自己存）、按模型维度、按项目维度
+（成本已经有项目维度；运行观测先看全局）。
 
 ---
 

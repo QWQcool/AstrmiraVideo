@@ -138,6 +138,30 @@ describe('进度跟踪器', () => {
     expect(created).toBe(1);
     tracker.stop();
   });
+
+  it('V2.90：连接事实可观测 —— open 计数、断开后 state=closed、重连计数只 +1', () => {
+    const fake = fakeSocket();
+    const tracker = new ComfyProgressTracker({
+      baseUrl: 'http://127.0.0.1:8190',
+      createSocket: () => fake.socket,
+      reconnectMs: 60_000,
+    });
+
+    tracker.start();
+    // 构造出 socket ≠ 连上：open 之前是 connecting
+    expect(tracker.stats()).toMatchObject({ state: 'connecting', opens: 0, reconnects: 0 });
+
+    fake.emit('open');
+    expect(tracker.stats()).toMatchObject({ state: 'connected', opens: 1, reconnects: 0 });
+
+    // error 与 close 可能先后到达：只应该排一次重连、只 +1
+    fake.emit('error');
+    fake.emit('close');
+    expect(tracker.stats()).toMatchObject({ state: 'closed', reconnects: 1 });
+
+    tracker.stop();
+    expect(tracker.stats().state).toBe('closed');
+  });
 });
 
 describe('WS 地址拼接', () => {
