@@ -302,6 +302,8 @@ export function CanvasStudioView() {
   const [pickerReferenceNodeId, setPickerReferenceNodeId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  /** P1-2d：上传后让参考封面索引重拉一次（资产清单是另一个数据源） */
+  const [assetPreviewRev, setAssetPreviewRev] = useState(0);
   const [menu, setMenu] = useState<{
     x: number;
     y: number;
@@ -1193,6 +1195,8 @@ export function CanvasStudioView() {
           );
         }
         addAssets(entries, 'uploaded');
+        // 新素材要能立刻在素材条里看见缩略图
+        setAssetPreviewRev((value) => value + 1);
       } catch (caught) {
         setError(describeError(caught));
       } finally {
@@ -1850,11 +1854,43 @@ export function CanvasStudioView() {
   void historyRev;
 
   const edgeSource = doc?.edges ?? null;
+
+  /**
+   * P1-2d：**上传素材**的封面（批次产物之外的另一半）。
+   *
+   * 早先只从批次产物建索引，所以"从资产库加进来的参考"永远没有缩略图 ——
+   * 而即梦那边参考就是"看得见的那张图"。这里按项目拉一次资产清单补上：
+   * 产物优先（下面 memo 里先写产物），资产只补空缺。
+   *
+   * 只取图片与视频；取不到 url 的条目直接跳过（不拼 URL、不猜扩展名）。
+   */
+  const [assetPreviews, setAssetPreviews] = useState<ReadonlyMap<string, ReferencePreview>>(
+    () => new Map(),
+  );
+  const refreshAssetPreviews = useCallback(async (): Promise<void> => {
+    try {
+      const pool = await fetchAssets(projectId);
+      const map = new Map<string, ReferencePreview>();
+      for (const asset of pool.assets) {
+        if (asset.kind === 'audio') continue;
+        if (asset.url === '') continue;
+        map.set(asset.assetId, { kind: asset.kind, url: resolveMediaUrl(asset.url) ?? asset.url });
+      }
+      setAssetPreviews(map);
+    } catch {
+      // 拉不到就保持旧值：缩略图是锦上添花，不该把画布打成错误态
+    }
+  }, [projectId]);
+  useEffect(() => {
+    void refreshAssetPreviews();
+    // 切换画布/项目、或刚上传完新素材时，资产池会变，重新拉一次
+  }, [refreshAssetPreviews, doc?.projectId, assetPreviewRev]);
+
   /**
    * 2026-10-24「引用缩略图」：assetId → 可显示的封面。
    *
-   * 只从**已有批次产物**里取（那是唯一可信的来源），因此：
-   * 上传素材若被用作参考、但它不是任何节点产物，这里就取不到 —— 组件退化回文字标签。
+   * 两个来源，产物优先：①节点批次产物（一定可显示）②资产清单（P1-2d 补的上传素材）。
+   * 都没有就返回 null，组件退回文字标签 —— 不假装有图。
    */
   const referencePreviews = useMemo((): ReadonlyMap<string, ReferencePreview> => {
     const map = new Map<string, ReferencePreview>();
@@ -1873,8 +1909,12 @@ export function CanvasStudioView() {
         }
       }
     }
+    // 资产清单补齐空缺（产物地址优先：那是"这一次真正生成的图"）
+    for (const [assetId, preview] of assetPreviews) {
+      if (!map.has(assetId)) map.set(assetId, preview);
+    }
     return map;
-  }, [doc]);
+  }, [doc, assetPreviews]);
 
   const referencePreview = useCallback(
     (assetId: string): ReferencePreview | null => referencePreviews.get(assetId) ?? null,
