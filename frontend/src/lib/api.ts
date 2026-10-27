@@ -28,6 +28,7 @@ import {
   PromptEnhanceResponseSchema,
   ProviderStatusSchema,
   SelfCheckResponseSchema,
+  StatsSummaryResponseSchema,
   TaskProgressSchema,
   UploadResponseSchema,
 } from '@astrmira/shared';
@@ -75,6 +76,7 @@ import type {
   PromptEnhanceResponse,
   ProviderStatus,
   SelfCheckResponse,
+  StatsSummaryResponse,
   TaskProgress,
   UploadResponse,
   VideoGenerateRequest,
@@ -558,6 +560,22 @@ export function fetchCostSummary(query: {
   if (query.to !== undefined) params.set('to', String(query.to));
   const suffix = params.size === 0 ? '' : `?${params.toString()}`;
   return request(`/api/costs/summary${suffix}`, CostSummaryResponseSchema);
+}
+
+/**
+ * 运行观测汇总（V2.90 / D-8，CONTRACT §16 附）。
+ *
+ * 与 `/api/costs/summary` 的分工：那边回答"花了多少钱"，这边回答"跑得多快、失败在哪些码上"。
+ * 耗时**只是近似**（`durationNote` 由服务端下发，界面不要自己再写一版）。
+ */
+export function fetchStatsSummary(
+  query: { from?: number; to?: number } = {},
+): Promise<StatsSummaryResponse> {
+  const params = new URLSearchParams();
+  if (query.from !== undefined) params.set('from', String(query.from));
+  if (query.to !== undefined) params.set('to', String(query.to));
+  const suffix = params.size === 0 ? '' : `?${params.toString()}`;
+  return request(`/api/stats/summary${suffix}`, StatsSummaryResponseSchema);
 }
 
 /**

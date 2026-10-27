@@ -2869,3 +2869,70 @@ audio.cs-card-media {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── 运行观测（V2.90 / D-8；CONTRACT §16 附）────────────────────────
+   表格在窄屏内部横向滚动：整页不出现横向溢出（D-9），列语义也不会被砍掉。 */
+.stats-note {
+  margin: 0 0 8px;
+}
+
+.stats-panel {
+  margin-bottom: 12px;
+}
+
+.stats-table-wrap {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text);
+  font-size: var(--fs-note);
+}
+
+.stats-table th,
+.stats-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.stats-table thead th {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.stats-table th:first-child,
+.stats-table td:first-child {
+  text-align: left;
+}
+
+.stats-codes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text);
+  font-size: var(--fs-note);
+}
+
+.stats-code-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.stats-code-row code {
+  color: var(--gold);
+  font-size: var(--fs-micro);
+  overflow-wrap: anywhere;
+}

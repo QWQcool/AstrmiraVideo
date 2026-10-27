@@ -26,6 +26,7 @@ export const SHELL_ZH = {
   'shell.nav.canvas': '画布',
   // V2.88（D-1）：编排是一级视图（与画布并列，不塞进画布的工具栏）
   'shell.nav.plan': '编排',
+  'shell.nav.stats': '运行观测',
   'shell.nav.costs': '成本台账',
   'shell.nav.recipes': '配方库',
   'shell.nav.runs': '创作会话',
@@ -119,6 +120,7 @@ export const SHELL_EN = {
   'shell.nav.library': 'Video Library',
   'shell.nav.canvas': 'Canvas',
   'shell.nav.plan': 'Plan',
+  'shell.nav.stats': 'Observability',
   'shell.nav.costs': 'Cost Ledger',
   'shell.nav.recipes': 'Recipe Library',
   'shell.nav.runs': 'Creation Runs',

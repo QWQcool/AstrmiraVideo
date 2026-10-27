@@ -10,6 +10,7 @@ import { LogsView } from './LogsView';
 import { OverviewView } from './OverviewView';
 import { PlanView } from './PlanView';
 import { RunsView } from './RunsView';
+import { StatsView } from './StatsView';
 import { SkillsView } from './SkillsView';
 import { WorkbenchView } from './WorkbenchView';
 
@@ -37,7 +38,9 @@ export type ViewIconKey =
   /** V2.12（B48）：成本台账 —— 铜钱/账本意象 */
   | 'coins'
   /** V2.88（D-1）：编排 —— 一串依序执行的节点 */
-  | 'route';
+  | 'route'
+  /** V2.90（D-8）：运行观测 —— 一条脉搏线 */
+  | 'pulse';
 
 export interface ViewDef {
   /** hash 路径（不含查询参数），如 `#/overview` */
@@ -79,6 +82,8 @@ export const VIEW_REGISTRY: readonly ViewDef[] = [
   // 理由：画布是"编辑与生成"，编排是"执行与依赖"，两种心智混在一个工具栏里
   // 用户会分不清"我改的是这张图"还是"我改的是这条流水线"。
   { path: '#/plan', titleKey: 'shell.nav.plan', eyebrow: 'Plan', icon: 'route', component: PlanView },
+  // V2.90（D-8）：运行观测（耗时 / 失败码 / WS 连接）。成本金额仍在 `#/costs`（隐藏）。
+  { path: '#/stats', titleKey: 'shell.nav.stats', eyebrow: 'Observability', icon: 'pulse', component: StatsView },
   { path: '#/lineage', titleKey: 'shell.nav.canvas', eyebrow: 'Lineage', icon: 'graph', component: LegacyLineageView, hidden: true },
   // V2.12（台账 B48）：成本台账 —— D62（2026-10-19）**下线**：不做支付/积分，成本只保留"估算"，
   // 入口从侧栏移除；路由保留一个版本周期（旧链接不直接 404）。

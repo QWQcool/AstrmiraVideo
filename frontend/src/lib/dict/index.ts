@@ -13,6 +13,7 @@ import { OVERVIEW_EN, OVERVIEW_ZH } from './overview';
 import { RECIPES_EN, RECIPES_ZH } from './recipes';
 import { SKILLS_EN, SKILLS_ZH } from './skills';
 import { SHELL_EN, SHELL_ZH } from './shell';
+import { STATS_EN, STATS_ZH } from './stats';
 import { WORKBENCH_EN, WORKBENCH_ZH } from './workbench';
 
 /**
@@ -91,6 +92,7 @@ export const ZH = {
   ...LOGS_ZH,
   ...RUNS_ZH,
   ...OVERVIEW_ZH,
+  ...STATS_ZH,
   ...EDIT_ZH,
 };
 
@@ -119,6 +121,7 @@ export const EN: Record<MessageKey, string> = {
   ...LOGS_EN,
   ...RUNS_EN,
   ...OVERVIEW_EN,
+  ...STATS_EN,
   ...EDIT_EN,
 };
 

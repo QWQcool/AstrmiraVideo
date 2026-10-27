@@ -71,6 +71,8 @@ const ICONS: Record<ViewIconKey, ReactNode> = {
       <path d="M20 4 8.1 13.1M20 20 8.1 10.9" />
     </>
   ),
+  // 运行观测（V2.90 / D-8）：一条脉搏线
+  pulse: <path d="M3 12h4l2.5-6 4 12 2.5-6h5" />,
   // 编排（V2.88 / D-1）：三个节点顺着一条折线往下走 —— "按顺序执行"的最小示意
   route: (
     <>
