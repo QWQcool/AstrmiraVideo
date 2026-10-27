@@ -56,8 +56,13 @@ const width = Number(flag('width', '1024'));
 const height = Number(flag('height', '576'));
 const outDir = path.resolve(ROOT, flag('out', '.tmp/multiref'));
 
-if (!refA || !refB || !refB2) {
-  console.error('需要 --ref-a / --ref-b / --ref-b2');
+if (args.includes('--stress')) {
+  if (flag('refs', '') === '') {
+    console.error('压测模式需要 --refs a,b,c,…（逗号分隔的本地图片路径）');
+    process.exit(2);
+  }
+} else if (!refA || !refB || !refB2) {
+  console.error('需要 --ref-a / --ref-b / --ref-b2（或用 --stress --refs 做张数压测）');
   process.exit(2);
 }
 
@@ -100,6 +105,34 @@ function singleRefVariant(workflow) {
   delete copy['80'];
   copy['63'].inputs.positive = ['78', 0];
   return copy;
+}
+
+/**
+ * 按 N 张图拼 `ReferenceLatent` 链（模板只自带 2 条，第 3 张起动态追加）。
+ *
+ * 这条链的形状就是 P1-2b 里 provider 要生成的东西：cond → ref1 → ref2 → … → refN。
+ * 先在这里验证，再接进后端，避免"先写产品代码再发现跑不动"。
+ */
+function buildChain(workflow, names) {
+  const wf = JSON.parse(JSON.stringify(workflow));
+  wf['56'].inputs.image = names[0];
+  let tail = ['78', 0];
+  if (names.length < 2) {
+    return singleRefVariant(wf);
+  }
+  wf['57'].inputs.image = names[1];
+  tail = ['80', 0];
+  for (let index = 2; index < names.length; index += 1) {
+    const img = `r${index}img`;
+    const enc = `r${index}enc`;
+    const ref = `r${index}ref`;
+    wf[img] = { class_type: 'LoadImage', inputs: { image: names[index] } };
+    wf[enc] = { class_type: 'VAEEncode', inputs: { pixels: [img, 0], vae: ['72', 0] } };
+    wf[ref] = { class_type: 'ReferenceLatent', inputs: { conditioning: [tail[0], 0], latent: [enc, 0] } };
+    tail = [ref, 0];
+  }
+  wf['63'].inputs.positive = tail;
+  return wf;
 }
 
 async function uploadImage(filePath) {
@@ -159,18 +192,36 @@ const main = async () => {
   const clientId = `multiref-${Date.now()}`;
 
   console.log(`ComfyUI: ${base}\n模板: ${path.relative(ROOT, TEMPLATE)}\n`);
-  const [nameA, nameB, nameB2] = [refA, refB, refB2];
-  const uploaded = {
-    A: await uploadImage(nameA),
-    B: await uploadImage(nameB),
-    B2: await uploadImage(nameB2),
-  };
 
-  const runs = [
-    { id: 'run1-A', refs: ['A'], variant: 'single' },
-    { id: 'run2-AB', refs: ['A', 'B'], variant: 'dual' },
-    { id: 'run3-AB2', refs: ['A', 'B2'], variant: 'dual' },
-  ];
+  // 两种用途：三组对照（默认）或 N 张压测（--stress + --refs）
+  const stressRefs = (flag('refs', '') ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  const stress = args.includes('--stress');
+
+  const imageNames = stress
+    ? await Promise.all(stressRefs.map((file) => uploadImage(path.resolve(file))))
+    : [];
+  const uploaded = stress
+    ? {}
+    : {
+        A: await uploadImage(refA),
+        B: await uploadImage(refB),
+        B2: await uploadImage(refB2),
+      };
+
+  const runs = stress
+    ? [
+        { id: 'stress-4refs', refs: imageNames.slice(0, 4), variant: 'chain' },
+        { id: 'stress-9refs', refs: imageNames.slice(0, 9), variant: 'chain' },
+        { id: 'stress-12refs', refs: imageNames.slice(0, 12), variant: 'chain' },
+      ].filter((run) => run.refs.length > 0)
+    : [
+        { id: 'run1-A', refs: [uploaded.A], variant: 'single' },
+        { id: 'run2-AB', refs: [uploaded.A, uploaded.B], variant: 'dual' },
+        { id: 'run3-AB2', refs: [uploaded.A, uploaded.B2], variant: 'dual' },
+      ];
 
   const records = [];
   for (const run of runs) {
@@ -182,14 +233,13 @@ const main = async () => {
       HEIGHT: height,
       SEED: seed,
       OUTPUT_PREFIX: `astrmira/multiref/${run.id}`,
-      START_IMAGE_NAME: uploaded[run.refs[0]],
-      REFERENCE_IMAGE_NAME: uploaded[run.refs[1] ?? run.refs[0]],
+      START_IMAGE_NAME: run.refs[0] ?? '',
+      REFERENCE_IMAGE_NAME: run.refs[1] ?? run.refs[0] ?? '',
     };
-    let workflow = fill(template, values);
-    if (run.variant === 'single') workflow = singleRefVariant(workflow);
+    const workflow = buildChain(fill(template, values), run.refs);
 
     writeFileSync(path.join(outDir, `${run.id}.workflow.json`), JSON.stringify(workflow, null, 2));
-    console.log(`\n[${run.id}] 参考=${run.refs.join('+')} seed=${seed} ${width}x${height}`);
+    console.log(`\n[${run.id}] 参考=${run.refs.length} 张 seed=${seed} ${width}x${height}`);
     const promptId = await submit(workflow, clientId);
     console.log(`  prompt_id=${promptId}`);
     const entry = await waitFor(promptId);
