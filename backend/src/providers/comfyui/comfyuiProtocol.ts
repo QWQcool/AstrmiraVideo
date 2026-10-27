@@ -180,7 +180,10 @@ export function parseTemplateDeclaration(
   const matchRaw = asRecord(record['modelMatch']);
   const modelMatch: ComfyModelMatch = {};
   if (matchRaw !== null) {
-    for (const key of ['unet', 'clip', 'vae'] as const) {
+    // V2.76 修：`clipType` 之前**没被解析**（接口里有、parser 不读），
+    // 结果是声明了 `clipType: "flux2"` 的模板仍按 /object_info 的候选回落成 `wan`，
+    // 实测报错 `mat1 and mat2 shapes cannot be multiplied`。四个键一起读。
+    for (const key of ['unet', 'clip', 'vae', 'clipType'] as const) {
       const raw = matchRaw[key];
       if (raw === undefined) continue;
       if (typeof raw !== 'string' || raw.trim() === '') {
@@ -481,6 +484,13 @@ export interface ComfyTuning {
   shift: number;
   fps: number;
   dtype: string;
+  /**
+   * 单次提交最多消费几张参考图（V2.76 / B 路线）。
+   *
+   * 这是**实例能力**，不是产品上限：10GB 卡实测 2 张 12s、4 张 21s、9 张 56s、12 张 130s，
+   * 所以默认 4；租到 24GB+ 的机器再用 `COMFYUI_MAX_REFERENCES` 调高（封顶 12）。
+   */
+  maxReferences: number;
 }
 
 export const COMFY_DEFAULT_TUNING: ComfyTuning = {
@@ -490,6 +500,7 @@ export const COMFY_DEFAULT_TUNING: ComfyTuning = {
   shift: COMFY_DEFAULT_SHIFT,
   fps: COMFY_FPS,
   dtype: 'fp8_e4m3fn',
+  maxReferences: 4,
 };
 
 /** 读一个正整数 env（非法 / 缺失 → 用默认值；**不猜、不报错**，但也不静默改成别的数） */
@@ -530,6 +541,11 @@ export function resolveComfyTuning(env: NodeJS.ProcessEnv = process.env): ComfyT
     shift: readPositiveFloat(env.COMFYUI_SHIFT, COMFY_DEFAULT_TUNING.shift),
     fps: readPositiveInt(env.COMFYUI_FPS, COMFY_DEFAULT_TUNING.fps),
     dtype: dtype === undefined || dtype === '' ? COMFY_DEFAULT_TUNING.dtype : dtype,
+    // 封顶 12（产品结构上限），避免 env 写成 999 之后用户连满 999 张再失败
+    maxReferences: Math.min(
+      12,
+      readPositiveInt(env.COMFYUI_MAX_REFERENCES, COMFY_DEFAULT_TUNING.maxReferences),
+    ),
   };
 }
 
@@ -907,6 +923,14 @@ export interface ComfyWorkflowInput {
   dtype: string;
   /** i2v 的首帧在 ComfyUI 里的名字（`LoadImage.image`；由上传接口返回） */
   startImageName?: string;
+  /**
+   * 多参考（V2.76 / B 路线）：按 `order` 排好的图片名。
+   *
+   * - 1 张：只用 `{{START_IMAGE_NAME}}`；
+   * - 2 张：`{{START_IMAGE_NAME}}` + `{{REFERENCE_IMAGE_NAME}}`（模板自带两个槽）；
+   * - 3 张以上：前两张同上，其余由 `appendReferenceChain` **动态追加**（模板不必预置槽位）。
+   */
+  referenceImageNames?: readonly string[];
   /** 产物前缀（默认带 `astrmira/` 子目录） */
   outputPrefix: string;
 }
@@ -923,7 +947,8 @@ export function buildComfyWorkflow(
   input: ComfyWorkflowInput,
   template: WorkflowTemplate = WAN22_TI2V_5B_TEMPLATE,
 ): ComfyWorkflow {
-  return renderWorkflow(template, {
+  const references = input.referenceImageNames ?? [];
+  const rendered = renderWorkflow(template, {
     UNET_NAME: input.models.unet,
     CLIP_NAME: input.models.clip,
     CLIP_TYPE: input.models.clipType,
@@ -941,11 +966,109 @@ export function buildComfyWorkflow(
     SHIFT: input.shift ?? COMFY_DEFAULT_SHIFT,
     OUTPUT_PREFIX: input.outputPrefix,
     // t2v 时这两个都是 undefined → 键被删、`LoadImage` 节点也被删（模板里的 _dropWhenMissing）
-    START_IMAGE_NAME: input.startImageName,
+    START_IMAGE_NAME: references[0] ?? input.startImageName,
+    // V2.76：第二张参考（模板只有两个槽时用；>2 张的其余由 appendReferenceChain 追加）
+    REFERENCE_IMAGE_NAME: references[1],
     // ⚠️ `56` 是**内置模板里 LoadImage 的节点 id** —— 写自定义模板的人只要保证"有一个输入图节点"
     // 并把它的连接写进模板（本行只在 i2v 时给内置模板用）
-    START_IMAGE: input.startImageName === undefined ? undefined : ['56', 0],
+    START_IMAGE: (references[0] ?? input.startImageName) === undefined ? undefined : ['56', 0],
   });
+  // 追加链只新增 `{class_type, inputs}` 形状的节点，结果仍是 ComfyWorkflow
+  return (references.length > 2 ? appendReferenceChain(rendered, references) : rendered) as ComfyWorkflow;
+}
+
+/** 模板能静态吃几张参考图（0 = 没有输入槽） */
+export function countTemplateReferenceSlots(template: WorkflowTemplate): number {
+  const placeholders = templatePlaceholders(template);
+  if (placeholders.has('REFERENCE_IMAGE_NAME')) return 2;
+  if (placeholders.has('START_IMAGE_NAME') || placeholders.has('START_IMAGE')) return 1;
+  return 0;
+}
+
+/**
+ * 把第 3 张起的参考接进 `ReferenceLatent` 链（V2.76 / B 路线）。
+ *
+ * 形状与实测一致：`cond → ref1 → ref2 → … → refN`，每级 = `LoadImage → VAEEncode → ReferenceLatent`。
+ * 追加的节点 id 固定前缀 `refchain_<i>_*`（与模板 id 冲突直接抛错，不覆盖用户模板里的节点）。
+ *
+ * 为什么不在模板里预置 12 个槽：那会把"张数"写死进每份模板，而张数是**实例能力**（`COMFYUI_MAX_REFERENCES`）。
+ */
+export function appendReferenceChain(
+  workflow: WorkflowTemplate,
+  imageNames: readonly string[],
+): WorkflowTemplate {
+  if (imageNames.length <= 2) return workflow;
+
+  const cloned = JSON.parse(JSON.stringify(workflow)) as WorkflowTemplate;
+  const nodeIds = Object.keys(cloned);
+  const refLatents = nodeIds.filter((id) => cloned[id]?.['class_type'] === 'ReferenceLatent');
+  if (refLatents.length === 0) {
+    throw new Error('模板里没有 ReferenceLatent 节点，无法接多参考（需要 FLUX.2 风格的参考工作流）');
+  }
+
+  const isRefTo = (value: unknown, id: string): boolean =>
+    Array.isArray(value) && value.length === 2 && value[0] === id && value[1] === 0;
+  // 链尾 = 没有被其它 ReferenceLatent 当作 conditioning 的那个
+  const tails = refLatents.filter(
+    (id) =>
+      !refLatents.some(
+        (other) => other !== id && isRefTo((cloned[other]?.['inputs'] as Record<string, unknown> | undefined)?.['conditioning'], id),
+      ),
+  );
+  const originalTail = tails[tails.length - 1] ?? refLatents[refLatents.length - 1];
+  if (originalTail === undefined) throw new Error('无法定位参考链尾节点');
+
+  // VAE 引用从任意 VAEEncode 上取（模板自己声明用哪个 VAE）
+  const encoded = nodeIds.find((id) => cloned[id]?.['class_type'] === 'VAEEncode');
+  const vaeRef = encoded === undefined
+    ? undefined
+    : (cloned[encoded]?.['inputs'] as Record<string, unknown> | undefined)?.['vae'];
+  if (!Array.isArray(vaeRef)) throw new Error('模板里没有 VAEEncode 的 vae 连接，无法追加参考链');
+
+  const chainIds = new Set<string>();
+  let tail: string = originalTail;
+  for (let index = 2; index < imageNames.length; index += 1) {
+    const imageId = `refchain_${index}_img`;
+    const encodeId = `refchain_${index}_enc`;
+    const refId = `refchain_${index}_ref`;
+    for (const id of [imageId, encodeId, refId]) {
+      if (cloned[id] !== undefined) throw new Error(`模板里已存在节点 id ${id}，无法追加参考链`);
+    }
+    cloned[imageId] = { class_type: 'LoadImage', inputs: { image: imageNames[index] } };
+    cloned[encodeId] = { class_type: 'VAEEncode', inputs: { pixels: [imageId, 0], vae: vaeRef } };
+    cloned[refId] = {
+      class_type: 'ReferenceLatent',
+      inputs: { conditioning: [tail, 0], latent: [encodeId, 0] },
+    };
+    chainIds.add(imageId);
+    chainIds.add(encodeId);
+    chainIds.add(refId);
+    tail = refId;
+  }
+
+  // 把"用旧链尾的地方"改指新链尾（新链节点自己不动，否则会把链打断）
+  const retarget = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      if (value.length === 2 && value[0] === originalTail && value[1] === 0) return [tail, 0];
+      return value.map(retarget);
+    }
+    if (value !== null && typeof value === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+        out[key] = retarget(inner);
+      }
+      return out;
+    }
+    return value;
+  };
+  for (const [id, node] of Object.entries(cloned)) {
+    if (chainIds.has(id) || node === undefined) continue;
+    const inputs = node['inputs'];
+    if (inputs === undefined || inputs === null || typeof inputs !== 'object') continue;
+    node['inputs'] = retarget(inputs) as Record<string, unknown>;
+  }
+
+  return cloned;
 }
 
 export interface ComfyArtifact {

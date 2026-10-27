@@ -17,6 +17,7 @@ import {
   COMFYUI_DEFAULT_BASE_URL,
   COMFY_DEFAULT_NEGATIVE,
   COMFY_OUTPUT_SUBDIR,
+  countTemplateReferenceSlots,
   describeComfySubmissionError,
   parseComfyOutputs,
   pickComfyImageArtifact,
@@ -252,6 +253,7 @@ export class ComfyUiProvider implements VideoProvider {
     runtimes: TemplateRuntime[],
     mode: GenerationMode,
     wantsReference = false,
+    minReferenceSlots = 0,
   ): TemplateRuntime | undefined {
     const candidates = runtimes.filter((item) => item.capabilities.modes.includes(mode));
     if (candidates.length === 0) return undefined;
@@ -259,7 +261,10 @@ export class ComfyUiProvider implements VideoProvider {
       // B93/F2：带参考图时必须命中声明 referenceImage 的模板。
       // 绝不能回退普通 t2i —— 那会上传成功、/prompt 成功，但参考图被静默丢弃。
       const referenceCandidates = candidates.filter(
-        (item) => item.loaded.declaration?.referenceImage === true,
+        (item) =>
+          item.loaded.declaration?.referenceImage === true &&
+          // V2.76：多参考要求模板至少有足够的静态槽位（2 张以内）；3 张以上由追加链补齐
+          countTemplateReferenceSlots(item.loaded.template) >= minReferenceSlots,
       );
       if (referenceCandidates.length === 0) return undefined;
       const loaded = this.templates();
@@ -399,10 +404,33 @@ export class ComfyUiProvider implements VideoProvider {
 
   async submit(request: VideoGenerateRequest): Promise<{ taskId: string }> {
     const runtimes = await this.readInventory();
-    // S9-A1：t2i 提交带首帧参考（会话跨镜一致性）→ 用 ReferenceLatent 变体
+    // V2.76（B 路线）：`assets.references[]` 与首帧参考走同一条上传通道（二者互斥由 schema 保证）
+    const referenceAssets = [...(request.assets?.references ?? [])]
+      .sort((left, right) => left.order - right.order)
+      .map((reference) => reference.assetId);
     const wantsReference =
-      request.mode === 't2i' && request.assets?.firstFrameImage !== undefined;
-    const target = this.pickTemplateForMode(runtimes, request.mode, wantsReference);
+      request.mode === 't2i' &&
+      (referenceAssets.length > 0 || request.assets?.firstFrameImage !== undefined);
+    const referenceCount =
+      referenceAssets.length > 0 ? referenceAssets.length : wantsReference ? 1 : 0;
+    if (referenceCount > this.tuning.maxReferences) {
+      // 不静默截断：连满 12 张再失败比"这里就说清楚"更贵
+      throw new Error(
+        `这个本地实例最多消费 ${this.tuning.maxReferences} 张参考图（收到 ${referenceCount} 张）。` +
+          `10GB 卡实测 2 张 12s / 4 张 21s / 9 张 56s / 12 张 130s —— ` +
+          `确需更多请调 COMFYUI_MAX_REFERENCES（封顶 12）。`,
+      );
+    }
+    // i2v 缺首帧：在提交前就说清（比"上传时 assetId 为空"更可执行）
+    if (request.mode === 'i2v' && (request.assets?.firstFrameImage ?? '') === '') {
+      throw new Error('i2v（图生视频）需要首帧：请在参考素材里选一张图片');
+    }
+    const target = this.pickTemplateForMode(
+      runtimes,
+      request.mode,
+      wantsReference,
+      Math.min(2, referenceCount),
+    );
 
     if (target === undefined) {
       // **不假装可用**：没有模板能跑这个模式就直说，而不是提交上去等上游 400
@@ -431,10 +459,14 @@ export class ComfyUiProvider implements VideoProvider {
     const { models, loaded } = target;
     const dimensions = planComfyDimensions(request, this.tuning.maxPixels);
     const frames = planComfyFrames(request.params?.durationSec, this.tuning.fps);
-    const startImageName =
-      request.mode === 'i2v' || wantsReference
-        ? await this.uploadFirstFrame(request)
-        : undefined;
+    // 参考图逐个下载再上传给 ComfyUI（它只认自己 input 目录里的文件）
+    const imageNames =
+      referenceAssets.length > 0
+        ? await Promise.all(referenceAssets.map((assetId) => this.uploadReferenceImage(assetId)))
+        : request.mode === 'i2v' || wantsReference
+          ? [await this.uploadReferenceImage(request.assets?.firstFrameImage ?? '')]
+          : [];
+    const startImageName = imageNames[0];
 
     const workflow = buildComfyWorkflow({
       models,
@@ -452,6 +484,7 @@ export class ComfyUiProvider implements VideoProvider {
       dtype: this.tuning.dtype,
       outputPrefix: this.outputPrefix,
       ...(startImageName === undefined ? {} : { startImageName }),
+      ...(imageNames.length === 0 ? {} : { referenceImageNames: imageNames }),
     }, loaded.template);
 
     const response = await this.fetchImpl(`${this.baseUrl}/prompt`, {
@@ -484,11 +517,14 @@ export class ComfyUiProvider implements VideoProvider {
   /** 提交时攒下的告警（`queryStatus` 里随结果一起交出去） */
   private readonly pendingWarnings = new Map<string, string[]>();
 
-  /** i2v：把首帧**下载下来再上传**给 ComfyUI（它只认自己 input 目录里的文件） */
-  private async uploadFirstFrame(request: VideoGenerateRequest): Promise<string> {
-    const assetId = request.assets?.firstFrameImage;
-    if (assetId === undefined || assetId === '') {
-      throw new Error('i2v（图生视频）需要首帧：请在参考素材里选一张图片');
+  /**
+   * 把参考图**下载下来再上传**给 ComfyUI（它只认自己 input 目录里的文件）。
+   *
+   * V2.76：从"只传首帧"扩成"传任意一张参考图"—— 多参考时逐张调用（顺序由 `order` 决定）。
+   */
+  private async uploadReferenceImage(assetId: string): Promise<string> {
+    if (assetId === '') {
+      throw new Error('参考图缺少 assetId：请在参考素材里选一张图片');
     }
     if (this.resolveAssetUrl === undefined) {
       throw new Error('i2v 需要解析首帧地址，但本 provider 没有拿到 resolveAssetUrl（装配问题）');

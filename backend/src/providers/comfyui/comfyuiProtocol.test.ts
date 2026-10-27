@@ -7,9 +7,11 @@ import {
   comfyCapabilities,
   comfyViewPath,
   COMFY_DEFAULT_TUNING,
+  countTemplateReferenceSlots,
   COMFY_MAX_PIXELS,
   describeComfySubmissionError,
   FLUX2_KLEIN_T2I_DECLARATION,
+  FLUX2_KLEIN_T2I_REF_TEMPLATE,
   FLUX2_KLEIN_T2I_TEMPLATE,
   parseComfyOutputs,
   parseTemplateDeclaration,
@@ -24,6 +26,7 @@ import {
   WAN22_TI2V_5B_DECLARATION,
   WAN22_TI2V_5B_TEMPLATE,
   type ComfyModels,
+  type ComfyWorkflowInput,
   type WorkflowTemplate,
 } from './comfyuiProtocol.js';
 
@@ -380,6 +383,7 @@ describe('ComfyUI 协议 · 档位解析（env）', () => {
       COMFYUI_SHIFT: '3',
       COMFYUI_FPS: '16',
       COMFYUI_WEIGHT_DTYPE: 'default',
+      COMFYUI_MAX_REFERENCES: '9',
     } as NodeJS.ProcessEnv);
 
     expect(tuning).toEqual({
@@ -389,7 +393,19 @@ describe('ComfyUI 协议 · 档位解析（env）', () => {
       shift: 3,
       fps: 16,
       dtype: 'default',
+      maxReferences: 9,
     });
+  });
+
+  it('参考张数：默认 4（10GB 实测），env 写成超大也封顶 12', () => {
+    expect(resolveComfyTuning({} as NodeJS.ProcessEnv).maxReferences).toBe(4);
+    expect(
+      resolveComfyTuning({ COMFYUI_MAX_REFERENCES: '999' } as NodeJS.ProcessEnv).maxReferences,
+    ).toBe(12);
+    // 非法值回落默认，不抛错（档位是旋钮不是开关）
+    expect(
+      resolveComfyTuning({ COMFYUI_MAX_REFERENCES: 'abc' } as NodeJS.ProcessEnv).maxReferences,
+    ).toBe(4);
   });
 
   it('非法值**回落到默认**（档位是"能用"的旋钮，不是"配错就起不来"的开关）', () => {
@@ -544,5 +560,97 @@ describe('ComfyUI 协议 · 产物与错误解析', () => {
     expect(pickComfyVideoArtifact([plain])).toEqual(plain);
     const bin = { filename: 'a.bin', subfolder: '', type: 'output' };
     expect(pickComfyVideoArtifact([bin, plain])).toEqual(bin);
+  });
+});
+
+/**
+ * V2.76 / B 路线：多参考链。
+ *
+ * 这两组用例钉住的是"第 3 张起真的接进了图"，而不是"提交没报错"——
+ * 早先的静默丢弃就是"上传成功、/prompt 成功、参考没进去"。
+ */
+describe('多参考：模板槽位与动态参考链（V2.76）', () => {
+  const baseInput = (): ComfyWorkflowInput => ({
+    models: {
+      unet: 'flux-2-klein-4b.safetensors',
+      clip: 'qwen_3_4b.safetensors',
+      clipType: 'flux2',
+      vae: 'flux2-vae.safetensors',
+    },
+    prompt: '测试',
+    negativePrompt: '',
+    mode: 't2i',
+    width: 1024,
+    height: 576,
+    frames: 1,
+    seed: 12345,
+    dtype: 'default',
+    outputPrefix: 'astrmira/test',
+  });
+
+  /** 在单参考模板上再补一条 ref（模拟双槽模板） */
+  const twoSlotTemplate = (): WorkflowTemplate => {
+    const base = JSON.parse(JSON.stringify(FLUX2_KLEIN_T2I_REF_TEMPLATE)) as WorkflowTemplate;
+    base['57'] = { class_type: 'LoadImage', inputs: { image: '{{REFERENCE_IMAGE_NAME}}' } };
+    base['79'] = { class_type: 'VAEEncode', inputs: { pixels: ['57', 0], vae: ['72', 0] } };
+    base['80'] = {
+      class_type: 'ReferenceLatent',
+      inputs: { conditioning: ['78', 0], latent: ['79', 0] },
+    };
+    (base['63'] as { inputs: Record<string, unknown> }).inputs['positive'] = ['80', 0];
+    return base;
+  };
+
+  it('模板槽位计数：单槽 / 双槽 / 无槽', () => {
+    expect(countTemplateReferenceSlots(FLUX2_KLEIN_T2I_REF_TEMPLATE)).toBe(1);
+    expect(countTemplateReferenceSlots(twoSlotTemplate())).toBe(2);
+    expect(countTemplateReferenceSlots(FLUX2_KLEIN_T2I_TEMPLATE)).toBe(0);
+  });
+
+  it('2 张：直接用模板的两个槽，不追加节点', () => {
+    const workflow = buildComfyWorkflow(
+      { ...baseInput(), referenceImageNames: ['a.png', 'b.png'] },
+      twoSlotTemplate(),
+    );
+    expect(workflow['56'].inputs.image).toBe('a.png');
+    expect(workflow['57'].inputs.image).toBe('b.png');
+    expect(Object.keys(workflow).some((id) => id.startsWith('refchain_'))).toBe(false);
+    expect(workflow['63'].inputs.positive).toEqual(['80', 0]);
+  });
+
+  it('声明里的 modelMatch.clipType 会被解析（V2.76 修：之前被静默忽略，导致按 wan 跑 flux 模型）', () => {
+    const parsed = parseTemplateDeclaration({
+      modes: ['t2i'],
+      modelMatch: { clip: 'qwen_3', clipType: 'flux2' },
+    });
+    expect(parsed.modelMatch?.clipType).toBe('flux2');
+  });
+
+  it('4 张：追加两条链，guider 指向新链尾，旧链尾被改指', () => {
+    const workflow = buildComfyWorkflow(
+      { ...baseInput(), referenceImageNames: ['a.png', 'b.png', 'c.png', 'd.png'] },
+      twoSlotTemplate(),
+    );
+
+    expect(workflow['refchain_2_img'].inputs.image).toBe('c.png');
+    expect(workflow['refchain_3_img'].inputs.image).toBe('d.png');
+    // 链形状：80 → refchain_2_ref → refchain_3_ref
+    expect(workflow['refchain_2_ref'].inputs.conditioning).toEqual(['80', 0]);
+    expect(workflow['refchain_3_ref'].inputs.conditioning).toEqual(['refchain_2_ref', 0]);
+    // 原来吃 80 的 guider 改吃链尾
+    expect(workflow['63'].inputs.positive).toEqual(['refchain_3_ref', 0]);
+    // 追加的 VAEEncode 复用模板的 VAE
+    expect(workflow['refchain_3_enc'].inputs.vae).toEqual(['72', 0]);
+  });
+
+  it('节点 id 冲突时明确报错（不覆盖用户模板里的节点）', () => {
+    const template = twoSlotTemplate();
+    template['refchain_2_img'] = { class_type: 'LoadImage', inputs: { image: 'x.png' } };
+    expect(() =>
+      buildComfyWorkflow(
+        { ...baseInput(), referenceImageNames: ['a.png', 'b.png', 'c.png'] },
+        template,
+      ),
+    ).toThrow(/节点 id/);
   });
 });

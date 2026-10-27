@@ -25,6 +25,25 @@ import { buildZipStore, downloadBytes, type ZipEntry } from './zipStore';
  * 又最值得用单测钉住的部分；`buildDeliverableZip` 只负责"按计划取字节、拼包、下载"。
  */
 
+/**
+ * 请求快照里的参考资产 id（V2.76：`assets` 现在既有字符串字段，也有 `references[]` 数组）。
+ *
+ * 交付清单里只放**用到的素材 id**，不放结构；哪天要区分用途，应该另开字段而不是把数组塞进去。
+ */
+function snapshotAssetIds(assets: Record<string, unknown> | undefined): string[] {
+  if (assets === undefined) return [];
+  const ids: string[] = [];
+  for (const [key, value] of Object.entries(assets)) {
+    if (key === 'references') continue;
+    if (typeof value === 'string' && value !== '') ids.push(value);
+  }
+  const references = (assets['references'] as Array<{ assetId?: unknown }> | undefined) ?? [];
+  for (const reference of references) {
+    if (typeof reference?.assetId === 'string' && reference.assetId !== '') ids.push(reference.assetId);
+  }
+  return ids;
+}
+
 export interface DeliverableOptions {
   preset: PlatformPreset;
   projectName: string;
@@ -125,7 +144,7 @@ export function planDeliverablePackage(
       projectIncluded: options.includeProject && item.task.origin?.kind === 'edit',
       // 这里是**意图**；`buildDeliverableZip` 会按渲染结果把实际值写回清单再入包
       transcoded: options.transcode,
-      assets: Object.values(item.task.requestSnapshot.assets ?? {}),
+      assets: snapshotAssetIds(item.task.requestSnapshot.assets),
       extractedAssetCount: item.task.extractedAssetIds?.length ?? 0,
       ...(item.task.cost === undefined ? {} : { costYuan: item.task.cost.yuan }),
       warnings: item.warnings,

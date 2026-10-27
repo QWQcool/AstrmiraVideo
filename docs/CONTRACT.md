@@ -1,6 +1,14 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.75 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.76 · 已冻结（变更需先改本文，再改代码）**
+> **V2.76 修订（2026-10-27）**：**§1 请求体多参考 `assets.references[]`（B 路线）** ——
+>   ① 新增 `references?: Array<{assetId, role, order}>`，`role` 本版只允许 `reference-image`，
+>      与 `firstFrameImage` / `lastFrameImage` **互斥**；`order`（槽位）与 `assetId` 均不得重复；
+>   ② 结构上限 12；**真实上限由实例声明**（ComfyUI：`COMFYUI_MAX_REFERENCES` 默认 4、封顶 12）；
+>      超限**提交前拒绝**，不静默截断；
+>   ③ `role` 枚举与画布 `CanvasReferenceRoleSchema` **同为 `request.ts` 的 `ReferenceRoleSchema`**（单一事实源）；
+>   ④ provider：ComfyUI 逐张上传，按 `order` 拼 `ReferenceLatent` 链（第 3 张起动态追加节点）；
+>   ⑤ 无新路由、无新错误码；旧字段与旧文档行为不变。
 > **V2.75 修订（2026-10-27）**：**画布参考组成与提示词提及（§21-16 / B 路线）** ——
 >   ① `referenceMode` 三档语义冻结：缺省（旧文档不判）/ `none` / `first-last-frame` / `omni-reference`；
 >      图片与视频节点同规则，`omni-reference` 下只收 `reference-image`（`order` 定槽位），不许混首尾帧；
@@ -628,6 +636,17 @@ export interface VideoGenerateRequest {
     // 服务端解析 `task:` 引用：任务不存在 / 无成片 → 404 `TASK_NOT_FOUND`；
     // 解析出的 `/media/<taskId>.mp4` 与上传资产走**同一条**公网 URL 守卫（无 `PUBLIC_BASE_URL` → 提交前 400）。
     referenceVideo?: string;
+
+    // V2.76（B 路线）：**多参考**。与 firstFrameImage / lastFrameImage **互斥**
+    // （同时给会让"哪张是首帧"出现两份真相）；目前只接受 role=reference-image，
+    // 首尾帧仍走上面两个字段、参考视频仍走 referenceVideo。
+    // 结构上限 12；真实上限由能力目录/实例决定（ComfyUI 走 COMFYUI_MAX_REFERENCES，默认 4）。
+    // order 是**槽位**：提示词里的 {{image:N}} 指的就是按 order 升序后的第 N 个。
+    references?: Array<{
+      assetId: string;              // 资产 ID 或 `task:<taskId>`（与 firstFrameImage 同口径）
+      role: 'reference-image';      // 本版只开放这一种；其余 role 在 schema 层拒绝
+      order: number;                // 0..63，同一次提交内不得重复
+    }>;
   };
 
   // 画面规格（自动对齐为 32 的整数倍）

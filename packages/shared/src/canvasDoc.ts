@@ -3,6 +3,7 @@ import {
   AspectRatioSchema,
   DurationSecSchema,
   GenerationModeSchema,
+  ReferenceRoleSchema,
   VideoGenerateRequestSchema,
 } from './request.js';
 
@@ -27,14 +28,13 @@ export const CANVAS_DOC_VERSION = 1;
 /** 首发节点类型（时间线/主体/导演台/文档节点明确不做，见 PLAN Step 11「明确不做」） */
 export const CanvasNodeTypeSchema = z.enum(['text', 'image', 'video', 'audio']);
 
-/** 参考素材的用途。与"参考模式"是两个维度：模式决定能不能用，用途决定喂到哪。 */
-export const CanvasReferenceRoleSchema = z.enum([
-  'first-frame',
-  'last-frame',
-  'reference-image',
-  'reference-video',
-  'reference-audio',
-]);
+/**
+ * 参考素材的用途。与"参考模式"是两个维度：模式决定能不能用，用途决定喂到哪。
+ *
+ * V2.76：改用 `request.ts` 的 `ReferenceRoleSchema`（请求体 `assets.references[].role` 与画布同源），
+ * 这里保留旧名字只为兼容既有 import。
+ */
+export const CanvasReferenceRoleSchema = ReferenceRoleSchema;
 
 /** 参考模式（互斥语义，实测自即梦；`none` = 纯文生） */
 export const CanvasReferenceModeSchema = z.enum(['none', 'first-last-frame', 'omni-reference']);

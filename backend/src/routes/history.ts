@@ -61,14 +61,27 @@ const HistoryQuerySchema = z.object({
 /** V2.25：`limit` 省略时的条数（= V2.25 之前写死的 50 —— 老调用方行为不变） */
 const DEFAULT_HISTORY_LIMIT = 50;
 
-/** 快照里被引用的参考资产 id（首帧 / 尾帧 / 参考视频三格） */
-function referencedAssetIds(snapshot: { assets?: Record<string, string | undefined> }): string[] {
+/** 快照里被引用的参考资产 id（首帧 / 尾帧 / 参考视频 + V2.76 的多参考数组） */
+function referencedAssetIds(snapshot: {
+  assets?: {
+    firstFrameImage?: string;
+    lastFrameImage?: string;
+    referenceVideo?: string;
+    references?: ReadonlyArray<{ assetId?: string }>;
+  };
+}): string[] {
   const assets = snapshot.assets;
   if (assets === undefined) return [];
 
-  return [assets['firstFrameImage'], assets['lastFrameImage'], assets['referenceVideo']].filter(
-    (value): value is string => typeof value === 'string' && value !== '',
-  );
+  const ids: Array<string | undefined> = [
+    assets.firstFrameImage,
+    assets.lastFrameImage,
+    assets.referenceVideo,
+  ];
+  // V2.76：多参考也要参与"是否还有别的任务引用"的判定，否则删任务会误删别人还在用的图
+  for (const reference of assets.references ?? []) ids.push(reference?.assetId);
+
+  return ids.filter((value): value is string => typeof value === 'string' && value !== '');
 }
 
 /**

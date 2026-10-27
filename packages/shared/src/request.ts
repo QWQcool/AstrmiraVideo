@@ -126,12 +126,92 @@ export function parseTaskRef(value: string): string | null {
   return taskId === '' ? null : taskId;
 }
 
-/** 参考资产：服务端分配的资产 ID（生命周期见 CONTRACT §7）；V2.6 起 referenceVideo 也可为 `task:<taskId>` */
-export const GenerationAssetsSchema = z.object({
-  firstFrameImage: z.string().optional(), // i2v 和 fl2v 必需
-  lastFrameImage: z.string().optional(), // fl2v 专用尾帧
-  referenceVideo: z.string().optional(), // v2v 风格/动作迁移参考（资产 ID 或 `task:<taskId>`，V2.6）
+/**
+ * 参考用途（V2.76：与画布 `CanvasReferenceRoleSchema` **同一份枚举**，单一事实源）。
+ *
+ * 为什么提到这里：请求体 `assets.references[]` 与画布文档 `draft.references[]` 用的是同一套词，
+ * 两边各写一遍枚举迟早会漂（前端能存、后端不认）。
+ */
+export const ReferenceRoleSchema = z.enum([
+  'first-frame',
+  'last-frame',
+  'reference-image',
+  'reference-video',
+  'reference-audio',
+]);
+
+/**
+ * 一条多参考（V2.76 / B 路线）。
+ *
+ * `order` 是**槽位**：提示词里的 `{{image:N}}` 指的就是按 order 升序后的第 N 个。
+ * `assetId` 与 `firstFrameImage` 同口径（资产 id 或 `task:<taskId>`）。
+ */
+export const GenerationReferenceSchema = z.object({
+  assetId: z.string().min(1),
+  role: ReferenceRoleSchema,
+  order: z.number().int().min(0).max(63),
 });
+
+/** 多参考的结构上限（与画布 `CANVAS_MAX_REFERENCES` 同值；真实上限由能力目录决定） */
+export const MAX_GENERATION_REFERENCES = 12;
+
+/**
+ * 参考资产：服务端分配的资产 ID（生命周期见 CONTRACT §7）；V2.6 起 referenceVideo 也可为 `task:<taskId>`。
+ *
+ * V2.76 增补 `references[]`（B 路线，多参考）——三条硬规则：
+ * 1. **与首尾帧互斥**：`references` 非空时不许再给 `firstFrameImage` / `lastFrameImage`
+ *    （同时给会让"哪张是首帧"变成两份真相）；
+ * 2. 目前只接受 `role: 'reference-image'`：首尾帧仍走 `firstFrameImage` / `lastFrameImage`，
+ *    参考视频仍走 `referenceVideo`；把 `references` 当成"万能数组"会让每种组合都要单独验；
+ * 3. `order` 与 `assetId` 都不许重复（槽位冲突 / 同图重复喂）。
+ */
+export const GenerationAssetsSchema = z
+  .object({
+    firstFrameImage: z.string().optional(), // i2v 和 fl2v 必需
+    lastFrameImage: z.string().optional(), // fl2v 专用尾帧
+    referenceVideo: z.string().optional(), // v2v 风格/动作迁移参考（资产 ID 或 `task:<taskId>`，V2.6）
+    references: z.array(GenerationReferenceSchema).max(MAX_GENERATION_REFERENCES).optional(), // V2.76 多参考
+  })
+  .superRefine((value, ctx) => {
+    const references = value.references ?? [];
+    if (references.length === 0) return;
+
+    if (value.firstFrameImage !== undefined || value.lastFrameImage !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['references'],
+        message: 'assets.references 与 firstFrameImage / lastFrameImage 互斥：多参考模式不要再给首尾帧',
+      });
+    }
+
+    const orders = new Set<number>();
+    const assetIds = new Set<string>();
+    for (const reference of references) {
+      if (reference.role !== 'reference-image') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['references'],
+          message: `assets.references 目前只接受 role=reference-image（收到 ${reference.role}）`,
+        });
+      }
+      if (orders.has(reference.order)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['references'],
+          message: `assets.references 的 order 重复：${reference.order}`,
+        });
+      }
+      orders.add(reference.order);
+      if (assetIds.has(reference.assetId)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['references'],
+          message: `assets.references 重复引用同一素材：${reference.assetId}`,
+        });
+      }
+      assetIds.add(reference.assetId);
+    }
+  });
 
 /** 推理参数 */
 export const GenerationParamsSchema = z.object({
