@@ -16,7 +16,15 @@ import { z } from 'zod';
  * 3. 它用的是**别的模型**（Flux 系）与**别的模板** —— 同一台 ComfyUI 里
  *    "出图"与"出视频"是**两份模板**（一个实例可以同时挂两份，按模式挑）。
  */
-export const GenerationModeSchema = z.enum(['t2v', 'i2v', 'fl2v', 'v2v', 't2i']);
+/**
+ * 生成模式（V2.77 增补 `upscale`）。
+ *
+ * `upscale` 与其它模式的区别是**不需要 prompt**：它把一张已存在的图放大，
+ * 输入走 `assets.firstFrameImage`（与 i2v/t2i 参考同口径），倍率走 `options.scale`。
+ * 为什么单独立一个模式而不是塞进 `options`：塞进 options 时**别的 provider 会静默忽略**
+ * （契约允许忽略未识别键），结果就是"用户要了超清、拿到一张原图"。独立模式才能被能力位拦。
+ */
+export const GenerationModeSchema = z.enum(['t2v', 'i2v', 'fl2v', 'v2v', 't2i', 'upscale']);
 
 /** 画面比例。1:1 仅云端可选，本地 H3 支持度【待验证】 */
 export const AspectRatioSchema = z.enum(['16:9', '9:16', '1:1']);

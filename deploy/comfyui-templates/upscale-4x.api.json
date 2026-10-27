@@ -2,14 +2,22 @@
   "1": { "class_type": "LoadImage", "inputs": { "image": "{{START_IMAGE_NAME}}" } },
   "2": {
     "class_type": "UpscaleModelLoader",
-    "inputs": { "model_name": "4x-UltraSharp.pth" }
+    "inputs": { "model_name": "{{UPSCALE_MODEL}}" }
   },
   "3": {
     "class_type": "ImageUpscaleWithModel",
     "inputs": { "upscale_model": ["2", 0], "image": ["1", 0] }
   },
   "4": {
+    "class_type": "ImageScaleBy",
+    "inputs": {
+      "image": ["3", 0],
+      "upscale_method": "lanczos",
+      "scale_by": "{{UPSCALE_SCALE_BY}}"
+    }
+  },
+  "5": {
     "class_type": "SaveImage",
-    "inputs": { "images": ["3", 0], "filename_prefix": "{{OUTPUT_PREFIX}}" }
+    "inputs": { "images": ["4", 0], "filename_prefix": "{{OUTPUT_PREFIX}}" }
   }
 }

@@ -33,6 +33,7 @@ import {
   type CanvasReferenceRole,
   type StoryboardExpansion,
   type TaskProgress,
+  type VideoGenerateRequest,
 } from '@astrmira/shared';
 import type { AssetListEntry } from '@astrmira/shared';
 import {
@@ -83,8 +84,8 @@ import {
 } from '../lib/canvasHistory';
 import {
   buildCanvasGenerateRequest,
+  buildCanvasUpscaleRequest,
   canvasDefaultProvider,
-  canvasDraftMode,
   canvasSubmitIssue,
   canvasSubmitIssueText,
 } from '../lib/canvasNodeSubmit';
@@ -1238,7 +1239,12 @@ export function CanvasStudioView() {
 
   // ── 提交生成 ───────────────────────────────────────────────────────────
   const submitNode = useCallback(
-    async (nodeId: string): Promise<void> => {
+    /**
+     * `override` 用于"不是按草稿生成"的动作（V2.77 的超清：输入是当前产物、不吃提示词）。
+     * 传了它就不再跑 `canvasSubmitIssue` 那一套（那是给"生成"设计的：空提示词会被它拦住），
+     * 批次、幂等键、轮询、写回全都复用同一条路径。
+     */
+    async (nodeId: string, override?: VideoGenerateRequest): Promise<void> => {
       const current = docRef.current;
       if (current === null || switchingRef.current) return;
       const node = findCanvasNode(current, nodeId);
@@ -1249,25 +1255,31 @@ export function CanvasStudioView() {
         hasCloudKey: resolveProviderKey(byok) !== undefined,
       };
       const provider = canvasDefaultProvider(node, context);
-      const issue = canvasSubmitIssue(node, provider, context);
-      if (issue !== null) {
-        setNotice(canvasSubmitIssueText(issue));
-        return;
+      if (override === undefined) {
+        const issue = canvasSubmitIssue(node, provider, context);
+        if (issue !== null) {
+          setNotice(canvasSubmitIssueText(issue));
+          return;
+        }
       }
 
-      let request: ReturnType<typeof buildCanvasGenerateRequest>;
-      try {
-        request = buildCanvasGenerateRequest({
-          node,
-          provider,
-          projectId,
-          canvasProjectId: current.projectId,
-          ...(byok.baseUrl.trim() === '' ? {} : { baseUrl: byok.baseUrl }),
-          ...(byok.model.trim() === '' ? {} : { model: byok.model }),
-        });
-      } catch (caught) {
-        setNotice(describeError(caught));
-        return;
+      let request: VideoGenerateRequest;
+      if (override !== undefined) {
+        request = override;
+      } else {
+        try {
+          request = buildCanvasGenerateRequest({
+            node,
+            provider,
+            projectId,
+            canvasProjectId: current.projectId,
+            ...(byok.baseUrl.trim() === '' ? {} : { baseUrl: byok.baseUrl }),
+            ...(byok.model.trim() === '' ? {} : { model: byok.model }),
+          });
+        } catch (caught) {
+          setNotice(describeError(caught));
+          return;
+        }
       }
 
       submittingRef.current.add(nodeId);
@@ -1301,7 +1313,8 @@ export function CanvasStudioView() {
           updateCanvasNodeDraft(
             d,
             nodeId,
-            { settings: { provider, mode: canvasDraftMode(node).mode } },
+            // 写回**实际提交的**模式（超清那次是 upscale，不是草稿推导出来的 t2i）
+            { settings: { provider, mode: request.mode } },
             now,
           ),
         { record: false },
@@ -2188,6 +2201,27 @@ export function CanvasStudioView() {
             referencePreview,
             onDraftChange: handleDraftChange,
             onSubmit: (id) => void submitNode(id),
+            onUpscale: (id, scale) => {
+              const current = docRef.current;
+              const node = current === null ? null : findCanvasNode(current, id);
+              if (current === null || node === null) return;
+              const request = buildCanvasUpscaleRequest({
+                node,
+                provider: canvasDefaultProvider(node, {
+                  providerStatus,
+                  hasCloudKey: resolveProviderKey(byok) !== undefined,
+                }),
+                projectId,
+                canvasProjectId: current.projectId,
+                scale,
+              });
+              if (request === null) {
+                // 没有可见产物就不该出现这个按钮；真点到了也只说一句，不静默什么都不做
+                setNotice(t('canvas.studio.issue.imageUnavailable'));
+                return;
+              }
+              void submitNode(id, request);
+            },
             onRecover: (id, batchId) => void recoverSubmit(id, batchId),
             onAddReference: (id) => {
               setPickerReferenceNodeId(id);

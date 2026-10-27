@@ -8,6 +8,7 @@ import {
 } from '@astrmira/shared';
 import {
   buildCanvasGenerateRequest,
+  buildCanvasUpscaleRequest,
   canvasAspectRatio,
   canvasDefaultProvider,
   canvasDraftMode,
@@ -390,6 +391,54 @@ describe('B 路线：全能参考的提交映射（V2.76）', () => {
         hasCloudKey: false,
       }),
     ).toBe('mention-out-of-range');
+  });
+
+  it('V2.77 超清：对当前产物提交 upscale，不吃提示词', () => {
+    const node = createCanvasNode({ id: 'up', type: 'image', x: 0, y: 0, now: 1 });
+    node.data.batches = [
+      {
+        id: 'b1',
+        taskId: 't1',
+        createdAt: 1,
+        status: 'succeeded',
+        outputs: [{ assetId: 'task:t1', kind: 'image', url: '/media/t1.png' }],
+      },
+    ];
+    const request = buildCanvasUpscaleRequest({
+      node,
+      provider: 'host-comfyui',
+      projectId: 'p1',
+      canvasProjectId: 'c1',
+      scale: 4,
+    });
+    expect(request?.mode).toBe('upscale');
+    expect(request?.prompt).toBe('');
+    expect(request?.assets).toEqual({ firstFrameImage: 'task:t1' });
+    expect(request?.options).toEqual({ scale: '4' });
+    // 草稿里的提示词不参与这次提交
+    node.data.draft.prompt = '这段文字不该进放大请求';
+    expect(
+      buildCanvasUpscaleRequest({
+        node,
+        provider: 'host-comfyui',
+        projectId: 'p1',
+        canvasProjectId: 'c1',
+        scale: 2,
+      })?.prompt,
+    ).toBe('');
+  });
+
+  it('V2.77 超清：没有可见产物 → 不构造请求（界面就不该显示按钮）', () => {
+    const node = createCanvasNode({ id: 'empty', type: 'image', x: 0, y: 0, now: 1 });
+    expect(
+      buildCanvasUpscaleRequest({
+        node,
+        provider: 'host-comfyui',
+        projectId: 'p1',
+        canvasProjectId: 'c1',
+        scale: 4,
+      }),
+    ).toBeNull();
   });
 
   it('发上游前剥掉 `{{image:N}}`，但草稿里的原文不动', () => {

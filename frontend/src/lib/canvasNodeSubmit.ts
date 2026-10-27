@@ -11,6 +11,7 @@ import {
   type ProviderStatus,
   type VideoGenerateRequest,
 } from '@astrmira/shared';
+import { canvasNodeVisibleOutput } from './canvasDocOps';
 import {
   DEFAULT_COMFY_ENGINE_ID,
   comfyUiEngineOptions,
@@ -411,6 +412,39 @@ export function buildCanvasGenerateRequest(input: {
       ...(input.model === undefined ? {} : { model: input.model }),
     },
     ...(video ? { params: { durationSec: canvasDurationSec(node) } } : {}),
+  };
+}
+
+/**
+ * V2.77：把节点**当前可见产物**放大的请求（`mode: 'upscale'`）。
+ *
+ * 与"生成"的区别：
+ * - 输入是**已经出来的那张图**（不是草稿里的参考），所以取 `canvasNodeVisibleOutput`；
+ * - 不吃提示词（`prompt: ''` 是合法输入，服务端对 upscale 放行空提示词）；
+ * - 倍率走 `options.scale`，由 provider 决定"4x 模型 + 降采样"的具体做法。
+ *
+ * 没有可见产物时返回 null —— 界面据此不显示按钮（不做点了没反应的按钮）。
+ */
+export function buildCanvasUpscaleRequest(input: {
+  node: CanvasDocNode;
+  provider: string;
+  projectId: string;
+  canvasProjectId: string;
+  scale: 2 | 4;
+}): VideoGenerateRequest | null {
+  const visible = canvasNodeVisibleOutput(input.node);
+  if (visible.state !== 'selected' && visible.state !== 'latest') return null;
+  return {
+    prompt: '',
+    mode: 'upscale',
+    assets: { firstFrameImage: visible.output.assetId },
+    aspectRatio: canvasAspectRatio(input.node),
+    resolution: canvasResolution(input.node),
+    provider: input.provider,
+    projectId: input.projectId,
+    origin: 'canvas',
+    canvasProjectId: input.canvasProjectId,
+    options: { scale: String(input.scale) },
   };
 }
 

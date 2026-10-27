@@ -652,6 +652,26 @@ export function StudioNode({ id, selected }: NodeProps) {
             </button>
           ) : null}
 
+          {/* V2.77：超清按钮只对有可见产物的图片节点出现（没有图就没有"放大"这件事） */}
+          {node.type === 'image' && preview !== null ? (
+            <div className="cs-toolbar-row" title={t('canvas.studio.upscaleHint')}>
+              <button
+                type="button"
+                className="cs-toolbar-link"
+                onClick={() => studio.onUpscale(id, 4)}
+              >
+                {t('canvas.studio.upscale4x')}
+              </button>
+              <button
+                type="button"
+                className="cs-toolbar-link"
+                onClick={() => studio.onUpscale(id, 2)}
+              >
+                {t('canvas.studio.upscale2x')}
+              </button>
+            </div>
+          ) : null}
+
           {node.type === 'text' ? (
             <p className="cs-toolbar-issue">{t('canvas.studio.textNodeHint')}</p>
           ) : (

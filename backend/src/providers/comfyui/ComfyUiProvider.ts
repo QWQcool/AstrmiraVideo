@@ -165,6 +165,25 @@ const DEFAULT_INVENTORY_TTL_MS = 10 * 60 * 1000;
  */
 const PROBE_TIMEOUT_MS = 8_000;
 
+/**
+ * V2.77：`options.scale`（`'2' | '2x' | '4' | '4x'`，也接受数字）→ 4x 模型的降采样系数。
+ *
+ * 为什么统一跑 4x 再降采样：模板只挂一份 4x 模型，2x 只需 `ImageScaleBy 0.5`；
+ * 为 2x 单独训/挂一份模型不值当，而且"先吃满模型再降采样"的质量通常好于直接 2x 模型。
+ * 越界一律夹紧（>4 拿不到更多细节，<0.05 没有意义），**不报错但也不假装**。
+ */
+export function readUpscaleScaleBy(request: VideoGenerateRequest): number {
+  const raw = request.options?.['scale'];
+  const parsed =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string'
+        ? Number.parseFloat(raw.replace(/[^0-9.]/g, ''))
+        : 4;
+  const scale = Number.isFinite(parsed) && parsed > 0 ? parsed : 4;
+  return Math.min(1, Math.max(0.05, scale / 4));
+}
+
 export class ComfyUiProvider implements VideoProvider {
   /**
    * V2.36：具名实例时是 `host-comfyui:<name>` —— 任务的 `provider` 字段据此能回答
@@ -421,15 +440,19 @@ export class ComfyUiProvider implements VideoProvider {
           `确需更多请调 COMFYUI_MAX_REFERENCES（封顶 12）。`,
       );
     }
-    // i2v 缺首帧：在提交前就说清（比"上传时 assetId 为空"更可执行）
+    // i2v / upscale 缺输入图：在提交前就说清（比"上传时 assetId 为空"更可执行）
     if (request.mode === 'i2v' && (request.assets?.firstFrameImage ?? '') === '') {
       throw new Error('i2v（图生视频）需要首帧：请在参考素材里选一张图片');
+    }
+    if (request.mode === 'upscale' && (request.assets?.firstFrameImage ?? '') === '') {
+      throw new Error('放大需要一张输入图：请选一张图片（或对一个已有产物的节点点"超清"）');
     }
     const target = this.pickTemplateForMode(
       runtimes,
       request.mode,
       wantsReference,
-      Math.min(2, referenceCount),
+      // 放大要一个输入槽；t2i 参考按张数要 1~2 个静态槽（>2 张由追加链补齐）
+      request.mode === 'upscale' ? 1 : Math.min(2, referenceCount),
     );
 
     if (target === undefined) {
@@ -460,10 +483,11 @@ export class ComfyUiProvider implements VideoProvider {
     const dimensions = planComfyDimensions(request, this.tuning.maxPixels);
     const frames = planComfyFrames(request.params?.durationSec, this.tuning.fps);
     // 参考图逐个下载再上传给 ComfyUI（它只认自己 input 目录里的文件）
+    // V2.77：`upscale` 也走这条通道（输入是一张图，不是 prompt）
     const imageNames =
       referenceAssets.length > 0
         ? await Promise.all(referenceAssets.map((assetId) => this.uploadReferenceImage(assetId)))
-        : request.mode === 'i2v' || wantsReference
+        : request.mode === 'i2v' || request.mode === 'upscale' || wantsReference
           ? [await this.uploadReferenceImage(request.assets?.firstFrameImage ?? '')]
           : [];
     const startImageName = imageNames[0];
@@ -485,6 +509,10 @@ export class ComfyUiProvider implements VideoProvider {
       outputPrefix: this.outputPrefix,
       ...(startImageName === undefined ? {} : { startImageName }),
       ...(imageNames.length === 0 ? {} : { referenceImageNames: imageNames }),
+      // V2.77：放大模板的两个旋钮（其它模板没有这两个占位符，传了也不影响）
+      ...(request.mode === 'upscale'
+        ? { upscaleModel: this.tuning.upscaleModel, upscaleScaleBy: readUpscaleScaleBy(request) }
+        : {}),
     }, loaded.template);
 
     const response = await this.fetchImpl(`${this.baseUrl}/prompt`, {
@@ -692,7 +720,8 @@ export class ComfyUiProvider implements VideoProvider {
       // V2.39 / V2.40：**按产物类型挑**而不是"取第一个"（顺序取决于节点 id）。
       // 视频模式挑视频（H3 这类模板可能视频 + 音频同时输出，取到音频会把音频字节写成 .mp4）；
       // 图片模式（`t2i`）挑图片。
-      const isImage = requestSnapshot.mode === 't2i';
+      // V2.77：放大产出的也是图片
+      const isImage = requestSnapshot.mode === 't2i' || requestSnapshot.mode === 'upscale';
       const artifact = isImage ? pickComfyImageArtifact(outputs) : pickComfyVideoArtifact(outputs);
       if (artifact === undefined) {
         const names = outputs.map((item) => item.filename).join('、');

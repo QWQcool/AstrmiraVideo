@@ -30,6 +30,11 @@ export interface StudioServices {
   onDraftChange(nodeId: string, patch: CanvasDraftPatch): void;
   onSubmit(nodeId: string): void;
   /**
+   * V2.77：把节点**当前可见产物**放大（`mode:'upscale'`）。
+   * 不复用草稿参考 —— "超清"是对已经出来的那张图动手，不是对输入再生成一次。
+   */
+  onUpscale(nodeId: string, scale: 2 | 4): void;
+  /**
    * 按 assetId 取参考缩略图；**取不到就返回 null**（上传素材、抽帧失败、外部导入都可能没有）。
    * 组件层必须能退化回纯文字标签 —— 不假装有图。
    */

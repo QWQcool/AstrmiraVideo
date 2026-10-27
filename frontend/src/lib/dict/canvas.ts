@@ -227,6 +227,9 @@ export const CANVAS_ZH = {
   'canvas.studio.lineage.referencesFull': '这个节点已连满 12 张参考 —— 先移除一张再连',
   'canvas.studio.issue.mentionOutOfRange':
     '提示词里引用了不存在的素材（{{image:N}} 的 N 从 0 开始，且不能超过已连参考数）',
+  'canvas.studio.upscale4x': '超清 4x',
+  'canvas.studio.upscale2x': '超清 2x',
+  'canvas.studio.upscaleHint': '对当前这张图放大，不吃提示词（本地轨需装放大模型）',
   'canvas.studio.referenceRemove': '移除这张参考',
   'canvas.studio.referenceMoveLeft': '往前移一位（槽位号会跟着变）',
   'canvas.studio.referenceMoveRight': '往后移一位（槽位号会跟着变）',
@@ -769,6 +772,10 @@ export const CANVAS_EN = {
   'canvas.studio.lineage.referencesFull': 'This node already has 12 references — remove one before connecting',
   'canvas.studio.issue.mentionOutOfRange':
     'The prompt references a material that does not exist ({{image:N}}: N starts at 0 and must stay below the reference count)',
+  'canvas.studio.upscale4x': 'Upscale 4x',
+  'canvas.studio.upscale2x': 'Upscale 2x',
+  'canvas.studio.upscaleHint':
+    'Upscales the current image; the prompt is not used (the local engine needs an upscale model)',
   'canvas.studio.referenceRemove': 'Remove this reference',
   'canvas.studio.referenceMoveLeft': 'Move one slot earlier (slot numbers follow)',
   'canvas.studio.referenceMoveRight': 'Move one slot later (slot numbers follow)',

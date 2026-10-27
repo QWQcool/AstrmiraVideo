@@ -384,6 +384,7 @@ describe('ComfyUI 协议 · 档位解析（env）', () => {
       COMFYUI_FPS: '16',
       COMFYUI_WEIGHT_DTYPE: 'default',
       COMFYUI_MAX_REFERENCES: '9',
+      COMFYUI_UPSCALE_MODEL: 'RealESRGAN_x4plus.pth',
     } as NodeJS.ProcessEnv);
 
     expect(tuning).toEqual({
@@ -394,6 +395,7 @@ describe('ComfyUI 协议 · 档位解析（env）', () => {
       fps: 16,
       dtype: 'default',
       maxReferences: 9,
+      upscaleModel: 'RealESRGAN_x4plus.pth',
     });
   });
 
@@ -641,6 +643,31 @@ describe('多参考：模板槽位与动态参考链（V2.76）', () => {
     expect(workflow['63'].inputs.positive).toEqual(['refchain_3_ref', 0]);
     // 追加的 VAEEncode 复用模板的 VAE
     expect(workflow['refchain_3_enc'].inputs.vae).toEqual(['72', 0]);
+  });
+
+  it('V2.77：声明 upscale 的模板必须有输入图槽，否则如实不可用', () => {
+    // fixture 只补了 Wan 模板用到的节点，放大模板用的 LoadImage / SaveImage 要自己加
+    const info = objectInfo() as Record<string, unknown>;
+    info['LoadImage'] = { input: { required: {} } };
+    info['SaveImage'] = { input: { required: {} } };
+
+    const withSlot: WorkflowTemplate = {
+      '1': { class_type: 'LoadImage', inputs: { image: '{{START_IMAGE_NAME}}' } },
+      '2': { class_type: 'SaveImage', inputs: { images: ['1', 0], filename_prefix: 'x' } },
+    };
+    const caps = comfyCapabilities(info, MODELS, withSlot, {
+      modes: ['upscale'],
+    });
+    expect(caps.modes).toContain('upscale');
+
+    const withoutSlot: WorkflowTemplate = {
+      '2': { class_type: 'SaveImage', inputs: { images: ['1', 0], filename_prefix: 'x' } },
+    };
+    const rejected = comfyCapabilities(info, MODELS, withoutSlot, {
+      modes: ['upscale'],
+    });
+    expect(rejected.modes).not.toContain('upscale');
+    expect(rejected.unavailableReasons.join(' ')).toMatch(/upscale/);
   });
 
   it('节点 id 冲突时明确报错（不覆盖用户模板里的节点）', () => {

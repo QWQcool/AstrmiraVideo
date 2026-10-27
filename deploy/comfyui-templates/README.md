@@ -56,7 +56,5 @@ COMFYUI_TEMPLATE_DIR=/path/to/deploy/comfyui-templates
 （`LoadImage → UpscaleModelLoader → ImageUpscaleWithModel → SaveImage`）。
 
 - 实测（RTX 3080 10GB，`4x-UltraSharp.pth` 64MB）：1024×576 → 4096×2304，**7.1 秒**；
-- **暂未接线**：`GenerationMode` 里还没有 `upscale`，所以这份模板没有 sidecar（声明里的
-  `modes` 只能是既有枚举），且模型名写死为 `4x-UltraSharp.pth`；
-- 接线时要做的三件事：① 契约加 `upscale` 模式（或等价的操作语义）②模板把模型名换成占位符并声明能力
-  ③画布节点加"超清 2x/4x"入口。
+- **已接线（V2.77）**：正式模板是同目录上一层的 `upscale-4x.api.json`（声明 `modes: ["upscale"]`），
+  模型名走 `COMFYUI_UPSCALE_MODEL`、倍率走请求的 `options.scale`（2 → 先 4x 再 ×0.5）。

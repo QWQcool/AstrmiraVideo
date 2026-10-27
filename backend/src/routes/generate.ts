@@ -123,8 +123,11 @@ export const createGenerateRoutes =
         const body = request.body;
 
         // 提示词校验（防线 6 的服务端半边）：空 / 超长 → `PROMPT_REJECTED`（terminal，前端应提示用户改参数）
+        //
+        // V2.77：`upscale` 不吃提示词（它只放大一张已有图），空提示词对它是合法输入 ——
+        // 这里放行而不是让客户端硬塞一句"放大"来绕过校验（那会把噪声写进任务快照）。
         const prompt = body.prompt.trim();
-        if (prompt === '') {
+        if (prompt === '' && body.mode !== 'upscale') {
           return reply
             .code(400)
             .send(createErrorResponse('PROMPT_REJECTED', '提示词不能为空'));

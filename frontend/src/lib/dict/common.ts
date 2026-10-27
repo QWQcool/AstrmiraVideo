@@ -18,6 +18,7 @@ export const COMMON_ZH = {
   'common.mode.fl2v': '首尾帧',
   'common.mode.v2v': '视频参考',
   'common.mode.t2i': '文生图',
+  'common.mode.upscale': '超清放大',
 
   // ── 任务状态（`TaskProgress['status']`）──
   'common.status.queued': '排队中',
@@ -178,6 +179,7 @@ export const COMMON_EN = {
   'common.mode.fl2v': 'First/last frame',
   'common.mode.v2v': 'Video reference',
   'common.mode.t2i': 'Text to image',
+  'common.mode.upscale': 'Upscale',
 
   'common.status.queued': 'Queued',
   'common.status.running': 'Generating',

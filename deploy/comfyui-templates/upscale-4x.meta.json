@@ -1,0 +1,5 @@
+{
+  "modes": ["upscale"],
+  "label": "4x 放大（4x-UltraSharp）",
+  "notes": "输入图走 {{START_IMAGE_NAME}}；模型名取 COMFYUI_UPSCALE_MODEL（默认 4x-UltraSharp.pth），倍率取请求的 options.scale（2 → 先 4x 再 ×0.5）。需要 models/upscale_models 下放对应模型（约 64MB）。实测 1024×576 → 4096×2304 约 7 秒（RTX 3080 10GB）。"
+}

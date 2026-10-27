@@ -111,7 +111,7 @@ export interface ComfyModels {
  * 而 fl2v / v2v 的**首尾帧 / 参考视频我们还没接**（契约 §19-8 明写不做）。
  * 两者取交集才是"真的能用"：声明了却没接线的模式会被**剔除并说明**，不报成可用。
  */
-export const COMFY_WIRED_MODES: readonly GenerationMode[] = ['t2v', 'i2v', 't2i'];
+export const COMFY_WIRED_MODES: readonly GenerationMode[] = ['t2v', 'i2v', 't2i', 'upscale'];
 
 /** sidecar 里"挑哪个模型文件"的关键词（大小写不敏感的子串匹配） */
 export interface ComfyModelMatch {
@@ -417,7 +417,9 @@ function resolveDeclaredModes(
   for (const mode of declaration.modes) {
     // 未接线的模式不在这里单独说 —— 由下面的 `unwired` 统一回答（避免同一件事说两遍）
     if (!COMFY_WIRED_MODES.includes(mode)) continue;
-    const needsFirstFrame = mode === 'i2v' || mode === 'fl2v' || mode === 'v2v';
+    // V2.77：`upscale` 也要一张输入图（模板里必须有 START_IMAGE_NAME 才塞得进去）
+    const needsFirstFrame =
+      mode === 'i2v' || mode === 'fl2v' || mode === 'v2v' || mode === 'upscale';
     if (needsFirstFrame && !placeholders.has('START_IMAGE') && !placeholders.has('START_IMAGE_NAME')) {
       rejected.push(`${mode}（模板里没有 START_IMAGE / START_IMAGE_NAME 占位，我们没有地方塞首帧）`);
       continue;
@@ -491,6 +493,11 @@ export interface ComfyTuning {
    * 所以默认 4；租到 24GB+ 的机器再用 `COMFYUI_MAX_REFERENCES` 调高（封顶 12）。
    */
   maxReferences: number;
+  /**
+   * V2.77：放大模型文件名（`models/upscale_models/` 下）。
+   * 换模型只改 env，不用发版 —— 与其它档位同一取向。
+   */
+  upscaleModel: string;
 }
 
 export const COMFY_DEFAULT_TUNING: ComfyTuning = {
@@ -501,6 +508,7 @@ export const COMFY_DEFAULT_TUNING: ComfyTuning = {
   fps: COMFY_FPS,
   dtype: 'fp8_e4m3fn',
   maxReferences: 4,
+  upscaleModel: '4x-UltraSharp.pth',
 };
 
 /** 读一个正整数 env（非法 / 缺失 → 用默认值；**不猜、不报错**，但也不静默改成别的数） */
@@ -546,6 +554,11 @@ export function resolveComfyTuning(env: NodeJS.ProcessEnv = process.env): ComfyT
       12,
       readPositiveInt(env.COMFYUI_MAX_REFERENCES, COMFY_DEFAULT_TUNING.maxReferences),
     ),
+    upscaleModel:
+      env.COMFYUI_UPSCALE_MODEL?.trim() === undefined ||
+      env.COMFYUI_UPSCALE_MODEL?.trim() === ''
+        ? COMFY_DEFAULT_TUNING.upscaleModel
+        : env.COMFYUI_UPSCALE_MODEL.trim(),
   };
 }
 
@@ -931,6 +944,16 @@ export interface ComfyWorkflowInput {
    * - 3 张以上：前两张同上，其余由 `appendReferenceChain` **动态追加**（模板不必预置槽位）。
    */
   referenceImageNames?: readonly string[];
+  /**
+   * V2.77：放大用的模型文件名（`models/upscale_models/` 下）。
+   * 只有 `upscale` 模式会用到；缺省由 provider 的档位（`COMFYUI_UPSCALE_MODEL`）给。
+   */
+  upscaleModel?: string;
+  /**
+   * V2.77：放大后再缩放到的倍率（相对**原图**）。
+   * 4x 模型跑完之后：4x → 1、2x → 0.5（先吃满模型再降采样，比直接要 2x 干净）。
+   */
+  upscaleScaleBy?: number;
   /** 产物前缀（默认带 `astrmira/` 子目录） */
   outputPrefix: string;
 }
@@ -969,6 +992,9 @@ export function buildComfyWorkflow(
     START_IMAGE_NAME: references[0] ?? input.startImageName,
     // V2.76：第二张参考（模板只有两个槽时用；>2 张的其余由 appendReferenceChain 追加）
     REFERENCE_IMAGE_NAME: references[1],
+    // V2.77：放大模板的两个旋钮（别的模板里没有这两个占位符，值会被忽略）
+    UPSCALE_MODEL: input.upscaleModel,
+    UPSCALE_SCALE_BY: input.upscaleScaleBy,
     // ⚠️ `56` 是**内置模板里 LoadImage 的节点 id** —— 写自定义模板的人只要保证"有一个输入图节点"
     // 并把它的连接写进模板（本行只在 i2v 时给内置模板用）
     START_IMAGE: (references[0] ?? input.startImageName) === undefined ? undefined : ['56', 0],

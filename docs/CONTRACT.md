@@ -1,6 +1,15 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.76 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.77 · 已冻结（变更需先改本文，再改代码）**
+> **V2.77 修订（2026-10-27）**：**`upscale` 放大模式（§1 / P2-1）** ——
+>   ① `GenerationMode` 新增 `upscale`：输入一张图（`assets.firstFrameImage`），输出同一张图的放大版；
+>      **不吃提示词**——空 `prompt` 对它是合法输入（服务端对 `upscale` 放行空提示词校验），
+>      客户端传 `''` 而不是硬塞一句"放大"来绕过校验；
+>   ② 倍率走 `options.scale`（`'2'` / `'4'`，也接受 `'2x'`/`'4x'` 与数字）：本地实现是**统一跑 4x 模型**
+>      再按 `scale/4` 降采样（2x → 0.5）；越界夹紧，不报错但也不假装能超过模型上限；
+>   ③ 能力位：模板 sidecar 用 `"modes": ["upscale"]` 声明，且模板里必须有 `{{START_IMAGE_NAME}}`
+>      （没有输入槽就如实不可用）；其它 provider 不支持时按 `mode-unsupported` 拒绝；
+>   ④ 无新路由、无新错误码；`upscale` 的产物是**图片**（与 `t2i` 同一套产物路径）。
 > **V2.76 修订（2026-10-27）**：**§1 请求体多参考 `assets.references[]`（B 路线）** ——
 >   ① 新增 `references?: Array<{assetId, role, order}>`，`role` 本版只允许 `reference-image`，
 >      与 `firstFrameImage` / `lastFrameImage` **互斥**；`order`（槽位）与 `assetId` 均不得重复；
@@ -618,7 +627,7 @@ export interface VideoGenerateRequest {
   // 核心文本描述（可配合 LLM 扩写）
   prompt: string;
 
-  // 生成模式：文生视频 | 首帧图生 | 首尾帧 | 视频参考 | **文生图（V2.40）**
+  // 生成模式：文生视频 | 首帧图生 | 首尾帧 | 视频参考 | 文生图（V2.40） | **放大（V2.77）**
   mode: GenerationMode;
 
   // 参考资产（服务端分配的资产 ID，见 §7 资产生命周期）

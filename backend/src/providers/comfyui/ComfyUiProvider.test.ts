@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { VideoGenerateRequest } from '@astrmira/shared';
-import { ComfyUiProvider } from './ComfyUiProvider.js';
+import { ComfyUiProvider, readUpscaleScaleBy } from './ComfyUiProvider.js';
 import {
   FLUX2_KLEIN_T2I_DECLARATION,
   FLUX2_KLEIN_T2I_REF_DECLARATION,
@@ -602,5 +602,26 @@ describe('ComfyUiProvider · 取消', () => {
     const { provider } = setup({ queued: true });
     await provider.submit(request());
     await expect(provider.cancel('p-1')).resolves.toBe(false);
+  });
+});
+
+/** V2.77：`options.scale` → 4x 模型的降采样系数（4x 模型跑完之后再缩） */
+describe('ComfyUiProvider · 放大倍率', () => {
+  const withScale = (scale: unknown): VideoGenerateRequest => ({
+    ...request(),
+    options: scale === undefined ? {} : { scale },
+  });
+
+  it('4 / 4x / 缺省 → 1（不缩）；2 / 2x → 0.5；非法一律回落到 1', () => {
+    expect(readUpscaleScaleBy(withScale('4'))).toBe(1);
+    expect(readUpscaleScaleBy(withScale('4x'))).toBe(1);
+    expect(readUpscaleScaleBy(withScale(undefined))).toBe(1);
+    expect(readUpscaleScaleBy(withScale('2'))).toBe(0.5);
+    expect(readUpscaleScaleBy(withScale('2x'))).toBe(0.5);
+    expect(readUpscaleScaleBy(withScale(2))).toBe(0.5);
+    expect(readUpscaleScaleBy(withScale('abc'))).toBe(1);
+    // 超过 4x 拿不到更多细节，夹到 1；极端小值也不允许变成 0
+    expect(readUpscaleScaleBy(withScale('8'))).toBe(1);
+    expect(readUpscaleScaleBy(withScale('0.1'))).toBe(0.05);
   });
 });
