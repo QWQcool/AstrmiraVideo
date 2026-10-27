@@ -45,6 +45,8 @@ export interface StudioServices {
   onRenameGroup(groupId: string, title: string): void;
   /** 解散分组（**只删组，不删节点**） */
   onRemoveGroup(groupId: string): void;
+  /** V2.83：按组批量运行（跳过还跑不了的节点，不弹 N 条相同错误） */
+  onRunGroup(groupId: string): void;
   /**
    * V2.79：扩图（`mode:'outpaint'`）。`size` 是底图真实宽高，`expand` 是四边外扩像素
    * （调用方已按 8 对齐；服务端会再校验一次）。

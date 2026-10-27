@@ -76,8 +76,32 @@ export function moveCanvasNode(
   return changed ? { ...doc, nodes, updatedAt: now } : doc;
 }
 
-/** 删节点：连带清掉悬空边（否则画布会画出指向空气的线） */
-export function removeCanvasNodes(
+/**
+ * V2.83（D-4）：**一次移动多个节点**（拖动分组框时用）。
+ *
+ * 为什么做成一次而不是循环 `moveCanvasNode`：拖一次框应该在撤销栈里是**一步**，
+ * 循环会把 N 个节点变成 N 条历史记录，撤销时得按 N 次。
+ * 位置没变的节点原地保留（返回同一个对象），避免无意义的保存。
+ */
+export function moveCanvasNodes(
+  doc: CanvasDoc,
+  moves: readonly { id: string; x: number; y: number }[],
+  now: number = Date.now(),
+): CanvasDoc {
+  if (moves.length === 0) return doc;
+  const target = new Map(moves.map((move) => [move.id, move]));
+  let changed = false;
+  const nodes = doc.nodes.map((node) => {
+    const move = target.get(node.id);
+    if (move === undefined) return node;
+    if (node.layout.x === move.x && node.layout.y === move.y) return node;
+    changed = true;
+    return { ...node, layout: { ...node.layout, x: move.x, y: move.y } };
+  });
+  return changed ? { ...doc, nodes, updatedAt: now } : doc;
+}
+
+/** 删节点：连带清掉悬空边（否则画布会画出指向空气的线） */export function removeCanvasNodes(
   doc: CanvasDoc,
   nodeIds: readonly string[],
   now: number = Date.now(),

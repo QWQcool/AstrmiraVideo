@@ -65,6 +65,7 @@ import {
   findCanvasNode,
   insertCanvasNodes,
   moveCanvasNode,
+  moveCanvasNodes,
   nextCanvasNodePosition,
   nextCanvasNodePositions,
   selectCanvasNodeBatch,
@@ -268,7 +269,8 @@ function toGroupRfNodes(doc: CanvasDoc): StudioRfNode[] {
         type: 'canvasGroup',
         position: { x: bounds.x, y: bounds.y },
         style: { width: bounds.width, height: bounds.height },
-        draggable: false,
+        // V2.83（D-4）：框可以拖 —— 拖动时按 delta 平移成员（不改坐标模型）
+        draggable: true,
         selectable: false,
         connectable: false,
         deletable: false,
@@ -1424,6 +1426,48 @@ export function CanvasStudioView() {
   );
 
   /**
+   * V2.83（D-4）：**按组批量运行**。
+   *
+   * 先过一遍 `canvasSubmitIssue`，只提交真正能跑的那些：
+   * 一组 6 个节点里有 2 个没写提示词时，不该弹 6 条相同的错误提示 ——
+   * 报"提交 N 个 / 跳过 M 个"，跳过的原因让用户自己在节点上点一下就能看到。
+   */
+  const runGroup = useCallback(
+    (groupId: string): void => {
+      const current = docRef.current;
+      if (current === null) return;
+      const group = (current.groups ?? []).find((item) => item.id === groupId);
+      if (group === undefined) return;
+      const context = {
+        providerStatus,
+        hasCloudKey: resolveProviderKey(byok) !== undefined,
+      };
+      const ready: string[] = [];
+      let skipped = 0;
+      for (const nodeId of group.nodeIds) {
+        const node = findCanvasNode(current, nodeId);
+        if (node === null) {
+          skipped += 1;
+          continue;
+        }
+        const provider = canvasDefaultProvider(node, context);
+        if (canvasSubmitIssue(node, provider, context) !== null) {
+          skipped += 1;
+          continue;
+        }
+        ready.push(nodeId);
+      }
+      if (ready.length === 0) {
+        setNotice(t('canvas.group.runNone', { count: group.nodeIds.length }));
+        return;
+      }
+      setNotice(t('canvas.group.runStarted', { count: ready.length, skipped }));
+      for (const nodeId of ready) void submitNode(nodeId);
+    },
+    [byok, providerStatus, submitNode, t],
+  );
+
+  /**
    * V2.49：核对“提交结果未知”的批次。
    *
    * 用**原请求 + 原批次 id（幂等键）**重放：服务端先按幂等键查已有任务，
@@ -1667,8 +1711,66 @@ export function CanvasStudioView() {
     [],
   );
 
+  /**
+   * V2.83（D-4）：拖动分组框 = 按 delta 平移成员。
+   *
+   * 拖框时不改文档（只在本地 RF 状态里跟着动，避免每帧写一次文档），**松手提交一次**
+   * —— 这样撤销栈里是"拖了一下"一步，而不是 N 个节点各一步。
+   */
+  const groupDragRef = useRef<{
+    groupId: string;
+    start: { x: number; y: number };
+    members: Array<{ id: string; x: number; y: number }>;
+  } | null>(null);
+
+  const handleDragStart = useCallback((_event: unknown, node: StudioRfNode): void => {
+    if (node.type !== 'canvasGroup' || !node.id.startsWith('group:')) return;
+    const groupId = node.id.slice('group:'.length);
+    const current = docRef.current;
+    if (current === null) return;
+    const group = (current.groups ?? []).find((item) => item.id === groupId);
+    if (group === undefined) return;
+    const members = new Set(group.nodeIds);
+    groupDragRef.current = {
+      groupId,
+      start: { x: node.position.x, y: node.position.y },
+      members: current.nodes
+        .filter((item) => members.has(item.id))
+        .map((item) => ({ id: item.id, x: item.layout.x, y: item.layout.y })),
+    };
+  }, []);
+
+  const handleDrag = useCallback((_event: unknown, node: StudioRfNode): void => {
+    const drag = groupDragRef.current;
+    if (drag === null) return;
+    const dx = node.position.x - drag.start.x;
+    const dy = node.position.y - drag.start.y;
+    const next = new Map(drag.members.map((item) => [item.id, { x: item.x + dx, y: item.y + dy }]));
+    setNodes((prev) =>
+      prev.map((item) => {
+        const moved = next.get(item.id);
+        return moved === undefined ? item : { ...item, position: moved };
+      }),
+    );
+  }, []);
+
   const handleDragStop = useCallback(
     (_event: unknown, node: StudioRfNode): void => {
+      const drag = groupDragRef.current;
+      if (drag !== null) {
+        groupDragRef.current = null;
+        const dx = node.position.x - drag.start.x;
+        const dy = node.position.y - drag.start.y;
+        if (dx === 0 && dy === 0) return;
+        applyDoc((d) =>
+          moveCanvasNodes(
+            d,
+            drag.members.map((item) => ({ id: item.id, x: item.x + dx, y: item.y + dy })),
+          ),
+        );
+        return;
+      }
+      if (node.type === 'canvasGroup') return; // 组框自己不该有落位
       applyDoc((d) => moveCanvasNode(d, node.id, node.position));
     },
     [applyDoc],
@@ -2406,6 +2508,7 @@ export function CanvasStudioView() {
             onSelectGroup: selectGroup,
             onRenameGroup: renameGroup,
             onRemoveGroup: removeGroup,
+            onRunGroup: runGroup,
             onRecover: (id, batchId) => void recoverSubmit(id, batchId),
             onAddReference: (id) => {
               setPickerReferenceNodeId(id);
@@ -2509,6 +2612,8 @@ export function CanvasStudioView() {
                 edges={rfEdges}
                 nodeTypes={NODE_TYPES}
                 onNodesChange={onNodesChange}
+                onNodeDragStart={handleDragStart}
+                onNodeDrag={handleDrag}
                 onNodeDragStop={handleDragStop}
                 onMoveEnd={handleMoveEnd}
                 onConnect={handleConnect}

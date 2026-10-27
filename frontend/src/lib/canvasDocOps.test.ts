@@ -5,6 +5,7 @@ import {
   canvasDocCounts,
   canvasNodeTitle,
   moveCanvasNode,
+  moveCanvasNodes,
   nextCanvasNodePosition,
   removeCanvasNode,
   renameCanvasDoc,
@@ -84,5 +85,42 @@ describe('canvasDocOps', () => {
     expect(nextCanvasNodePosition(createEmptyCanvasDoc('p', 'x'))).toEqual({ x: 0, y: 0 });
     const pos = nextCanvasNodePosition(docWithTwo());
     expect(pos.x).toBeGreaterThan(400);
+  });
+});
+
+/** V2.83（D-4）：拖分组框 = 一次移动多个节点（撤销栈里一步，不是 N 步） */
+describe('moveCanvasNodes（批量平移）', () => {
+  const withNodes = (): CanvasDoc => {
+    const doc = createEmptyCanvasDoc('p1', '分组演示', 100);
+    doc.nodes = [
+      createCanvasNode({ id: 'a', type: 'image', x: 0, y: 0 }),
+      createCanvasNode({ id: 'b', type: 'image', x: 400, y: 50 }),
+      createCanvasNode({ id: 'c', type: 'image', x: 900, y: 0 }),
+    ];
+    return doc;
+  };
+
+  it('按 delta 平移选中的节点，未列出的节点原地不动', () => {
+    const moved = moveCanvasNodes(withNodes(), [
+      { id: 'a', x: 10, y: 20 },
+      { id: 'b', x: 410, y: 70 },
+    ]);
+    expect(moved.nodes.map((node) => [node.id, node.layout.x, node.layout.y])).toEqual([
+      ['a', 10, 20],
+      ['b', 410, 70],
+      ['c', 900, 0],
+    ]);
+  });
+
+  it('没有实际位移 → 返回同一个 doc 引用（不写一次空的保存）', () => {
+    const doc = withNodes();
+    expect(moveCanvasNodes(doc, [{ id: 'a', x: 0, y: 0 }])).toBe(doc);
+    expect(moveCanvasNodes(doc, [])).toBe(doc);
+  });
+
+  it('只动自己列的 id：不存在的 id 被忽略，不会造出节点', () => {
+    const moved = moveCanvasNodes(withNodes(), [{ id: 'ghost', x: 1, y: 1 }]);
+    expect(moved.nodes).toHaveLength(3);
+    expect(moved.nodes.map((node) => node.id)).toEqual(['a', 'b', 'c']);
   });
 });

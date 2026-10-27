@@ -72,6 +72,17 @@ export function CanvasGroupNode({ data }: { data: CanvasGroupNodeData }): ReactN
         )}
         <button
           type="button"
+          className="cs-group-run"
+          title={t('canvas.group.run')}
+          onClick={(event) => {
+            event.stopPropagation();
+            studio.onRunGroup(data.groupId);
+          }}
+        >
+          {t('canvas.group.runLabel')}
+        </button>
+        <button
+          type="button"
           className="cs-group-close"
           aria-label={t('canvas.group.ungroup')}
           title={t('canvas.group.ungroup')}

@@ -2008,6 +2008,21 @@ audio.cs-card-media {
   font-variant-numeric: tabular-nums;
 }
 
+.cs-group-run {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
+.cs-group-run:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 .cs-group-close {
   width: 20px;
   height: 20px;
