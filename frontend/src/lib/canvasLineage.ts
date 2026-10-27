@@ -51,12 +51,37 @@ export function canReach(doc: CanvasDoc, start: string, goal: string): boolean {
   return false;
 }
 
+/** 产品结构上限与实例声明的交集（实例没声明/非法 = 按产品上限） */
+export function referenceLimit(options: CanvasLineageOptions = {}): number {
+  const declared = options.maxReferences;
+  if (declared === undefined || !Number.isFinite(declared) || declared <= 0) {
+    return CANVAS_MAX_REFERENCES;
+  }
+  return Math.min(CANVAS_MAX_REFERENCES, Math.floor(declared));
+}
+
+/**
+ * V2.80：连线时用的实例能力（目前只有参考张数）。
+ *
+ * 为什么要有它：产品结构上限是 12，但**本机实例**可能只跑得动 4 张（实测 2 张 12s / 4 张 21s /
+ * 9 张 56s / 12 张 130s）。让用户连满 12 张再在提交时失败是最差的体验，所以在**连线那一刻**就拦。
+ */
+export interface CanvasLineageOptions {
+  /** 目标引擎声明的参考张数上限；缺省 = 按产品结构上限（12） */
+  maxReferences?: number;
+}
+
 /**
  * 计划一条来源边：检查怎么连、用什么角色、写哪条参考。
  *
  * 拒绝顺序：节点存在 → 自环 → 重复 → 环 → 上游产物 → 上游类型 → 下游类型 → 角色占位。
  */
-export function planCanvasLineage(doc: CanvasDoc, from: string, to: string): CanvasLineagePlan {
+export function planCanvasLineage(
+  doc: CanvasDoc,
+  from: string,
+  to: string,
+  options: CanvasLineageOptions = {},
+): CanvasLineagePlan {
   const source = doc.nodes.find((node) => node.id === from);
   const target = doc.nodes.find((node) => node.id === to);
   if (source === undefined || target === undefined) {
@@ -89,7 +114,7 @@ export function planCanvasLineage(doc: CanvasDoc, from: string, to: string): Can
         return { ok: false, problem: 'duplicate' };
       }
       const slots = targetRefs.filter((ref) => ref.role === 'reference-image');
-      if (slots.length >= CANVAS_MAX_REFERENCES) return { ok: false, problem: 'references-full' };
+      if (slots.length >= referenceLimit(options)) return { ok: false, problem: 'references-full' };
       const order = slots.reduce((max, ref) => Math.max(max, ref.order), -1) + 1;
       return { ok: true, role: 'reference-image', assetId: output.assetId, order };
     }
@@ -126,7 +151,7 @@ export function planCanvasLineage(doc: CanvasDoc, from: string, to: string): Can
         return { ok: false, problem: 'role-taken' };
       }
       const slots = target.data.draft.references.filter((ref) => ref.role === 'reference-image');
-      if (slots.length >= CANVAS_MAX_REFERENCES) return { ok: false, problem: 'references-full' };
+      if (slots.length >= referenceLimit(options)) return { ok: false, problem: 'references-full' };
       role = 'reference-image';
     } else if (!roles.includes('first-frame')) role = 'first-frame';
     else if (!roles.includes('last-frame')) role = 'last-frame';
@@ -222,8 +247,9 @@ export function addCanvasLineageEdge(
   to: string,
   edgeId: string,
   now: number = Date.now(),
+  options: CanvasLineageOptions = {},
 ): CanvasLineageResult {
-  const plan = planCanvasLineage(doc, from, to);
+  const plan = planCanvasLineage(doc, from, to, options);
   if (!plan.ok) return { doc, edge: null, problem: plan.problem };
 
   const edge: CanvasDocEdge = {

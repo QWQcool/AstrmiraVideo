@@ -146,7 +146,8 @@ describe('GET /api/providers/status（CONTRACT §2 V1.8 / PLAN §6-D22、D27）'
 
       expect(body.comfyui.available).toBe(true);
       expect(body.comfyui.servers).toEqual([
-        { id: 'host-comfyui', label: '默认引擎', available: true },
+        // V2.80：参考张数上限随状态下发（配置事实，默认 4）
+        { id: 'host-comfyui', label: '默认引擎', available: true, maxReferences: 4 },
       ]);
       // V2.32 的"一个后端一段"在撤档之后**仍然成立**：ComfyUI 配好了，不代表 H3 那一档能用了 ——
       // 它已经不是"没配"，而是"没有了"

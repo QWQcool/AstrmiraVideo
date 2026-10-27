@@ -6,6 +6,7 @@ import {
   addCanvasLineageEdge,
   planCanvasDependency,
   planCanvasLineage,
+  referenceLimit,
   removeCanvasLineageEdge,
 } from './canvasLineage';
 
@@ -380,6 +381,31 @@ describe('B 路线：全能参考（omni-reference）允许多图', () => {
     }));
     const doc = makeDoc(makeNode('a', 'image'), b);
     expect(planCanvasLineage(doc, 'a', 'b')).toEqual({ ok: false, problem: 'references-full' });
+  });
+
+  it('实例能力把上限收窄：声明 4 张后连第 5 张即 references-full', () => {
+    const b = makeNode('b', 'image');
+    b.data.draft.settings.referenceMode = 'omni-reference';
+    b.data.draft.references = Array.from({ length: 4 }, (_, index) => ({
+      assetId: `task:x${index}-t1`,
+      role: 'reference-image' as const,
+      order: index,
+    }));
+    const doc = makeDoc(makeNode('a', 'image'), b);
+    // 没有能力声明 → 仍按产品上限 12，能连
+    expect(planCanvasLineage(doc, 'a', 'b')).toMatchObject({ ok: true });
+    // 实例只声明 4 张 → 拒绝
+    expect(planCanvasLineage(doc, 'a', 'b', { maxReferences: 4 })).toEqual({
+      ok: false,
+      problem: 'references-full',
+    });
+  });
+
+  it('能力值非法/超过产品上限时按 12 算（不让 env 写 999 就放开）', () => {
+    expect(referenceLimit({ maxReferences: 999 })).toBe(12);
+    expect(referenceLimit({ maxReferences: 0 })).toBe(12);
+    expect(referenceLimit({})).toBe(12);
+    expect(referenceLimit({ maxReferences: 4 })).toBe(4);
   });
 
   it('视频节点 omni-reference：图源进 reference-image 槽位，不和首尾帧混', () => {

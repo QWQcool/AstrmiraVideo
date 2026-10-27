@@ -23,7 +23,11 @@ import {
 
 const CLOUD = { cloud: false, comfy: true } as const;
 
-function status(input: { cloud: boolean; comfy: boolean }): ProviderStatus {
+function status(input: {
+  cloud: boolean;
+  comfy: boolean;
+  maxReferences?: number;
+}): ProviderStatus {
   return {
     cloud: {
       available: input.cloud,
@@ -35,7 +39,12 @@ function status(input: { cloud: boolean; comfy: boolean }): ProviderStatus {
       available: input.comfy,
       provider: 'comfyui',
       servers: [
-        { id: 'host-comfyui', label: '默认引擎', available: input.comfy },
+        {
+          id: 'host-comfyui',
+          label: '默认引擎',
+          available: input.comfy,
+          ...(input.maxReferences === undefined ? {} : { maxReferences: input.maxReferences }),
+        },
       ],
     },
     httpServices: { available: false, provider: 'http-service', servers: [] },
@@ -391,6 +400,32 @@ describe('B 路线：全能参考的提交映射（V2.76）', () => {
         hasCloudKey: false,
       }),
     ).toBe('mention-out-of-range');
+  });
+
+  it('V2.80：连的参考超过本机实例上限 → references-over-limit（点生成之前就说）', () => {
+    const many = createCanvasNode({ id: 'limits', type: 'image', x: 0, y: 0, now: 1 });
+    many.data.draft.prompt = '把这几张拼起来';
+    many.data.draft.settings.referenceMode = 'omni-reference';
+    many.data.draft.references = Array.from({ length: 5 }, (_, index) => ({
+      assetId: `task:r${index}-t1`,
+      role: 'reference-image' as const,
+      order: index,
+    }));
+
+    expect(
+      canvasSubmitIssue(many, 'host-comfyui', {
+        providerStatus: status({ cloud: false, comfy: true, maxReferences: 4 }),
+        hasCloudKey: false,
+      }),
+    ).toBe('references-over-limit');
+
+    // 能力位没声明（未自检 / 老服务）→ 不据此禁用，交给服务端兜
+    expect(
+      canvasSubmitIssue(many, 'host-comfyui', {
+        providerStatus: status({ cloud: false, comfy: true }),
+        hasCloudKey: false,
+      }),
+    ).not.toBe('references-over-limit');
   });
 
   it('V2.77 超清：对当前产物提交 upscale，不吃提示词', () => {

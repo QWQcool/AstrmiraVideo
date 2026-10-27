@@ -224,9 +224,11 @@ export const CANVAS_ZH = {
   'canvas.studio.lineage.sourceNotMedia': '上游产物不是图片或视频',
   'canvas.studio.lineage.targetNotVideo': '只有图片或视频节点能接收参考',
   'canvas.studio.lineage.roleTaken': '首帧 / 尾帧 / 参考视频已经占满',
-  'canvas.studio.lineage.referencesFull': '这个节点已连满 12 张参考 —— 先移除一张再连',
+  'canvas.studio.lineage.referencesFull': '这个节点最多连 {count} 张参考（本机实测上限）—— 先移除一张再连',
   'canvas.studio.issue.mentionOutOfRange':
     '提示词里引用了不存在的素材（{{image:N}} 的 N 从 0 开始，且不能超过已连参考数）',
+  'canvas.studio.issue.referencesOverLimit':
+    '这张节点连的参考超过了本机实例的能力上限 —— 少连几张，或换一台算力更强的实例',
   'canvas.mask.title': '局部重绘',
   'canvas.mask.hint': '在要重画的地方涂抹（白=重画，其余保留）',
   'canvas.mask.brush': '笔刷',
@@ -790,9 +792,11 @@ export const CANVAS_EN = {
   'canvas.studio.lineage.sourceNotMedia': 'The upstream output is neither image nor video',
   'canvas.studio.lineage.targetNotVideo': 'Only image or video nodes can receive references',
   'canvas.studio.lineage.roleTaken': 'First frame / last frame / reference video are already taken',
-  'canvas.studio.lineage.referencesFull': 'This node already has 12 references — remove one before connecting',
+  'canvas.studio.lineage.referencesFull': 'This node takes at most {count} references (this instance) — remove one first',
   'canvas.studio.issue.mentionOutOfRange':
     'The prompt references a material that does not exist ({{image:N}}: N starts at 0 and must stay below the reference count)',
+  'canvas.studio.issue.referencesOverLimit':
+    'This node has more references than the local instance can handle — remove some or use a bigger GPU',
   'canvas.mask.title': 'Inpaint',
   'canvas.mask.hint': 'Paint over what should change (white = repaint, everything else is kept)',
   'canvas.mask.brush': 'Brush',

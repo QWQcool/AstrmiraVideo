@@ -116,6 +116,7 @@ import {
   addCanvasLineageEdge,
   planCanvasDependency,
   planCanvasLineage,
+  referenceLimit,
   removeCanvasLineageEdge,
   type CanvasDependencyProblem,
   type CanvasLineageProblem,
@@ -1653,7 +1654,21 @@ export function CanvasStudioView() {
         const from = connection.source;
         const to = connection.target;
         if (current === null || from === null || to === null) return;
-        const plan = planCanvasLineage(current, from, to);
+
+        // V2.80：参考张数上限取**目标节点所用引擎**的配置事实（缺省 = 产品上限 12）
+        const target = findCanvasNode(current, to);
+        const engine =
+          target === null
+            ? undefined
+            : canvasDefaultProvider(target, {
+                providerStatus,
+                hasCloudKey: resolveProviderKey(byok) !== undefined,
+              });
+        const capacity = comfyUiEngineOptions(providerStatus).find(
+          (option) => option.id === engine,
+        )?.maxReferences;
+
+        const plan = planCanvasLineage(current, from, to, { maxReferences: capacity });
         if (!plan.ok) {
           if (plan.problem === 'source-no-output') {
             // 草稿之间先连成流水线是合法意图：建虚线计划边（不写参考），不是拒绝。
@@ -1667,14 +1682,22 @@ export function CanvasStudioView() {
             setNotice(t(DEPENDENCY_PROBLEM_KEYS[dep.problem]));
             return;
           }
-          setNotice(t(LINEAGE_PROBLEM_KEYS[plan.problem]));
+          setNotice(
+            plan.problem === 'references-full'
+              ? t('canvas.studio.lineage.referencesFull', {
+                  count: referenceLimit({ maxReferences: capacity }),
+                })
+              : t(LINEAGE_PROBLEM_KEYS[plan.problem]),
+          );
           return;
         }
         const edgeId = `edge-${newCanvasProjectId()}`;
         setNotice(null);
-        applyDoc((d) => addCanvasLineageEdge(d, from, to, edgeId).doc);
+        applyDoc((d) =>
+          addCanvasLineageEdge(d, from, to, edgeId, Date.now(), { maxReferences: capacity }).doc,
+        );
       },
-      [applyDoc, t],
+      [applyDoc, byok, providerStatus, t],
     );
 
   const deleteEdge = useCallback(

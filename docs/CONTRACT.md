@@ -1,6 +1,12 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.79 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.80 · 已冻结（变更需先改本文，再改代码）**
+> **V2.80 修订（2026-10-27）**：**参考张数上限接线（§19 / §21-16-B）** ——
+>   ① `GET /api/providers/status` 的 `comfyui.servers[]` 新增 `maxReferences?`（配置事实：
+>      `COMFYUI_MAX_REFERENCES`，封顶 12；缺省 = 未知，**不得据此禁用**）；
+>   ② 画布连线按 `min(12, maxReferences)` 收窄槽位（`references-full`），
+>      生成前再兜一次（问题码 `references-over-limit`）；
+>   ③ 无新路由、无新错误码；老服务不下发该字段时行为不变（仍按 12 放行，服务端兜底）。
 > **V2.79 修订（2026-10-27）**：**`outpaint` 扩图模式（§1 / P2-2）** ——
 >   ① `GenerationMode` 新增 `outpaint`：底图 + 四边外扩像素，新区域由模型补画、**原画面不动**；
 >   ② 外扩参数走 `options.expand: { left?, top?, right?, bottom? }`（像素），三条硬规则
@@ -2803,6 +2809,10 @@ interface ModelCapability {
 
 - 结构上限 `CANVAS_MAX_REFERENCES = 12`（与即梦同款，**产品上限**）；
 - **真实可用上限 = `min(12, ModelCapability.maxReferences)`** —— 由模板/实例声明。
+  V2.80 起这条**已接线**：`GET /api/providers/status` 的 `comfyui.servers[].maxReferences`
+  下发本服务配置的 `COMFYUI_MAX_REFERENCES`（封顶 12），画布在**连线那一刻**就按它拦
+  （`references-full`），并在生成按钮上方给出 `references-over-limit`；
+  未下发（老服务 / 未自检）= 未知，**不据此禁用**，仍按 12 放行、由服务端兜底。
   跑不动的实例应把能力值调低（例如 10GB 卡现阶段只验到 2 张），**不是让用户连满 12 张再在提交时失败**；
 - 图片节点与视频节点**同一套规则**（B 路线：两边都允许多图）。
 

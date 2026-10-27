@@ -23,6 +23,11 @@ export interface EngineOption {
   hint: string;
   /** V2.47：配置型 HTTP 服务声明的能力；ComfyUI 选项不填 */
   modes?: GenerationMode[];
+  /**
+   * V2.80：这台实例最多消费几张参考图（ComfyUI 才有）。
+   * 缺省 = 未知，调用方按产品结构上限（12）办，**不得**据此禁用。
+   */
+  maxReferences?: number;
 }
 
 /** 没有配任何 ComfyUI 时界面上仍保留的那一档（与后端 `DEFAULT_COMFY_SERVER_ID` 同一个值） */
@@ -67,6 +72,8 @@ export function comfyUiEngineOptions(status: ProviderStatus | null): EngineOptio
         : translate(lang, 'common.engine.unavailable')),
     // V2.51：最近一次自检的模式；缺省 = 未检测，调用方不得据此禁用
     ...(server.modes === undefined ? {} : { modes: server.modes }),
+    // V2.80：这台实例的参考张数上限（配置事实）
+    ...(server.maxReferences === undefined ? {} : { maxReferences: server.maxReferences }),
   }));
 }
 

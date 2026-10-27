@@ -9,6 +9,7 @@ import type {
   SelfCheckResponse,
 } from '@astrmira/shared';
 import { getProvider } from '../providers/registry.js';
+import { resolveComfyTuning } from '../providers/comfyui/comfyuiProtocol.js';
 import { DEFAULT_COMFY_SERVER_ID, resolveComfyServers } from '../providers/comfyui/comfyuiServers.js';
 import { resolveHttpServices } from '../providers/httpService/httpServiceProfile.js';
 
@@ -126,6 +127,8 @@ function resolveComfyUiStatus(): ProviderStatus['comfyui'] {
       ...(cached === undefined
         ? {}
         : { modes: cached.modes, modesCheckedAt: cached.checkedAt }),
+      // V2.80：参考图张数上限是**全局档位**（provider 也是这么读的），画布据此收窄槽位
+      maxReferences: resolveComfyTuning().maxReferences,
     };
   });
 

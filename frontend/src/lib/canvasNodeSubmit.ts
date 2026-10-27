@@ -52,7 +52,9 @@ export type CanvasSubmitIssue =
   | 'cloud-key-missing'
   | 'provider-unavailable'
   /** B 路线：提示词里的 `{{image:N}}` 越界（引用了不存在的素材） */
-  | 'mention-out-of-range';
+  | 'mention-out-of-range'
+  /** V2.80：参考张数超过**这台实例**的实测上限（连线时已拦，这里兜旧文档） */
+  | 'references-over-limit';
 
 export interface CanvasSubmitContext {
   providerStatus: ProviderStatus | null;
@@ -72,6 +74,7 @@ const ISSUE_KEYS: Record<CanvasSubmitIssue, MessageKey> = {
   'cloud-key-missing': 'canvas.studio.issue.cloudKey',
   'provider-unavailable': 'canvas.studio.issue.provider',
   'mention-out-of-range': 'canvas.studio.issue.mentionOutOfRange',
+  'references-over-limit': 'canvas.studio.issue.referencesOverLimit',
 };
 
 /** 按当前语言翻成一句可执行的中文/英文（与 `engineOptions` 同一手法：非 React 上下文取文案） */
@@ -308,6 +311,22 @@ export function canvasSubmitIssue(
 
   const draft = canvasDraftMode(node);
   if (draft.unsupportedRoles.length > 0) return 'reference-unsupported';
+
+  /**
+   * V2.80：连满 12 张但实例只跑得动 4 张时，**在点生成之前**就说清楚。
+   * 连线那一刻已经按能力拦过；这里兜住"旧文档 / 换了引擎 / env 被调小"这三种情况。
+   */
+  const capacity = comfyUiEngineOptions(context.providerStatus).find(
+    (option) => option.id === provider,
+  )?.maxReferences;
+  if (
+    node.data.draft.settings.referenceMode === 'omni-reference' &&
+    capacity !== undefined &&
+    draft.assets?.references !== undefined &&
+    draft.assets.references.length > Math.min(12, capacity)
+  ) {
+    return 'references-over-limit';
+  }
 
   // B 路线：`{{image:N}}` 越界时提交前就拦住（不静默改用户的提示词）
   if (draft.assets?.references !== undefined) {

@@ -87,6 +87,14 @@ export const ComfyUiServerStatusSchema = z.object({
   modes: z.array(GenerationModeSchema).optional(),
   /** 上述 modes 的检测时刻（ISO）；与 modes 同时出现 */
   modesCheckedAt: z.string().optional(),
+  /**
+   * V2.80：**这台实例最多消费几张参考图**（`COMFYUI_MAX_REFERENCES`，封顶 12）。
+   *
+   * 为什么放进状态而不是等提交失败：10GB 卡实测 2 张 12s / 4 张 21s / 9 张 56s / 12 张 130s，
+   * 让用户连满 12 张再在提交时被拒是最差的体验。画布按 `min(12, 本值)` 拦。
+   * 与 `modes` 一样是**配置事实**（读 env），不需要探测远端。
+   */
+  maxReferences: z.number().int().positive().optional(),
 });
 export type ComfyUiServerStatus = z.infer<typeof ComfyUiServerStatusSchema>;
 
