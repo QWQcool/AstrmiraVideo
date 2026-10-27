@@ -9,6 +9,7 @@ import type {
   VideoProvider,
 } from '@astrmira/shared';
 import type { TaskVideoResolution } from '../../store/assets.js';
+import type { ComfyProgressSource } from './comfyuiProgress.js';
 import { parseTaskRef } from '@astrmira/shared';
 import {
   buildComfyWorkflow,
@@ -57,9 +58,9 @@ const FINALIZE_GRACE_MS = 30_000;
  * `prompt_id` 直接当 `taskId` 用（本仓调度器只要求"提交返回 id、可按 id 查状态"）。
  *
  * ## 三条如实边界（都来自真机实测，见 PLAN V8.34/V8.35）
- * 1. **进度百分比拿不到**：ComfyUI 的 HTTP 接口不报单任务进度（进度在 WebSocket 上）。
- *    所以 `running` 时 `progressPercent` 恒为 **0**，并用 `message` 讲清楚 ——
- *    **不编造一个会匀速上涨的假进度条**（那正是本仓"不假装可用"的反面）。
+ * 1. **进度只能从 WebSocket 拿**（V2.82 起）：HTTP 接口不报单任务进度，所以进度走
+ *    `ComfyProgressTracker`（`/ws` 的 `progress` 事件）。**拿不到就还是 0 + 一句说明** ——
+ *    绝不编造一个匀速上涨的假进度条（那正是本仓"不假装可用"的反面）。
  * 2. **取消不支持**：`POST /interrupt` 会让任务**重启**、`POST /queue {delete}` 只清 pending，
  *    真要停下只能重启 ComfyUI。所以 `cancel()` 恒返回 `false`（承认做不到，而不是假装取消成功）。
  * 3. **任务记录会随重启丢失**：`/history` 与队列都在内存里 —— 查不到又有 jobs 记录时，
@@ -84,6 +85,13 @@ export interface ComfyUiProviderOptions {
   templateName?: string;
   /** 注入 fetch（测试用；默认全局 fetch） */
   fetchImpl?: typeof fetch;
+  /**
+   * V2.82：实时进度来源（WebSocket 侧）。
+   *
+   * 不传 = 没有进度（行为与 V2.81 一致：`progressPercent` 恒 0 + 一句说明）。
+   * 生产由 registry 注入进程级共享的 `ComfyProgressTracker`；测试想钉进度就注入假实现。
+   */
+  progress?: ComfyProgressSource;
   /**
    * 档位**显式覆盖**（V2.32）。
    *
@@ -277,6 +285,8 @@ export class ComfyUiProvider implements VideoProvider {
   private readonly outputPrefix: string;
   private readonly resolveAssetUrl?: (assetId: string) => Promise<string | null>;
   private readonly resolveTaskVideoUrl?: (taskId: string) => Promise<TaskVideoResolution>;
+  /** V2.82：实时进度（WS）；缺省 = 没有进度，`progressPercent` 恒 0 */
+  private readonly progress?: ComfyProgressSource;
   private readonly inventoryTtlMs: number;
 
   /** 每份模板各自挑到的模型与判定出的能力位（V2.40：清单式） */
@@ -306,6 +316,7 @@ export class ComfyUiProvider implements VideoProvider {
     }
     if (options.template !== undefined) this.injectedTemplate = options.template;
     if (options.declaration !== undefined) this.injectedDeclaration = options.declaration;
+    if (options.progress !== undefined) this.progress = options.progress;
   }
 
   /**
@@ -770,15 +781,25 @@ export class ComfyUiProvider implements VideoProvider {
         // ② 还没进历史 → 在队列里就是在跑（ComfyUI 不报进度，如实说明）
         const queued = await this.isQueued(taskId);
         if (queued) {
+          /**
+           * V2.82：进度只从 WS 拿（HTTP 不报）。
+           * 拿不到就仍然写 0 并说明原因 —— **不编造一个匀速上涨的假进度条**。
+           */
+          const live = this.progress?.progress(taskId) ?? null;
           return {
             taskId,
             status: 'running',
-            // **不编造进度**：ComfyUI 的 HTTP 接口不提供单任务进度（它在 WebSocket 上）
-            progressPercent: 0,
+            progressPercent: live?.percent ?? 0,
             requestSnapshot,
             createdAt,
             ...(warnings.length === 0 ? {} : { warnings }),
-            message: 'ComfyUI 正在执行（它不上报进度百分比 —— 本地轨以出片为准）',
+            message:
+              live === null
+                ? 'ComfyUI 正在执行（拿不到进度百分比 —— 本地轨以出片为准）'
+                : live.percent >= 100
+                  ? // 采样跑完还要解码/落盘：这时报"100% 但仍在执行"会让人以为卡住了
+                    'ComfyUI 采样已完成，正在收尾（解码/保存）'
+                  : `ComfyUI 正在执行：${live.percent}%（采样进度，仍以出片为准）`,
           };
         }
 

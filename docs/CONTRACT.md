@@ -1,6 +1,13 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.81 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.82 · 已冻结（变更需先改本文，再改代码）**
+> **V2.82 修订（2026-10-27）**：**本地 ComfyUI 的真实进度（§4 / P4-1）** ——
+>   ① 本地轨 `running` 的 `progressPercent` 不再恒为 0：改从 ComfyUI `/ws` 的 `progress` 事件取值
+>      （`value/max` 归一化取整、夹在 0..100），事件带 `prompt_id`，按任务精确归属；
+>   ② **拿不到就是 0**：WS 连不上 / 没收到该 prompt 的事件 / 事件超过 90s 未更新 → 仍返回 0
+>      并附一句说明，**不编造匀速假进度**；`percent=100` 但仍在跑时文案改为"采样已完成，正在收尾"；
+>   ③ 无新路由、无新字段、无新错误码（复用既有 `TaskProgress.progressPercent` / `message`）；
+>   ④ 云端 / HTTP 服务轨行为不变（它们的进度本来就来自上游）。
 > **V2.81 修订（2026-10-27）**：**画布分组（§21-17 / P3）** ——
 >   ① `CanvasDoc` 新增 `groups: CanvasGroup[]`（旧文档缺省 `[]`）：
 >      `{ id, title, nodeIds[], color?, createdAt }`；
@@ -2320,8 +2327,9 @@ export interface BackupManifest {
 | 无产物 | 同上但 `outputs` 空 | `failed`（把 ComfyUI 的 `status_str` 与 `exception_message` **原样带出**） |
 | 记录丢失 | 既不在 history 也不在 queue | `failed`，消息直说"**可能重启过**"（`/history` 与队列都在内存里） |
 
-- **进度百分比拿不到**（进度在 WebSocket 上）：`running` 时 `progressPercent` 恒为 **0**，
-  `message` 说明"它不上报进度" —— **不编造一个会匀速上涨的假进度条**；
+- **进度只从 WebSocket 拿**（V2.82）：HTTP 侧不报单任务进度，所以 `running` 时
+  从 `/ws` 的 `progress` 事件（`value/max`）取真实百分比；**拿不到（连不上 / 无该 prompt 事件 /
+  超 90s 未更新）就仍是 0 + 一句说明** —— 绝不编造匀速假进度条；
 - **提交被拒**（400）：把 `node_errors` 的**节点 id + 消息**拼成人话抛出（只说"提交失败"用户无法行动）；
 - **重复查询幂等**：已交付的任务再查直接返回同一结果，**不重复下载**产物。
 

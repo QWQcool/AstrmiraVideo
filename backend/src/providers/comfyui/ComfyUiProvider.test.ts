@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { VideoGenerateRequest } from '@astrmira/shared';
 import { ComfyUiProvider, readOutpaintPad, readUpscaleScaleBy } from './ComfyUiProvider.js';
+import type { ComfyProgressSource } from './comfyuiProgress.js';
 import {
   FLUX2_KLEIN_T2I_DECLARATION,
   FLUX2_KLEIN_T2I_REF_DECLARATION,
@@ -142,6 +143,8 @@ type ExtraOptions = Partial<{
   resolveAssetUrl: (id: string) => Promise<string | null>;
   template: WorkflowTemplate;
   declaration: ComfyTemplateDeclaration;
+  /** V2.82：注入假进度（真实现走 WS，测试不建连接） */
+  progress: ComfyProgressSource;
 }>;
 
 function makeProvider(state: FakeState, extra: ExtraOptions = {}) {
@@ -311,13 +314,35 @@ describe('ComfyUiProvider · 提交', () => {
 });
 
 describe('ComfyUiProvider · 查状态', () => {
-  it('在队列里 → running，且**不编造进度**（progressPercent 0 + 说明）', async () => {
+  it('在队列里但拿不到进度 → running + 0 + 说明（**不编造**）', async () => {
     const { provider } = setup({ queued: true });
     await provider.submit(request());
     const progress = await provider.queryStatus('p-1');
     expect(progress.status).toBe('running');
     expect(progress.progressPercent).toBe(0);
-    expect(progress.message).toContain('不上报进度');
+    expect(progress.message).toContain('拿不到进度百分比');
+  });
+
+  it('V2.82：注入 WS 进度源后 running 带**真实**百分比', async () => {
+    const { provider } = setup(
+      { queued: true },
+      { progress: { progress: () => ({ percent: 60 }) } },
+    );
+    await provider.submit(request());
+    const progress = await provider.queryStatus('p-1');
+    expect(progress.status).toBe('running');
+    expect(progress.progressPercent).toBe(60);
+    expect(progress.message).toContain('60%');
+  });
+
+  it('V2.82：进度源对别的 prompt 返回 null → 仍然 0（不串台）', async () => {
+    const { provider } = setup(
+      { queued: true },
+      { progress: { progress: (promptId) => (promptId === 'p-1' ? { percent: 30 } : null) } },
+    );
+    await provider.submit(request());
+    expect((await provider.queryStatus('p-1')).progressPercent).toBe(30);
+    expect((await provider.queryStatus('p-2')).progressPercent).toBe(0);
   });
 
   it('出片 → 下载到 OUTPUT_DIR 并返回 /media/<taskId>.mp4（内容是 ComfyUI 给的那份）', async () => {

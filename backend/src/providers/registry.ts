@@ -6,6 +6,7 @@ import { readOptionString } from './providerOptions.js';
 import { VolcanoSeedanceProvider } from './VolcanoSeedanceProvider.js';
 import { SEEDANCE_DEFAULT_BASE_URL, SEEDANCE_DEFAULT_MODEL } from './seedanceProtocol.js';
 import { ComfyUiProvider } from './comfyui/ComfyUiProvider.js';
+import { getComfyProgressTracker } from './comfyui/comfyuiProgress.js';
 import { DEFAULT_COMFY_SERVER_ID, findComfyServer } from './comfyui/comfyuiServers.js';
 import { HttpServiceProvider } from './httpService/HttpServiceProvider.js';
 import { findHttpService } from './httpService/httpServiceProfile.js';
@@ -167,6 +168,8 @@ function createComfyProviderFor(id: string, ctx: ProviderResolutionContext): Vid
     ...(ctx.resolveAssetUrl === undefined ? {} : { resolveAssetUrl: ctx.resolveAssetUrl }),
     // S9 修正：i2v 首帧引用 `task:<id>`（会话图片步产物）需要 task 通道——与云端 provider 对齐
     ...(ctx.resolveTaskVideoUrl === undefined ? {} : { resolveTaskVideoUrl: ctx.resolveTaskVideoUrl }),
+    // V2.82：进度走 WS；按 baseUrl 进程级共享（provider 是每请求新建的）
+    progress: getComfyProgressTracker(server.url),
   });
 }
 

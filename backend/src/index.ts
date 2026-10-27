@@ -15,6 +15,8 @@ import { cleanupTaskTemp } from './pipeline/cleanup.js';
 import { createEditJobRunner } from './pipeline/editExecutor.js';
 import { createTaskThumbnail } from './pipeline/thumbnail.js';
 import { getEnvModelWarning, getProvider } from './providers/registry.js';
+import { getComfyProgressTracker } from './providers/comfyui/comfyuiProgress.js';
+import { resolveComfyServers } from './providers/comfyui/comfyuiServers.js';
 import { JobDispatcher } from './queue/dispatcher.js';
 import { SqliteJobQueue } from './queue/SqliteJobQueue.js';
 import { createEditRoutes } from './routes/edits.js';
@@ -279,6 +281,18 @@ const app = Fastify({
     store,
     ...(publicBaseUrl === undefined || publicBaseUrl === '' ? {} : { publicBaseUrl }),
   });
+
+  /**
+   * V2.82：**启动就把 ComfyUI 的 WS 连上**。
+   *
+   * 若等到第一条任务提交时才连，那条任务的早期进度（第一条 `progress` 通常在几百毫秒内）
+   * 就漏了 —— 表现是"任务已经跑了一半才突然出现 60%"。连不上也没关系：
+   * `ComfyProgressTracker` 会静默降级（进度恒为 null），界面照旧显示"以出片为准"。
+   */
+  for (const server of resolveComfyServers().servers) {
+    if (!server.available) continue;
+    getComfyProgressTracker(server.url);
+  }
 
   // 启动调解：上次进程退出时留下的 running 任务必须归档 ——
   // 否则界面上它们会永远停在 40%，而持有上游 id 的那批其实已经可能计费了。
