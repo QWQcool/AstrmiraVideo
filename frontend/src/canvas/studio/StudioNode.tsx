@@ -404,6 +404,19 @@ export function StudioNode({ id, selected }: NodeProps) {
           ...httpEngines,
         ];
 
+  /**
+   * V2.95（B104）：**采样预览**。只有 ComfyUI 会推（其它引擎没有这个通道），
+   * 所以判断条件写死为"运行中 + 服务端给了序号"——没序号就不显示，绝不画一张占位图。
+   * `seq` 进 URL：序号变了才重下，轮询本身不搬运图片。
+   */
+  const livePreviewUrl =
+    active?.taskId !== undefined &&
+    live !== undefined &&
+    live.status === 'running' &&
+    live.previewSeq !== undefined
+      ? `/api/tasks/${active.taskId}/preview?seq=${live.previewSeq}`
+      : null;
+
   const mediaUrl = preview === null ? null : resolveMediaUrl(preview.output.url);
   const previewKind = preview?.output.kind ?? null;
   const posterKey =
@@ -433,6 +446,12 @@ export function StudioNode({ id, selected }: NodeProps) {
       </header>
 
       <div className="cs-card-body">
+        {livePreviewUrl !== null ? (
+          <figure className="cs-card-live">
+            <img src={livePreviewUrl} alt="" draggable={false} />
+            <figcaption>{t('canvas.studio.livePreview')}</figcaption>
+          </figure>
+        ) : null}
         {mediaUrl !== null && previewKind === 'image' ? (
           <img
             className="cs-card-media"

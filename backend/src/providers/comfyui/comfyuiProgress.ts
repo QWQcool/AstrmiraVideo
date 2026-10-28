@@ -60,6 +60,47 @@ export function reduceComfyEvent(raw: unknown): ComfyEventReduction {
 export interface ComfySocket {
   addEventListener(type: string, listener: (event: { data?: unknown }) => void): void;
   close(): void;
+  /** 浏览器/undici 的 WebSocket 默认把二进制给成 Blob —— 必须显式要求 ArrayBuffer */
+  binaryType?: string;
+}
+
+/**
+ * ComfyUI 的**二进制预览帧**（V2.95 / B104）。
+ *
+ * 协议（ComfyUI `server.py` 的 `send_sync`）：每帧前 4 字节是事件类型（big-endian uint32），
+ * 类型 `1` = 预览图，紧跟 4 字节图片格式（`1` = JPEG、`2` = PNG），之后才是图片字节。
+ * 其它类型（`3` = 文本、`2` = 旧版未压缩预览）一律忽略 —— 我们只认能直接当图片显示的那一种。
+ *
+ * **为什么值得解析**：采样过程中 ComfyUI 会推 latent 预览（模糊但形状正确），
+ * 这是"片子正在长成什么样"的唯一真实信号；不给它，用户只能盯着一个百分比。
+ */
+export type ComfyBinaryReduction =
+  | { kind: 'preview'; mime: 'image/jpeg' | 'image/png'; bytes: Uint8Array }
+  | { kind: 'ignore' };
+
+export function parseComfyBinaryFrame(raw: unknown): ComfyBinaryReduction {
+  const bytes = toBytes(raw);
+  if (bytes === null || bytes.length < 8) return { kind: 'ignore' };
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const eventType = view.getUint32(0, false);
+  if (eventType !== 1) return { kind: 'ignore' };
+  const format = view.getUint32(4, false);
+  const mime = format === 1 ? 'image/jpeg' : format === 2 ? 'image/png' : null;
+  if (mime === null) return { kind: 'ignore' };
+  const payload = bytes.subarray(8);
+  if (payload.length === 0) return { kind: 'ignore' };
+  return { kind: 'preview', mime, bytes: payload };
+}
+
+/** 把 WS 的 `event.data` 收敛成字节视图（支持 ArrayBuffer / TypedArray / Buffer） */
+function toBytes(raw: unknown): Uint8Array | null {
+  if (raw instanceof Uint8Array) return raw;
+  if (raw instanceof ArrayBuffer) return new Uint8Array(raw);
+  // Node 的 Buffer 是 Uint8Array 子类，上面已覆盖；这里兜住跨 realm 的 ArrayBufferView
+  if (ArrayBuffer.isView(raw)) {
+    return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+  }
+  return null;
 }
 
 export type ComfySocketFactory = (url: string) => ComfySocket | null;
@@ -67,6 +108,8 @@ export type ComfySocketFactory = (url: string) => ComfySocket | null;
 export interface ComfyProgressSource {
   /** 该 prompt 的实时进度；没有/过期/连不上 → null */
   progress(promptId: string): { percent: number } | null;
+  /** V2.95（B104）：该 prompt 是否已有预览帧（没有 → null）。**只有拿到才算有**，不占位 */
+  previewSeq?(promptId: string): number | null;
 }
 
 export interface ComfyProgressTrackerOptions {
@@ -85,7 +128,20 @@ function defaultSocketFactory(url: string): ComfySocket | null {
   const ctor = (globalThis as { WebSocket?: new (target: string) => ComfySocket }).WebSocket;
   if (ctor === undefined) return null;
   try {
-    return new ctor(url);
+    const socket = new ctor(url);
+    /**
+     * V2.95（B104）：**必须**显式要求 ArrayBuffer。
+     *
+     * undici（Node ≥22 的全局 WebSocket）默认 `binaryType = 'blob'`，二进制预览帧会以
+     * Blob 形式到达 —— 位置不对就拿不到字节，表现为"预览一直没有"。
+     * 这条是 2026-10-28 真机跑出来的：解析函数没错，是数据根本没到手。
+     */
+    try {
+      socket.binaryType = 'arraybuffer';
+    } catch {
+      /* 某些实现只读 —— 下面还有 Blob 兜底 */
+    }
+    return socket;
   } catch {
     return null;
   }
@@ -115,6 +171,22 @@ export class ComfyProgressTracker implements ComfyProgressSource {
   private state: ComfyLinkStats['state'] = 'connecting';
   private opens = 0;
   private reconnects = 0;
+  /**
+   * V2.95（B104）：每个 prompt 的**最新一帧采样预览**。
+   *
+   * 只留最新一帧（不攒历史）：它是"正在长成什么样"的当下状态，攒起来既没用又费内存。
+   * `seq` 递增用于让前端判断"要不要重新拉图"，避免每次轮询都重下一遍 base64。
+   */
+  private readonly previews = new Map<
+    string,
+    { bytes: Uint8Array; mime: string; seq: number; updatedAt: number }
+  >();
+  private previewSeqCounter = 0;
+  /**
+   * 二进制预览帧**不带 prompt_id**（ComfyUI 协议如此）—— 只能归属到"最近在跑的那条"。
+   * 本地轨并发恒为 1（防线 1），所以这个近似是成立的；并发 >1 时宁可少给也不张冠李戴。
+   */
+  private currentPromptId: string | null = null;
 
   constructor(options: ComfyProgressTrackerOptions) {
     this.options = {
@@ -134,7 +206,33 @@ export class ComfyProgressTracker implements ComfyProgressSource {
 
     socket.addEventListener('message', (event) => {
       const raw = event.data;
-      if (typeof raw !== 'string') return; // 二进制是预览图，不是进度
+      if (typeof raw !== 'string') {
+        // V2.95（B104）：二进制帧 = 采样预览图（不是进度）
+        const reduceBinary = (data: unknown) => {
+          const reduction = parseComfyBinaryFrame(data);
+          if (reduction.kind !== 'preview') return;
+          const promptId = this.currentPromptId;
+          if (promptId === null) return; // 还不知道这帧属于谁 —— 宁可不给，也不张冠李戴
+          this.previewSeqCounter += 1;
+          this.previews.set(promptId, {
+            bytes: reduction.bytes,
+            mime: reduction.mime,
+            seq: this.previewSeqCounter,
+            updatedAt: this.options.now(),
+          });
+        };
+        // Blob 兜底：万一 binaryType 设不上（实现只读），也别把预览直接丢掉
+        const maybeBlob = raw as { arrayBuffer?: () => Promise<ArrayBuffer> };
+        if (typeof maybeBlob.arrayBuffer === 'function' && !ArrayBuffer.isView(raw)) {
+          void maybeBlob
+            .arrayBuffer()
+            .then((buffer) => reduceBinary(buffer))
+            .catch(() => undefined);
+          return;
+        }
+        reduceBinary(raw);
+        return;
+      }
       let parsed: unknown;
       try {
         parsed = JSON.parse(raw);
@@ -143,6 +241,7 @@ export class ComfyProgressTracker implements ComfyProgressSource {
       }
       const reduction = reduceComfyEvent(parsed);
       if (reduction.kind === 'progress') {
+        this.currentPromptId = reduction.promptId;
         this.entries.set(reduction.promptId, {
           percent: reduction.percent,
           updatedAt: this.options.now(),
@@ -156,7 +255,12 @@ export class ComfyProgressTracker implements ComfyProgressSource {
         }
         return;
       }
-      if (reduction.kind === 'done') this.entries.delete(reduction.promptId);
+      if (reduction.kind === 'done') {
+        this.entries.delete(reduction.promptId);
+        // 跑完就把预览丢掉：界面该看的是成片，不是最后一帧模糊图
+        this.previews.delete(reduction.promptId);
+        if (this.currentPromptId === reduction.promptId) this.currentPromptId = null;
+      }
     });
 
     const reconnect = () => {
@@ -203,6 +307,32 @@ export class ComfyProgressTracker implements ComfyProgressSource {
     return { percent: entry.percent };
   }
 
+  /**
+   * V2.95（B104）：该 prompt 是否有预览帧。返回 `seq`（递增序号）而不是布尔 ——
+   * 前端靠"序号变了"决定要不要重新拉图，而不是每次轮询都下一遍。
+   * 过期规则与进度一致：太久没更新就不认（ComfyUI 重启后 prompt_id 会重来）。
+   */
+  previewSeq(promptId: string): number | null {
+    const entry = this.previews.get(promptId);
+    if (entry === undefined) return null;
+    if (this.options.now() - entry.updatedAt > this.options.ttlMs) {
+      this.previews.delete(promptId);
+      return null;
+    }
+    return entry.seq;
+  }
+
+  /** 该 prompt 的最新预览帧（路由按需取；没有就 null —— 不返回占位图） */
+  preview(promptId: string): { bytes: Uint8Array; mime: string; seq: number } | null {
+    const entry = this.previews.get(promptId);
+    if (entry === undefined) return null;
+    if (this.options.now() - entry.updatedAt > this.options.ttlMs) {
+      this.previews.delete(promptId);
+      return null;
+    }
+    return { bytes: entry.bytes, mime: entry.mime, seq: entry.seq };
+  }
+
   stop(): void {
     this.stopped = true;
     if (this.timer !== null) {
@@ -234,4 +364,22 @@ export function getComfyProgressTracker(baseUrl: string): ComfyProgressTracker {
  */
 export function comfyProgressStats(): ComfyLinkStats[] {
   return [...trackers.values()].map((tracker) => tracker.stats());
+}
+
+/**
+ * V2.95（B104）：按 promptId 找预览帧（**跨实例查找**）。
+ *
+ * 为什么不在路由里按 baseUrl 找：任务记录里只存 provider 名（`host-comfyui:<name>`），
+ * 不存 baseUrl（那是部署配置，写进任务会让换机后的历史任务指向错的机器）。
+ * 预览帧是内存里的瞬时数据、promptId 全局唯一（ComfyUI 的 uuid），所以扫一遍实例表即可；
+ * 实例数是个位数。
+ */
+export function findComfyPreview(
+  promptId: string,
+): { bytes: Uint8Array; mime: string; seq: number } | null {
+  for (const tracker of trackers.values()) {
+    const found = tracker.preview(promptId);
+    if (found !== null) return found;
+  }
+  return null;
 }

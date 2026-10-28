@@ -139,6 +139,12 @@ export const TaskProgressSchema = z.object({
    * 出别的尺寸（云端尤其如此）。有了这一对数字，"界面承诺的尺寸"和"实际出的片"才能被对上；
    * 没有它就只能靠猜。**探不到就省略**（文件已清理 / 编码不认），不给推测值。
    */
+  /**
+   * V2.95（B104）：**采样预览的序号**（递增）。有值 = 现在能拉到一张预览帧；
+   * 序号变了才需要重新拉（GET /api/tasks/:id/preview），否则每轮轮询都会白下一遍图。
+   * **只有 ComfyUI 会推预览**（其它引擎没有这个通道 → 字段缺省，界面就不显示预览）。
+   */
+  previewSeq: z.number().int().positive().optional(),
   outputDimension: z
     .object({ width: z.number().int().positive(), height: z.number().int().positive() })
     .optional(),

@@ -787,12 +787,15 @@ export class ComfyUiProvider implements VideoProvider {
            * 拿不到就仍然写 0 并说明原因 —— **不编造一个匀速上涨的假进度条**。
            */
           const live = this.progress?.progress(taskId) ?? null;
+          // V2.95（B104）：有采样预览就让界面知道（只给序号，图另走 /preview 路由）
+          const previewSeq = this.progress?.previewSeq?.(taskId) ?? null;
           return {
             taskId,
             status: 'running',
             progressPercent: live?.percent ?? 0,
             requestSnapshot,
             createdAt,
+            ...(previewSeq === null ? {} : { previewSeq }),
             ...(warnings.length === 0 ? {} : { warnings }),
             message:
               live === null

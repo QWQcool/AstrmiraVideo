@@ -1,6 +1,16 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.94 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.95 · 已冻结（变更需先改本文，再改代码）**
+> **V2.95 修订（2026-10-28 · B104：ComfyUI 采样预览帧）** ——
+>   ① §4 `TaskProgress` 新增**可选** `previewSeq`（递增序号；有值 = 现在能拉一张预览帧）；
+>   ② §5 新增 `GET /api/tasks/:taskId/preview`（**二进制**图片，不塞进任务 JSON —— 否则每次轮询
+>      都要搬运一张图）；`x-preview-seq` 与 `previewSeq` 对齐，前端"序号变了才重下"；
+>   ③ 协议解析：ComfyUI 的二进制帧头 = 4 字节事件类型（`1` = 图片）+ 4 字节格式（`1` = JPEG / `2` = PNG）；
+>      二进制帧**不带 prompt_id**，只能归属到"最近在跑的那条"（本地轨并发恒为 1，所以成立）；
+>   ④ 三条边界：任务结束即丢弃预览（界面该看成片）；探不到就 **404**、不返回占位图；
+>      **模型不产 latent 预览时这里永远没有帧**（2026-10-28 实测：本机 FLUX / Wan 的 16 通道 latent
+>      拿不到预览，需要 ComfyUI 侧开 `--preview-method taesd` 之类才有）。
+> **V2.94 修订（2026-10-28 · B98 片 B：产物实测尺寸）** ——
 > **V2.94 修订（2026-10-28 · B98 片 B：产物实测尺寸）** ——
 >   ① §4 `TaskProgress` 新增**可选** `outputDimension: { width, height }` —— 成功时服务端 ffprobe 一次
 >      落库（`tasks.output_width` / `output_height` 两列，旧行为 NULL）；
@@ -1087,6 +1097,7 @@ export interface AssetListResponse {
 | `GET` | `/media/*` | **V1.8 新增**：`outputs/` 静态媒体服务（成片直链，播放器与下载的 **206 Range** 载体）；路径只含服务端生成的随机 ID，不含任何用户输入 |
 | `POST` | `/api/generate` | 创建视频生成任务（凭据经 `X-Provider-Key`，见下方注记段）。**200 → `{ taskId }`**（幂等：同一 `Idempotency-Key` 或缺省指纹重复提交返回同一 `taskId`）；提示词为空或超过 2000 字符 → **400 `PROMPT_REJECTED`**（terminal）；引擎未实现 / 未启用 → **503 `PROVIDER_UNAVAILABLE`**；60s 防抖限流 → 429。**V2.11（B47）**：body 可带可选 `projectId`（缺省 = 默认项目）；**显式给了不存在的项目 → 404 `PROJECT_NOT_FOUND`**（不静默落到默认项目）；`projectId` 进幂等指纹 |
 | `GET` | `/api/tasks/:taskId` | 轮询任务状态与结果。**200 → `TaskProgress`（§4）**；不存在或已清理 → **404 `TASK_NOT_FOUND`** |
+| `GET` | `/api/tasks/:taskId/preview` | **V2.95 新增（B104）**：ComfyUI 的**采样预览帧**（二进制图片，`image/jpeg` 或 `image/png`，`cache-control: no-store`，`x-preview-seq` = 序号）。取不到 → **404 `PREVIEW_UNAVAILABLE`**（任务已结束 / 引擎不是 ComfyUI / 模型不产 latent 预览）。**先看 `TaskProgress.previewSeq` 再决定要不要拉**，别每轮都拉 |
 | `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消；已在终态 → `{ ok: false }`）。**200 → `{ ok, taskId }`**。语义是**尽力而为**：服务端把任务置 `cancelled`（此后调度器**不再推进**、也不会被 heartbeat 覆盖），并**通知上游停止**；上游是否真的停止、是否已产生费用，本服务无法代上游保证 —— 前端文案必须如实说明并指向服务商后台核对 |
 | `POST` | `/api/prompt/enhance` | 提示词扩写助手（**V2.0 已实现**，凭据经 `X-LLM-Key`，见下方注记段）。**200 → `PromptEnhanceResponse`（§3，含必填 `engine`）**；无 Key → **501 `LLM_NOT_CONFIGURED`**；空 / 超长提示词 → **400 `PROMPT_REJECTED`**；上游拒绝凭据 → **401 `KEY_INVALID`**；其余上游故障（含超时）→ **502 `UPSTREAM_ERROR`**。状态映射的完整口径见 §3 |
 | `POST` | `/api/agent/plan` | **V2.54 新增（§23）**：Agent 规划器；只返回结构化计划，**不创建任务、不调用生成**。**200 → `AgentPlanResponse`（含必填 `engine: 'llm'`）**；无 Key → **501 `LLM_NOT_CONFIGURED`**；意图为空 / 计划结构或能力校验失败 → **400 `INVALID_REQUEST`**；上游拒绝凭据 → **401 `KEY_INVALID`**；其余上游故障（含超时/非 JSON）→ **502 `UPSTREAM_ERROR`**。凭据经 `X-LLM-Key`，服务端零留存 |
