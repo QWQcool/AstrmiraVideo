@@ -2,7 +2,7 @@
 
 > 基线：2026-10-22，HEAD `806c679`。  
 > 本文把**已经成功的站点部署**和**所有依赖 GPU 算力服务器的开发项**放在一起，避免租到机器后靠会话记忆现场发挥。  
-> 相关文档：`docs/LOCAL-GPU-DEPLOY.md`（H3 选型/权重/网络细节）、`docs/MOSS-IMAGE-EVALUATION.md`（MOSS 实测）、`deploy/comfyui-templates/README.md`（MOSS 可选模板）。
+> 相关文档：`docs/LOCAL-GPU-DEPLOY.md`（H3 选型/权重/网络细节）、`docs/REFERENCES.md`（MOSS 实测那一段）、`deploy/comfyui-templates/README.md`（MOSS 可选模板）。
 
 ---
 

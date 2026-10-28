@@ -2615,7 +2615,7 @@ interface ModelCapability {
 ### 21-16 参考组成与提示词提及（V2.75；B 路线，用户 2026-10-27 拍板）
 
 > 背景：即梦画布的多参考是「边即集合 + 生成模式（`mode`）裁决」，实测抓包见
-> [JIMENG-PROTOCOL-2026-10-27](JIMENG-PROTOCOL-2026-10-27.md)。本仓 `settings.referenceMode`
+> [即梦协议观测](JIMENG-REFERENCE.md)。本仓 `settings.referenceMode`
 > 与 `ModelCapability` 早已在契约里（§21-3 / §21-9），本节把**组成规则**冻结下来并接到画布上。
 
 **A. 三档模式的合法组成**（`settings.referenceMode`）
@@ -2755,7 +2755,7 @@ interface Subject {
 
 > 目标：把“算力服务器跑模型、应用只提交/轮询/取产物”做成一个**可配置的通用适配器**，
 > 而不是为每个模型写死 provider。形态参考 infOS/Pictoria 的 `ServiceProfile`
-> （见 `docs/INFOS-REVIEW.md`），但只保留本仓需要的最小集合。
+> （见 `docs/REFERENCES.md`），但只保留本仓需要的最小集合。
 
 ### 22-1 配置与门控
 
