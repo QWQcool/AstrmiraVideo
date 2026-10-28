@@ -8,6 +8,7 @@ import type {
   VideoGenerateRequest,
   VideoProvider,
 } from '@astrmira/shared';
+import { ProviderFailureError } from '../../errors.js';
 import type { TaskVideoResolution } from '../../store/assets.js';
 import type { ComfyProgressSource } from './comfyuiProgress.js';
 import { parseTaskRef } from '@astrmira/shared';
@@ -521,8 +522,12 @@ export class ComfyUiProvider implements VideoProvider {
     const referenceCount =
       referenceAssets.length > 0 ? referenceAssets.length : wantsReference ? 1 : 0;
     if (referenceCount > this.tuning.maxReferences) {
-      // 不静默截断：连满 12 张再失败比"这里就说清楚"更贵
-      throw new Error(
+      // 不静默截断：连满 12 张再失败比"这里就说清楚"更贵。
+      // **必须归 terminal**：这是提交前的校验（一个字节都没发出去），
+      // 用普通 Error 会被兜底逻辑判成"已进入提交阶段"→ UNCERTAIN_RESULT，
+      // 界面就会显示"结果未知，可能已扣费"—— 对没发生的事撒谎（B111 真机发现）。
+      throw new ProviderFailureError(
+        'INVALID_REQUEST',
         `这个本地实例最多消费 ${this.tuning.maxReferences} 张参考图（收到 ${referenceCount} 张）。` +
           `10GB 卡实测 2 张 12s / 4 张 21s / 9 张 56s / 12 张 130s —— ` +
           `确需更多请调 COMFYUI_MAX_REFERENCES（封顶 12）。`,
@@ -530,28 +535,34 @@ export class ComfyUiProvider implements VideoProvider {
     }
     // i2v / upscale 缺输入图：在提交前就说清（比"上传时 assetId 为空"更可执行）
     if (request.mode === 'i2v' && (request.assets?.firstFrameImage ?? '') === '') {
-      throw new Error('i2v（图生视频）需要首帧：请在参考素材里选一张图片');
+      throw new ProviderFailureError(
+        'INVALID_REQUEST',
+        'i2v（图生视频）需要首帧：请在参考素材里选一张图片',
+      );
     }
     if (request.mode === 'upscale' && (request.assets?.firstFrameImage ?? '') === '') {
-      throw new Error('放大需要一张输入图：请选一张图片（或对一个已有产物的节点点"超清"）');
+      throw new ProviderFailureError(
+        'INVALID_REQUEST',
+        '放大需要一张输入图：请选一张图片（或对一个已有产物的节点点"超清"）',
+      );
     }
     // V2.78：局部重绘要底图 + 蒙版，缺一个都不许提交
     if (request.mode === 'inpaint') {
       if ((request.assets?.firstFrameImage ?? '') === '') {
-        throw new Error('局部重绘需要底图：assets.firstFrameImage');
+        throw new ProviderFailureError('INVALID_REQUEST', '局部重绘需要底图：assets.firstFrameImage');
       }
       if ((request.assets?.maskImage ?? '') === '') {
-        throw new Error('局部重绘需要蒙版：assets.maskImage（白=重画区、黑=保留）');
+        throw new ProviderFailureError('INVALID_REQUEST', '局部重绘需要蒙版：assets.maskImage（白=重画区、黑=保留）');
       }
     }
     // V2.79：扩图要底图 + 四边外扩像素（规则见 readOutpaintPad）
     let pad: OutpaintPad | undefined;
     if (request.mode === 'outpaint') {
       if ((request.assets?.firstFrameImage ?? '') === '') {
-        throw new Error('扩图需要底图：assets.firstFrameImage');
+        throw new ProviderFailureError('INVALID_REQUEST', '扩图需要底图：assets.firstFrameImage');
       }
       const parsed = readOutpaintPad(request);
-      if (!parsed.ok) throw new Error(parsed.reason);
+      if (!parsed.ok) throw new ProviderFailureError('INVALID_REQUEST', parsed.reason);
       pad = parsed.pad;
     }
     const target = this.pickTemplateForMode(
@@ -576,13 +587,17 @@ export class ComfyUiProvider implements VideoProvider {
       if (wantsReference) {
         // B93/F2：参考图请求没有 referenceImage 模板时，明确拒绝；
         // 这里发生在 upload 和 /prompt 之前，不允许静默降级成普通文生图。
-        throw new Error(
+        // 归 `PROVIDER_UNAVAILABLE`（terminal）：这是"这台机器没有这个能力"，
+        // 不是"请求写错了"，重试同一请求也不会好。
+        throw new ProviderFailureError(
+          'PROVIDER_UNAVAILABLE',
           `本地 ComfyUI 没有声明 referenceImage 的 ${request.mode} 模板，` +
             `无法消费参考图；已拒绝提交，不会回退普通文生图。` +
             `当前支持：${supported.join(' / ') || '无'}；原因：${reasons.join('；')}`,
         );
       }
-      throw new Error(
+      throw new ProviderFailureError(
+        'PROVIDER_UNAVAILABLE',
         `本地 ComfyUI 当前不支持 ${request.mode}（支持：${supported.join(' / ') || '无'}）。` +
           `原因：${reasons.join('；')}`,
       );
@@ -610,10 +625,10 @@ export class ComfyUiProvider implements VideoProvider {
             }
           : planComfyDimensions(request, this.tuning.maxPixels);
     if (request.mode === 'inpaint' && (dimensions.width <= 0 || dimensions.height <= 0)) {
-      throw new Error('局部重绘需要有效的 resolution（底图真实宽高）：蒙版必须与底图同尺寸');
+      throw new ProviderFailureError('INVALID_REQUEST', '局部重绘需要有效的 resolution（底图真实宽高）：蒙版必须与底图同尺寸');
     }
     if (request.mode === 'outpaint' && (baseWidth <= 0 || baseHeight <= 0)) {
-      throw new Error('扩图需要有效的 resolution（底图真实宽高）');
+      throw new ProviderFailureError('INVALID_REQUEST', '扩图需要有效的 resolution（底图真实宽高）');
     }
     const frames = planComfyFrames(request.params?.durationSec, this.tuning.fps);
     // 参考图逐个下载再上传给 ComfyUI（它只认自己 input 目录里的文件）
@@ -697,7 +712,7 @@ export class ComfyUiProvider implements VideoProvider {
    */
   private async uploadReferenceImage(assetId: string): Promise<string> {
     if (assetId === '') {
-      throw new Error('参考图缺少 assetId：请在参考素材里选一张图片');
+      throw new ProviderFailureError('INVALID_REQUEST', '参考图缺少 assetId：请在参考素材里选一张图片');
     }
     if (this.resolveAssetUrl === undefined) {
       throw new Error('i2v 需要解析首帧地址，但本 provider 没有拿到 resolveAssetUrl（装配问题）');

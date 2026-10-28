@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { VideoGenerateRequest } from '@astrmira/shared';
+import { ProviderFailureError } from '../../errors.js';
 import { ComfyUiProvider, readOutpaintPad, readUpscaleScaleBy } from './ComfyUiProvider.js';
 import type { ComfyProgressSource } from './comfyuiProgress.js';
 import {
@@ -266,6 +267,40 @@ describe('ComfyUiProvider · 提交', () => {
   it('i2v 缺首帧 → 提交前就报错（提示用户去选素材，而不是等上游 400）', async () => {
     const { provider } = setup({ queued: false });
     await expect(provider.submit(request({ mode: 'i2v' }))).rejects.toThrow(/需要首帧/);
+  });
+
+  /**
+   * B111 真机发现：这些**提交前**的拒绝原本是裸 `Error`，被兜底逻辑判成
+   * "已进入提交阶段" → `UNCERTAIN_RESULT`（界面显示"可能已扣费"），而实际一个字节都没发出去。
+   * 现在按语义归类：请求本身不合法 → `INVALID_REQUEST`；这台机器没这个能力 → `PROVIDER_UNAVAILABLE`。
+   */
+  it('参考图超过实例上限 → INVALID_REQUEST（terminal），且不白提交一次', async () => {
+    const { provider, fake } = setup({ queued: false });
+    const references = Array.from({ length: 5 }, (_, index) => ({
+      assetId: `asset-${index}`,
+      role: 'reference-image' as const,
+      order: index,
+    }));
+    const error = await provider
+      .submit(request({ mode: 't2i', assets: { references } }))
+      .then(() => null)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderFailureError);
+    expect((error as ProviderFailureError).code).toBe('INVALID_REQUEST');
+    expect(String((error as Error).message)).toMatch(/最多消费 4 张参考图/);
+    expect(fake.calls.some((call) => call.includes('/prompt'))).toBe(false);
+  });
+
+  it('模式在这台机器上没有模板 → PROVIDER_UNAVAILABLE（terminal），不是"结果未知"', async () => {
+    const { provider } = setup({ queued: false });
+    const error = await provider
+      .submit(request({ mode: 'v2v' }))
+      .then(() => null)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderFailureError);
+    expect((error as ProviderFailureError).code).toBe('PROVIDER_UNAVAILABLE');
   });
 
   it('ComfyUI 拒绝提交 → 把**节点级原因**带出来', async () => {
