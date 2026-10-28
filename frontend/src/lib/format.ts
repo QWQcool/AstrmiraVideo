@@ -1,9 +1,20 @@
 import type { AspectRatio, ExecutedBy } from '@astrmira/shared';
+import {
+  DEFAULT_RESOLUTION_TIER as SHARED_DEFAULT_TIER,
+  resolveTierSize,
+  tierForSize as sharedTierForSize,
+  type ResolutionTier as SharedResolutionTier,
+  type TargetSize as SharedTargetSize,
+} from '@astrmira/shared';
 import { getLanguage, translate, type MessageKey } from './i18n';
 
 /**
  * 展示层格式化（纯函数，可单测）。
  * 目标尺寸必须落在 **32 的整数倍**上（CONTRACT §1「自动对齐为 32 的整数倍」）。
+ *
+ * ⚠️ 尺寸表**不在本文件**：它在 `packages/shared/src/resolution.ts`（B98 之前的教训 ——
+ * 前后端各算一份，841/853 这种差几像素的结果会让"界面显示的尺寸"与"实际产物"不是同一个数）。
+ * 这里只保留面向界面的 API 名字，实现全部转调 shared。
  */
 
 /** 3 位索引号（AC6）：分区标题与卡片统一用它 */
@@ -12,21 +23,18 @@ export function formatIndex(index: number): string {
   return String(safe).padStart(3, '0').slice(-3);
 }
 
-export interface TargetSize {
-  width: number;
-  height: number;
-}
+export type TargetSize = SharedTargetSize;
 
 /**
  * 清晰度档（对齐上游 `--resolution` 的取值集合：480p / 720p / 1080p）。
  * 后端 `seedanceProtocol.resolutionToTier` 按**短边**归档：< 640 → 480p，640~999 → 720p，≥ 1000 → 1080p。
- * 下表每一格的短边都落在对应档位区间内，因此"界面显示的目标尺寸"与"发给上游的档位"不会互相打架。
+ * 表里每一格的短边都落在对应档位区间内，因此"界面显示的目标尺寸"与"发给上游的档位"不会互相打架。
  */
-export type ResolutionTier = '480p' | '720p' | '1080p';
+export type ResolutionTier = SharedResolutionTier;
 
 export const RESOLUTION_TIERS = ['480p', '720p', '1080p'] as const;
 
-export const DEFAULT_RESOLUTION_TIER: ResolutionTier = '480p';
+export const DEFAULT_RESOLUTION_TIER: ResolutionTier = SHARED_DEFAULT_TIER;
 
 /** 可选时长（秒）：`DurationSecSchema` 是 `positive().max(10)`，所以这里最大只能到 10 */
 export const DURATION_OPTIONS = [3, 5, 8, 10] as const;
@@ -39,42 +47,20 @@ export function clampDurationSec(value: number): number {
   return Math.min(10, Math.max(1, Math.round(value)));
 }
 
-/** 每一格都必须落在 32 的倍数上（AC/契约要求；单测逐格断言） */
-const TARGET_SIZES: Record<ResolutionTier, Record<AspectRatio, TargetSize>> = {
-  '480p': {
-    '16:9': { width: 832, height: 480 },
-    '9:16': { width: 480, height: 832 },
-    '1:1': { width: 480, height: 480 },
-  },
-  '720p': {
-    '16:9': { width: 1280, height: 704 },
-    '9:16': { width: 704, height: 1280 },
-    '1:1': { width: 704, height: 704 },
-  },
-  '1080p': {
-    '16:9': { width: 1920, height: 1056 },
-    '9:16': { width: 1056, height: 1920 },
-    '1:1': { width: 1056, height: 1056 },
-  },
-};
-
-/**
- * 由像素尺寸反推档位（用于"参数一键回填"：快照里存的是 `resolution` 像素，不是档位名）。
- * 归档口径与后端 `seedanceProtocol.resolutionToTier` 一致：按**短边**。
- */
-export function tierForSize(width: number, height: number): ResolutionTier {
-  const shortSide = Math.min(width, height);
-  if (shortSide >= 1000) return '1080p';
-  if (shortSide >= 640) return '720p';
-  return '480p';
-}
-
 /** 目标渲染尺寸 = 画幅 × 清晰度档（默认 480p，与历史行为一致） */
 export function resolveTargetSize(
   ratio: AspectRatio,
   tier: ResolutionTier = DEFAULT_RESOLUTION_TIER,
 ): TargetSize {
-  return TARGET_SIZES[tier][ratio];
+  return resolveTierSize(tier, ratio);
+}
+
+/**
+ * 由像素尺寸反推档位（"参数一键回填"用：快照里存的是 `resolution` 像素，不是档位名）。
+ * 口径按**短边**，与后端 `seedanceProtocol.resolutionToTier` 一致；实现在 shared（B98 之后只有一份）。
+ */
+export function tierForSize(width: number, height: number): ResolutionTier {
+  return sharedTierForSize(width, height);
 }
 
 /**

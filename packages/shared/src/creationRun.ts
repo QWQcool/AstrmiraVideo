@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ResolutionTierSchema } from './resolution.js';
 import { AspectRatioSchema, DurationSecSchema } from './request.js';
 import { normalizeProjectId } from './projects.js';
 
@@ -50,8 +51,11 @@ export const CreationRunStepSchema = z
     kind: CreationRunStepKindSchema,
     prompt: z.string().trim().min(1).max(2000),
     aspectRatio: AspectRatioSchema,
-    /** 提交时按画幅映射为请求的 resolution（请求无 tier 字段） */
-    resolutionTier: z.enum(['480p', '720p', '1080p']).optional(),
+    /**
+     * 提交时按画幅映射为请求的 resolution（请求无 tier 字段）。
+     * 表在 esolution.ts（V2.93 / B98：档位 → 尺寸只能有一份）。
+     */
+    resolutionTier: ResolutionTierSchema.optional(),
     /** 仅 video 步骤有意义；缺省引擎默认 */
     durationSec: DurationSecSchema.optional(),
     /** 用户已有资产 id；v1 只接受一张（无依赖视频作 first-frame / 图片作 ReferenceLatent） */

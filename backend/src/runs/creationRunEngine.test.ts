@@ -233,7 +233,9 @@ describe('buildStepRequest · 请求构造（纯函数）', () => {
     expect(dep.mode).toBe('i2v');
     expect(dep.assets?.firstFrameImage).toBe('task:t9');
     expect(dep.params?.durationSec).toBe(5);
-    expect(dep.resolution).toEqual({ width: 1280, height: 720 });
+    // B98：720p 16:9 的表值是 1280×704（32 对齐），不是 1280×720 ——
+    // 后者是旧实现 Math.round(720*16/9) 算出来的，会被 provider 再缩一次
+    expect(dep.resolution).toEqual({ width: 1280, height: 704 });
   });
 
   it('B93：多张用户参考 / 多依赖在请求构造层也拒绝', () => {

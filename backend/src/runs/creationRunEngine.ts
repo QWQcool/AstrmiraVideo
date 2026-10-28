@@ -5,6 +5,7 @@ import {
   type CreationRunStep,
   type EditScript,
   type EditTransition,
+  resolveTierSize,
   type VideoGenerateRequest,
 } from '@astrmira/shared';
 
@@ -201,15 +202,6 @@ export function readySteps(run: CreationRun): CreationRunStep[] {
   });
 }
 
-/** 档位 × 画幅 → 分辨率（标准尺寸；服务端管线会把边对齐到 32 的倍数） */
-function resolutionOf(tier: '480p' | '720p' | '1080p', aspect: '16:9' | '9:16' | '1:1') {
-  const base = tier === '480p' ? 480 : tier === '720p' ? 720 : 1080;
-  if (aspect === '1:1') return { width: base, height: base };
-  return aspect === '16:9'
-    ? { width: Math.round((base * 16) / 9), height: base }
-    : { width: base, height: Math.round((base * 16) / 9) };
-}
-
 /**
  * ④ 步骤 → 生成请求（纯）。
  *
@@ -235,9 +227,10 @@ export function buildStepRequest(run: CreationRun, step: CreationRunStep): Video
         ? step.referenceAssetIds[step.dependsOn.length > 0 ? 0 : 1]
         : undefined;
 
-  const resolution = step.resolutionTier === undefined
-    ? undefined
-    : resolutionOf(step.resolutionTier, step.aspectRatio);
+  // **必须用 shared 的那张表**：这里曾经自己算 Math.round(base*16/9)，得到 853×480 / 1920×1080
+  // —— 非 32 对齐、1080p 还越了档位预算，与界面显示的尺寸不是同一个数（B98）。档位表只能有一份。
+  const resolution =
+    step.resolutionTier === undefined ? undefined : resolveTierSize(step.resolutionTier, step.aspectRatio);
 
   if (step.kind === 'image') {
     // S9-A1：图步带依赖（定妆语义）→ 参考首镜产物继续出图（ReferenceLatent 模板在 provider 侧接住）
