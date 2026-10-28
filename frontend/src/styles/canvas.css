@@ -525,18 +525,7 @@
   cursor: not-allowed;
 }
 
-.cv-insp-cost {
-  margin: 0;
-  font-family: var(--serif);
-  font-size: var(--fs-title);
-  color: var(--text);
-}
 
-.cv-insp-cost-note {
-  font-family: var(--sans);
-  font-size: var(--fs-note);
-  color: var(--muted);
-}
 
 .cv-insp-warn {
   color: var(--gold);

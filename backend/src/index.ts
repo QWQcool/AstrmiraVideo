@@ -39,7 +39,6 @@ import { createGenerateRoutes } from './routes/generate.js';
 import { healthRoutes } from './routes/health.js';
 // V2.16（B53）：告警阈值走 shared 的**同一份**解析（env 变量名也定义在那边，一处改、两处生效）
 import { providerBaseType, readThresholdsFromEnv, resolveThresholds } from '@astrmira/shared';
-import { createCostRoutes } from './routes/costs.js';
 import { createObservabilityRoutes } from './routes/observability.js';
 import { createHistoryRoutes } from './routes/history.js';
 import { createHistoryImportRoutes } from './routes/historyImport.js';
@@ -582,8 +581,6 @@ const app = Fastify({
   await app.register(createTaskRoutes({ store }));
   await app.register(createHistoryRoutes({ store }));
   await app.register(createHistoryImportRoutes({ store, projects }));
-  // V2.12（B48）：成本台账汇总（只读；金额为预估，口径见 COST_DISCLAIMER）
-  await app.register(createCostRoutes({ store, projects }));
   // V2.90（D-8）：运行观测（耗时 p50/p95、失败码分布、ComfyUI WS 连接事实）
   await app.register(createStatsRoutes({ store, comfyLinks: comfyProgressStats }));
   // V2.16（B53）：可观测 —— live/ready 分级 + 运维快照（告警阈值可 env 覆盖）

@@ -1,5 +1,4 @@
 import type {
-  CostRecord,
   EditProject,
   EditScript,
   ExecutedBy,
@@ -66,9 +65,7 @@ export interface TaskRecord {
   executedBy?: ExecutedBy;
   /**
    * V2.12（台账 B48）：成本记录（预估）。**只有成功任务在终态结算时写入**，
-   * 缺省 = 未结算（V2.12 之前的老任务 / 无法估算的任务）。
-   */
-  cost?: CostRecord;
+     */
   createdAt: number;
   updatedAt: number;
 }
@@ -93,9 +90,6 @@ interface TaskRow {
   extracted_asset_ids: string | null;
   project_id: string | null;
   executed_by: string | null;
-  cost_yuan: number | null;
-  cost_source: string | null;
-  cost_detail: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -127,10 +121,7 @@ function rowToRecord(row: TaskRow): TaskRecord {
     projectId: row.project_id ?? DEFAULT_PROJECT_ID,
     // V2.27（A1 片 A / B11）：NULL = V2.27 之前的老任务 —— **不猜**（不按 provider 反推）
     ...(row.executed_by === null ? {} : { executedBy: row.executed_by as ExecutedBy }),
-    // V2.12：成本记录（NULL = 未结算，**不给默认值** —— "花了 0 元"与"不知道花了多少"要分开）。
-    // `cost_yuan` / `cost_source` 是给 SQL 聚合用的**冗余列**，真相在 `cost_detail` 的完整 JSON；
-    // 万一 detail 损坏，退回到"只有金额与来源"的最小记录（不整条丢掉）。
-    ...(row.cost_yuan === null ? {} : { cost: parseCostRow(row) }),
+    // V2.92：成本记账已删（自用定位），任务记录不再带金额字段。
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -144,49 +135,6 @@ export interface StatRow {
   updatedAt: number;
   /** `error.code`（成功/未失败时为 null） */
   errorCode: string | null;
-}
-
-/** 成本汇总的一行（V2.12 / B48；只取聚合需要的列，不拉整条快照） */
-export interface CostRow {
-  projectId: string;
-  /** 有成本记录时是金额；NULL = 未结算（V2.12 之前的老任务） */
-  costYuan: number | null;
-  createdAt: number;
-  /** 请求快照里的模型 id（缺省 = 部署默认档，交给上层显示成"默认档"） */
-  modelId: string | null;
-}
-
-/**
- * 成本 → SQL 参数（V2.12）。`cost_yuan` / `cost_source` 是**给聚合用的冗余列**
- * （按项目 / 按天 SUM 不必解 JSON），完整记录进 `cost_detail`。
- * 未结算（`undefined`）时三列都写 NULL —— **不写 0**（0 是"本地轨免费"的真实值）。
- */
-function costParams(cost: CostRecord | undefined): {
-  costYuan: number | null;
-  costSource: string | null;
-  costDetail: string | null;
-} {
-  if (cost === undefined) return { costYuan: null, costSource: null, costDetail: null };
-  return {
-    costYuan: cost.yuan,
-    costSource: cost.source,
-    costDetail: JSON.stringify(cost),
-  };
-}
-
-/**
- * 成本行的读取（V2.12）：优先用 `cost_detail` 的完整 JSON；
- * 损坏 / 缺失时退化成"金额 + 来源"的最小记录 —— 金额是 B 端最不能丢的那部分。
- */
-function parseCostRow(row: TaskRow): CostRecord {
-  const yuan = row.cost_yuan ?? 0;
-  const source = (row.cost_source ?? 'estimate') as CostRecord['source'];
-  if (row.cost_detail === null) return { yuan, source } as CostRecord;
-  try {
-    return JSON.parse(row.cost_detail) as CostRecord;
-  } catch {
-    return { yuan, source } as CostRecord;
-  }
 }
 
 /**
@@ -237,8 +185,6 @@ export function toTaskProgress(record: TaskRecord): TaskProgress {
     ...(record.extractedAssetIds === undefined
       ? {}
       : { extractedAssetIds: record.extractedAssetIds }),
-    // V2.12（B48）：成本记录（缺省 = 未结算；界面必须把"未结算"显示出来，否则金额会被误读成全部）
-    ...(record.cost === undefined ? {} : { cost: record.cost }),
     // V2.27（A1 片 A / B11）：执行位置（缺省 = V2.27 之前的老任务 —— 界面对缺省**不猜**）
     ...(record.executedBy === undefined ? {} : { executedBy: record.executedBy }),
     // V2.3：任务创建时间（`tasks.created_at` 列本就存在且有索引，零迁移）。
@@ -260,13 +206,13 @@ export class TaskStore {
                             output_video_url, output_image_url, thumbnail_url, warnings, error,
                             upstream_task_id,
                             submitting, message, edit_script, edit_origin, extracted_asset_ids,
-                            project_id, executed_by, cost_yuan, cost_source, cost_detail,
+                            project_id, executed_by,
                             created_at, updated_at)
          VALUES (@taskId, @track, @provider, @status, @progressPercent, @requestSnapshot,
                  @outputVideoUrl, @outputImageUrl, @thumbnailUrl, @warnings, @error, @upstreamTaskId,
                  @submitting,
                  @message, @editScript, @editOrigin, @extractedAssetIds, @projectId, @executedBy,
-                 @costYuan, @costSource, @costDetail, @createdAt, @updatedAt)`,
+                 @createdAt, @updatedAt)`,
       )
       .run({
         taskId: record.taskId,
@@ -291,8 +237,6 @@ export class TaskStore {
         projectId: record.projectId ?? DEFAULT_PROJECT_ID,
         // V2.27（A1 片 A）：执行位置 —— **调用方（队列）按 provider 判定**；缺省即 NULL（老行为）
         executedBy: record.executedBy ?? null,
-        // V2.12：入库时通常还没有成本（结算在终态），但接口保持一致（可写入已算好的成本）
-        ...costParams(record.cost),
         createdAt: now,
         updatedAt: now,
       });
@@ -324,8 +268,6 @@ export class TaskStore {
                          edit_script = @editScript, edit_origin = @editOrigin,
                          extracted_asset_ids = @extractedAssetIds,
                          executed_by = @executedBy,
-                         cost_yuan = @costYuan, cost_source = @costSource,
-                         cost_detail = @costDetail,
                          updated_at = @updatedAt
                          WHERE task_id = @taskId`,
       )
@@ -350,55 +292,8 @@ export class TaskStore {
           next.extractedAssetIds === undefined ? null : JSON.stringify(next.extractedAssetIds),
         // V2.27（A1 片 A）：执行位置（缺省 → NULL —— 老任务不被"补写"成推测值）
         executedBy: next.executedBy ?? null,
-        // V2.12（B48）：成本三列与 record.cost 同步（缺省 → NULL，**不写 0**）
-        ...costParams(next.cost),
         updatedAt: Date.now(),
       });
-  }
-
-  /**
-   * 成本汇总的行集（V2.12 / 台账 B48）。
-   *
-   * 为什么把聚合放在**上层**而不是这里：聚合要按项目 / 按天 / 按模型三种维度分组，
-   * 用一条 SQL 写三个 `GROUP BY` 反而更难读；这里只负责"取哪些行"，
-   * 分组与求和交给路由层（那里同时能拿到项目名、档位标签与免责声明）。
-   *
-   * `limit` 是**有意的上界**：汇总宁可报"已截断"，也不把十万行拉进内存
-   * （调用方据返回条数是否等于 limit 判定，并在响应里如实标注）。
-   */
-  listCostRows(options: {
-    projectId?: string;
-    from?: number;
-    to?: number;
-    limit: number;
-  }): CostRow[] {
-    const where: string[] = ["status = 'succeeded'"];
-    const params: Record<string, unknown> = { limit: options.limit };
-    if (options.projectId !== undefined) {
-      where.push('project_id = @projectId');
-      params['projectId'] = options.projectId;
-    }
-    if (options.from !== undefined) {
-      where.push('created_at >= @from');
-      params['from'] = options.from;
-    }
-    if (options.to !== undefined) {
-      where.push('created_at <= @to');
-      params['to'] = options.to;
-    }
-
-    const rows = this.db
-      .prepare(
-        `SELECT project_id AS projectId, cost_yuan AS costYuan, created_at AS createdAt,
-                json_extract(request_snapshot, '$.options.model') AS modelId
-           FROM tasks
-          WHERE ${where.join(' AND ')}
-          ORDER BY created_at DESC
-          LIMIT @limit`,
-      )
-      .all(params) as CostRow[];
-
-    return rows;
   }
 
   /**

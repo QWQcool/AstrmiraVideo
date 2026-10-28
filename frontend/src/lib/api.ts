@@ -12,7 +12,6 @@ import {
   CanvasDocSaveResponseSchema,
   CanvasDocSchema,
   CanvasProjectIndexSchema,
-  CostSummaryResponseSchema,
   DeleteProjectResponseSchema,
   ErrorResponseSchema,
   GenerateResponseSchema,
@@ -54,7 +53,6 @@ import type {
   CreationRunResponse,
   CanvasDocSaveResponse,
   CanvasProjectIndex,
-  CostSummaryResponse,
   DeleteProjectResponse,
   EditProject,
   EditScript,
@@ -544,28 +542,9 @@ export function fetchHistory(filter?: {
 }
 
 /**
- * 成本台账汇总（V2.12 / B48，CONTRACT §13）。
- *
- * `project` 省略 = **默认项目**；字面量 `'all'` = **跨项目汇总**（唯一刻意跨项目的读端点）。
- * 金额是**预估**：`disclaimer` 由服务端下发，界面直接显示它、不要自己写一版。
- */
-export function fetchCostSummary(query: {
-  project?: string;
-  from?: number;
-  to?: number;
-} = {}): Promise<CostSummaryResponse> {
-  const params = new URLSearchParams();
-  if (query.project !== undefined) params.set('project', query.project);
-  if (query.from !== undefined) params.set('from', String(query.from));
-  if (query.to !== undefined) params.set('to', String(query.to));
-  const suffix = params.size === 0 ? '' : `?${params.toString()}`;
-  return request(`/api/costs/summary${suffix}`, CostSummaryResponseSchema);
-}
-
-/**
  * 运行观测汇总（V2.90 / D-8，CONTRACT §16 附）。
  *
- * 与 `/api/costs/summary` 的分工：那边回答"花了多少钱"，这边回答"跑得多快、失败在哪些码上"。
+ * 回答"跑得多快、失败在哪些码上"（金额不在这里：提交前的估价在本地算，不查库）。
  * 耗时**只是近似**（`durationNote` 由服务端下发，界面不要自己再写一版）。
  */
 export function fetchStatsSummary(

@@ -2,7 +2,6 @@ import type { ComponentType } from 'react';
 import type { MessageKey } from '../lib/i18n';
 import { CanvasStudioView } from './CanvasStudioView';
 import { LegacyLineageView } from './LegacyLineageView';
-import { CostsView } from './CostsView';
 import { CreateView } from './CreateView';
 import { EditView } from './EditView';
 import { LibraryView } from './LibraryView';
@@ -35,8 +34,6 @@ export type ViewIconKey =
   | 'list'
   | 'scissors'
   | 'graph'
-  /** V2.12（B48）：成本台账 —— 铜钱/账本意象 */
-  | 'coins'
   /** V2.88（D-1）：编排 —— 一串依序执行的节点 */
   | 'route'
   /** V2.90（D-8）：运行观测 —— 一条脉搏线 */
@@ -82,12 +79,9 @@ export const VIEW_REGISTRY: readonly ViewDef[] = [
   // 理由：画布是"编辑与生成"，编排是"执行与依赖"，两种心智混在一个工具栏里
   // 用户会分不清"我改的是这张图"还是"我改的是这条流水线"。
   { path: '#/plan', titleKey: 'shell.nav.plan', eyebrow: 'Plan', icon: 'route', component: PlanView },
-  // V2.90（D-8）：运行观测（耗时 / 失败码 / WS 连接）。成本金额仍在 `#/costs`（隐藏）。
+  // V2.90（D-8）：运行观测（耗时 / 失败码 / WS 连接）。
   { path: '#/stats', titleKey: 'shell.nav.stats', eyebrow: 'Observability', icon: 'pulse', component: StatsView },
   { path: '#/lineage', titleKey: 'shell.nav.canvas', eyebrow: 'Lineage', icon: 'graph', component: LegacyLineageView, hidden: true },
-  // V2.12（台账 B48）：成本台账 —— D62（2026-10-19）**下线**：不做支付/积分，成本只保留"估算"，
-  // 入口从侧栏移除；路由保留一个版本周期（旧链接不直接 404）。
-  { path: '#/costs', titleKey: 'shell.nav.costs', eyebrow: 'Cost Ledger', icon: 'coins', component: CostsView, hidden: true },
   // S6-A2：配方/模板收敛为单一「技能」入口。旧 `#/recipes` 保留为隐藏别名，旧书签不断。
   { path: '#/skills', titleKey: 'shell.nav.skills', eyebrow: 'Skills', icon: 'cards', component: SkillsView },
   { path: '#/recipes', titleKey: 'shell.nav.skills', eyebrow: 'Skills', icon: 'cards', component: SkillsView, hidden: true },

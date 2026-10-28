@@ -3,12 +3,16 @@ import { VIDEO_MODEL_PRESETS } from './videoModels.js';
 import type { VideoGenerateRequest } from './request.js';
 
 /**
- * 成本台账的**计价口径**（V2.12 / 台账 B48，契约 §12）。
+ * 提交前的**估价口径**（V2.12 / B48 起；V2.92 去掉记账侧，只留估价）。
  *
  * ## 这是估算，不是账单
  * 本文件产出的每一个数字都是**预估**：单价来自公开价目与官方口径（第三方价格页 / 活动页），
- * **从未与我方方舟账单核对过**（PLAN §8 已如实标注【待验证】）。所有对外呈现都必须带
- * `COST_DISCLAIMER`——"以方舟账单为准"不是免责套话，而是这个功能的**正确性边界**。
+ * **从未与我方方舟账单核对过**（PLAN §8 已如实标注【待验证】）。界面上只写"预估"，
+ * 真实扣费以方舟控制台账单为准 —— 这是这个功能的**正确性边界**，不是免责套话。
+ *
+ * ## 为什么不记账了
+ * 自用部署没有"按月对账"的对象，记账只会多一套会过期的数字；留下估价是因为
+ * **提交前就该知道要花多少钱**（这条在 BYOK 云端轨上真的有用）。
  *
  * ## 计算口径（沿用 PLAN §8 已实测的公式）
  * ```
@@ -28,13 +32,6 @@ export const COST_BILLING_FPS = 24;
 
 /** USD → CNY 的默认汇率（可由 `COST_USD_TO_CNY` 覆盖；**同样【待验证】**） */
 export const COST_DEFAULT_USD_TO_CNY = 7.1;
-
-/**
- * 对外呈现必须携带的口径说明。**不要**在界面里自己写别的版本 ——
- * 一处措辞 = 一处维护，且"以账单为准"这句话不允许被改弱。
- */
-export const COST_DISCLAIMER =
-  '预估金额（按公开价目 × 上游计费公式折算），未与我方账单核对；实际扣费以火山方舟控制台账单为准。';
 
 /** 表内无此模型时的兜底单价（自定义 `ep-…` 接入点走这条） */
 export const COST_UNKNOWN_MODEL_USD_PER_MILLION = 6.5;
@@ -288,63 +285,3 @@ export function formatYuan(yuan: number): string {
   return `¥${Math.round(yuan).toLocaleString('zh-CN')}`;
 }
 
-// ── 汇总（CONTRACT §5 `GET /api/costs/summary`）─────────────────────────────
-
-/**
- * 一个汇总桶（按项目 / 按天 / 按模型共用同一形状）。
- *
- * `unsettledCount` 与 `yuan` **并列出现**是刻意的：一个桶里"花了多少钱"必须和
- * "还有多少条没算出来"一起看 —— 只给金额会让人以为这就是全部。
- */
-export const CostBucketSchema = z.object({
-  /** 分组键：projectId / `YYYY-MM-DD` / modelId */
-  key: z.string(),
-  /** 展示名：项目名 / 日期 / 模型档位标签 */
-  label: z.string(),
-  yuan: z.number().nonnegative(),
-  taskCount: z.number().int().nonnegative(),
-  /** 该桶内**成功但没有成本记录**的任务数（V2.12 之前的老任务） */
-  unsettledCount: z.number().int().nonnegative(),
-});
-
-/** 部署级月度预算（`MONTHLY_BUDGET_YUAN`；未配置时为 null —— 不编默认预算） */
-export const CostBudgetSchema = z.object({
-  monthlyYuan: z.number().positive(),
-  monthToDateYuan: z.number().nonnegative(),
-  ratio: z.number().nonnegative(),
-  over: z.boolean(),
-});
-
-export const CostSummaryResponseSchema = z.object({
-  /** 统计区间（epoch ms；null = 不限） */
-  range: z.object({ from: z.number().int().nullable(), to: z.number().int().nullable() }),
-  /** 统计范围：某个项目 / `null` = 跨项目汇总（成本视图的"全部项目"档） */
-  projectId: z.string().nullable(),
-  totalYuan: z.number().nonnegative(),
-  /** 区间内的成功任务总数（含未结算的） */
-  taskCount: z.number().int().nonnegative(),
-  /** 其中**有成本记录**的条数（totalYuan 就是它们之和） */
-  pricedTaskCount: z.number().int().nonnegative(),
-  /** 成功但无成本记录（老任务）；界面必须显示，否则金额会被误读成"全部" */
-  unsettledCount: z.number().int().nonnegative(),
-  /**
-   * 已提交但我方无法确认结果的任务数（`UNCERTAIN_RESULT`）——
-   * **可能已产生费用**，B 端预算视图必须把它单独提出来（这是最容易被漏掉的成本）。
-   */
-  uncertainCount: z.number().int().nonnegative(),
-  byProject: z.array(CostBucketSchema),
-  byDay: z.array(CostBucketSchema),
-  byModel: z.array(CostBucketSchema),
-  /**
-   * true = 区间内任务数超过服务端的扫描上界，**金额是部分之和**。
-   * 有这一位才允许界面显示数字；否则"截断后的和"会被读成全量。
-   */
-  truncated: z.boolean(),
-  budget: CostBudgetSchema.nullable(),
-  /** 口径说明（固定为 `COST_DISCLAIMER`；服务端下发，界面不要自己写一版） */
-  disclaimer: z.string(),
-});
-
-export type CostBucket = z.infer<typeof CostBucketSchema>;
-export type CostBudget = z.infer<typeof CostBudgetSchema>;
-export type CostSummaryResponse = z.infer<typeof CostSummaryResponseSchema>;

@@ -144,11 +144,6 @@ const COLUMN_MIGRATIONS: ReadonlyArray<{ table: string; column: string; ddl: str
   // V2.11（台账 B47）：任务归属的项目。NULL = V2.11 之前建的行 → 启动时回填成默认项目
   // （`bootstrapProjects`）。回填而不是"查询时用 coalesce"：让按项目过滤能吃到索引。
   { table: 'tasks', column: 'project_id', ddl: 'TEXT' },
-  // V2.12（台账 B48）：成本记录。金额与来源单独成列（SQL 才能按项目 / 按天 SUM），
-  // 依据（算式 / 单价 / token 量）进 cost_detail（JSON）。NULL = 未结算（V2.12 之前的老任务）。
-  { table: 'tasks', column: 'cost_yuan', ddl: 'REAL' },
-  { table: 'tasks', column: 'cost_source', ddl: 'TEXT' },
-  { table: 'tasks', column: 'cost_detail', ddl: 'TEXT' },
   // V2.27（台账 A1 片 A / B11）：任务**实际在哪台机器上跑的**（cloud / host-local / client-worker）。
   // NULL = V2.27 之前的老任务 —— 界面遇到 NULL **不猜**（不按 provider 反推历史事实）。
   { table: 'tasks', column: 'executed_by', ddl: 'TEXT' },
@@ -173,7 +168,7 @@ function applyColumnMigrations(db: Db): void {
  * 「no such column」（这正是"改表必须走 ALTER"那条经验的下半句）。
  */
 const POST_MIGRATION_INDEXES = `
-CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, created_at DESC);-- V2.12（B48）：成本汇总按时间区间扫，走这条（cost_yuan 为 NULL 的行不参与 SUM）
+CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
 `;
 

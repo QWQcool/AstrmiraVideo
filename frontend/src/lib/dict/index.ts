@@ -4,7 +4,6 @@ import { CANVAS_EN, CANVAS_ZH } from './canvas';
 import { COMMON_EN, COMMON_ZH } from './common';
 import { CREATE_EN, CREATE_ZH } from './create';
 import { ERROR_EN, ERROR_ZH } from './error';
-import { COSTS_EN, COSTS_ZH } from './costs';
 import { EDIT_EN, EDIT_ZH } from './edit';
 import { LIBRARY_EN, LIBRARY_ZH } from './library';
 import { LOGS_EN, LOGS_ZH } from './logs';
@@ -36,8 +35,8 @@ import { WORKBENCH_EN, WORKBENCH_ZH } from './workbench';
  * `lib/errorReport.ts` 拼的崩溃面板与运行期通知正文 + `lib/runtimeErrorNotice.ts` 的壳）、
  * `canvas`（画布 —— **整屏**：节点卡 / 编排检查器 / 词表 / 画布纯函数 / 视图壳）、
  * `library`（视频库：页头 / 工具条 / 筛选排序取值 / 卡片 / 详情抽屉）。
- * 未迁：成本台账 / 配方库 / 操作日志 / 剪辑台 / 总览，以及一批零散库
- * （`lib/lineage.ts` / `costView.ts` / `workerClient.ts` /
+ * 未迁：配方库 / 操作日志 / 剪辑台 / 总览，以及一批零散库
+ * （`lib/lineage.ts` / `workerClient.ts` /
  * `engineOptions.ts` / `api.ts` 等 —— 精确剩余见迁移期盘点脚本）。
  *
  * ## 已定的一个口径（语言迁移第八批）：`console.*` 不是界面文案，保持中文
@@ -86,7 +85,6 @@ export const ZH = {
   ...ERROR_ZH,
   ...CANVAS_ZH,
   ...LIBRARY_ZH,
-  ...COSTS_ZH,
   ...RECIPES_ZH,
   ...SKILLS_ZH,
   ...LOGS_ZH,
@@ -115,7 +113,6 @@ export const EN: Record<MessageKey, string> = {
   ...ERROR_EN,
   ...CANVAS_EN,
   ...LIBRARY_EN,
-  ...COSTS_EN,
   ...RECIPES_EN,
   ...SKILLS_EN,
   ...LOGS_EN,

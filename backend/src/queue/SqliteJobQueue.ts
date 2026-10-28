@@ -1,6 +1,5 @@
 import type { TaskError, TaskProgress } from '@astrmira/shared';
 import { resolveExecutedBy } from '@astrmira/shared';
-import { settleTaskCost } from '../pricing.js';
 import type { TaskStore, TrackId } from '../store/taskStore.js';
 import type { JobQueue, QueueJob, TaskProgressUpdate } from './JobQueue.js';
 
@@ -114,10 +113,6 @@ export class SqliteJobQueue implements JobQueue {
     output: { videoUrl: string; imageUrl?: string; thumbnailUrl?: string; message?: string },
   ): Promise<void> {
     const before = this.store.get(taskId);
-    // V2.12（台账 B48）：**成本在终态结算一次**（失败任务不结算；本地轨记 0 元）。
-    // 结算在这里而不是在读取时算：历史单价会变，而"当时花了多少"不该被后改的价格改写；
-    // 现在算一次还能让 SQL 直接 SUM（`cost_yuan` 冗余列）。
-    const cost = before === null ? null : settleTaskCost(before.requestSnapshot, before.track);
     this.store.update(taskId, {
       status: 'succeeded',
       progressPercent: 100,
@@ -127,7 +122,6 @@ export class SqliteJobQueue implements JobQueue {
         ? {}
         : { outputImageUrl: output.imageUrl }),
       ...(output.thumbnailUrl === undefined ? {} : { thumbnailUrl: output.thumbnailUrl }),
-      ...(cost === null ? {} : { cost }),
       submitting: false,
       // 终态文案：不传则回落到中性文案。
       // 关键是不能沿用上一阶段（轮询 heartbeat 写下的"上游生成中"）——

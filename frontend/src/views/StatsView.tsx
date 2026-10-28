@@ -177,9 +177,6 @@ export function StatsView(): ReactNode {
               <Eyebrow index={4}>{t('stats.cost.title')}</Eyebrow>
             </div>
             <p className="wb-note">{t('stats.cost.body')}</p>
-            <a className="wb-note" href="#/costs">
-              {t('stats.cost.link')}
-            </a>
           </section>
         </>
       ) : null}

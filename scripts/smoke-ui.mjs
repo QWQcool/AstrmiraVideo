@@ -412,11 +412,11 @@ try {
   assert(true, '九个一级视图可切换，侧栏 aria-current 跟随');
 
   // 退场路由仍可直达（D62：保留一版），但不再要求出现在侧栏 / aria-current
-  for (const hash of ['#/costs', '#/workbench', '#/lineage']) {
+  for (const hash of ['#/workbench', '#/lineage']) {
     await page.evaluate((h) => { location.hash = h; }, hash);
     await page.waitForFunction((h) => location.hash === h, hash, { timeout: 5_000 });
   }
-  assert(true, '退场路由仍可直达（#/costs / #/workbench / #/lineage）');
+  assert(true, '退场路由仍可直达（#/workbench / #/lineage）');
 
   // 前进后退可用（hash 变化产生历史条目）
   await page.evaluate(() => { location.hash = '#/overview'; });
@@ -564,67 +564,6 @@ try {
   await page.evaluate(() => { location.hash = '#/workbench'; });
   await page.waitForSelector('.wb-main', { timeout: 5_000 });
 
-  console.log('\n[1d] 成本台账（V2.12 / 台账 B48：结构 + 口径说明）');
-  await page.evaluate(() => { location.hash = '#/costs'; });
-  await page.waitForSelector('.cost-controls', { timeout: 10_000 });
-  assert(true, '成本台账可直达（#/costs，侧栏第八项）');
-
-  const kpiLabels = await page.evaluate(() =>
-    [...document.querySelectorAll('.ov-kpi .ov-kpi-label')].map((el) => el.textContent ?? ''),
-  );
-  assert(
-    kpiLabels.length === 4 && kpiLabels.includes('未结算') && kpiLabels.includes('结果不明'),
-    `四张卡齐全且把"未结算 / 结果不明"摆在明面上（${kpiLabels.join(' / ')}）`,
-  );
-
-  assert(
-    (await page.locator('.cost-controls .wb-segment').count()) >= 6,
-    `两个分段控件（统计范围 2 项 + 区间 4 项）可点（实际 ${await page.locator('.cost-controls .wb-segment').count()} 个按钮）`,
-  );
-  // ⚠️ 必须限定在 `.cost-controls` 内：工作台/创作是 keepalive 常驻视图，
-  // 它们的 `.wb-segment` 仍在 DOM 里（隐藏），全局查询会先命中隐藏副本（V8.7 的教训）
-  const scopePressed = await page.evaluate(
-    () =>
-      document
-        .querySelectorAll('.cost-controls .wb-segmented')[0]
-        ?.querySelector('.wb-segment[aria-pressed="true"]')?.textContent ?? '',
-  );
-  assert(
-    scopePressed.includes('当前项目'),
-    `默认统计范围 = 当前项目（与全站"我在哪个项目里"同一心智模型；实际「${scopePressed}」）`,
-  );
-
-  // 口径说明**由服务端下发**（界面不自己写一版）—— 这句话是功能的正确性边界
-  const disclaimer = await page.locator('.cost-disclaimer').innerText();
-  assert(
-    disclaimer.includes('以火山方舟控制台账单为准') && disclaimer.includes('预估'),
-    `页面显示服务端下发的口径说明（「${disclaimer.slice(0, 24)}…」）`,
-  );
-
-  // 三个分桶面板（按项目 / 按天 / 按模型）都在
-  const bucketHeads = await page.evaluate(() =>
-    [...document.querySelectorAll('.cost-panel .wb-eyebrow')].map((el) => el.textContent ?? ''),
-  );
-  assert(
-    bucketHeads.length === 3,
-    `按项目 / 按天 / 按模型三个分桶面板齐全（${bucketHeads.join(' / ')}）`,
-  );
-
-  // 切到"全部项目"（成本视图独有的跨项目档）
-  await page.locator('.cost-controls').getByRole('button', { name: '全部项目' }).click();
-  await page.waitForFunction(
-    () =>
-      document
-        .querySelectorAll('.cost-controls .wb-segmented')[0]
-        ?.querySelector('.wb-segment[aria-pressed="true"]')?.textContent === '全部项目',
-    null,
-    { timeout: 5_000 },
-  );
-  assert(true, '可切到「全部项目」档（跨项目汇总 —— 这台机器一共花了多少）');
-
-  // 回到工作台（[2] 起的检查都假设当前在工作台 —— 与 [1c] 末尾同一纪律）
-  await page.evaluate(() => { location.hash = '#/workbench'; });
-  await page.waitForSelector('.wb-main', { timeout: 5_000 });
 
   console.log('\n[1e] 可观测（V2.16 / 台账 B53：live / ready / metrics 三端点分工）');
   const liveRes = await fetch(`${baseUrl}/api/health/live`);
@@ -1781,68 +1720,6 @@ try {
     `B57：淡出写回工程并经草稿恢复（刷新后仍是 ${fadeOutValue} 帧）`,
   );
 
-  console.log('\n[6j] 成本台账（V2.12 / 台账 B48：本地轨"记 0 元"而不是"未结算"）');
-  // 夹具任务是 local 轨 → 结算为 `local-free` 0 元。这条断言正是"没花钱"与"不知道花了多少"
-  // 分得开的端到端证据（如果实现里用 0 兜底未结算，这里就分不出来了）。
-  const costSummary = await page.evaluate(async () => {
-    const data = await (await fetch('/api/costs/summary?project=all')).json();
-    return {
-      taskCount: data.taskCount,
-      pricedTaskCount: data.pricedTaskCount,
-      unsettledCount: data.unsettledCount,
-      uncertainCount: data.uncertainCount,
-      totalYuan: data.totalYuan,
-      truncated: data.truncated,
-      modelBuckets: data.byModel.map((bucket) => bucket.label),
-      disclaimer: data.disclaimer,
-    };
-  });
-  note(`成本汇总：${JSON.stringify(costSummary)}`);
-  assert(
-    costSummary.taskCount >= 1 && costSummary.pricedTaskCount >= 1,
-    `区间内成功任务都已结算（${costSummary.pricedTaskCount}/${costSummary.taskCount} 条有成本记录）`,
-  );
-  assert(
-    costSummary.unsettledCount === 0,
-    '未结算 = 0（本地轨任务**显式记 0 元**，不是"不知道花了多少"）',
-  );
-  assert(
-    costSummary.totalYuan === 0,
-    `预估总花费 = ¥0（本次冒烟全是本地轨：无 API 费用；实际 ${costSummary.totalYuan}）`,
-  );
-  assert(
-    costSummary.disclaimer.includes('以火山方舟控制台账单为准'),
-    '汇总响应带口径说明（服务端下发，界面不自己写一版）',
-  );
-  assert(costSummary.truncated === false, '未触到扫描上界（truncated=false）');
-
-  // 界面上也看一眼：金额与条数**成组出现**
-  await page.evaluate(() => { location.hash = '#/costs'; });
-  await page.waitForSelector('.cost-controls', { timeout: 10_000 });
-  await page.locator('.cost-controls').getByRole('button', { name: '全部', exact: true }).click();
-  await page.waitForFunction(
-    () => document.querySelectorAll('.ov-kpi .ov-kpi-value').length === 4,
-    null,
-    { timeout: 10_000 },
-  );
-  const costHeadline = await page.evaluate(() => {
-    const cards = [...document.querySelectorAll('.ov-kpi')];
-    const find = (label) =>
-      cards.find((card) => card.querySelector('.ov-kpi-label')?.textContent === label);
-    return {
-      detail: find('预估花费')?.querySelector('.ov-kpi-foot')?.textContent ?? '',
-      unsettled: find('未结算')?.querySelector('.ov-kpi-value')?.textContent ?? '',
-    };
-  });
-  assert(
-    costHeadline.detail.includes('已结算'),
-    `金额旁边跟着"已结算 N 条"（只给金额会被读成全量；实际「${costHeadline.detail}」）`,
-  );
-  assert(
-    costHeadline.unsettled.startsWith('0'),
-    `界面上未结算显示 0 条（实际「${costHeadline.unsettled}」）`,
-  );
-
   console.log('\n[7b] 动效体系（V9 · B6：reduced-motion 双 context 对照）');
   // 先切到视频库：卡片级联的探针要挑一个真的有 `.lib-card` 的视图
   await page.evaluate(() => { location.hash = '#/library'; });
@@ -2383,7 +2260,6 @@ console.log('\n[7g] 语言防线（V2.38 上线：首访跟随浏览器 · 显�
    * （值来自文档名，可能是用户数据），因此单独断言“编辑器壳渲染”，不拿标题文案硬比。
    */
   for (const [hash, selector, title] of [
-    ['#/costs', 'h1.wb-page-title', ['Cost ledger']],
     ['#/skills', 'h1.wb-page-title', ['Skill library']],
     ['#/logs', 'h1.wb-page-title', ['Activity log']],
     ['#/overview', 'h1.wb-page-title', ['Overview']],

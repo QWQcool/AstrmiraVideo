@@ -34,8 +34,7 @@ export const STATS_ZH = {
   'stats.cost.title': '成本口径',
   'stats.cost.body':
     '本地轨（ComfyUI）的成本是 0，这是真实值而不是缺数据：算力是自建的，没有按次计费；' +
-    '这里也不把电费/折旧折算成金额（那会变成编造的数字）。云端轨的金额见成本台账。',
-  'stats.cost.link': '打开成本台账',
+    '这里也不把电费/折旧折算成金额（那会变成编造的数字）。云端轨按方舟账单结算，界面只在提交前给估价。',
 } as const;
 
 export const STATS_EN: Record<keyof typeof STATS_ZH, string> = {
@@ -68,6 +67,5 @@ export const STATS_EN: Record<keyof typeof STATS_ZH, string> = {
   'stats.cost.title': 'Cost basis',
   'stats.cost.body':
     'The local track (ComfyUI) costs 0 and that is a real value, not missing data: the compute is self-hosted with no per-run billing; ' +
-    'electricity and depreciation are deliberately not converted into money here (that would be an invented number). Cloud spend lives in the cost ledger.',
-  'stats.cost.link': 'Open cost ledger',
+    'electricity and depreciation are deliberately not converted into money here (that would be an invented number). Cloud spend is billed by Ark; the UI only shows a pre-submit estimate.',
 };
