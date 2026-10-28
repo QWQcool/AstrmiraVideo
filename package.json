@@ -25,6 +25,7 @@
     "test:browser:media": "node tests/browser/run-media.mjs",
     "test:browser:edges": "node tests/browser/edge-lines.mjs",
     "smoke:comfy": "node scripts/comfyui-acceptance.mjs",
+    "smoke:image": "node scripts/image-edit-acceptance.mjs",
     "smoke:comfy:e2e": "node scripts/smoke-comfyui-e2e.mjs",
     "capture:shots": "node scripts/capture-docs-shots.mjs",
     "serve:local": "node scripts/serve-local.mjs",
