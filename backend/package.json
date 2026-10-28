@@ -9,10 +9,7 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:e2e": "vitest run src/e2e",
-    "test:coverage": "vitest run --coverage",
-    "ops:backup": "node dist/ops/cli.js backup",
-    "ops:verify": "node dist/ops/cli.js verify",
-    "ops:restore": "node dist/ops/cli.js restore"
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@astrmira/shared": "workspace:*",

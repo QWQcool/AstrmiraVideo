@@ -8,7 +8,8 @@
 >      `WEBHOOK_NOT_FOUND`、快照里的 `webhooks` 字段与两条告警规则一并删除；
 >   ③ §13 成本台账（V2.12 / B48）—— GET /api/costs/summary、TaskView.cost、	asks 三列、
 >      终态结算与前端台账页全部删除；**保留提交前的估价**（纯前端算，不进库、不下发）；
->   ④ §17 备份与恢复随后同批删除（单独 commit）。
+>   ④ §17 备份与恢复（V2.17 / B52 / B95）—— ops CLI 三个子命令、data/backups、
+>      manifest.json 与恢复闸门全部删除；**服务进程锁保留**（它挡的是两个进程写一个库）。
 >   **章节编号不复用**：§14/§15 空号保留，避免外部笔记与旧提交里的"§16/§17"指向漂移。
 >   **不新增**字段、路由、错误码；被删能力在旧数据上表现为"字段不再下发"，不报错。
 > **V2.91 修订（2026-10-27 · D-1 真机验收发现的两处缺陷）** ——
@@ -1727,7 +1728,7 @@ export interface CanvasPlanFile {
    （旧口径是"就地删除并返回 null"—— 那是数据丢失，用户只会看到"我的剪辑怎么没了"）；
 2. **历史快照走同一个迁移函数**：老快照也要能打开；读不出来的那份**跳过并计数**，由界面如实说明；
 3. **恢复前先保底**：恢复某个历史版本之前，先把**当前**状态强制存一份（`force`）——
-   恢复错了还能回去（与备份恢复 §17 同一纪律）。
+   恢复错了还能回去（与其它不可逆动作同一纪律：先留旧值，再写新值）。
 
 **历史的三条节制**：`DRAFT_HISTORY_LIMIT = 8`（只留最近 8 份）、
 `DRAFT_HISTORY_MIN_INTERVAL_MS = 5 分钟`（自动快照节流；编辑防抖是 500ms，不节流会瞬间刷满）、
@@ -1919,116 +1920,6 @@ interface StatsSummaryResponse {
 **本版不做**：直方图/分位数时间序列（趋势由调用方自己存）、按模型维度、按项目维度
 （成本已经有项目维度；运行观测先看全局）。
 
----
-
-## 17. 备份与恢复（V2.17 新增；**V2.72 纳入画布**；台账 B52 片 A / B95）
-
-> **为什么进契约**：备份/恢复的语义决定"客户的片子会不会丢"，而它比任何接口都更难事后补救。
-
-**数据布局**（部署者只需知道这五样）：
-
-| 路径 | 是什么 | 备注 |
-|---|---|---|
-| `data/app.db` | 任务 / 项目 / 日志 | WAL 模式（`-wal` / `-shm` 是**派生文件**） |
-| `data/canvas/` | **画布文档** `<projectId>.doc.json` + `index.json`（派生索引）+ `<projectId>.deleted`（删除墓碑） | 见 §21-8；**不在 `app.db` 里** |
-| `data/server.lock` | **服务进程锁**（`{ pid, startedAt, version }`） | 服务启动时写、`onClose` 释放；备份 CLI 靠它判断"能不能恢复" |
-| `outputs/` | 成片 / 缩略图 / 参考资产 | 见 §7 的生命周期与淘汰规则 |
-| `data/backups/`（约定位置） | 备份产物 | 默认落在这里；可用 `--out` 改 |
-
-**明确不在备份范围内的东西**：浏览器 `localStorage` / `sessionStorage` 里的画布便签、助手会话、BYOK、主题与偏好、上次打开的画布 ——
-它们**在用户浏览器里**，服务端备份取不到。不要说"备份恢复了全部工作状态"。
-
-**备份产物 = 一个目录**（不是 tar/zip）：
-
-```
-backups/backup-20261010-160000/
-├── app.db            # VACUUM INTO 的**一致性快照**
-├── manifest.json     # 见下（"这一份是完整的"的标记，最后才写）
-├── canvas/…          # 文档 / index.json / 墓碑（**总是包含**；--no-outputs 不影响它）
-└── outputs/…         # 成片与资产（--no-outputs 时没有这一层）
-```
-
-```ts
-export interface BackupManifest {
-  backupVersion: number;      // 2 = 含画布；> 本机版本 → 恢复前必须升级服务（明确报这句话）
-  createdAt: number; appVersion: string;
-  includeOutputs: boolean;
-  includeCanvas: boolean;     // V2.72；旧备份（v1）没有这个字段 → 解析为 false
-  database: { path: 'app.db'; bytes: number; sha256: string };
-  outputs: Array<{ path: string; bytes: number }>;   // 大文件只记字节数（逐字节 hash 代价与收益不成比例）
-  canvas: Array<{ path: string; bytes: number; sha256: string }>;  // 小文件逐份 hash（V2.72）
-  counts: {
-    tasks: number; projects: number;
-    canvases: number; canvasTombstones: number;      // V2.72：恢复后对账
-  };
-}
-```
-
-**一致性策略（V2.72；不是"两个目录各拷一遍"）**：
-
-数据库与画布是两套持久化，**不能把不同时点的两份拼起来再声称完整一致**。顺序固定为：
-
-1. 取**画布写锁** `data/canvas/.backup.lock`（含 `{pid, startedAt}`）；
-2. `VACUUM INTO` 取数据库快照；
-3. 拷贝画布文件（逐份 sha256）；
-4. 释放写锁；
-5. 拷贝 `outputs/`（体积大，不参与"画布 ↔ 任务"对账，不延长画布只读窗口）；
-6. 最后写 `manifest.json`。
-
-- 备份窗口内 `PUT/DELETE /api/canvas/docs/:projectId` **明确返回 409**（人话说明"备份进行中，画布暂时只读，编辑不会丢，稍后重试"），**不静默丢弃**；
-  只改 `activeProjectId` 的"上次打开"不拦（它不改变画布集合）。
-- 由此可对账的事实：**画布集合在整个窗口内不变**，所以画布文档引用的任务一定创建于数据库快照之前。
-- 不宣称更强的东西：备份期间**新产生的任务**不在快照里（"回到那一刻"的语义）。
-- 陈旧锁（异常退出残留）超过 **10 分钟**可被下次备份接管；否则拒绝并发备份。
-
-**版本与旧备份兼容**：
-
-| 情形 | 行为 |
-|---|---|
-| `backupVersion > 本机` | 校验失败，明确要求升级服务 |
-| `backupVersion === 1`（无 canvas 字段） | **校验可通过**，但输出 note：不含画布；恢复时**保留目标现有画布**，`canvasRestored=false`，CLI 如实打印"不能声称完整画布恢复" |
-| `includeCanvas=true` 但 `canvas=[]` | 校验通过 + note"备份时确实没有任何画布" |
-| `includeCanvas=false` 却列了 canvas 文件 | 校验失败（manifest 自相矛盾） |
-
-**校验范围（V2.72）**：manifest 可解析 + 版本兼容 + `app.db` 的 sha256 + 每个 outputs 文件字节数 +
-**每个画布文件的字节数与 sha256** + 画布引用关系：
-
-- 文档文件名解码后的 `projectId` 必须等于文档内 `projectId`，且是规范转义；
-- 文档必须是合法 `CanvasDoc`（§21-1）；
-- `index.json` 列出的每张画布都必须有对应文档、且没有删除墓碑；
-- 同一 `projectId` 不能既存在文档又存在墓碑；
-- `counts.canvases` 必须等于实际文档数。
-
-**恢复语义**：整体替换 `app.db`（含 `-wal`/`-shm` 清理）、`outputs/`（`includeOutputs` 时）与 `canvas/`（`includeCanvas` 时）。
-恢复前自动备份的 `pre-restore-*` 同样包含画布（`--no-outputs` 只影响媒体）。
-
-**为什么必须是 `VACUUM INTO` 而不是 `cp data/app.db`**：WAL 模式下直接拷库可能拿到
-**缺了最近事务、甚至内部不一致**的文件（最新数据还在 `-wal` 里）。`VACUUM INTO` 是 SQLite 原生的
-一致性快照 —— 这是"备份能不能用来恢复"的分界线，而一份拷出来的坏库只有真要恢复的那天才会被发现。
-
-**恢复的三道安全闸门**（缺一不可）：
-
-1. **服务进程锁**：检测到 `server.lock` 里那个 PID **还活着** → 拒绝恢复（消息里带上 PID 与启动时间）。
-   ⚠️ **这道闸门不能省**（实测教训）：第一版只检查"数据库写锁"，而**空闲的服务不持有写锁** →
-   判定放行 → 在 Windows 上 `EBUSY`（响亮失败），在 **Linux（部署目标）上 unlink 会成功**，
-   服务继续往被删除的 inode 写 —— 运维以为恢复成功，实际"新库"与"跑着的服务"从此刻起各写各的。
-   **陈旧锁**（PID 已不存在，异常退出留下的）→ 明确提示并放行（拿一把陈旧锁挡住灾难恢复更糟）。
-2. **`--yes`**：恢复是**不可逆的整体替换**，必须显式确认。
-3. **校验不通过不动数据**：`manifest` 可解析 + 版本兼容 + `app.db` 的 sha256 + 逐文件字节数
-   + 画布文件的 sha256 与索引↔文档↔墓碑引用关系（V2.72）。
-   另外恢复前**自动把当前状态备一份**（`pre-restore-*`，含画布）—— 恢复错了还能回去。
-
-**⚠️ 一条运维必读**：**用服务打开一份备份快照会改写它**（`openDatabase` 的幂等迁移 + 启动引导会写库、
-还会生成 `-wal`）→ 之后 sha256 校验必然失败。**先 `verify`，再决定要不要打开看**。
-
-**CLI**（先 `pnpm build`）：`node backend/dist/ops/cli.js <backup|verify|restore>`，
-或 `pnpm --filter backend ops:backup` / `ops:verify` / `ops:restore`。备份**可以在服务运行时做**
-（一致性快照），**恢复必须在服务停止后做**。
-
-**本版不做**：① 备份的**加密与异地存放**（产物是普通文件，交给客户的存储策略：对象存储 / rsync / 磁带）；
-② **增量备份**（`VACUUM INTO` 是全量；outputs 可自行用 rsync 做增量）；③ **自动定时备份**
-（本版只提供工具与闸门，调度交给客户已有的 cron/计划任务）；④ **跨版本数据迁移**（向前兼容由 `COLUMN_MIGRATIONS`
-保证，但"回退到旧版本"不在支持范围 —— 回退请用恢复）。
 ---
 
 ## 18. 本地 worker 协议 `astrmira-worker/v1`（V2.28 新增；台账 A1 片 A / B1）
