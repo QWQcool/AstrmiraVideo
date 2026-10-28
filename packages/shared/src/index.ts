@@ -37,7 +37,6 @@ export * from './editProject.js';
 export * from './edit.js';
 export * from './projects.js';
 export * from './cost.js';
-export * from './webhooks.js';
 export * from './metrics.js';
 export * from './canvasPlan.js';
 export * from './canvasDoc.js';

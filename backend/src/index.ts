@@ -41,7 +41,6 @@ import { healthRoutes } from './routes/health.js';
 import { providerBaseType, readThresholdsFromEnv, resolveThresholds } from '@astrmira/shared';
 import { createCostRoutes } from './routes/costs.js';
 import { createObservabilityRoutes } from './routes/observability.js';
-import { createWebhookRoutes } from './routes/webhooks.js';
 import { createHistoryRoutes } from './routes/history.js';
 import { createHistoryImportRoutes } from './routes/historyImport.js';
 // V2.16（B53）：readiness 的媒体工具自检（ffmpeg/ffprobe 缺失不降级，但如实陈述）
@@ -89,8 +88,6 @@ import { createAssetUrlResolver, createTaskVideoUrlResolver } from './store/asse
 import { openDatabase, resolveDatabasePath } from './store/db.js';
 import { EventLogStore } from './store/eventLog.js';
 import { ProjectStore } from './store/projects.js';
-import { WebhookStore } from './store/webhooks.js';
-import { WebhookDispatcher } from './webhook/dispatcher.js';
 import { reconcileOrphanTasks } from './store/reconciliation.js';
 import { TaskStore } from './store/taskStore.js';
 
@@ -227,8 +224,6 @@ const app = Fastify({
   const store = new TaskStore(db);
   // V2.11（B47）：项目维度（默认项目由 openDatabase 的 bootstrapProjects 保证存在）
   const projects = new ProjectStore(db);
-  // V2.15（B51）：Webhook 订阅与投递流水
-  const webhooks = new WebhookStore(db);
   const eventLog = new EventLogStore(db);
   // V9 修复：任务终态（complete / fail / uncertain）也进操作日志 —— 否则异步任务的失败
   // 不产生新的 HTTP 请求，操作日志里无迹可查（剪辑失败但日志全是 200 的缺口）。
@@ -408,27 +403,14 @@ const app = Fastify({
     );
   }
 
-  // V2.15（B51）：Webhook 终态回调 —— 扫描补投 + 投递循环（默认 2s 一轮）。
-  // 为什么是扫描而不是"终态时立刻推"：见 store/webhooks.ts 的文件头（一处覆盖全部终态写入点 + 重启补投）。
-  const webhookDispatcher = new WebhookDispatcher({
-    webhooks,
-    tasks: store,
-    ...(process.env['PUBLIC_BASE_URL'] === undefined
-      ? {}
-      : { publicBaseUrl: process.env['PUBLIC_BASE_URL'] }),
-    onError: (err) => app.log.warn({ err }, 'Webhook 投递循环异常（不影响服务）'),
-  });
-  webhookDispatcher.start();
 
   app.addHook('onClose', async () => {
-    // 先排空后台任务（淘汰器 + 调度器 + Webhook 投递 + 日志保留：停表 + 等在飞的一轮）**再关库**：
+    // 先排空后台任务（淘汰器 + 调度器 + 日志保留：停表 + 等在飞的一轮）**再关库**：
     // 关早了，在飞的扫描会在关闭后的连接上读写 → unhandled rejection（2026-09-24 CI 实测）
     logRetention.stop();
-    webhookDispatcher.stop();
     await storageEvictor.drain();
     await logRetention.drain();
     await dispatcher.drain();
-    await webhookDispatcher.drain();
     db.close();
     // V2.17（B52）：释放服务进程锁（备份 CLI 靠它判断"能不能恢复"）
     serverLock.release();
@@ -604,13 +586,10 @@ const app = Fastify({
   await app.register(createCostRoutes({ store, projects }));
   // V2.90（D-8）：运行观测（耗时 p50/p95、失败码分布、ComfyUI WS 连接事实）
   await app.register(createStatsRoutes({ store, comfyLinks: comfyProgressStats }));
-  // V2.15（B51 片 A）：Webhook 订阅管理（终态回调；secret 只回显一次，URL 过 SSRF 准入）
-  await app.register(createWebhookRoutes({ webhooks, projects }));
   // V2.16（B53）：可观测 —— live/ready 分级 + 运维快照（告警阈值可 env 覆盖）
   await app.register(
     createObservabilityRoutes({
       tasks: store,
-      webhooks,
       outputsDir: resolveOutputsDir(),
       // 与淘汰器**共用同一个上限解析**（否则会出现"面板说没超、淘汰器已经在删"）
       maxBytes: resolveOutputsMaxBytes(),

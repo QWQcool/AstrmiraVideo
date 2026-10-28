@@ -4,7 +4,10 @@
 > **V2.92 修订（2026-10-28 · 定位收敛为「个人自用」，删掉 B 端交付能力）** ——
 >   定位从"面向私有化交付"改为"一个人自用"（见 README 开头的定位段），因此**整节删除**：
 >   ① §14 交付物命名/平台规格/归档清单（V2.13 / B49）—— 交付包已从视频库下线；
->   后续同批删除 §15 Webhook、§13 成本台账、§17 备份与恢复，各自单独一条修订记录。
+>   ② §15 Webhook 终态回调（V2.15 / B51）—— 五条 `/api/webhooks` 路由、两张表、
+>      `WEBHOOK_NOT_FOUND`、快照里的 `webhooks` 字段与两条告警规则一并删除；
+>   ③ §13 成本台账、§17 备份与恢复随后同批删除（各自单独 commit）。
+>   **章节编号不复用**：§14/§15 空号保留，避免外部笔记与旧提交里的"§16/§17"指向漂移。
 >   **不新增**字段、路由、错误码；被删能力在旧数据上表现为"字段不再下发"，不报错。
 > **V2.91 修订（2026-10-27 · D-1 真机验收发现的两处缺陷）** ——
 >   ① **参考少于模板槽位**：双槽模板只给 1 张参考时，第二槽 `LoadImage` 没有 `image`，
@@ -525,7 +528,7 @@
 > **状态（上一版）：V2.18 · 已冻结**
 > **V2.18 修订（2026-10-10）**：**操作日志保留策略（台账 B23）** —— 无新路由、无新错误码，
 >   只把 §10 里那句"全量保留、由用户手动删"改成**默认保留 90 天 / 20 万条**（`LOG_RETENTION_DAYS` /
->   `LOG_MAX_ROWS` 可覆盖，`0` = 关闭该判据），并新增 `log.prune` 动作。为什么现在做：私有化部署是长跑，
+>   `LOG_MAX_ROWS` 可覆盖，`0` = 关闭该判据），并新增 `log.prune` 动作。为什么现在做：这台服务是长期自用的，
 >   而 §16 的 `database.size` 告警会**先于**任何人注意到日志在涨；**只删日志，业务数据一条不动**。
 >
 > **状态（上一版）：V2.17 · 已冻结**
@@ -1090,14 +1093,9 @@ export interface AssetListResponse {
 | `POST` | `/api/subjects` | **V2.86 新增**：新建主体（body `{ name, description?, assetIds? }`，`name` 1~60 字符、`assetIds` ≤9）。**200 → `{ subject }`**（id 由服务端生成，`createdAt` = 服务端时间）。`name` 空白 → **400 `INVALID_REQUEST`**；数量达上限（500）→ **400 `INVALID_REQUEST`**（不静默丢） |
 | `PATCH` | `/api/subjects/:id` | **V2.86 新增**：改主体（body `{ name?, description?, assetIds? }`，至少一项）。**200 → `{ subject }`**；不存在 → **404 `PROJECT_NOT_FOUND`**；`description` 传空串 = **清除描述**（不保留空字符串）；`assetIds` 传 `[]` = **清空参考素材** |
 | `DELETE` | `/api/subjects/:id` | **V2.86 新增**：删除主体。**200 → `{ deleted: true, subjectId }`**；不存在 → **404 `PROJECT_NOT_FOUND`**。**只删主体记录，不删它的素材资产**（资产由 §7 的生命周期管理）；已引用它的画布节点保持原样（`subjectId` 不会被回写清空，界面显示"未知主体"） |
-| `GET` | `/api/webhooks` | **V2.15 新增（台账 B51 片 A）**：**Webhook 订阅清单**（只读）。`?project=` —— **省略 = 默认项目**（与全站同口径）；项目不存在 → **404 `PROJECT_NOT_FOUND`**。**200 → `{ webhooks: WebhookView[] }`** —— **永远不含明文 secret**（只有 `secretMasked`，形如 `whsec_01…cdef`）。用途：客户系统自检"我的订阅还在不在" |
-| `POST` | `/api/webhooks` | **V2.15 新增**：新建订阅（body `{ projectId?, url, secret?, events? }`）。**201 → `{ webhook: WebhookView, secret }`** —— ⚠️ **明文 `secret` 只在这唯一一次响应里出现**（之后任何接口都只有掩码），客户必须自己存好；省略 `secret` 由服务端生成（推荐，手填弱 secret 是这条链路上最容易出的安全问题）；`events` 省略 = `['task.terminal']`。**URL 过 SSRF 准入**（只允许 http/https、不许带用户名密码、**默认拒绝环回 / 私网 / 链路本地 / 云元数据**，理由见 §15）→ 不通过 **400 `INVALID_REQUEST`**（文案含"部署者设 `WEBHOOK_ALLOW_PRIVATE=1` 可放行"）；项目不存在 → **404 `PROJECT_NOT_FOUND`** |
-| `PATCH` | `/api/webhooks/:webhookId` | **V2.15 新增**：改地址 / 启停（body `{ url?, enabled? }`，至少给一项）。**200 → `{ webhook: WebhookView }`**（同样**不回显**明文 secret）；订阅不存在 → **404 `WEBHOOK_NOT_FOUND`**；新 URL 不过 SSRF 准入 → **400 `INVALID_REQUEST`** |
-| `DELETE` | `/api/webhooks/:webhookId` | **V2.15 新增**：删订阅（**连带删掉它的投递流水** —— 留着一堆指向已删订阅的记录会让人以为"还有回调在跑"）。**200 → `{ deleted: true }`**；不存在 → **404 `WEBHOOK_NOT_FOUND`** |
-| `GET` | `/api/webhooks/:webhookId/deliveries` | **V2.15 新增**：**投递流水**（最近 N 条，`?limit=` 1~200，默认 50）。**200 → `{ deliveries: WebhookDeliveryView[] }`**（`status` / `attempts` / `lastStatusCode` / `lastError` / `nextAttemptAt` / `deliveredAt`）—— 它是"客户到底收到没有"的唯一证据，也是排错入口。**空列表是 200 而不是 404**（订阅存在但还没到终态任务）；订阅不存在 → **404 `WEBHOOK_NOT_FOUND`** |
 | `GET` | `/api/health/live` | **V2.16 新增（台账 B53）**：**存活探针**（与 `/api/health` **同语义**，新路径为了与 ready 成对）。**任何来源免鉴权**（编排器的 livenessProbe 不会带 Bearer）。**零依赖**：不碰数据库、不扫目录 —— 探针若在依赖故障时也变慢/失败，编排器会把"数据库卡住"当成"进程死了"并重启，把一次依赖故障放大成服务不可用。**200 → `HealthLiveResponse`（§16）** |
 | `GET` | `/api/health/ready` | **V2.16 新增**：**就绪探针**（进程活着 ≠ 能干活）。检查项：数据库可读、输出目录**真写一次**、容量余量、媒体工具（见 §16）。**需鉴权**（回环免；它暴露部署内部细节 —— 探针自己带 `Authorization: Bearer <PUBLIC_API_TOKEN>`）。`required` 检查失败 → **503**（响应体**照样**给完整 `checks`：排错要看原因，不是只看状态码）；**非 required** 失败（ffmpeg 缺失、容量接近阈值、凭据未配）**不降级** —— BYOK / 纯云端部署下它们不影响力 |
-| `GET` | `/api/metrics` | **V2.16 新增**：**运维快照**（任务按状态 / 队列积压 / 存储 / 数据库体积 / Webhook 投递 / 告警 / 生效阈值）。**需鉴权**（回环免）。**200 → `MetricsResponse`（§16）**。⚠️ 它含**一次目录扫描**（毫秒级，本项目规模下），因此**不做服务端自动轮询** —— 调用方自己决定频率（建议 15~60s）。无新错误码 |
+| `GET` | `/api/metrics` | **V2.16 新增**：**运维快照**（任务按状态 / 队列积压 / 存储 / 数据库体积 / 告警 / 生效阈值）。**需鉴权**（回环免）。**200 → `MetricsResponse`（§16）**。⚠️ 它含**一次目录扫描**（毫秒级，本项目规模下），因此**不做服务端自动轮询** —— 调用方自己决定频率（建议 15~60s）。无新错误码 |
 | `GET` | `/api/history` | 历史视频列表（含完整参数快照用于回填）。**200 → `{ items: TaskProgress[], storage: StorageUsage, hasMore: boolean }`**（`items` 默认最近 50 条；**V2.3 起**每条含 `createdAt` / `outputSizeBytes?`，响应另带 `storage` 目录级聚合，形状见 §4 末尾）。**V2.4 起**：默认只返回**生成产物**（剪辑产物不进历史，避免提示词与源片相同造成的"重复"观感）；查询参数 `?kind=edit`：**V2.6 起 `source` 可选** —— 带 `source=<taskId>` 返回某源片的剪辑产物（剪辑台"本片剪辑历史"用）；**不带 `source` 返回全部剪辑产物**（剪辑台素材候选 / L2 血缘画布用，同样受条数上限约束）。**V2.11（B47）**：可选 `?project=<projectId>` —— **省略 = 默认项目**（不是"全部项目"：界面的心智模型是"我在哪个项目里"）；`storage` 聚合仍是**目录级全局**（它描述磁盘，不描述项目）。**V2.25（B44）**：新增可选 `?limit=`（**1~200，省略 = 50**，超出范围 → 400 `INVALID_REQUEST`）与 `?before=<epoch ms>`（只返回 `created_at < before` 的任务 —— "加载更早"的游标）；响应新增必填 `hasMore`（服务端按 `limit + 1` 探测后截断，不做额外 COUNT；老客户端忽略它即可）。**排序键是 `created_at`**（游标语义与之一致）。**V2.43**：新增可选 `?origin=create|canvas` —— **缺省与 `create` 都排除画布产物**（画布节点的结果只在画布里看得到，与实测产品一致）；`origin=canvas` 时只返回画布产物（画布内回查用）。过滤在 SQL 层做（`json_extract(request_snapshot,'$.origin')`），否则分页/搜索会把画布产物翻出来 |
 | `POST` | `/api/history/import` | **V2.58 新增（§27）**：把本站已上传的外部作品登记成历史。**200 → `HistoryImportResponse`**；资产不存在/类型不符/项目不存在 → **400 `INVALID_REQUEST`**。不调用上游、不创建队列任务、无成本；provider 固定 `imported` |
 | `DELETE` | `/api/history/:taskId` | 删除单条历史并**释放磁盘**。**200 → `{ ok, taskId }`**；不存在 → 404 `TASK_NOT_FOUND` |
@@ -1150,7 +1148,6 @@ export type ErrorDisposition =
 | `KEY_INVALID` | 凭据被上游拒绝（真实调用与 `POST /api/providers/keys/verify` 两处产生，见 §9） | `terminal` |
 | `KEY_MISSING` | 需要凭据的端点既未收到 `X-Provider-Key`，服务端也无 env 兜底 Key（也用于访问令牌缺失） | `terminal` |
 | `PROJECT_NOT_FOUND` | **V2.11 新增（台账 B47）**：请求显式指定的 `projectId`（正文 / 查询参数）在项目表里不存在。用于 `POST /api/generate` 与 `PATCH` / `DELETE /api/projects/:projectId`。**刻意不静默落到默认项目** —— 那会让用户在"默认项目"里看到本不属于它的东西，而他以为自己选中的项目并没有接住这条任务 | `terminal`（改 id 或先建项目） |
-| `WEBHOOK_NOT_FOUND` | **V2.15 新增（台账 B51）**：`/api/webhooks/:webhookId` 系列指定的订阅不存在（含"刚被删"）。**刻意不静默 200** —— 客户系统据此知道配置已被删（否则它会一直以为回调还在生效） | `terminal`（改 id 或重新创建订阅） |
 | `DOC_CONFLICT` | **V2.48 新增（§21-8 / D70）**：画布文档的 `X-Canvas-Revision` 与当前修订不匹配、已有文档缺少该头、或该文档已被删除（墓碑）。**不静默覆盖**：客户端应重载/另存，而不是自动重试旧修订 | `terminal`（重载/另存；同一旧修订重试无意义） |
 | `INVALID_REQUEST` | **V2.3 登记（V9 · B9 落地时补齐）**：请求**形状合法但值/组合不合法** —— 如剪辑台 `endSec ≤ startSec`、连续两次「拼接」、转场未跟在拼接之后。⚠️ 本码在 V2.2 的 §11-2 里就被引用过，但当时**没有登记进本字典**（契约内部不自洽）；B9 实现时按"契约优先且必须自洽"补齐，契约测试的双向校验（实现 ↔ 文档）会一直盯着这件事 | `terminal` |
 
@@ -1178,7 +1175,6 @@ export type ErrorDisposition =
 | 成片缩略图（V1.9） | `outputs/thumbs/<taskId>.jpg` | 成功出片后由调度器抽首帧生成（宽度 480，`/media/thumbs/...` 直链）；**尽力而为**：抽帧失败只记日志，任务仍为 `succeeded`；随任务删除一并物理删除 |
 | 上传的参考资产 | `outputs/assets/<assetId>.<jpg\|png\|mp3\|wav\|m4a>` | 关联任务删除时一并清理（`DELETE /api/history/:taskId`）；**保护规则**：若该 `assetId` 仍被其它任务引用（「参数一键回填」会复用资产），则只删任务、保留资产 —— 否则会毁掉另一条任务的参考图。扩展名由防线 4 的清洗结果决定，因此按 `<assetId>.` 前缀匹配删除。**V2.7**：可由 `GET /api/assets` **只读列举**（含抽帧产物——它与上传资产同目录同规则）；列举不改变上述任何清理规则。**V2.9**：每个上传资产可带一份 sidecar `outputs/assets/<assetId>.json`（原始文件名 + 上传时间）；它**天然被同一条 `<assetId>.` 前缀规则覆盖**（删资产即删 sidecar、不新增清理路径），也不参与容量淘汰（与资产同规则）。**V2.10**：扩展名补 `.mp3` / `.wav` / `.m4a`（音频素材，台账 B57）—— 与参考资产**完全同规则**：同一 `<assetId>.` 前缀清理、不参与容量淘汰；sidecar 增可选 `kind`（`/api/assets` 免探测复读，见 §5） |
 | 中间帧 / 临时音频 | host 轨：`outputs/.tmp/<taskId>/`；client 轨（【规划】，PLAN §6-D26）：落在用户机器、由 worker 清理 | 合成结束立即物理删除（防线 3）；client 轨须回报 `tmpCleaned` 并写入 `warnings[]`，服务端无法强制验证该事实 |
-| **Webhook 订阅与投递流水（V2.15 落地，台账 B51）** | SQLite（同上）：`webhooks(webhook_id, project_id, url, secret, enabled, events, created_at, updated_at)` + `webhook_deliveries(delivery_id, webhook_id, task_id, event, status, attempts, last_status_code, last_error, next_attempt_at, delivered_at, created_at, updated_at)`；唯一索引 `(webhook_id, task_id, event)` | **订阅的 `secret` 落库**（服务端要它签 HMAC）但**永不回读**：只有创建响应给一次明文，其余接口只有掩码（§15）。删订阅**连带删它的投递流水**（不留指向已删订阅的记录）。流水**不做自动清理**（与操作日志同策略：量小、排错要靠它；若要清理另立台账） |
 | **BYOK Key（`X-Provider-Key` / `X-LLM-Key`）** | **服务端零留存（无此数据）** | V1.8：仅存在于单次请求的内存上下文；不落库、不入日志、不回显（见 §5「凭据传递约定」）；env 兜底值由部署者自管 |
 | 前端任务 ID 锚点 | 浏览器 `localStorage` | 刷新后凭 ID 向服务端重挂载进度 |
 
@@ -1311,7 +1307,7 @@ export interface EventLogEntry {
     **防膨胀的硬上限不按类别分裂**：库不该无限长，与"哪类记录更值钱"是两个问题；
   - **每条判据都可以用 `0` 单独关闭**（含两个天数判据）：全部关闭 = 策略关闭，
     **启动时会警告** —— 那种配置下先被吃掉的是日志，运维往往直到冒烟才发现；
-- **只删操作日志**：任务、项目、Webhook 订阅与投递流水都是业务数据，保留策略一条都不动
+- **只删操作日志**：任务、项目都是业务数据，保留策略一条都不动
   （这是"保留策略"与"数据清理"的分界线）；
 - **真删了才留痕**（`log.prune` 操作日志，见下）：写入"删了多少 / 按哪条判据删的（含**分级拆分**）/ 还剩多少 / 生效策略"——
   这是"我的日志怎么少了"的唯一答案；
@@ -1618,7 +1614,7 @@ export interface CanvasPlan {
 - **🔴「试跑」永久不做**（**B75 / D54**，用户 2026-10-13 明确砍掉）：真实上游**没有免费试跑**，
   它只能退化成演示引擎 / 最低档参数 / 只校验不提交三种伪形态，三种的**诚实成本都高于其价值**；
   防误点已由确定性幂等键兜住（第 2 条）；
-- **不做"全图终态可视化"与自动接力**（上游失败不会自动取消已提交的下游 —— 那需要轮询或 §15 Webhook）；
+- **不做"全图终态可视化"与自动接力**（上游失败不会自动取消已提交的下游 —— 那需要轮询）；
   但**下游要引用的那条上游**一定会等到出片（第 1 条），这是"引用能成立"的最小等待；
 - **v2v 的 `continueOnFail` 语义在本产品不成立**（如实登记，避免照着 n8n 抄一个假功能）：
   下游 v2v **物理上**需要上游成片，"带着上游的错误继续跑"没有可执行的形态 ——
@@ -1774,7 +1770,7 @@ export interface RecipePack {
 
 ## 12. 项目维度 `Project`（V2.11 新增；台账 B47）
 
-> **定位**：交付形态是**一家客户一套私有部署**（PLAN §6-D42），所以**没有** tenant / 跨租户隔离。
+> **定位**：这台服务**只有一个人用**（自用部署），所以**没有** tenant / 跨租户隔离这一层。
 > 需要隔离的单位是**一个客户内部的多条片子 / 产品线** —— 那就是项目。
 > **角色（管理员 / 创作者 / 查看者）不在本版**（用户 2026-10-10 拍板"先不做"）：
 > 没有用户身份系统就做角色只是假门禁（违反"不许假装可用"），它需要独立的身份系统，登记为待办。
@@ -1919,71 +1915,9 @@ token = (输入时长 + 输出时长) × 宽 × 高 × 帧率 ÷ 1024        // 
 
 ---
 
-## 15. Webhook 终态回调（V2.15 新增；台账 B51 片 A）
-
-> **定位**：客户系统目前只能轮询 `/api/tasks/:id`。集成方要的是"到终态推我一下" ——
-> 这是"客户系统集成"里**成本最低、收益最直接**的一件，所以排在项目级 API Key / 批量提交之前。
-
-**唯一事件：`task.terminal`**（任务进入 `succeeded` / `failed` / `cancelled`）。不预留"将来可能会有"的事件名 ——
-那只会让订阅语义变模糊；真要扩事件，`WebhookEventSchema` 一处即可。
-
-**请求形状**（`POST` 到客户配置的 URL，`content-type: application/json`）：
-
-| 头 | 值 | 用途 |
-|---|---|---|
-| `X-Astrmira-Signature` | `sha256=<hex>` | HMAC-SHA256(**原始请求体**, secret)。**客户侧必须验签** |
-| `X-Astrmira-Event` | `task.terminal` | 事件名（客户未来可用同一 URL 收多事件） |
-| `X-Astrmira-Delivery` | `<deliveryId>` | 投递 id —— 客户可用它做**幂等键**（重试会带同一个 id） |
-
-```js
-// 客户侧验签（Node 示例；必须对**收到的字节**验，不要重新序列化）
-const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-const got = req.headers['x-astrmira-signature'];
-if (expected.length !== got.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(got))) {
-  return res.status(401).end();
-}
-```
-
-**载荷**（`TaskTerminalPayload`，字段与 `TaskProgress` 同名同义，便于与轮询结果对账）：
-`event` / `deliveryId` / `taskId` / `projectId` / `status` / `disposition?` / `errorCode?` / `message?` /
-`outputVideoUrl?`（配了 `PUBLIC_BASE_URL` 时为**绝对 URL**，否则给相对路径）/ `thumbnailUrl?` /
-`progressPercent` / `costYuan?`（**未结算 = 不出现，不是 0**，与 §13 同口径）/ `createdAt` / `terminatedAt`。
-
-**投递语义**：
-
-- **2xx = 成功**；其它状态码 / 网络错误 / 超时（默认 10s）**都算失败并重试**；
-- 重试**上限 3 次**（首次 + 2 次），退避 **5s / 25s**，用尽后 `status='failed'` 且**不再自动重试**
-  （客户系统长时间宕机时应自己拉历史补，而不是让我们无限重试）；
-- **最多一个扫描间隔的延迟**（默认 2s）—— 实现是**扫描补投**而不是"终态时立刻推"，理由见下。
-
-**订阅是 forward-only（从创建那一刻起生效）**：创建订阅**之前**就已终态的任务**不补投** ——
-否则客户一接入就会收到最近 7 天所有终态任务的**事件洪峰**（那不是"欢迎"，是骚扰）。
-想看历史走 `GET /api/history`（它本来就是为这个准备的）。兜底扫描窗口（7 天）只用于补"进程不在时到终态"的任务。
-
-**为什么是扫描而不是内联触发**（这是本片最重要的一个取舍）：终态写入点有**三处**
-（调度器成功 / 失败、剪辑入库直插），内联触发就要改三处、且漏掉"终态时进程正好重启"这种情形；
-扫描版只有**一处**（`NOT EXISTS` 条件天然幂等），还顺带覆盖崩溃补投与"订阅是任务结束之后才建的"。
-代价是最多 2 秒延迟 —— 而回调本来就是异步语义（客户系统不该指望"我提交后 0 毫秒就收到"）。
-
-**SSRF 准入**（`checkWebhookUrl`）：只允许 http/https、URL 不许带用户名密码，**默认拒绝**
-环回 / 私网（10/8、172.16/12、192.168/16、100.64/10）/ 链路本地 / 云元数据（169.254.169.254）。
-B 端私有部署里"回调到客户内网"是真实需求，因此留了 **`WEBHOOK_ALLOW_PRIVATE=1`**（默认关，
-= 部署者显式承担该决定）。⚠️ **如实说明**：判定是**字面量**的（IP 字面 + 主机名规则），
-**不做 DNS 解析后再查** —— 那会引出"解析与请求之间地址变了"（DNS rebinding）的更大口子；
-本服务是**单租户私有部署**（调用方本来就是部署者自己），真正的多租户场景需要固定出口代理，属另一个量级（已登记）。
-
-**secret 的生命周期**：**创建响应里回显一次明文**，之后一切接口只给掩码（`whsec_ab…`）。
-与 §9 的 BYOK 差别：provider Key 是**用户凭据**（服务端不持有）；webhook secret 是**双方共享的签名密钥**，
-服务端**必须持有**才能签名 —— 所以它落库，但它**不可回读**。
-
-**存储**（细则见 §7）：`webhooks`（订阅）+ `webhook_deliveries`（投递流水）；
-`(webhook_id, task_id, event)` **唯一索引**保证幂等（重复扫描不会重复投递）。
-
----
-
 ## 16. 可观测：live / ready 分级与运维快照（V2.16 新增；台账 B53）
 
-> **它解决什么**：私有化交付后，"服务是不是还行"必须有**可查的数字**，而不是"客户说卡"。
+> **它解决什么**：长期跑下来，"服务是不是还行"必须有**可查的数字**，而不是凭感觉。
 > 三个端点分工明确、**不许混用**：
 
 | 端点 | 回答的问题 | 依赖 | 鉴权 |
@@ -2013,8 +1947,6 @@ B 端私有部署里"回调到客户内网"是真实需求，因此留了 **`WEB
 | 告警 id | 默认阈值 | env 覆盖 |
 |---|---|---|
 | `storage.warn` / `storage.critical` | 用量 ≥ 85% / ≥ 95%（或已超 `OUTPUTS_MAX_BYTES`） | `METRICS_STORAGE_WARN_RATIO` / `METRICS_STORAGE_CRITICAL_RATIO` |
-| `webhook.pending` | 存在超过 300s 未投出的终态事件 | `METRICS_WEBHOOK_PENDING_WARN_SEC` |
-| `webhook.failed` | 有 ≥ 1 条永久失败的投递 | `METRICS_WEBHOOK_FAILED_WARN_COUNT` |
 | `task.stuck` | 有任务 `running` 超过 1800s（上游挂住 / 本地卡死） | `METRICS_TASK_STUCK_WARN_SEC` |
 | `database.size` | 库 + WAL ≥ 512MB | `METRICS_DATABASE_WARN_BYTES` |
 
@@ -2031,7 +1963,6 @@ export interface MetricsResponse {
   queue: { queued: number; running: number; oldestQueuedAgeSec: number | null };
   storage: { totalBytes; videoBytes; thumbBytes; assetBytes; maxBytes; usageRatio; overThreshold };
   database: { fileBytes; walBytes };                     // **只给体积，不给路径**（快照会被贴进工单）
-  webhooks: { enabled; pending; failed; oldestPendingAgeSec: number | null };
   alerts: SystemAlert[]; thresholds: Record<string, number>;
 }
 ```
@@ -2039,7 +1970,7 @@ export interface MetricsResponse {
 **本版不做（如实登记）**：
 ① **Prometheus / OpenMetrics 文本导出** —— 形态选择：JSON 快照能被 `curl`/`jq`/客户脚本直接消费，
 且与其它端点同一套鉴权；真要接 Prometheus，用一个外部 exporter 抓 `/api/metrics` 转换即可（无需我们改约定）；
-② **告警外发通道**（邮件 / IM / 再发一条 Webhook）—— 本版只把"越线的事实"暴露在快照里；
+② **告警外发通道**（邮件 / IM）—— 本版只把"越线的事实"暴露在快照里；
 ③ **历史趋势**（时序库）—— 本版是**当前快照**，趋势由调用方自己存；
 ④ **链路追踪**（OpenTelemetry）—— 操作日志（§10）+ `requestId` 已能回答"这一次请求发生了什么"。
 
@@ -2099,7 +2030,7 @@ interface StatsSummaryResponse {
 
 | 路径 | 是什么 | 备注 |
 |---|---|---|
-| `data/app.db` | 任务 / 项目 / 日志 / Webhook 订阅与投递流水 | WAL 模式（`-wal` / `-shm` 是**派生文件**） |
+| `data/app.db` | 任务 / 项目 / 日志 | WAL 模式（`-wal` / `-shm` 是**派生文件**） |
 | `data/canvas/` | **画布文档** `<projectId>.doc.json` + `index.json`（派生索引）+ `<projectId>.deleted`（删除墓碑） | 见 §21-8；**不在 `app.db` 里** |
 | `data/server.lock` | **服务进程锁**（`{ pid, startedAt, version }`） | 服务启动时写、`onClose` 释放；备份 CLI 靠它判断"能不能恢复" |
 | `outputs/` | 成片 / 缩略图 / 参考资产 | 见 §7 的生命周期与淘汰规则 |
@@ -2128,7 +2059,7 @@ export interface BackupManifest {
   outputs: Array<{ path: string; bytes: number }>;   // 大文件只记字节数（逐字节 hash 代价与收益不成比例）
   canvas: Array<{ path: string; bytes: number; sha256: string }>;  // 小文件逐份 hash（V2.72）
   counts: {
-    tasks: number; projects: number; webhooks: number;
+    tasks: number; projects: number;
     canvases: number; canvasTombstones: number;      // V2.72：恢复后对账
   };
 }

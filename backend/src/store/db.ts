@@ -45,37 +45,6 @@ CREATE TABLE IF NOT EXISTS projects (
   updated_at INTEGER NOT NULL
 );
 
--- Webhook 订阅（V2.15 / 台账 B51，契约 §15）：客户系统的终态回调。
--- secret **落库**（服务端要它签 HMAC），但**永不回读** —— 对外只有掩码，明文只在创建响应里出现一次。
--- （注意：这段是模板字符串，注释里不能出现反引号 —— 会提前结束 SCHEMA。）
-CREATE TABLE IF NOT EXISTS webhooks (
-  webhook_id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  url        TEXT NOT NULL,
-  secret     TEXT NOT NULL,
-  enabled    INTEGER NOT NULL DEFAULT 1,
-  events     TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
--- 投递流水（既是重试状态，也是"客户有没有收到"的唯一证据）：
--- 一条 (webhook, task, event) 只允许一条 —— 幂等靠唯一索引 + 扫描时的 NOT EXISTS。
-CREATE TABLE IF NOT EXISTS webhook_deliveries (
-  delivery_id      TEXT PRIMARY KEY,
-  webhook_id       TEXT NOT NULL,
-  task_id          TEXT NOT NULL,
-  event            TEXT NOT NULL,
-  status           TEXT NOT NULL,
-  attempts         INTEGER NOT NULL DEFAULT 0,
-  last_status_code INTEGER,
-  last_error       TEXT,
-  next_attempt_at  INTEGER,
-  delivered_at     INTEGER,
-  created_at       INTEGER NOT NULL,
-  updated_at       INTEGER NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS idempotency_keys (
   key        TEXT PRIMARY KEY,
   task_id    TEXT NOT NULL,
@@ -206,13 +175,6 @@ function applyColumnMigrations(db: Db): void {
 const POST_MIGRATION_INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, created_at DESC);-- V2.12（B48）：成本汇总按时间区间扫，走这条（cost_yuan 为 NULL 的行不参与 SUM）
 CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
--- V2.15（B51）：投递流水去重（(webhook, task, event) 唯一）与"到期该投的"扫描
-CREATE UNIQUE INDEX IF NOT EXISTS idx_webhook_deliveries_unique
-  ON webhook_deliveries(webhook_id, task_id, event);
-CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_due
-  ON webhook_deliveries(status, next_attempt_at);
-CREATE INDEX IF NOT EXISTS idx_webhooks_project
-  ON webhooks(project_id, enabled);
 `;
 
 /**

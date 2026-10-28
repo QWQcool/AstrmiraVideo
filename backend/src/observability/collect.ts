@@ -13,7 +13,6 @@ import {
 import { readStorageUsage } from '../server/storageUsage.js';
 import { SERVICE_NAME, SERVICE_VERSION } from '../version.js';
 import type { TaskStore } from '../store/taskStore.js';
-import type { WebhookStore } from '../store/webhooks.js';
 
 /**
  * 可观测采集器（V2.16 / 台账 B53，契约 §16）。
@@ -36,7 +35,6 @@ export interface ObservabilityDeps {
     | 'oldestCreatedAt'
     | 'databaseFileBytes'
   >;
-  webhooks: Pick<WebhookStore, 'statsAll'>;
   outputsDir: string;
   /** 存储触发阈值（与淘汰器共用 `resolveOutputsMaxBytes`） */
   maxBytes: number;
@@ -82,7 +80,6 @@ export async function collectMetrics(deps: ObservabilityDeps): Promise<MetricsRe
   const window = deps.tasks.countByStatus({ since: now - WINDOW_24H_MS });
   const storage = await readStorage(deps.outputsDir);
   const dbBytes = deps.tasks.databaseFileBytes();
-  const webhookStats = deps.webhooks.statsAll();
 
   const oldestQueuedAt = deps.tasks.oldestCreatedAt('queued');
   const oldestRunningAt = deps.tasks.oldestCreatedAt('running');
@@ -92,10 +89,6 @@ export async function collectMetrics(deps: ObservabilityDeps): Promise<MetricsRe
     {
       storageUsageRatio: deps.maxBytes > 0 ? storage.totalBytes / deps.maxBytes : 0,
       storageOverThreshold: storage.totalBytes > deps.maxBytes,
-      webhookPending: webhookStats.pending,
-      webhookOldestPendingSec:
-        webhookStats.oldestPendingAt === null ? null : (now - webhookStats.oldestPendingAt) / 1000,
-      webhookFailed: webhookStats.failed,
       runningTasks,
       oldestRunningSec: oldestRunningAt === null ? null : (now - oldestRunningAt) / 1000,
       databaseBytes: dbBytes.fileBytes + dbBytes.walBytes,
@@ -144,15 +137,6 @@ export async function collectMetrics(deps: ObservabilityDeps): Promise<MetricsRe
       overThreshold: storage.totalBytes > deps.maxBytes,
     },
     database: { fileBytes: dbBytes.fileBytes, walBytes: dbBytes.walBytes },
-    webhooks: {
-      enabled: webhookStats.enabled,
-      pending: webhookStats.pending,
-      failed: webhookStats.failed,
-      oldestPendingAgeSec:
-        webhookStats.oldestPendingAt === null
-          ? null
-          : Math.round((now - webhookStats.oldestPendingAt) / 1000),
-    },
     alerts,
     thresholds: { ...thresholds },
   };

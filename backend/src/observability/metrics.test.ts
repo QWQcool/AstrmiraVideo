@@ -14,7 +14,6 @@ import {
 import { collectMetrics, collectReadinessChecks, probeWritableDir } from './collect.js';
 import { openDatabase, type Db } from '../store/db.js';
 import { TaskStore } from '../store/taskStore.js';
-import { WebhookStore } from '../store/webhooks.js';
 
 /**
  * 可观测（V2.16 / 台账 B53，契约 §16）。
@@ -36,9 +35,6 @@ describe('§16-① 告警判定（纯函数，没越线就不出现）', () => {
   const quiet = {
     storageUsageRatio: 0.1,
     storageOverThreshold: false,
-    webhookPending: 0,
-    webhookOldestPendingSec: null,
-    webhookFailed: 0,
     runningTasks: 0,
     oldestRunningSec: null,
     databaseBytes: 1024,
@@ -64,20 +60,6 @@ describe('§16-① 告警判定（纯函数，没越线就不出现）', () => {
     expect(buildAlerts({ ...quiet, storageOverThreshold: true })[0]!.severity).toBe('critical');
   });
 
-  it('Webhook：永久失败与投递积压各给一条（客户系统可能已挂）', () => {
-    const alerts = buildAlerts({
-      ...quiet,
-      webhookFailed: 2,
-      webhookPending: 5,
-      webhookOldestPendingSec: METRICS_DEFAULTS.webhookPendingWarnSec,
-    });
-    expect(alerts.map((a) => a.id).sort()).toEqual(['webhook.failed', 'webhook.pending']);
-    // 有积压但还很新 → 不告警
-    expect(
-      buildAlerts({ ...quiet, webhookPending: 5, webhookOldestPendingSec: 10 }).map((a) => a.id),
-    ).toEqual([]);
-  });
-
   it('任务卡住：只在"确实有 running 且最老的那条超时"时才报', () => {
     expect(
       buildAlerts({ ...quiet, runningTasks: 1, oldestRunningSec: METRICS_DEFAULTS.taskStuckWarnSec }),
@@ -99,7 +81,7 @@ describe('§16-① 告警判定（纯函数，没越线就不出现）', () => {
   });
 
   it('每条告警都带可复核的 value / threshold（否则"越线"无法被验证）', () => {
-    for (const alert of buildAlerts({ ...quiet, storageUsageRatio: 0.99, webhookFailed: 3 })) {
+    for (const alert of buildAlerts({ ...quiet, storageUsageRatio: 0.99 })) {
       expect(alert.value).not.toBeNull();
       expect(alert.threshold).not.toBeNull();
       expect(alert.detail.length).toBeGreaterThan(0);
@@ -119,12 +101,12 @@ describe('§16-② 阈值解析（坏 env 不许把阈值变成 0）', () => {
     const bad = readThresholdsFromEnv({
       METRICS_STORAGE_WARN_RATIO: '',
       METRICS_STORAGE_CRITICAL_RATIO: 'abc',
-      METRICS_WEBHOOK_FAILED_WARN_COUNT: '-1',
+      METRICS_TASK_STUCK_WARN_SEC: '-1',
       METRICS_DATABASE_WARN_BYTES: '1024',
     });
     expect(bad).toEqual({ databaseWarnBytes: 1024 });
     // 0 是**合法**阈值（"一有就报"），必须与"坏值"区分开
-    expect(resolveThresholds({ webhookFailedWarnCount: 0 }).webhookFailedWarnCount).toBe(0);
+    expect(resolveThresholds({ taskStuckWarnSec: 0 }).taskStuckWarnSec).toBe(0);
   });
 });
 
@@ -172,7 +154,6 @@ describe('§16-④ 采集：数字要与库里的真实值对得上', () => {
 
   it('任务/队列/告警全部来自真实行；阈值原样回显（可复核）', async () => {
     const tasks = new TaskStore(db);
-    const webhooks = new WebhookStore(db);
     insertTask('q1', 'queued', FIXED_NOW - 60_000); // 排队 60 秒
     insertTask('r1', 'running', FIXED_NOW - 10_000, 'local');
     insertTask('s1', 'succeeded', FIXED_NOW - 1_000);
@@ -180,7 +161,6 @@ describe('§16-④ 采集：数字要与库里的真实值对得上', () => {
 
     const metrics = await collectMetrics({
       tasks,
-      webhooks,
       outputsDir: dir,
       maxBytes: 1_000,
       now: () => FIXED_NOW,
@@ -231,8 +211,7 @@ describe('§16-④ 采集：数字要与库里的真实值对得上', () => {
     try {
       const metrics = await collectMetrics({
         tasks: new TaskStore(fileDb),
-        webhooks: new WebhookStore(fileDb),
-        outputsDir: fileDir,
+          outputsDir: fileDir,
         maxBytes: 1_000,
         now: () => FIXED_NOW,
         readStorage: async () => ({
@@ -262,7 +241,6 @@ describe('§16-④ 采集：数字要与库里的真实值对得上', () => {
   it('无任务无积压 → status ok、零告警、age 全为 null', async () => {
     const metrics = await collectMetrics({
       tasks: new TaskStore(db),
-      webhooks: new WebhookStore(db),
       outputsDir: dir,
       maxBytes: 1_000,
       now: () => FIXED_NOW,
@@ -286,7 +264,6 @@ describe('§16-④ 采集：数字要与库里的真实值对得上', () => {
     expect(metrics.status).toBe('ok');
     expect(metrics.alerts).toEqual([]);
     expect(metrics.queue.oldestQueuedAgeSec).toBeNull();
-    expect(metrics.webhooks.oldestPendingAgeSec).toBeNull();
   });
 });
 
@@ -331,7 +308,6 @@ describe('§16-⑥ readiness 检查项组合', () => {
   it('数据库可读 + 目录可写 → 两项 required 通过；ffmpeg 缺失只如实陈述、不降级', async () => {
     const deps = {
       tasks: new TaskStore(db),
-      webhooks: new WebhookStore(db),
       outputsDir: dir,
       maxBytes: 1_000,
       now: () => FIXED_NOW,
@@ -368,7 +344,6 @@ describe('§16-⑥ readiness 检查项组合', () => {
         oldestCreatedAt: () => null,
         databaseFileBytes: () => ({ fileBytes: 0, walBytes: 0 }),
       },
-      webhooks: new WebhookStore(db),
       outputsDir: dir,
       maxBytes: 1_000,
       now: () => FIXED_NOW,

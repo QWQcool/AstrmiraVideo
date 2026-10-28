@@ -30,8 +30,6 @@ export const ERROR_DISPOSITION = {
   INVALID_REQUEST: 'terminal',
   // V2.11（台账 B47）：项目不存在 —— 重试无意义（要么改 id，要么先建项目）
   PROJECT_NOT_FOUND: 'terminal',
-  // V2.15（台账 B51）：Webhook 不存在 —— 同上（客户系统据此知道订阅已被删）
-  WEBHOOK_NOT_FOUND: 'terminal',
   // V2.48（§21-8）：画布修订冲突 —— 重试同一条旧修订不会变好，必须重载/另存
   DOC_CONFLICT: 'terminal',
 } satisfies Record<ErrorCode, ErrorDisposition>;
@@ -137,8 +135,6 @@ function defaultMessageOf(code: ErrorCode): string {
       return '请求参数不合法（形状没问题，但取值或组合不被接受）';
     case 'PROJECT_NOT_FOUND':
       return '项目不存在或已被删除';
-    case 'WEBHOOK_NOT_FOUND':
-      return 'Webhook 订阅不存在或已被删除';
     case 'UPSTREAM_ERROR':
       return '上游返回错误';
     case 'UNCERTAIN_RESULT':

@@ -81,7 +81,6 @@ export const BackupManifestSchema = z.object({
   counts: z.object({
     tasks: z.number().int(),
     projects: z.number().int(),
-    webhooks: z.number().int(),
     canvases: z.number().int().nonnegative().default(0),
     canvasTombstones: z.number().int().nonnegative().default(0),
   }),
@@ -245,8 +244,7 @@ export async function createBackup(options: BackupOptions): Promise<BackupManife
       counts: {
         tasks: countTable(options.db, 'tasks'),
         projects: countTable(options.db, 'projects'),
-        webhooks: countTable(options.db, 'webhooks'),
-        canvases: canvasFiles.filter((file) => file.path.endsWith('.doc.json')).length,
+          canvases: canvasFiles.filter((file) => file.path.endsWith('.doc.json')).length,
         canvasTombstones: canvasFiles.filter((file) => file.path.endsWith('.deleted')).length,
       },
     };

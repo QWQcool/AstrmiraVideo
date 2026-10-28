@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ALWAYS_PUBLIC_PATHS } from '../security/auth.js';
 import { openDatabase, type Db } from '../store/db.js';
 import { TaskStore } from '../store/taskStore.js';
-import { WebhookStore } from '../store/webhooks.js';
 import { createObservabilityRoutes, type ObservabilityRoutesDeps } from './observability.js';
 
 /**
@@ -40,7 +39,6 @@ async function buildApp(db: Db, overrides: Partial<ObservabilityRoutesDeps> = {}
   await app.register(
     createObservabilityRoutes({
       tasks: new TaskStore(db),
-      webhooks: new WebhookStore(db),
       outputsDir: process.cwd(),
       maxBytes: 1_000,
       now: () => FIXED_NOW,
@@ -105,7 +103,7 @@ describe('可观测端点（CONTRACT §16）', () => {
     expect(body.checks[0]).toMatchObject({ id: 'database', ok: false, required: true });
   });
 
-  it('GET /api/metrics：快照形状齐全（任务/队列/存储/数据库/Webhook/告警/阈值）', async () => {
+  it('GET /api/metrics：快照形状齐全（任务/队列/存储/数据库/告警/阈值）', async () => {
     const app = await buildApp(db);
     const response = await app.inject({ method: 'GET', url: '/api/metrics' });
     expect(response.statusCode).toBe(200);
@@ -121,13 +119,11 @@ describe('可观测端点（CONTRACT §16）', () => {
       'tasks',
       'thresholds',
       'uptimeSec',
-      'webhooks',
     ]);
     expect(body.status).toBe('ok');
     expect(body.alerts).toEqual([]);
     expect(body.storage.maxBytes).toBe(1_000);
     expect(body.tasks.byStatus.succeeded).toBe(0);
-    expect(body.webhooks).toMatchObject({ enabled: 0, pending: 0, failed: 0 });
   });
 
   it('GET /api/metrics：越过阈值时 status=degraded 并带上告警（value/threshold 可复核）', async () => {

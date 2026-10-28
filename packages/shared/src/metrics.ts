@@ -6,7 +6,7 @@ import { z } from 'zod';
  * ## 它解决什么
  * 私有化交付后，"服务是不是还行"必须有**可查的数字**，而不是"客户说卡"。本模块给出：
  * ① **live / ready 分级**（进程活着 ≠ 能干活 —— 现有 `/api/health` 只回答前者，且不碰数据库）；
- * ② 一份 `GET /api/metrics` 快照（队列 / 任务 / 存储 / 数据库 / Webhook / 成本口径）；
+ * ② 一份 `GET /api/metrics` 快照（队列 / 任务 / 存储 / 数据库 / 成本口径）；
  * ③ **阈值告警的判定规则**（纯函数，可单测；告警不发明新的外发通道，先在快照与运维面板里可见）。
  *
  * ## 三条口径（都是"不假装"）
@@ -25,10 +25,6 @@ export const METRICS_DEFAULTS = {
   storageWarnRatio: 0.85,
   /** 存储用量比例 ≥ 此值 → critical（淘汰器会开始删最旧的成片） */
   storageCriticalRatio: 0.95,
-  /** 存在超过此秒数仍未投出去的 Webhook → warn（客户系统可能挂了） */
-  webhookPendingWarnSec: 300,
-  /** 永久失败的 Webhook 投递 ≥ 此值 → warn */
-  webhookFailedWarnCount: 1,
   /** 任务 running 超过此秒数 → warn（上游挂住 / 本地推理卡死） */
   taskStuckWarnSec: 1_800,
   /** 数据库文件 ≥ 此值 → warn（日志与任务表长期增长） */
@@ -54,9 +50,6 @@ export type SystemAlert = z.infer<typeof SystemAlertSchema>;
 export interface AlertInputs {
   storageUsageRatio: number;
   storageOverThreshold: boolean;
-  webhookPending: number;
-  webhookOldestPendingSec: number | null;
-  webhookFailed: number;
   runningTasks: number;
   oldestRunningSec: number | null;
   databaseBytes: number;
@@ -82,8 +75,6 @@ export function resolveThresholds(
 export const METRICS_ENV_KEYS: Record<keyof MetricsThresholds, string> = {
   storageWarnRatio: 'METRICS_STORAGE_WARN_RATIO',
   storageCriticalRatio: 'METRICS_STORAGE_CRITICAL_RATIO',
-  webhookPendingWarnSec: 'METRICS_WEBHOOK_PENDING_WARN_SEC',
-  webhookFailedWarnCount: 'METRICS_WEBHOOK_FAILED_WARN_COUNT',
   taskStuckWarnSec: 'METRICS_TASK_STUCK_WARN_SEC',
   databaseWarnBytes: 'METRICS_DATABASE_WARN_BYTES',
 };
@@ -132,31 +123,6 @@ export function buildAlerts(
       detail: '接近淘汰阈值，成片随时可能被淘汰（任务记录与血缘不受影响）。',
       value: Number(input.storageUsageRatio.toFixed(4)),
       threshold: thresholds.storageWarnRatio,
-    });
-  }
-
-  if (input.webhookFailed >= thresholds.webhookFailedWarnCount) {
-    alerts.push({
-      id: 'webhook.failed',
-      severity: 'warn',
-      title: 'Webhook 有永久失败的投递',
-      detail: '重试用尽仍未成功（客户系统长时间不可用）。客户系统需自己拉历史补。',
-      value: input.webhookFailed,
-      threshold: thresholds.webhookFailedWarnCount,
-    });
-  }
-
-  if (
-    input.webhookOldestPendingSec !== null &&
-    input.webhookOldestPendingSec >= thresholds.webhookPendingWarnSec
-  ) {
-    alerts.push({
-      id: 'webhook.pending',
-      severity: 'warn',
-      title: 'Webhook 投递积压',
-      detail: '存在长时间未投出去的终态事件 —— 客户系统可能已宕机。',
-      value: Math.round(input.webhookOldestPendingSec),
-      threshold: thresholds.webhookPendingWarnSec,
     });
   }
 
@@ -271,12 +237,6 @@ export const MetricsResponseSchema = z.object({
   database: z.object({
     fileBytes: z.number(),
     walBytes: z.number(),
-  }),
-  webhooks: z.object({
-    enabled: z.number().int(),
-    pending: z.number().int(),
-    failed: z.number().int(),
-    oldestPendingAgeSec: z.number().nullable(),
   }),
   alerts: z.array(SystemAlertSchema),
   thresholds: z.record(z.string(), z.number()),
