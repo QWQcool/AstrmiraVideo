@@ -150,6 +150,11 @@ const COLUMN_MIGRATIONS: ReadonlyArray<{ table: string; column: string; ddl: str
   // V2.74（B99）：创作会话的**拼接尝试代数**（0 起）。旧行默认 0 —— 与 `assembly:a0` 的
   // 历史幂等键完全兼容（恢复窗口继续用同一键），不需要回填或改写任何历史任务。
   { table: 'creation_runs', column: 'assembly_attempt', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  // V2.94（B98 片 B）：产物**实测**尺寸。requestSnapshot.resolution 是"要求"，这两列是"事实"，
+  // 两者不一致时界面要如实说（上游按自己的档位规则出别的尺寸是允许的，装作一致才是错的）。
+  // 旧行保持 NULL（老任务没探过）—— 与"探不到"同义，界面不猜。
+  { table: 'tasks', column: 'output_width', ddl: 'INTEGER' },
+  { table: 'tasks', column: 'output_height', ddl: 'INTEGER' },
 ];
 
 function applyColumnMigrations(db: Db): void {

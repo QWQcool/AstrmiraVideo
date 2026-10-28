@@ -243,7 +243,7 @@ const app = Fastify({
         ...(event.message === undefined ? {} : { message: event.message }),
       },
     });
-  });
+  }, resolveOutputsDir());
   // 防线 5：60s 防抖冷却（键的构成见 security/rateLimit.ts）
   const cooldown = new CooldownStore(db);
   // V2.26（台账 A5 片 A）：编排运行（`x-plan-run`）的冷却豁免登记（内存 + TTL，见 rateLimit.ts）

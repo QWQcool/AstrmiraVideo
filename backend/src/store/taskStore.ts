@@ -32,6 +32,13 @@ export interface TaskRecord {
   outputImageUrl?: string;
   /** V1.9：成片首帧缩略图（同源 `/media/thumbs/<taskId>.jpg`）；抽帧失败时缺省 */
   thumbnailUrl?: string;
+  /**
+   * V2.94（B98 片 B）：产物**实测**尺寸（完成时 ffprobe 一次）。
+   * 与 `requestSnapshot.resolution` 是两种东西：后者是要求，这两个数是事实。
+   * 缺省 = 没探过（老任务）或探不到（文件已清理 / 编码不认）—— 界面不猜。
+   */
+  outputWidth?: number;
+  outputHeight?: number;
   warnings: string[];
   error?: TaskError;
   upstreamTaskId?: string;
@@ -90,6 +97,8 @@ interface TaskRow {
   extracted_asset_ids: string | null;
   project_id: string | null;
   executed_by: string | null;
+  output_width: number | null;
+  output_height: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -105,6 +114,9 @@ function rowToRecord(row: TaskRow): TaskRecord {
     outputVideoUrl: row.output_video_url ?? undefined,
     outputImageUrl: row.output_image_url ?? undefined,
     thumbnailUrl: row.thumbnail_url ?? undefined,
+    ...(row.output_width === null || row.output_height === null
+      ? {}
+      : { outputWidth: row.output_width, outputHeight: row.output_height }),
     warnings: row.warnings === null ? [] : (JSON.parse(row.warnings) as string[]),
     error: row.error === null ? undefined : (JSON.parse(row.error) as TaskError),
     upstreamTaskId: row.upstream_task_id ?? undefined,
@@ -175,6 +187,10 @@ export function toTaskProgress(record: TaskRecord): TaskProgress {
     // （正是本片真机验收抓到的第一个缺陷）
     ...(record.outputImageUrl === undefined ? {} : { outputImageUrl: record.outputImageUrl }),
     ...(record.thumbnailUrl === undefined ? {} : { thumbnailUrl: record.thumbnailUrl }),
+    // V2.94（B98 片 B）：实测尺寸（两个数必须同时有；缺一个就整个省略，不给半对数）
+    ...(record.outputWidth === undefined || record.outputHeight === undefined
+      ? {}
+      : { outputDimension: { width: record.outputWidth, height: record.outputHeight } }),
     ...(record.warnings.length === 0 ? {} : { warnings: record.warnings }),
     ...(record.error === undefined ? {} : { error: record.error }),
     ...(record.message === undefined ? {} : { message: record.message }),
@@ -206,12 +222,13 @@ export class TaskStore {
                             output_video_url, output_image_url, thumbnail_url, warnings, error,
                             upstream_task_id,
                             submitting, message, edit_script, edit_origin, extracted_asset_ids,
-                            project_id, executed_by,
+                            project_id, executed_by, output_width, output_height,
                             created_at, updated_at)
          VALUES (@taskId, @track, @provider, @status, @progressPercent, @requestSnapshot,
                  @outputVideoUrl, @outputImageUrl, @thumbnailUrl, @warnings, @error, @upstreamTaskId,
                  @submitting,
                  @message, @editScript, @editOrigin, @extractedAssetIds, @projectId, @executedBy,
+                 @outputWidth, @outputHeight,
                  @createdAt, @updatedAt)`,
       )
       .run({
@@ -237,6 +254,8 @@ export class TaskStore {
         projectId: record.projectId ?? DEFAULT_PROJECT_ID,
         // V2.27（A1 片 A）：执行位置 —— **调用方（队列）按 provider 判定**；缺省即 NULL（老行为）
         executedBy: record.executedBy ?? null,
+        outputWidth: record.outputWidth ?? null,
+        outputHeight: record.outputHeight ?? null,
         createdAt: now,
         updatedAt: now,
       });
@@ -268,6 +287,7 @@ export class TaskStore {
                          edit_script = @editScript, edit_origin = @editOrigin,
                          extracted_asset_ids = @extractedAssetIds,
                          executed_by = @executedBy,
+                         output_width = @outputWidth, output_height = @outputHeight,
                          updated_at = @updatedAt
                          WHERE task_id = @taskId`,
       )
@@ -292,6 +312,8 @@ export class TaskStore {
           next.extractedAssetIds === undefined ? null : JSON.stringify(next.extractedAssetIds),
         // V2.27（A1 片 A）：执行位置（缺省 → NULL —— 老任务不被"补写"成推测值）
         executedBy: next.executedBy ?? null,
+        outputWidth: next.outputWidth ?? null,
+        outputHeight: next.outputHeight ?? null,
         updatedAt: Date.now(),
       });
   }

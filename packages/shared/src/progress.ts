@@ -133,6 +133,16 @@ export const TaskProgressSchema = z.object({
   // 用途：视频库"按大小排序"与详情抽屉的"文件大小"；**文件已清理时省略该字段**（不填 0）。
   outputSizeBytes: z.number().int().nonnegative().optional(),
   /**
+   * V2.94（B98 片 B）：**产物实测尺寸**（成功且文件还在时，服务端 ffprobe 得出）。
+   *
+   * 存在的理由：`requestSnapshot.resolution` 是**要求**，不是事实 —— 上游可能按自己的档位规则
+   * 出别的尺寸（云端尤其如此）。有了这一对数字，"界面承诺的尺寸"和"实际出的片"才能被对上；
+   * 没有它就只能靠猜。**探不到就省略**（文件已清理 / 编码不认），不给推测值。
+   */
+  outputDimension: z
+    .object({ width: z.number().int().positive(), height: z.number().int().positive() })
+    .optional(),
+  /**
    * V9 · B9（CONTRACT §11-2）：这条任务是不是"剪辑产物"、以及它的剪辑来源。
    *
    * **可选**：缺省即"生成产物"（老记录同理），只有剪辑任务才会写。

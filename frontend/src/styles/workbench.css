@@ -2579,6 +2579,13 @@
   color: var(--gold);
 }
 
+/* V2.94（B98 片 B）：产物实测尺寸与计划尺寸不一致 —— 说清楚，不静默 */
+.lib-dim-mismatch {
+  margin-left: 6px;
+  font-size: var(--fs-note);
+  color: var(--warn);
+}
+
 .lib-edl-slot {
   display: flex;
   flex-direction: column;

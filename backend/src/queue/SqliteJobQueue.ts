@@ -1,6 +1,8 @@
 import type { TaskError, TaskProgress } from '@astrmira/shared';
 import { resolveExecutedBy } from '@astrmira/shared';
 import type { TaskStore, TrackId } from '../store/taskStore.js';
+import { probeMediaDimension } from '../lib/mediaDimensions.js';
+import { resolveOutputFilePath } from '../server/storageUsage.js';
 import type { JobQueue, QueueJob, TaskProgressUpdate } from './JobQueue.js';
 
 /**
@@ -34,6 +36,11 @@ export class SqliteJobQueue implements JobQueue {
   constructor(
     private readonly store: TaskStore,
     private readonly onTaskTerminal?: (event: TaskTerminalEvent) => void,
+    /**
+     * 产物目录（V2.94 / B98 片 B：任务完成时探一次实际尺寸）。
+     * 不传 = 不探 —— 单测与旧调用点保持零 IO。
+     */
+    private readonly outputsDir?: string,
   ) {}
 
   /** 终态上报：失败不抛（日志丢了不该让任务状态也丢） */
@@ -136,6 +143,27 @@ export class SqliteJobQueue implements JobQueue {
         ...(before.editScript === undefined ? {} : { kind: 'edit' }),
         ...(output.message === undefined ? {} : { message: output.message }),
       });
+    }
+    // V2.94（B98 片 B）：探一次实际尺寸。**放在终态事件之后** ——
+    // 尺寸是补充事实，不该让"任务已完成"的日志等一次 ffprobe。
+    void this.recordOutputDimension(taskId, output.imageUrl ?? output.videoUrl);
+  }
+
+  /**
+   * 探测产物尺寸并落库（best-effort）。
+   *
+   * 三条边界：① 没配 `outputsDir`（单测/旧调用）→ 不探；② 文件已被淘汰、不是媒体、
+   * 编码不认 → 不写（不填 0、不猜）；③ 写库失败不抛 —— 尺寸只是补充事实，
+   * 不能让一条**已经成功**的任务因为探测出错而看起来有问题。
+   */
+  private async recordOutputDimension(taskId: string, url: string | undefined): Promise<void> {
+    if (this.outputsDir === undefined || url === undefined || url === '') return;
+    const dimension = await probeMediaDimension(resolveOutputFilePath(this.outputsDir, url));
+    if (dimension === null) return;
+    try {
+      this.store.update(taskId, { outputWidth: dimension.width, outputHeight: dimension.height });
+    } catch {
+      /* 任务可能已被删除 */
     }
   }
 

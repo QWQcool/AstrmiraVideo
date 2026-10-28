@@ -25,6 +25,7 @@ import { setCanvasResultHandoff } from '../lib/canvasHandoff';
 import { TASK_STATUS_KEYS, EXECUTED_BY_LABEL_KEYS, EXECUTED_BY_TITLE_KEYS } from '../lib/format';
 import { useTranslate } from '../lib/i18n';
 import { useShell } from '../lib/shell';
+import { requestedDimensionMismatch } from '../lib/taskDimension';
 import {
   LIBRARY_SORT_LABEL_KEYS,
   LIBRARY_STATUS_LABEL_KEYS,
@@ -703,6 +704,24 @@ export function LibraryView() {
                   {selected.outputSizeBytes === undefined
                     ? t('library.drawer.kv.sizeMissing')
                     : formatBytes(selected.outputSizeBytes)}
+                </dd>
+                <dt>{t('library.drawer.kv.dimension')}</dt>
+                <dd>
+                  {selected.outputDimension === undefined ? (
+                    t('library.drawer.kv.dimensionMissing')
+                  ) : (
+                    <>
+                      {`${selected.outputDimension.width}×${selected.outputDimension.height}`}
+                      {requestedDimensionMismatch(selected) ? (
+                        <span className="lib-dim-mismatch">
+                          {t('library.drawer.kv.dimensionPlanned', {
+                            width: selected.requestSnapshot.resolution?.width ?? 0,
+                            height: selected.requestSnapshot.resolution?.height ?? 0,
+                          })}
+                        </span>
+                      ) : null}
+                    </>
+                  )}
                 </dd>
                 <dt>{t('library.drawer.kv.status')}</dt>
                 <dd>{t(TASK_STATUS_KEYS[selected.status])}</dd>
