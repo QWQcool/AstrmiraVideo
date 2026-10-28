@@ -717,9 +717,13 @@ export function StudioNode({ id, selected }: NodeProps) {
               >
                 {t('canvas.studio.inpaint')}
               </button>
+              {/* V2.97：扩图当前**只扩画布、不生成内容**（真机复验：新画的那圈是中性灰）。
+                  按本仓红线，宁可置灰并写明原因，也不做"点了得到一张灰边图"的按钮。 */}
               <button
                 type="button"
                 className="cs-toolbar-link"
+                disabled
+                title={t('canvas.studio.outpaintBroken')}
                 onClick={() => setOutpaintOpen(true)}
               >
                 {t('canvas.studio.outpaint')}
