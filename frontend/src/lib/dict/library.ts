@@ -65,38 +65,6 @@ export const LIBRARY_ZH = {
   'library.statusFilter.active': '进行中',
 
   // ── 交付包（V2.13 / B49）──
-  'library.deliver.title': '交付包',
-  'library.deliver.hintPick': '先在卡片上勾选要交付的成片（卡片右下角的 ☐）',
-  'library.deliver.hintReady': '把选中的成片打成交付包（命名 + 规格校验 + 归档清单）',
-  'library.deliver.button': '📦 交付包',
-  'library.deliver.buttonWithCount': '📦 交付包（{count}）',
-  'library.deliver.summary': '{count} 条 · 包内 {files} 个文件 · {name}',
-  'library.deliver.closeAria': '关闭交付面板',
-  'library.deliver.presetLabel': '平台规格',
-  'library.deliver.presetAria': '平台规格预设',
-  'library.deliver.prefixLabel': '项目前缀（命名用）',
-  'library.deliver.prefixPlaceholder': '交付',
-  'library.deliver.prefixAria': '项目前缀',
-  // 前面接的是 `chosenPreset.note`（共享包的中文，见文件头的"未收敛边界"）
-  'library.deliver.note': ' —— 本工具**只做命名与规格校验，不转码**（口径：{basis}）。',
-  'library.deliver.includeVideo': '成片 MP4',
-  'library.deliver.includeProject': '剪辑工程 JSON（仅剪辑产物有）',
-  'library.deliver.includeCover': '封面图',
-  'library.deliver.includeManifest': '交付清单.json',
-  'library.deliver.transcodeLabel': '按预设重新渲染（{width}×{height}）',
-  'library.deliver.transcodeTitle':
-    '在浏览器内把成片重新渲染成 {width}×{height}（画幅按 cover 裁切，不拉伸；时长不变；耗时与片长成正比）',
-  'library.deliver.warnTitle': '{count} 条与所选规格不一致（**只提示，不阻断**）',
-  'library.deliver.warnMore': '另有 {count} 条，同类提示见交付清单。',
-  'library.deliver.failed': '打包失败',
-  'library.deliver.fileNameExample': '命名示例：{name}',
-  'library.deliver.buildBusy': '打包中…',
-  'library.deliver.build': '📦 生成并下载',
-  'library.deliver.progressPreparing': '准备中…',
-  'library.deliver.done': '交付包已生成：{name}（{files} 个文件，含 {manifest}）。',
-  'library.deliver.manifestYes': '交付清单',
-  'library.deliver.manifestNo': '无清单',
-
   // ── 删除 ──
   'library.delete.done': '已删除该成片并释放磁盘。',
   'library.delete.failed': '删除失败：{reason}',
@@ -108,7 +76,6 @@ export const LIBRARY_ZH = {
   'library.card.noCover': '无封面',
   'library.card.editOriginTitle': '剪辑自 {id}',
   'library.card.editOrigin': '剪辑自 {id}',
-  'library.card.pickTitle': '加入 / 移出交付包',
   'library.card.editTitle': '剪辑',
   'library.card.editDisabledTitle': '失败任务不可剪辑',
   'library.card.editNoVideo': '图片产物不能进剪辑台',
@@ -150,31 +117,6 @@ export const LIBRARY_ZH = {
   'library.drawer.action.download': '下载',
   'library.drawer.action.delete': '删除',
 
-  // ── 交付包的进度 / ZIP 错误 / 转码原因（`lib/deliverablePackage.ts` / `zipStore.ts` /
-  //    `presetTranscode.ts`；语言迁移第十五批）──
-  // 这几条都是**前端生成、紧接着显示**的（面板下方的进度行与"打包失败"正文）→ 跟着界面语言走。
-  // ⚠️ 而 `manifestFileName`（`交付清单.json`）是**产物内容**（zip 里的文件名），**保持中文**
-  // （`lib/deliverablePackage.ts` 行内有标记）—— 客户拿到的包不该因为切了界面语言就换文件名。
-  'library.deliver.progress.readVideo': '读取成片 {name}',
-  'library.deliver.progress.writeProject': '写入工程 {name}',
-  'library.deliver.progress.readCover': '读取封面 {name}',
-  'library.deliver.progress.writeManifest': '写入交付清单',
-  'library.deliver.progress.done': '完成',
-  'library.deliver.fetchFailed': '取 {what} 失败（HTTP {status}）：{url}',
-  'library.deliver.whatVideo': '成片',
-  'library.deliver.whatCover': '封面',
-  'library.deliver.noDownloadable': '任务 {id} 没有可下载的成片',
-  'library.zip.tooLarge': '交付包超过 4GB：本实现不支持 ZIP64，请减少条目后再打包',
-  'library.zip.badCentralDirectory': '中央目录损坏',
-  'library.zip.notZip': '不是有效的 ZIP（找不到中央目录结束标记）',
-  'library.transcode.noSourceSize': '未探测到源片尺寸 → 按预设 {width}×{height} 渲染',
-  'library.transcode.alreadyMatches': '已经是 {width}×{height} @{fps}fps，跳过转码',
-  'library.transcode.fpsOnly': '画幅已一致，但帧率 {from}→{to} 需要重采样',
-  'library.transcode.resize': '{fromW}×{fromH} → {toW}×{toH}（画幅按 cover 裁切，不拉伸）',
-  'library.transcode.probing': '探测源片尺寸…',
-  'library.transcode.fetchSourceFailed': '取源片失败（HTTP {status}）',
-  'library.transcode.unsupported': '这台浏览器无法渲染转码（{detail}）',
-  'library.transcode.unknownReason': '未知原因',
 };
 
 export const LIBRARY_EN = {
@@ -219,37 +161,6 @@ export const LIBRARY_EN = {
   'library.statusFilter.failed': 'Failed',
   'library.statusFilter.active': 'In progress',
 
-  'library.deliver.title': 'Delivery package',
-  'library.deliver.hintPick': 'Tick the clips to deliver on the cards first (the ☐ at their bottom right)',
-  'library.deliver.hintReady':
-    'Pack the selected clips into a delivery package (naming + spec check + manifest)',
-  'library.deliver.button': '📦 Delivery package',
-  'library.deliver.buttonWithCount': '📦 Delivery package ({count})',
-  'library.deliver.summary': '{count} items · {files} files inside · {name}',
-  'library.deliver.closeAria': 'Close the delivery panel',
-  'library.deliver.presetLabel': 'Platform spec',
-  'library.deliver.presetAria': 'Platform spec preset',
-  'library.deliver.prefixLabel': 'Project prefix (for naming)',
-  'library.deliver.prefixPlaceholder': 'Delivery',
-  'library.deliver.prefixAria': 'Project prefix',
-  'library.deliver.note': ' — this tool **only names and checks specs; it does not transcode** (basis: {basis}).',
-  'library.deliver.includeVideo': 'Clip MP4',
-  'library.deliver.includeProject': 'Edit project JSON (only edit output has it)',
-  'library.deliver.includeCover': 'Cover image',
-  'library.deliver.includeManifest': 'Manifest.json',
-  'library.deliver.transcodeLabel': 'Re-render at the preset ({width}×{height})',
-  'library.deliver.transcodeTitle':
-    'Re-render the clip in the browser at {width}×{height} (cropped to cover, never stretched; duration unchanged; time grows with clip length)',
-  'library.deliver.warnTitle': '{count} items do not match the chosen spec (**advisory only, never blocking**)',
-  'library.deliver.warnMore': '{count} more — the manifest lists the same kind of note.',
-  'library.deliver.failed': 'Packaging failed',
-  'library.deliver.fileNameExample': 'Naming example: {name}',
-  'library.deliver.buildBusy': 'Packaging…',
-  'library.deliver.build': '📦 Build & download',
-  'library.deliver.progressPreparing': 'Preparing…',
-  'library.deliver.done': 'Delivery package built: {name} ({files} files, including {manifest}).',
-  'library.deliver.manifestYes': 'the manifest',
-  'library.deliver.manifestNo': 'no manifest',
 
   'library.delete.done': 'Deleted this clip and freed the disk space.',
   'library.delete.failed': 'Delete failed: {reason}',
@@ -260,7 +171,6 @@ export const LIBRARY_EN = {
   'library.card.noCover': 'No cover',
   'library.card.editOriginTitle': 'Edited from {id}',
   'library.card.editOrigin': 'Edited from {id}',
-  'library.card.pickTitle': 'Add to / remove from the delivery package',
   'library.card.editTitle': 'Edit',
   'library.card.editDisabledTitle': 'Failed tasks cannot be edited',
   'library.card.editNoVideo': 'Image outputs cannot be opened in the video editor',
@@ -300,28 +210,4 @@ export const LIBRARY_EN = {
   'library.drawer.action.download': 'Download',
   'library.drawer.action.delete': 'Delete',
 
-  'library.deliver.progress.readVideo': 'Reading clip {name}',
-  'library.deliver.progress.writeProject': 'Writing project {name}',
-  'library.deliver.progress.readCover': 'Reading cover {name}',
-  'library.deliver.progress.writeManifest': 'Writing the manifest',
-  'library.deliver.progress.done': 'Done',
-  'library.deliver.fetchFailed': 'Could not fetch {what} (HTTP {status}): {url}',
-  'library.deliver.whatVideo': 'the clip',
-  'library.deliver.whatCover': 'the cover',
-  'library.deliver.noDownloadable': 'Task {id} has no downloadable clip',
-  'library.zip.tooLarge':
-    'The delivery package exceeds 4GB: this implementation does not support ZIP64 — remove some entries and try again',
-  'library.zip.badCentralDirectory': 'The central directory is corrupt',
-  'library.zip.notZip': 'Not a valid ZIP (no end-of-central-directory record found)',
-  'library.transcode.noSourceSize':
-    'Could not probe the source size → rendering at the preset {width}×{height}',
-  'library.transcode.alreadyMatches': 'Already {width}×{height} @{fps}fps — skipping the transcode',
-  'library.transcode.fpsOnly':
-    'The aspect already matches, but the frame rate {from}→{to} needs resampling',
-  'library.transcode.resize':
-    '{fromW}×{fromH} → {toW}×{toH} (cropped to cover, never stretched)',
-  'library.transcode.probing': 'Probing the source size…',
-  'library.transcode.fetchSourceFailed': 'Could not fetch the source clip (HTTP {status})',
-  'library.transcode.unsupported': 'This browser cannot render the transcode ({detail})',
-  'library.transcode.unknownReason': 'unknown reason',
 };

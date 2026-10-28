@@ -35,9 +35,9 @@ import { WORKBENCH_EN, WORKBENCH_ZH } from './workbench';
  * `byok`（凭据抽屉）、`error`（**整条兜底线**：`ErrorBoundary` 的按钮 +
  * `lib/errorReport.ts` 拼的崩溃面板与运行期通知正文 + `lib/runtimeErrorNotice.ts` 的壳）、
  * `canvas`（画布 —— **整屏**：节点卡 / 编排检查器 / 词表 / 画布纯函数 / 视图壳）、
- * `library`（视频库：页头 / 工具条 / 筛选排序取值 / 交付包面板 / 卡片 / 详情抽屉）。
+ * `library`（视频库：页头 / 工具条 / 筛选排序取值 / 卡片 / 详情抽屉）。
  * 未迁：成本台账 / 配方库 / 操作日志 / 剪辑台 / 总览，以及一批零散库
- * （`lib/lineage.ts` / `costView.ts` / `workerClient.ts` / `deliverablePackage.ts` /
+ * （`lib/lineage.ts` / `costView.ts` / `workerClient.ts` /
  * `engineOptions.ts` / `api.ts` 等 —— 精确剩余见迁移期盘点脚本）。
  *
  * ## 已定的一个口径（语言迁移第八批）：`console.*` 不是界面文案，保持中文

@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  DEFAULT_PLATFORM_PRESET_ID,
-  PLATFORM_PRESETS,
-  findPlatformPreset,
-} from '@astrmira/shared';
-import {
   taskOutput,
   type AssetListEntry,
   type CanvasDoc,
@@ -27,11 +22,6 @@ import {
   resolveMediaUrl,
 } from '../lib/api';
 import { setCanvasResultHandoff } from '../lib/canvasHandoff';
-import {
-  buildDeliverableZip,
-  planDeliverablePackage,
-  saveDeliverable,
-} from '../lib/deliverablePackage';
 import { TASK_STATUS_KEYS, EXECUTED_BY_LABEL_KEYS, EXECUTED_BY_TITLE_KEYS } from '../lib/format';
 import { useTranslate } from '../lib/i18n';
 import { useShell } from '../lib/shell';
@@ -107,21 +97,7 @@ export function LibraryView() {
   const route = useHashRoute();
   const t = useTranslate();
   // V2.11（B47）：视频库按当前项目过滤（切项目即重拉）
-  const { projectId, projects } = useShell();
-  // ── 交付包（V2.13 / 台账 B49）：多选 + 规格预设 + 命名 + 归档清单 ──
-  const [pickedIds, setPickedIds] = useState<string[]>([]);
-  const [deliverOpen, setDeliverOpen] = useState(false);
-  const [presetId, setPresetId] = useState<string>(DEFAULT_PLATFORM_PRESET_ID);
-  const [deliverProjectName, setDeliverProjectName] = useState('');
-  const [includeVideo, setIncludeVideo] = useState(true);
-  const [includeProject, setIncludeProject] = useState(true);
-  const [includeCover, setIncludeCover] = useState(true);
-  const [includeManifest, setIncludeManifest] = useState(true);
-  // V2.14（B49 片 B）：按预设重新渲染（画幅对齐）—— 默认关：它慢，且客户可能只想改名打包
-  const [transcode, setTranscode] = useState(false);
-  const [deliverBusy, setDeliverBusy] = useState(false);
-  const [deliverProgress, setDeliverProgress] = useState<string | null>(null);
-  const [deliverError, setDeliverError] = useState<string | null>(null);
+  const { projectId } = useShell();
   const [history, setHistory] = useState<HistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -284,89 +260,6 @@ export function LibraryView() {
     navigate(`#/canvas?project=${encodeURIComponent(projectId)}`);
   };
 
-  // ── 交付包（V2.13 / B49）──
-  // 勾选的是"当前列表里选中的那些"（筛掉已删除 / 已不在列表的 id —— 陈旧勾选不该让打包失败）
-  const pickedTasks = useMemo(
-    () => items.filter((item) => pickedIds.includes(item.taskId)),
-    [items, pickedIds],
-  );
-  const activeProject = projects.find((project) => project.projectId === projectId) ?? null;
-  const effectiveProjectName = deliverProjectName.trim() === ''
-    // 这是**包名前缀的数据兜底值**（会进交付包的文件名），不是界面文案 ——
-    // 与 `createEmptyPlan` 的名字同一条口径（数据不跟界面语言走）；输入框的 placeholder 另有字典键。
-    // i18n-exempt: 交付包名前缀的数据兜底值（理由见上两行）
-    ? (activeProject?.name ?? '交付')
-    : deliverProjectName.trim();
-  const chosenPreset = findPlatformPreset(presetId) ?? PLATFORM_PRESETS[0]!;
-  const deliverPlan = useMemo(
-    () =>
-      planDeliverablePackage(pickedTasks, {
-        preset: chosenPreset,
-        projectName: effectiveProjectName,
-        projectId,
-        includeVideo,
-        includeProject,
-        includeCover,
-        includeManifest,
-        transcode,
-      }),
-    [
-      pickedTasks,
-      chosenPreset,
-      effectiveProjectName,
-      projectId,
-      includeVideo,
-      includeProject,
-      includeCover,
-      includeManifest,
-      transcode,
-    ],
-  );
-  /** 有条目带规格提示时如实汇总（**不阻断**：客户有权按自己的判断交付） */
-  const warnedItems = deliverPlan.items.filter((item) => item.warnings.length > 0);
-
-  function togglePick(taskId: string): void {
-    setPickedIds((prev) =>
-      prev.includes(taskId) ? prev.filter((id) => id !== taskId) : [...prev, taskId],
-    );
-  }
-
-  async function handleBuildDeliverable(): Promise<void> {
-    if (deliverBusy) return;
-    setDeliverBusy(true);
-    setDeliverError(null);
-    setDeliverProgress(t('library.deliver.progressPreparing'));
-    try {
-      const built = await buildDeliverableZip(
-        deliverPlan,
-        {
-          includeVideo,
-          includeProject,
-          includeCover,
-          includeManifest,
-          transcode,
-          preset: chosenPreset,
-        },
-        (progress) => setDeliverProgress(progress.label),
-      );
-      saveDeliverable(built);
-      setNotice(
-        t('library.deliver.done', {
-          name: built.packageName,
-          files: built.entryNames.length,
-          manifest: t(
-            includeManifest ? 'library.deliver.manifestYes' : 'library.deliver.manifestNo',
-          ),
-        }),
-      );
-      setDeliverOpen(false);
-    } catch (caught) {
-      setDeliverError(describeError(caught));
-    } finally {
-      setDeliverBusy(false);
-      setDeliverProgress(null);
-    }
-  }
 
   async function handleDelete(taskId: string): Promise<void> {
     setDeletingId(taskId);
@@ -622,186 +515,7 @@ export function LibraryView() {
             ? t('library.totalSize', { size: formatBytes(history.storage.totalBytes) })
             : ''}
         </span>
-
-        {tab === 'history' ? (
-          /* 交付包入口（V2.13 / B49）：勾选 ≥1 条才可用 —— 灰按钮上写明为什么要先勾选 */
-          <button
-            type="button"
-            className="wb-btn wb-btn-gold dl-open"
-            disabled={pickedTasks.length === 0}
-            title={t(
-              pickedTasks.length === 0 ? 'library.deliver.hintPick' : 'library.deliver.hintReady',
-            )}
-            onClick={() => {
-              setDeliverError(null);
-              setDeliverOpen(true);
-            }}
-          >
-            {pickedTasks.length === 0
-              ? t('library.deliver.button')
-              : t('library.deliver.buttonWithCount', { count: pickedTasks.length })}
-          </button>
-        ) : null}
       </div>
-
-      {tab === 'history' && deliverOpen && pickedTasks.length > 0 ? (
-        <section className="wb-panel dl-panel" role="dialog" aria-label={t('library.deliver.title')}>
-          <div className="wb-field-head">
-            <Eyebrow tone="gold" as="h2">
-              {t('library.deliver.title')}
-            </Eyebrow>
-            <span className="wb-note">
-              {t('library.deliver.summary', {
-                count: pickedTasks.length,
-                files: deliverPlan.plannedEntryCount,
-                name: deliverPlan.packageName,
-              })}
-            </span>
-            <button
-              type="button"
-              className="wb-btn lib-icon"
-              aria-label={t('library.deliver.closeAria')}
-              onClick={() => setDeliverOpen(false)}
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="dl-row">
-            <label className="wb-field">
-              <span className="wb-label">{t('library.deliver.presetLabel')}</span>
-              <select
-                className="wb-input dl-preset"
-                value={presetId}
-                aria-label={t('library.deliver.presetAria')}
-                onChange={(event) => setPresetId(event.target.value)}
-              >
-                {PLATFORM_PRESETS.map((preset) => (
-                  <option key={preset.presetId} value={preset.presetId}>
-                    {preset.label}（{preset.aspectRatio} · {preset.width}×{preset.height} · ≤
-                    {preset.maxDurationSec}s）
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="wb-field">
-              <span className="wb-label">{t('library.deliver.prefixLabel')}</span>
-              <input
-                className="wb-input dl-project"
-                value={deliverProjectName}
-                maxLength={30}
-                placeholder={activeProject?.name ?? t('library.deliver.prefixPlaceholder')}
-                aria-label={t('library.deliver.prefixAria')}
-                onChange={(event) => setDeliverProjectName(event.target.value)}
-              />
-            </label>
-          </div>
-
-          <p className="wb-note dl-note">
-            {chosenPreset.note}
-            {t('library.deliver.note', { basis: chosenPreset.basis })}
-          </p>
-
-          <div className="dl-checks">
-            <label>
-              <input
-                type="checkbox"
-                checked={includeVideo}
-                onChange={(event) => setIncludeVideo(event.target.checked)}
-              />
-              {t('library.deliver.includeVideo')}
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={includeProject}
-                onChange={(event) => setIncludeProject(event.target.checked)}
-              />
-              {t('library.deliver.includeProject')}
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={includeCover}
-                onChange={(event) => setIncludeCover(event.target.checked)}
-              />
-              {t('library.deliver.includeCover')}
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={includeManifest}
-                onChange={(event) => setIncludeManifest(event.target.checked)}
-              />
-              {t('library.deliver.includeManifest')}
-            </label>
-            <label
-              className="dl-transcode"
-              title={t('library.deliver.transcodeTitle', {
-                width: chosenPreset.width,
-                height: chosenPreset.height,
-              })}
-            >
-              <input
-                type="checkbox"
-                checked={transcode}
-                data-testid="dl-transcode"
-                onChange={(event) => setTranscode(event.target.checked)}
-              />
-              {t('library.deliver.transcodeLabel', {
-                width: chosenPreset.width,
-                height: chosenPreset.height,
-              })}
-            </label>
-          </div>
-
-          {warnedItems.length === 0 ? null : (
-            <div className="wb-uncertain dl-warn">
-              <span className="wb-uncertain-title">
-                {t('library.deliver.warnTitle', { count: warnedItems.length })}
-              </span>
-              <ul className="dl-warn-list">
-                {warnedItems.slice(0, 3).map((item) => (
-                  <li key={item.task.taskId}>
-                    {item.videoFileName}：{item.warnings.join('；')}
-                  </li>
-                ))}
-              </ul>
-              {warnedItems.length > 3 ? (
-                <span className="wb-note">
-                  {t('library.deliver.warnMore', { count: warnedItems.length - 3 })}
-                </span>
-              ) : null}
-            </div>
-          )}
-
-          {deliverError === null ? null : (
-            <div className="wb-uncertain dl-warn">
-              <span className="wb-uncertain-title">{t('library.deliver.failed')}</span>
-              <span className="wb-uncertain-body">{deliverError}</span>
-            </div>
-          )}
-
-          <div className="dl-actions">
-            <span className="wb-note dl-hint">
-              {deliverProgress === null
-                ? t('library.deliver.fileNameExample', {
-                    name: deliverPlan.items[0]?.videoFileName ?? '—',
-                  })
-                : deliverProgress}
-            </span>
-            <button
-              type="button"
-              className="wb-btn wb-btn-gold"
-              data-testid="dl-build"
-              disabled={deliverBusy || deliverPlan.plannedEntryCount === 0}
-              onClick={() => void handleBuildDeliverable()}
-            >
-              {t(deliverBusy ? 'library.deliver.buildBusy' : 'library.deliver.build')}
-            </button>
-          </div>
-        </section>
-      ) : null}
 
       {tab === 'history' ? (
         <div className="lib-body" data-drawer={selected === null ? '0' : '1'}>
@@ -880,16 +594,6 @@ export function LibraryView() {
                   </span>
                   <span className="lib-acts">
                     {/* 交付包多选（V2.13 / B49）：data-picked 是给冒烟读的渲染事实 */}
-                    <button
-                      type="button"
-                      className={`wb-btn lib-icon dl-pick${pickedIds.includes(task.taskId) ? ' dl-pick-on' : ''}`}
-                      aria-pressed={pickedIds.includes(task.taskId)}
-                      data-picked={pickedIds.includes(task.taskId) ? '1' : '0'}
-                      title={t('library.card.pickTitle')}
-                      onClick={() => togglePick(task.taskId)}
-                    >
-                      {pickedIds.includes(task.taskId) ? '☑' : '☐'}
-                    </button>
                     <button
                       type="button"
                       className="wb-btn lib-icon"
