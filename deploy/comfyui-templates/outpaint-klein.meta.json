@@ -1,5 +1,7 @@
 {
-  "modes": ["outpaint"],
+  "modes": [
+    "outpaint"
+  ],
   "modelMatch": {
     "unet": "klein",
     "clip": "qwen_3",
@@ -7,5 +9,5 @@
     "clipType": "flux2"
   },
   "label": "FLUX.2 Klein · 扩图（外扩补画）",
-  "notes": "底图走 {{START_IMAGE_NAME}}；四边外扩像素来自请求的 options.expand（8 的整数倍）。流程：ImagePadForOutpaint（同时产出蒙版）→ VAEEncode → SetLatentNoiseMask → 采样 → VAEDecode → ImageCompositeMasked 回贴（原图区域不动，只补新画布）。需要 diffusion_models/flux-2-klein-4b、text_encoders/qwen_3_4b、vae/flux2-vae。"
+  "notes": "底图走 {{START_IMAGE_NAME}}；四边外扩像素来自请求的 options.expand（8 的整数倍）。流程：ImagePadForOutpaint（灰底 0.5 + 蒙版）→ VAEEncode → SetLatentNoiseMask → 采样 → VAEDecode→ ImageCompositeMasked 回贴（原图区域不动，只补新画布）。**positive 直接接 CLIPTextEncode，不要接 ReferenceLatent**。2026-10-28 真机实测：接了 ReferenceLatent 时，模型把「补过灰边」的那张 latent 当参考喂回去，于是照着复刻灰边 —— 新区域永远是 #808080（把 steps 从 4 提到 12 也一样）；去掉后同 seed、同参数即可正常补画（新区域出现树/雪/栅栏，接缝连续）。需要 diffusion_models/flux-2-klein-4b、text_encoders/qwen_3_4b、vae/flux2-vae。"
 }

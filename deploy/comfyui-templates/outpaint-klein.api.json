@@ -1,18 +1,27 @@
 {
-  "70": {
-    "class_type": "UNETLoader",
-    "inputs": { "unet_name": "{{UNET_NAME}}", "weight_dtype": "{{WEIGHT_DTYPE}}" }
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "66",
+        0
+      ],
+      "filename_prefix": "{{OUTPUT_PREFIX}}"
+    }
   },
-  "71": {
-    "class_type": "CLIPLoader",
-    "inputs": { "clip_name": "{{CLIP_NAME}}", "type": "{{CLIP_TYPE}}" }
+  "56": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{START_IMAGE_NAME}}"
+    }
   },
-  "72": { "class_type": "VAELoader", "inputs": { "vae_name": "{{VAE_NAME}}" } },
-  "56": { "class_type": "LoadImage", "inputs": { "image": "{{START_IMAGE_NAME}}" } },
   "57": {
     "class_type": "ImagePadForOutpaint",
     "inputs": {
-      "image": ["56", 0],
+      "image": [
+        "56",
+        0
+      ],
       "left": "{{PAD_LEFT}}",
       "top": "{{PAD_TOP}}",
       "right": "{{PAD_RIGHT}}",
@@ -20,51 +29,165 @@
       "feathering": "{{PAD_FEATHERING}}"
     }
   },
-  "77": { "class_type": "VAEEncode", "inputs": { "pixels": ["57", 0], "vae": ["72", 0] } },
-  "78": {
-    "class_type": "SetLatentNoiseMask",
-    "inputs": { "samples": ["77", 0], "mask": ["57", 1] }
-  },
-  "74": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{PROMPT}}", "clip": ["71", 0] } },
-  "80": {
-    "class_type": "ReferenceLatent",
-    "inputs": { "conditioning": ["74", 0], "latent": ["77", 0] }
-  },
-  "76": { "class_type": "ConditioningZeroOut", "inputs": { "conditioning": ["74", 0] } },
-  "63": {
-    "class_type": "CFGGuider",
-    "inputs": { "model": ["70", 0], "positive": ["80", 0], "negative": ["76", 0], "cfg": 1 }
+  "61": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
   },
   "62": {
     "class_type": "Flux2Scheduler",
-    "inputs": { "steps": 4, "width": "{{WIDTH}}", "height": "{{HEIGHT}}" }
+    "inputs": {
+      "steps": 4,
+      "width": "{{WIDTH}}",
+      "height": "{{HEIGHT}}"
+    }
   },
-  "61": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
-  "73": { "class_type": "RandomNoise", "inputs": { "noise_seed": "{{SEED}}" } },
+  "63": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": [
+        "70",
+        0
+      ],
+      "positive": [
+        "74",
+        0
+      ],
+      "negative": [
+        "76",
+        0
+      ],
+      "cfg": 1
+    }
+  },
   "64": {
     "class_type": "SamplerCustomAdvanced",
     "inputs": {
-      "noise": ["73", 0],
-      "guider": ["63", 0],
-      "sampler": ["61", 0],
-      "sigmas": ["62", 0],
-      "latent_image": ["78", 0]
+      "noise": [
+        "73",
+        0
+      ],
+      "guider": [
+        "63",
+        0
+      ],
+      "sampler": [
+        "61",
+        0
+      ],
+      "sigmas": [
+        "62",
+        0
+      ],
+      "latent_image": [
+        "78",
+        0
+      ]
     }
   },
-  "65": { "class_type": "VAEDecode", "inputs": { "samples": ["64", 0], "vae": ["72", 0] } },
+  "65": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "64",
+        0
+      ],
+      "vae": [
+        "72",
+        0
+      ]
+    }
+  },
   "66": {
     "class_type": "ImageCompositeMasked",
     "inputs": {
-      "destination": ["57", 0],
-      "source": ["65", 0],
+      "destination": [
+        "57",
+        0
+      ],
+      "source": [
+        "65",
+        0
+      ],
       "x": 0,
       "y": 0,
       "resize_source": false,
-      "mask": ["57", 1]
+      "mask": [
+        "57",
+        1
+      ]
     }
   },
-  "9": {
-    "class_type": "SaveImage",
-    "inputs": { "images": ["66", 0], "filename_prefix": "{{OUTPUT_PREFIX}}" }
+  "70": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "{{UNET_NAME}}",
+      "weight_dtype": "{{WEIGHT_DTYPE}}"
+    }
+  },
+  "71": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "{{CLIP_NAME}}",
+      "type": "{{CLIP_TYPE}}"
+    }
+  },
+  "72": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "{{VAE_NAME}}"
+    }
+  },
+  "73": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "{{SEED}}"
+    }
+  },
+  "74": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "{{PROMPT}}",
+      "clip": [
+        "71",
+        0
+      ]
+    }
+  },
+  "76": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": [
+        "74",
+        0
+      ]
+    }
+  },
+  "77": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "57",
+        0
+      ],
+      "vae": [
+        "72",
+        0
+      ]
+    }
+  },
+  "78": {
+    "class_type": "SetLatentNoiseMask",
+    "inputs": {
+      "samples": [
+        "77",
+        0
+      ],
+      "mask": [
+        "57",
+        1
+      ]
+    }
   }
 }
