@@ -59,6 +59,9 @@
 - 系统内存建议 **64GB+**（分层 offload 吃内存）
 - **本机 3080（10GB）低于 12GB 门槛 → 不要在它上面下 H3**（42.5GB 下载 + 大概率跑不动）
 - 官方**没有**发布显存要求表；上表是社区/ComfyUI 实测口径
+- **租卡先核对型号与显存**：`RTX 4080` 官方只有 **16GB**，写成 "4080 32GB" 的只可能是**魔改卡或云厂商定制件**。拿到机器第一件事跑 `nvidia-smi --query-gpu=name,memory.total --format=csv`，把真实显存记下来再选权重档（16GB → INT8 剪枝 + offload；24GB+ → 走基线档）。显存数字只信 `nvidia-smi`，不信商品页。
+
+
 
 ### 2.4 部署步骤（租到机器后照做）
 
@@ -99,6 +102,23 @@
 - **本机 3080（10GB）现在就能测**（用 FP8/INT8 量化版）→ **不用等租卡**
 - 将来 5090 上可以与 H3 共存（不同模板），但**显存互斥**：同时只能跑一个（要么排队，要么按需切换）
 - **不建议为它单独租一台**：它太小了，租一台专门跑图不划算
+
+### 3.1 MOSS-Image（5B 文生图，Apache-2.0，JSON 布局控制）
+
+> 与 FLUX.3 Klein 是**两条并行的线**，不是替代关系；2026-10-16 由 OpenMOSS 开源，同日 ComfyUI 合并原生支持。
+
+| 项 | 值 |
+|---|---|
+| 参数量 | **5B DiT**；两个 checkpoint：`Base`（预训练）/ `SFT`（精调，文字成组更紧） |
+| 能力 | 文生图 · **JSON 布局提示词**（objects / 文字 / **边界框**）· 画面内直接渲染文字（含中文与手写体） |
+| 许可 | **Apache-2.0**（比 FLUX Kommunity License 宽松得多） |
+| 权重（Comfy-Org 重打包） | `diffusion_models/`：`moss_image_{sft,base}_bf16` 10.2GB 或 `..._int8_convrot` **5.4GB**；`text_encoders/`：`qwen3.5_9b_int8_convrot` 9.8GB 或 `qwen3.5_9b_w4a8_gptq` 7.3GB；`vae/`：**`flux2-vae.safetensors` 340MB（本机已有，FLUX.2 Klein 在用的同一个）** |
+| 显存（估，社区口径） | INT8 权重合计 ≈ **15.5GB** → 24/32GB 卡舒服；16GB 需分层卸载 |
+| 仓库 | HF `OpenMOSS-Team/MOSS-Image-{Base,SFT}`；ComfyUI 专用 `Comfy-Org/MOSS-Image`（魔搭有镜像） |
+
+**为什么值得记一笔**：它的"边界框布局控制"与我们画布"指哪放哪"是同一种输入形态，将来若要"按画布坐标直出"可能比文生图再重绘更直接。**但这属于产品决策，本轮没有拍板**，这里只登记事实。
+
+**接进来要做的（和 H3 同一处）**：能力位仍由模板声明（§五）；ComfyUI 需更新到含 MOSS-Image 支持的版本（该支持晚于当时的正式 release tag 合并），否则节点面板里根本不出现。
 
 ---
 
