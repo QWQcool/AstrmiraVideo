@@ -70,8 +70,11 @@
    - 下载务必**可断点续传**（42GB 级别，网络抖动会白跑）
 3. **打开模板**：ComfyUI → **工作流 → 浏览模板 → 视频 → 搜 "MiniMax H3"**
    - 常见报错 `缺少 qwen3vl_32b_minimax_h3_nvfp4_awq` = 文本编码器没放对目录（见 §2.2）
+   - 2026-10-29 已核实：本机 ComfyUI 0.36.0 的模板包里**已经带 H3 全套**（`video_minimax_h3_{t2v,i2v,r2v,multiframe_reference,i2v_continuation,fun_controlnet_union}` + 9 个 `api_minimax_h3_*`），不用另外找
 4. **跑通一条**：先用模板自带示例出一条 5 秒片，确认能在 5090 上出片并记下耗时
 5. **导出成 `.api.json`**（模板 → 导出 API 格式），放进我们的模板目录
+   - ⚠️ **别直接拿模板包里的文件当我们的模板**：自带的 `api_minimax_h3_*.json` 其实是**前端图格式**（`nodes` / `links`），我们的 provider 要的是**API 格式**（`{节点id: {class_type, inputs}}`）。必须在 ComfyUI 里点"导出（API）"再存盘，两者不通用
+   - 导出后按本仓约定把提示词/输入换成占位符（`{{PROMPT}}` / `{{START_IMAGE}}` …），再写 sidecar 声明 `modes`（V2.39 起能力位优先读声明，H3 这种"一个模型管 t2v/i2v/首尾帧/多参考"的文件名启发式会判错）
 6. **接进我们的服务**（见 §四）
 
 ### 2.5 许可（合规，别到商用才发现）
