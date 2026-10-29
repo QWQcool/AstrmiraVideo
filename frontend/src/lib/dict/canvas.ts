@@ -614,7 +614,8 @@ export const CANVAS_ZH = {
   // ── 主体库（V2.86 / D-3；CONTRACT §21-18）──
   // 主体的**名字与描述是用户数据**（落 subjects.json），不进字典；这里只有界面壳文案。
   'canvas.subject.title': '主体',
-  'canvas.subject.hint': '把主体拖到节点上，或点「加到选中节点」。主体只是给参考加一个来源标签，不改变生成参数。',
+  'canvas.subject.hint':
+    '把主体拖到节点上，或点「加到选中节点」。有定妆图时用它，没有则用第一张参考（卡片上会标出来）。',
   'canvas.subject.empty': '还没有主体。新建一个，把同一人物/商品的参考图放在一起。',
   'canvas.subject.loading': '读取主体库…',
   'canvas.subject.error': '主体库读取失败：{reason}',
@@ -1262,7 +1263,8 @@ export const CANVAS_EN = {
   'canvas.lineage.editOutput': 'Edit output',
 
   'canvas.subject.title': 'Subjects',
-  'canvas.subject.hint': 'Drag a subject onto a node, or use "Add to selected node". A subject only tags where a reference came from; it never changes generation parameters.',
+  'canvas.subject.hint':
+    'Drag a subject onto a node, or use "Add to selected node". Its anchor portrait is used when it has one, otherwise the first reference (the card says which).',
   'canvas.subject.empty': 'No subjects yet. Create one and keep the reference images of the same person/product together.',
   'canvas.subject.loading': 'Loading subjects...',
   'canvas.subject.error': 'Could not load subjects: {reason}',
