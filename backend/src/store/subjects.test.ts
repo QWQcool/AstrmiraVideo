@@ -76,6 +76,38 @@ describe('主体库存储', () => {
     expect(cleared?.assetIds).toEqual([]);
   });
 
+  it('V2.99 锚点：设 / 换 / 清，清的时候三件套一起消失', () => {
+    const { store } = harness();
+    const created = store.create({ name: 'A', assetIds: ['a1', 'a2'] });
+    expect(created.anchorAssetId).toBeUndefined();
+
+    // 生成的定妆图：带 taskId 与来源
+    const withAnchor = store.update(created.id, {
+      anchorAssetId: 'task:t-anchor',
+      anchorTaskId: 't-anchor',
+      anchorSource: 'generated',
+    });
+    expect(withAnchor?.anchorAssetId).toBe('task:t-anchor');
+    expect(withAnchor?.anchorTaskId).toBe('t-anchor');
+    expect(withAnchor?.anchorSource).toBe('generated');
+    expect(withAnchor?.anchorUpdatedAt).toBeGreaterThan(0);
+
+    // 换锚点但只给资源 id → 来源回落 manual，旧 taskId 不被继承（否则是假信息）
+    const manual = store.update(created.id, { anchorAssetId: 'asset-9' });
+    expect(manual?.anchorAssetId).toBe('asset-9');
+    expect(manual?.anchorSource).toBe('manual');
+    expect(manual?.anchorTaskId).toBeUndefined();
+
+    // 清锚点 = null（不是"没改"）
+    const cleared = store.update(created.id, { anchorAssetId: null });
+    expect(cleared?.anchorAssetId).toBeUndefined();
+    expect(cleared?.anchorTaskId).toBeUndefined();
+    expect(cleared?.anchorSource).toBeUndefined();
+    expect(cleared?.anchorUpdatedAt).toBeUndefined();
+    // 素材本身不动
+    expect(cleared?.assetIds).toEqual(['a1', 'a2']);
+  });
+
   it('改 / 删不存在的主体返回 null / false（不静默创建）', () => {
     const { store, file } = harness();
     expect(store.update('nope', { name: 'B' })).toBeNull();

@@ -2591,7 +2591,21 @@ audio.cs-card-media {
 
 .cs-subject-name,
 .cs-subject-desc,
+.cs-subject-anchor {
+  font-size: var(--fs-micro);
+  line-height: 1.3;
+}
+
+.cs-subject-anchor[data-state='ready'] {
+  color: var(--success);
+}
+
+.cs-subject-anchor[data-state='missing'] {
+  color: var(--text-dim);
+}
+
 .cs-subject-count {
+
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2603,7 +2617,21 @@ audio.cs-card-media {
 }
 
 .cs-subject-desc,
+.cs-subject-anchor {
+  font-size: var(--fs-micro);
+  line-height: 1.3;
+}
+
+.cs-subject-anchor[data-state='ready'] {
+  color: var(--success);
+}
+
+.cs-subject-anchor[data-state='missing'] {
+  color: var(--text-dim);
+}
+
 .cs-subject-count {
+
   color: var(--text-dim);
   font-size: var(--fs-micro);
 }

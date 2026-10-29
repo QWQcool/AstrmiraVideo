@@ -5,6 +5,7 @@ import {
   SubjectPatchSchema,
   SubjectResponseSchema,
   DeleteSubjectResponseSchema,
+  subjectReferenceOf,
   type CanvasNodeType,
   type CanvasReference,
   type CanvasReferenceMode,
@@ -92,12 +93,38 @@ async function request<S extends z.ZodType>(
 
 export type SubjectAttachReason = 'no-asset' | 'unsupported';
 
+export interface SetSubjectAnchorInput {
+  /** 定妆图：普通资产 id 或 	ask:<taskId> */
+  assetId: string;
+  /** 由哪条任务生成（手动指定时不给） */
+  taskId?: string;
+}
+
+/**
+ * 设 / 换主体锚点（V2.99 / N9）。
+ *
+ * 为什么不在服务端代提交生成：引擎选择与凭据都在客户端（BYOK、多实例），
+ * 服务端代跑就得复制一整套选择逻辑，还会在云端轨上**替用户花钱**。
+ */
+export function setSubjectAnchor(
+  subjectId: string,
+  input: SetSubjectAnchorInput,
+): Promise<{ subject: Subject }> {
+  return patchSubject(subjectId, {
+    anchorAssetId: input.assetId,
+    ...(input.taskId === undefined ? {} : { anchorTaskId: input.taskId }),
+    anchorSource: input.taskId === undefined ? 'manual' : 'generated',
+  });
+}
+
 export interface AttachSubjectResult {
   references: CanvasReference[];
   /** 新增了一条参考 */
   added: boolean;
   /** 素材已在节点里，只补了 subjectId（不新增条目） */
   linked: boolean;
+  /** 这次用的是定妆图还是回落的第一张参考（界面必须标出来） */
+  used: 'anchor' | 'fallback';
   /** 没加成时的原因（调用方必须如实显示，不能什么都不做） */
   reason?: SubjectAttachReason;
 }
@@ -114,10 +141,13 @@ export function attachSubjectToReferences(
   nodeType: CanvasNodeType,
   referenceMode?: CanvasReferenceMode,
 ): AttachSubjectResult {
-  const assetId = subject.assetIds[0];
-  if (assetId === undefined) {
-    return { references: [...existing], added: false, linked: false, reason: 'no-asset' };
+  // V2.99：**优先用定妆图**（有锚点就用锚点，没有才回落第一张参考）
+  const picked = subjectReferenceOf(subject);
+  if (picked === null) {
+    return { references: [...existing], added: false, linked: false, used: 'fallback', reason: 'no-asset' };
   }
+  const assetId = picked.assetId;
+  const used = picked.kind;
 
   const at = existing.findIndex((item) => item.assetId === assetId);
   if (at !== -1) {
@@ -127,6 +157,7 @@ export function attachSubjectToReferences(
       ),
       added: false,
       linked: true,
+      used,
     };
   }
 
@@ -137,7 +168,7 @@ export function attachSubjectToReferences(
     referenceMode === undefined ? {} : { referenceMode },
   );
   if (result.added === 0) {
-    return { references: [...existing], added: false, linked: false, reason: 'unsupported' };
+    return { references: [...existing], added: false, linked: false, used, reason: 'unsupported' };
   }
 
   return {
@@ -146,6 +177,7 @@ export function attachSubjectToReferences(
     ),
     added: true,
     linked: false,
+    used,
   };
 }
 

@@ -103,15 +103,46 @@ export class SubjectStore {
     const current = subjects[index] as Subject;
     const description =
       body.description === undefined ? current.description : normalizeDescription(body.description);
+    /**
+     * V2.99（N9）：锚点三件套一起改。
+     *
+     * `anchorAssetId: null` = **清除锚点**（回到"未出定妆图"），与 `description: ''` 同一口径；
+     * 清锚点时把 `anchorTaskId` / `anchorSource` / `anchorUpdatedAt` 一起删掉 ——
+     * 留着一个指向旧任务的 id 会让"这条锚点是哪来的"变成假信息。
+     */
+    const clearingAnchor = body.anchorAssetId === null;
+    const nextAnchor =
+      body.anchorAssetId === undefined
+        ? {}
+        : clearingAnchor
+          ? {}
+          : {
+              anchorAssetId: body.anchorAssetId,
+              ...(body.anchorTaskId === null || body.anchorTaskId === undefined
+                ? {}
+                : { anchorTaskId: body.anchorTaskId }),
+              anchorSource: body.anchorSource ?? 'manual',
+              anchorUpdatedAt: Date.now(),
+            };
     const next: Subject = SubjectSchema.parse({
       ...current,
       ...(body.name === undefined ? {} : { name: body.name }),
       ...(description === undefined ? {} : { description }),
       ...(body.assetIds === undefined ? {} : { assetIds: normalizeAssetIds(body.assetIds) }),
+      ...nextAnchor,
     });
     // `description` 是可选字段：要清空就必须真的没有这个键（`undefined` 会被 zod 剥掉，
     // 但这里显式删键，避免以后有人改成 passthrough 时把空串存进去）
     if (description === undefined) delete next.description;
+    if (clearingAnchor) {
+      delete next.anchorAssetId;
+      delete next.anchorTaskId;
+      delete next.anchorSource;
+      delete next.anchorUpdatedAt;
+    } else if (body.anchorAssetId !== undefined) {
+      // 换锚点时**不继承**旧 taskId：指向 old 任务会让"这条锚点哪来的"变成假信息
+      if (body.anchorTaskId === undefined || body.anchorTaskId === null) delete next.anchorTaskId;
+    }
 
     const updated = [...subjects];
     updated[index] = next;

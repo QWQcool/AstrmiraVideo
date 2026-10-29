@@ -23,6 +23,20 @@ function subject(assetIds: string[], id = 's1', name = '斯坦茜'): Subject {
   return { id, name, assetIds, createdAt: 1 };
 }
 
+/** V2.99：带定妆图（锚点）的主体 */
+function anchored(assetIds: string[], anchorAssetId: string): Subject {
+  return {
+    id: 's1',
+    name: '斯坦茜',
+    assetIds,
+    anchorAssetId,
+    anchorSource: 'generated',
+    anchorTaskId: 't-anchor',
+    anchorUpdatedAt: 2,
+    createdAt: 1,
+  };
+}
+
 function node(type: 'image' | 'video', mode?: 'omni-reference'): CanvasDocNode {
   const created = createCanvasNode({ id: 'n1', type, x: 0, y: 0, now: 1 });
   if (mode !== undefined) created.data.draft.settings.referenceMode = mode;
@@ -63,6 +77,29 @@ describe('主体 → 节点参考', () => {
       role: 'first-frame',
       subjectId: 's1',
     });
+  });
+
+  it('有一个定妆图时**用锚点**，不用原始照片（V2.99 / N9）', () => {
+    const result = attachSubjectToReferences(
+      [],
+      anchored(['a1', 'a2'], 'task:t-anchor'),
+      'image',
+      'omni-reference',
+    );
+    expect(result.added).toBe(true);
+    expect(result.used).toBe('anchor');
+    expect(result.references[0]).toMatchObject({ assetId: 'task:t-anchor', subjectId: 's1' });
+  });
+
+  it('没有定妆图时回落第一张，并如实标 fallback（界面据此提示"未出定妆图"）', () => {
+    const result = attachSubjectToReferences(
+      [],
+      subject(['a1', 'a2']),
+      'image',
+      'omni-reference',
+    );
+    expect(result.used).toBe('fallback');
+    expect(result.references[0]).toMatchObject({ assetId: 'a1' });
   });
 
   it('同一个素材已在节点里：只补 subjectId，不新增第二条', () => {

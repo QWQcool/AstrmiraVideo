@@ -1,5 +1,5 @@
 import { useState, type DragEvent, type ReactNode } from 'react';
-import type { Subject } from '@astrmira/shared';
+import { subjectReferenceOf, type Subject } from '@astrmira/shared';
 import { useTranslate } from '../../lib/i18n';
 import { referenceThumbnailPath } from '../../lib/canvasReferences';
 
@@ -30,6 +30,10 @@ export interface CanvasSubjectPanelProps {
   onDelete(subjectId: string): void;
   onPickAssets(subject: Subject): void;
   onAttach(subjectId: string, nodeId: string | null): void;
+  /** V2.99（N9）：给这个主体出/重出定妆图（锚点） */
+  onMakeAnchor(subject: Subject): void;
+  /** 正在出定妆图的主体 id（按钮据此置灰并说明） */
+  anchorBusyId: string | null;
 }
 
 export function CanvasSubjectPanel({
@@ -44,6 +48,8 @@ export function CanvasSubjectPanel({
   onDelete,
   onPickAssets,
   onAttach,
+  onMakeAnchor,
+  anchorBusyId,
 }: CanvasSubjectPanelProps): ReactNode {
   const t = useTranslate();
   const [name, setName] = useState('');
@@ -124,6 +130,9 @@ export function CanvasSubjectPanel({
       <ul className="cs-subject-list">
         {subjects.map((subject) => {
           const canAttach = subject.assetIds.length > 0;
+          // V2.99：缩略图优先用定妆图 —— 用户该看到"生成时真正用的那张"，不是原始照片
+          const picked = subjectReferenceOf(subject);
+          const anchorBusy = anchorBusyId === subject.id;
           return (
             <li
               key={subject.id}
@@ -140,10 +149,10 @@ export function CanvasSubjectPanel({
               }}
             >
               <div className="cs-subject-main">
-                {subject.assetIds.length === 0 ? null : (
+                {picked === null ? null : (
                   <img
                     className="cs-subject-thumb"
-                    src={referenceThumbnailPath(subject.assetIds[0] as string)}
+                    src={referenceThumbnailPath(picked.assetId)}
                     alt=""
                     loading="lazy"
                     onError={(event) => {
@@ -162,6 +171,17 @@ export function CanvasSubjectPanel({
                       ? t('canvas.subject.noAssets')
                       : t('canvas.subject.assets', { count: subject.assetIds.length })}
                   </span>
+                  {/* V2.99：锚点状态必须写出来 —— "用定妆图"和"用随手照片"效果不同 */}
+                  <span
+                    className="cs-subject-anchor"
+                    data-state={subject.anchorAssetId === undefined ? 'missing' : 'ready'}
+                  >
+                    {anchorBusy
+                      ? t('canvas.subject.anchorBusy')
+                      : subject.anchorAssetId === undefined
+                        ? t('canvas.subject.anchorMissing')
+                        : t('canvas.subject.anchorReady')}
+                  </span>
                 </div>
               </div>
 
@@ -172,6 +192,23 @@ export function CanvasSubjectPanel({
                   onClick={() => onPickAssets(subject)}
                 >
                   {t('canvas.subject.pickAssets')}
+                </button>
+                <button
+                  type="button"
+                  className="cs-subject-link"
+                  disabled={!canAttach || anchorBusy}
+                  title={
+                    !canAttach
+                      ? t('canvas.subject.anchorNeedAssets')
+                      : t('canvas.subject.anchorHint')
+                  }
+                  onClick={() => onMakeAnchor(subject)}
+                >
+                  {anchorBusy
+                    ? t('canvas.subject.anchorBusy')
+                    : subject.anchorAssetId === undefined
+                      ? t('canvas.subject.makeAnchor')
+                      : t('canvas.subject.remakeAnchor')}
                 </button>
                 <button
                   type="button"

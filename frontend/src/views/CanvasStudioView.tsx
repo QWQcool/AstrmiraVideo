@@ -24,6 +24,7 @@ import {
   BUILTIN_SKILLS,
   createCanvasNode,
   createEmptyCanvasDoc,
+  SUBJECT_ANCHOR_PROMPT,
   type CanvasDocNode,
   type CanvasDoc,
   type CanvasNodeType,
@@ -163,6 +164,7 @@ import {
   deleteSubject,
   fetchSubjects,
   patchSubject,
+  setSubjectAnchor,
   subjectName,
 } from '../lib/subjects';
 import { reuseFromBatch } from '../lib/canvasNodeReuse';
@@ -394,6 +396,8 @@ export function CanvasStudioView() {
   const [subjectsLoading, setSubjectsLoading] = useState(true);
   const [subjectsError, setSubjectsError] = useState<string | null>(null);
   const [subjectsBusy, setSubjectsBusy] = useState(false);
+  /** V2.99（N9）：正在出定妆图的主体（按钮据此置灰） */
+  const [anchorBusyId, setAnchorBusyId] = useState<string | null>(null);
   const [subjectPanelOpen, setSubjectPanelOpen] = useState(false);
   /** 非 null = 正在给这个主体挑素材（复用资产弹层） */
   const [subjectPickerId, setSubjectPickerId] = useState<string | null>(null);
@@ -1846,6 +1850,60 @@ export function CanvasStudioView() {
     [subjectPickerId, subjects],
   );
 
+  /**
+   * V2.99（N9）：给主体出定妆图（锚点）。
+   *
+   * 三个决定，都有理由：
+   * 1. **客户端提交**（不是服务端代跑）：引擎选择与凭据都在客户端（BYOK / 多实例），
+   *    服务端代跑就得复制一整套选择逻辑，还会在云端轨上替用户花钱；
+   * 2. **锚点先记 `task:<taskId>`**：任务一提交就写，节点立刻能用上；
+   *    文案说"已提交"而不是"已生成"—— 它可能失败，失败时界面会看到任务失败。
+   * 3. **比例 1:1**：定妆图是"看清这张脸"，方形最省像素也最不容易被构图带偏。
+   */
+  const handleMakeAnchor = useCallback(
+    (subject: Subject): void => {
+      const first = subject.assetIds[0];
+      if (first === undefined) {
+        setNotice(t('canvas.subject.anchorNeedAssets'));
+        return;
+      }
+      setAnchorBusyId(subject.id);
+      // 定妆图是 **t2i**：按"这台机器能不能出图"挑引擎，挑不到才回落云端
+      const localImageEngine = comfyUiEngineOptions(providerStatus).find(
+        (item) => item.configured && (item.modes === undefined || item.modes.includes('t2i')),
+      );
+      const provider = localImageEngine?.id ?? 'cloud-volcano-seedance';
+      void submitGenerate(
+        {
+          prompt: SUBJECT_ANCHOR_PROMPT,
+          mode: 't2i',
+          aspectRatio: '1:1',
+          assets: { references: [{ assetId: first, role: 'reference-image', order: 0 }] },
+          provider,
+          projectId,
+          ...(docRef.current === null ? {} : { origin: 'canvas' as const, canvasProjectId: docRef.current.projectId }),
+        },
+        {
+          idempotencyKey: `subject-anchor:${subject.id}:${Date.now()}`,
+          ...(resolveProviderKey(byok) === undefined ? {} : { providerKey: resolveProviderKey(byok) as string }),
+        },
+      )
+        .then(async (response) => {
+          const saved = await setSubjectAnchor(subject.id, {
+            assetId: `task:${response.taskId}`,
+            taskId: response.taskId,
+          });
+          setSubjects((prev) =>
+            prev.map((item) => (item.id === subject.id ? saved.subject : item)),
+          );
+          setNotice(t('canvas.subject.anchorSubmitted'));
+        })
+        .catch((caught: unknown) => setNotice(describeError(caught)))
+        .finally(() => setAnchorBusyId(null));
+    },
+    [byok, projectId, providerStatus, t],
+  );
+
   // ── 选择 / 菜单 / 快捷键 ────────────────────────────────────────────────
   const handleSelectionChange = useCallback(
     ({ nodes: selected, edges }: { nodes: StudioRfNode[]; edges?: Array<{ id: string }> }): void => {
@@ -2833,6 +2891,8 @@ export function CanvasStudioView() {
                 onDelete={handleDeleteSubject}
                 onPickAssets={(subject) => setSubjectPickerId(subject.id)}
                 onAttach={attachSubject}
+                onMakeAnchor={handleMakeAnchor}
+                anchorBusyId={anchorBusyId}
               />
             ) : null}
 
