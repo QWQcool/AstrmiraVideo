@@ -144,6 +144,15 @@
 
 **结论（自用）**：现在**一个都不用急着装**。等 32GB 机器到手，按需顺序是 ① Stable Audio 3.0 Small（一个模型同时管 BGM + 音效，8GB 就能跑，把音效轨从"只能传"变成"能生成"）→ ② Qwen3-TTS 0.6B（配音）→ ③ LatentSync 1.5（要数字人才上）。
 
+**本机实测（2026-10-29，RTX 3080 10GB，东西全在 D 盘）**：
+
+- **TTS 不用装**：本机早就有 GPT-SoVITS 特化包（`D:\TTS\GSVI\GPT-SoVITS-1007-cu124`，自带 Python/PyTorch/cu124，3 个音色：爱丽丝 中/日、白子 中文）。起 API：`D:\TTS\start-gsvi-api.bat`（`runtime\python.exe gsvi.py -p 8000`），接口 `POST http://127.0.0.1:8000/infer_single`，请求体 `{version:'v4', model_name:'蔚蓝档案-中文-爱丽丝', prompt_text_lang:'中文', emotion:'默认', text, text_lang:'中文'}` → 返回 `{"msg":"合成成功","audio_url":"http://0.0.0.0:8000/outputs/<hash>.wav"}`（把 `0.0.0.0` 换成 `127.0.0.1` 再 GET 就是 wav）。实测：2.56s 中文（热 4s / 首 22s，首含模型加载）、12.28s 长句 **14.4s**（≈1.17× 实时）、跨语种（日语模型念中文）3.52s 音频 7s；产物 **48kHz 单声道 pcm_s16le**，均值 −19.8 ~ −21.5dB（不是静音）。
+- **Stable Audio 3 Small 已装好，且不用升级 ComfyUI**：本机 ComfyUI **v0.36.0 已内置** SA3 模板与节点链 —— `CheckpointLoaderSimple` → `CLIPLoader(type='stable_audio')` → `CLIPTextEncode` ×2 → `EmptyLatentAudio(seconds,batch_size)` → `KSampler(steps=8, cfg=1, sampler='lcm', scheduler='simple')` → `VAEDecodeAudio` → `SaveAudio`。
+- 权重（`hf-mirror` + `Comfy-Org/stable-audio-3`）：`stable_audio_3_small_music` **2.1GB**、`stable_audio_3_small_sfx` **2.1GB**、文本编码器 `t5gemma_b_b_ul2` **1.1GB**（→ `models/checkpoints` 与 `models/text_encoders`）。**Small 分 music / sfx 两个 checkpoint，不是同一个**。
+- 实测：20s 配乐首次 **121.1s**（含加载）→ 热态 15s 只要 **2.3s**；切到 sfx 模型首次 **21.1s**；产物 **44.1kHz 立体声 FLAC**（20.06s / −23.8dB 均值），出片速度 ≈ 6.5× 实时。
+- 本机小工具：`D:\ComfyUI\audio-tools\sa3-cli.mjs`（可 `--ckpt/--prompt/--seconds/--out`）+ `run-sa3-demo.bat`；样本在 `D:\TTS\audio-out\`。
+- **新装一律放 D 盘**（C 盘只留系统与 IDE）：模型进 `D:\ComfyUI\...\models`，Python 环境进 `D:\TTS\...`，不要再用仓库里的 `.tmp`（`.tmp/facesim-venv` 那 850MB 是早先装的，可以随时挪走）。
+
 ---
 
 ## 四、接进我们的服务（现有代码，**不需要改方向**）
