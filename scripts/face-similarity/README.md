@@ -11,29 +11,33 @@ ArcFace 人脸识别模型（InsightFace）输出的 512 维**归一化身份嵌
 - 阈值 `0.35` 是 ArcFace 常被引用的工作点，**不是本项目标定的**。项目没有做 ROC/EER 标定，
   所以单看一个数就断言「同一张脸」是不成立的 —— 脚本自己会这么说（见"实测"）。
 
-## 一次性准备（不进仓库：`.tmp/` 已 gitignore）
+## 一次性准备（不进仓库，也**不放 C 盘**）
 
 模型约 650 MB、venv 约 200 MB，都不提交。缺了就**退出码 2**（跳过），不会被当成通过。
 
+默认落点：**`D:\dev-tools\facesim\{venv,models}`**（本机 C 盘紧张）。换位置用 `FACE_SIM_HOME`；
+也可以只指定解释器 `FACE_SIM_PYTHON`。仓库 `.tmp/` 下的旧路径仍作后备。
+
 ```powershell
+$H = 'D:\dev-tools\facesim'
 # 1) 隔离 venv（不碰 ComfyUI 的 python_embeded，也不进 node_modules）
-python -m venv .tmp/facesim-venv
-.tmp/facesim-venv/Scripts/python.exe -m pip install --progress-bar off `
+python -m venv "$H\venv"
+& "$H\venv\Scripts\python.exe" -m pip install --progress-bar off `
     onnxruntime opencv-python-headless numpy pillow insightface
 
 # 2) 模型包（二选一，或都下：两个模型结论不一样才有对比）
 Invoke-WebRequest 'https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip' `
-    -OutFile .tmp/facesim-models/buffalo_l.zip
-Expand-Archive .tmp/facesim-models/buffalo_l.zip -DestinationPath .tmp/facesim-models/models/buffalo_l
+    -OutFile "$H\models\buffalo_l.zip"
+Expand-Archive "$H\models\buffalo_l.zip" -DestinationPath "$H\models\models\buffalo_l"
 
 Invoke-WebRequest 'https://github.com/deepinsight/insightface/releases/download/v0.7/antelopev2.zip' `
-    -OutFile .tmp/facesim-models/antelopev2.zip
-Expand-Archive .tmp/facesim-models/antelopev2.zip -DestinationPath .tmp/facesim-models/tmp-antelope
-Move-Item .tmp/facesim-models/tmp-antelope/antelopev2 .tmp/facesim-models/models/antelopev2
+    -OutFile "$H\models\antelopev2.zip"
+Expand-Archive "$H\models\antelopev2.zip" -DestinationPath "$H\models\tmp-antelope"
+Move-Item "$H\models\tmp-antelope\antelopev2" "$H\models\models\antelopev2"
 ```
 
-Linux / macOS 把 `.tmp/facesim-venv/Scripts/python.exe` 换成 `.tmp/facesim-venv/bin/python`；
-包装脚本会自己按顺序找解释器，也可以用 `FACE_SIM_PYTHON` 指定。
+Linux / macOS 把 `Scripts\python.exe` 换成 `bin/python`；
+包装脚本会自己按顺序找解释器（`FACE_SIM_PYTHON` → D 盘 venv → 仓库 `.tmp` venv → `python3`）。
 
 为什么要 Python 而不是纯 Node：`onnxruntime-node` 会把多平台原生二进制塞进 `node_modules`，
 让 CI 和产物构建都变重；隔离 venv 对 `pnpm build` / `pnpm test` 零影响。

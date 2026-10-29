@@ -15,6 +15,9 @@
  *   2 = 后端不可用（没装 Python 依赖或没下模型）—— CI 与本地默认不装，所以这不算失败
  *
  * 这个脚本只做"把解释器找出来 + 转发参数"，判定逻辑全在 scripts/face-similarity/compare_faces.py。
+ *
+ * 装在哪：**默认 `D:\dev-tools\facesim\{venv,models}`**（本机 C 盘紧张，模型合计约 650MB）；
+ * 仓库 `.tmp` 那两个路径只是旧位置的后备。换机器用 `FACE_SIM_HOME` 或 `FACE_SIM_PYTHON` 覆盖。
  */
 
 import { spawnSync } from 'node:child_process';
@@ -25,8 +28,14 @@ import process from 'node:process';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SCRIPT = path.join(ROOT, 'scripts', 'face-similarity', 'compare_faces.py');
 
+/** 模型与 venv 的默认落点：**优先 D 盘**（本机 C 盘紧张），仓库 `.tmp` 只作后备。 */
+const HOME_D = process.env.FACE_SIM_HOME ?? 'D:\\dev-tools\\facesim';
+const MODEL_ROOTS = [path.join(HOME_D, 'models'), path.join(ROOT, '.tmp', 'facesim-models')];
+
 const CANDIDATES = [
   process.env.FACE_SIM_PYTHON,
+  path.join(HOME_D, 'venv', 'Scripts', 'python.exe'),
+  path.join(HOME_D, 'venv', 'bin', 'python'),
   path.join(ROOT, '.tmp', 'facesim-venv', 'Scripts', 'python.exe'),
   path.join(ROOT, '.tmp', 'facesim-venv', 'bin', 'python'),
   'python3',
@@ -35,7 +44,8 @@ const CANDIDATES = [
 
 const args = process.argv.slice(2);
 const hasModelRoot = args.includes('--model-root');
-const forwarded = hasModelRoot ? args : [...args, '--model-root', path.join(ROOT, '.tmp', 'facesim-models')];
+const modelRoot = MODEL_ROOTS.find((dir) => existsSync(dir)) ?? MODEL_ROOTS[0];
+const forwarded = hasModelRoot ? args : [...args, '--model-root', modelRoot];
 
 function run(executable) {
   return spawnSync(executable, [SCRIPT, ...forwarded], { stdio: 'inherit', cwd: ROOT });
