@@ -9,7 +9,7 @@
 
 [![Backend](https://img.shields.io/badge/backend-Node%2022%20%2B%20Fastify%205%20%2B%20SQLite-3178c6)](docs/CONTRACT.md)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20Vite%206-61dafb)](docs/CONTRACT.md)
-[![Contract](https://img.shields.io/badge/CONTRACT-V2.92-success)](docs/CONTRACT.md)
+[![Contract](https://img.shields.io/badge/CONTRACT-V2.100-success)](docs/CONTRACT.md)
 
 ## 现在能做什么
 
@@ -106,7 +106,7 @@ scripts/           本地托管、UI 冒烟、ComfyUI 验收、部署
 | [docs/JIMENG-REFERENCE.md](docs/JIMENG-REFERENCE.md) | 即梦观测与差距审计（要复刻什么、已复刻多少） |
 | [docs/CREATION-EXPERIENCE-DESIGN.md](docs/CREATION-EXPERIENCE-DESIGN.md) | 交互定稿（布局/层级/文案规格） |
 | [docs/REFERENCES.md](docs/REFERENCES.md) | 外部参考（n8n / infOS / 上游台账 / MOSS 评估） |
-| [docs/archive/PROGRESS-HISTORY.md](docs/archive/PROGRESS-HISTORY.md) | 进度流水存档（2026-08 ~ 2026-10，回溯用，不再追加） |
+| [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) | 验收命令及适用条件 |
 
 ## 协作约定（给未来的自己和 AI 会话）
 

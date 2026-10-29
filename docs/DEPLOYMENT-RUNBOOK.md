@@ -1,5 +1,9 @@
 # 部署手册（站点已上线 · 租算力服务器后一次做完）
 
+> **2026-10-30 状态更新**：AutoDL 已租用；GPU 为 32,760 MiB，数据盘可用空间超过 200 GB，容器内存上限约 72 GiB。隔离环境和 ComfyUI 0.43.0 已启动，回环 API 返回 200；模型仍在下载，工作流尚未验收。以下“租卡后”任务表是操作清单，完成状态以实际验证为准。
+
+> **交接与恢复**：GPU 数据盘 `/root/autodl-tmp/astrmira/` 内有 `download-models.log`、`comfyui-setup.log`、`moss-smoke.log`；先查看日志和进程，避免重复提交。下载脚本顺序下载并校验 MOSS 与 H3；`.partial` 是未完成文件。自动 MOSS 单次测试最多等待六小时，实例重启后进程不会自动恢复。中断后先核查已有文件与日志，再以同目录 `download-models.py` 续传；脚本对已存在的完整文件只跳过，不会重新校验，必要时人工对照上游哈希。MOSS 测试与 H3 工作流均需检查真实输出，不能仅凭进程存在判定成功。
+
 > 基线：2026-10-22，HEAD `806c679`。  
 > 本文把**已经成功的站点部署**和**所有依赖 GPU 算力服务器的开发项**放在一起，避免租到机器后靠会话记忆现场发挥。  
 > 相关文档：`docs/LOCAL-GPU-DEPLOY.md`（H3 选型/权重/网络细节）、`docs/REFERENCES.md`（MOSS 实测那一段）、`deploy/comfyui-templates/README.md`（MOSS 可选模板）。

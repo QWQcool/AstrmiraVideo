@@ -59,7 +59,7 @@ const FINALIZE_GRACE_MS = 30_000;
  * 所以这里天然是"`submit` 拿 id、`queryStatus` 轮询"的形态 —— 不需要像云端那样自己起轮询。
  * `prompt_id` 直接当 `taskId` 用（本仓调度器只要求"提交返回 id、可按 id 查状态"）。
  *
- * ## 三条如实边界（都来自真机实测，见 PLAN V8.34/V8.35）
+ * ## 三条如实边界（都来自真机实测，见 LOCAL-GPU-DEPLOY.md 的 V8.34/V8.35）
  * 1. **进度只能从 WebSocket 拿**（V2.82 起）：HTTP 接口不报单任务进度，所以进度走
  *    `ComfyProgressTracker`（`/ws` 的 `progress` 事件）。**拿不到就还是 0 + 一句说明** ——
  *    绝不编造一个匀速上涨的假进度条（那正是本仓"不假装可用"的反面）。

@@ -28,7 +28,7 @@ import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 
 const BASE = (process.env.COMFYUI_BASE_URL ?? 'http://127.0.0.1:8188').replace(/\/$/, '');
-/** 产物落本地（**不写进 ComfyUI 的 output 目录**：那里与别的项目共用，见 PLAN V8.34） */
+/** 产物落本地（**不写进 ComfyUI 的 output 目录**：那里与别的项目共用，见 LOCAL-GPU-DEPLOY.md 的 V8.34） */
 const ARTIFACT_DIR = resolve('.tmp/comfyui-acceptance');
 
 const NEGATIVE = 'blurry, low quality, watermark, text, subtitles, static, jitter';
@@ -74,7 +74,7 @@ async function ensureReachable() {
   } catch (error) {
     console.error(
       `\n✗ 连不上 ComfyUI（${BASE}）：${error instanceof Error ? error.message : String(error)}\n` +
-        '  先启动它（本机便携版路径与启动方式见 docs/PLAN.md 的 V8.34 段）：\n' +
+        '  先启动它（本机便携版路径与启动方式见 docs/LOCAL-GPU-DEPLOY.md 的本机实测记录）：\n' +
         '    D:\\ComfyUI\\ComfyUI_windows_portable\\run_nvidia_gpu.bat\n' +
         '  或设 COMFYUI_BASE_URL 指向别处的实例。\n',
     );

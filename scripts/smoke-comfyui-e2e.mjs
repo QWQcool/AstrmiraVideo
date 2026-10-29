@@ -79,7 +79,7 @@ try {
 } catch (error) {
   console.error(
     `✗ 连不上 ComfyUI（${COMFY_BASE}）：${error instanceof Error ? error.message : String(error)}\n` +
-      '  本机便携版启动方式见 docs/PLAN.md 的 V8.34 段（run_nvidia_gpu.bat）。',
+      '  本机便携版启动方式见 docs/LOCAL-GPU-DEPLOY.md 的本机实测记录（run_nvidia_gpu.bat）。',
   );
   process.exit(1);
 }

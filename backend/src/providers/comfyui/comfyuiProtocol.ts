@@ -14,7 +14,7 @@ import {
  * 分开的理由与 `canvasPlanRunner` 同一条：**正确性都在纯逻辑里**，网络只是最后一步。
  *
  * ## 参数从哪来（不许猜）
- * 全部来自 2026-10-13 的真机实测（PLAN V8.34/V8.35）：
+ * 全部来自 2026-10-13 的真机实测（LOCAL-GPU-DEPLOY.md 的 V8.34/V8.35）：
  * - 节点与参数名：`GET /object_info`（958 个节点的真实字段）
  * - 默认采样档：官方模板 `video_wan2_2_5B_ti2v.json`（20 步 / cfg 5 / `uni_pc` / `simple` / shift 8 / fps 24）
  * - 解码必须用 `VAEDecodeTiled`（10GB 卡上整段 `VAEDecode` 会退化成 CPU 解码，实测 >14 分钟未完成）
