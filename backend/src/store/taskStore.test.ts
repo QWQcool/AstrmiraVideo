@@ -144,3 +144,52 @@ describe('listRecent · 来源过滤（V2.43）', () => {
     expect(ids).not.toContain('gen-a');
   });
 });
+
+/**
+ * V2.90（D-8）：观测页的行集。
+ *
+ * 为什么补这组：`/api/stats/summary` 的**路由层**测试用的是假 store，所以真实 SQL
+ * （`from` / `to` 两个可选条件 + `json_extract(error,'$.code')` + `limit`）一直没被执行过，
+ * 覆盖率门限在 CI 上直接红（2026-10-29 实测：taskStore.ts 行 91.91% < 95%、函数 95.65% < 100%）。
+ * 这里补的是**真实库上的四档查询**，不是给数字凑数：口径错了，观测页的 p50/p95 与失败码分布会一起错。
+ */
+describe('listStatRows · 运行观测的行集（V2.90）', () => {
+  it('无 from/to：全量返回、按 createdAt 倒序，errorCode 从 JSON 里取（无错误时为 null）', () => {
+    seed({
+      taskId: 'stat-fail',
+      status: 'failed',
+      error: { code: 'INVALID_REQUEST', message: '参数不对', disposition: 'terminal' },
+    });
+
+    const rows = store.listStatRows({ limit: 200 });
+    expect(rows.length).toBeGreaterThanOrEqual(7);
+
+    // 倒序：统计按时间窗口聚合，顺序错了 p50/p95 的分桶会跟着错
+    const times = rows.map((row) => row.createdAt);
+    expect([...times].sort((left, right) => right - left)).toEqual(times);
+
+    const failed = rows.find((row) => row.errorCode === 'INVALID_REQUEST');
+    expect(failed).toBeDefined();
+    expect(failed?.status).toBe('failed');
+
+    const succeeded = rows.find((row) => row.status === 'succeeded');
+    expect(succeeded?.errorCode).toBeNull();
+    expect(succeeded?.provider).toBe('fixture-local');
+  });
+
+  it('from / to 是**闭区间**，各自可单独使用；越界返回空', () => {
+    const all = store.listStatRows({ limit: 200 });
+    const createdAt = all.map((row) => row.createdAt);
+    const min = Math.min(...createdAt);
+    const max = Math.max(...createdAt);
+
+    expect(store.listStatRows({ from: min, to: max, limit: 200 })).toHaveLength(all.length);
+    expect(store.listStatRows({ from: max + 1, limit: 200 })).toEqual([]);
+    expect(store.listStatRows({ to: min - 1, limit: 200 })).toEqual([]);
+  });
+
+  it('limit 真的截断（观测页只取窗口内的样本，不拉全表）', () => {
+    const rows = store.listStatRows({ limit: 2 });
+    expect(rows).toHaveLength(2);
+  });
+});
