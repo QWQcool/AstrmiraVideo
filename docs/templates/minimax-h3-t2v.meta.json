@@ -1,0 +1,10 @@
+{
+  "modes": ["t2v", "i2v"],
+  "modelMatch": {
+    "unet": "minimax_h3",
+    "clip": "qwen3vl_32b_minimax_h3",
+    "vae": "minimax_h3_video_vae"
+  },
+  "label": "MiniMax H3（ComfyUI 官方模板 / 本地轨）",
+  "notes": "与导出的 <name>.api.json 同名放在模板目录（<name>.meta.json）。导出 API 格式后，把提示词换 {{PROMPT}}、首帧换 {{START_IMAGE}} / {{START_IMAGE_NAME}}，否则 i2v 会被如实剔除。H3 本身还支持首尾帧与多参考（带音频），但本仓没有接 fl2v / v2v 的输入通道（CONTRACT §19-8），所以这里不声明 —— 声明了也会被剔除并在自检里写原因。"
+}

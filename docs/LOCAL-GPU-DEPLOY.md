@@ -223,6 +223,11 @@ unavailableReasons.push('fl2v / v2v 需要另外的模型（FLF2V / VACE 系列�
 
 **改法（与"模板驱动"一致）**：让**模板自己声明能力** —— `.api.json` 的 sidecar 里写 `modes`（这个模板能做哪些模式）+ 期望的模型文件名匹配，`comfyCapabilities` 改为读声明、缺声明才回落文件名启发式。这样换模型/换工作流**继续不改代码**。
 
+> **2026-10-29 更新：这条已经落地了（V2.39），现场**不需要改代码**。**
+> - `comfyCapabilities()` 已支持"声明优先"（`parseTemplateDeclaration` + `resolveDeclaredModes`），并且有 H3 风格的回归测试（文件名不含 `ti2v`/`i2v` 也能判对）；
+> - **sidecar 样例已备好**：`docs/templates/minimax-h3-t2v.meta.json`（与导出的 `<name>.api.json` 同名放进模板目录即可），并有单测钉住它"声明的模式都在本仓已接线集合里"；
+> - ⚠️ **但 H3 的首尾帧 / 多参考今天用不上**：`COMFY_WIRED_MODES` 只有 `t2v / i2v / t2i / upscale / inpaint / outpaint`，`fl2v` / `v2v` 是**没接输入通道**（CONTRACT §19-8）。声明里写 `fl2v` 会被**如实剔除**并在自检里写原因，不会假装可用。所以现场看到"H3 只给出 t2v / i2v"是**正确行为**，不是配错了。
+
 其它待核：
 - 帧数对齐 `4n+1` 是 **Wan 的时序要求**，H3 未必（要对齐到它的模板要求）；
 - H3 的**音频轨**在我们侧还没有落点（产物目前是单个 `outputVideoUrl`；音频随视频封装即可，但要确认封装格式与浏览器兼容）。
