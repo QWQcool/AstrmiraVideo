@@ -7,6 +7,7 @@
  * 因此判据必须看**像素**，并且固化成可重复执行的一条命令：
  *
  *   pnpm smoke:image --asset <已有的图片 assetId>
+ *   pnpm smoke:image --seed <本地照片>     # 一条命令跑完：现场上传，不用先去界面挑 id
  *
  * 判据（任一不过就 exit 1）：
  * 1. 超清：产物宽高 = 源 × 2，且内容与源不同（不是原图复制）；
@@ -15,10 +16,14 @@
  *    **新画区域的标准差 ≥ 8**（纯灰 ≈ 0，有内容才会大）—— 这条专门盯"灰边"回归。
  *
  * 依赖：本机 ffmpeg/ffprobe；站点已配 EXPOSE_HOST_LOCAL_TRACK + COMFYUI_*（否则跑不了）。
+ *
+ * 种子图的坑（2026-10-29 踩过）：别拿**已经重绘过的产物**当 `--seed` ——
+ * 蒙版里已经有"红苹果"时，模型照着原样重画，蒙版内 PSNR 34dB > 30，被判成"没真重画"（假失败）。
+ * 种子要选**没被这段提示词改过**的原始照片。
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -29,13 +34,22 @@ const flag = (name, fallback) => {
 };
 
 const BASE = (flag('base', process.env.PUBLIC_BASE_URL ?? 'http://127.0.0.1:3000')).replace(/\/$/, '');
-const ASSET = flag('asset', '');
+const ASSET_FLAG = flag('asset', '');
+const SEED = flag('seed', '');
 const EXPAND = Number(flag('expand', '64'));
 const WORK = mkdtempSync(path.join(tmpdir(), 'astrmira-image-accept-'));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-if (ASSET === '') {
-  console.error('✗ 需要 --asset <图片资产 id>（在视频库/素材面板里挑一张真实照片）');
+// 两种给源图的方式，都指向**一张真实照片**：
+//   --asset <id>  用已有的资产（老用法）；
+//   --seed <文件> 现场上传一张本地照片（一次命令跑完，不用先去界面挑 id）。
+// 不接受"没有源图就自己造" —— 纯色/色条这类合成图会让"扩图新区域有内容"这条判据变成平凡结论（B102 踩过）。
+if (ASSET_FLAG === '' && SEED === '') {
+  console.error('✗ 需要 --asset <图片资产 id> 或 --seed <本地照片路径>（要一张真实照片，别用纯色/色条合成图）');
+  process.exit(1);
+}
+if (SEED !== '' && !existsSync(SEED)) {
+  console.error(`✗ 找不到种子图：${SEED}`);
   process.exit(1);
 }
 
@@ -143,6 +157,24 @@ async function download(url, file) {
 }
 
 // ── 源图信息（直接量资产文件，不猜） ──────────────────────────────────────
+let ASSET = ASSET_FLAG;
+if (ASSET === '') {
+  const mime = SEED.toLowerCase().endsWith('.png')
+    ? 'image/png'
+    : SEED.toLowerCase().endsWith('.webp')
+      ? 'image/webp'
+      : 'image/jpeg';
+  const form = new FormData();
+  form.append('file', new Blob([readFileSync(SEED)], { type: mime }), path.basename(SEED));
+  const uploaded = await (await fetch(`${BASE}/api/upload`, { method: 'POST', body: form })).json();
+  ASSET = uploaded?.assets?.[0]?.assetId;
+  if (ASSET === undefined) {
+    console.error(`✗ 种子图上传失败：${JSON.stringify(uploaded).slice(0, 300)}`);
+    process.exit(1);
+  }
+  console.log(`种子图已上传：${SEED} → ${ASSET}`);
+}
+
 const assets = await (await fetch(`${BASE}/api/assets?limit=200`)).json();
 const asset = (assets.assets ?? []).find((item) => item.assetId === ASSET);
 if (asset === undefined) {
