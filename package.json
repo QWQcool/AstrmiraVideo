@@ -32,7 +32,8 @@
     "serve:local": "node scripts/serve-local.mjs",
     "deploy:check": "node scripts/deploy-check.mjs",
     "bench": "node scripts/bench.mjs",
-    "test:browser:audio": "node tests/browser/edit-audio.mjs"
+    "test:browser:audio": "node tests/browser/edit-audio.mjs",
+    "gpu:day-one": "node scripts/gpu-day-one.mjs"
   },
   "devDependencies": {
     "oxlint": "^1.85.0",

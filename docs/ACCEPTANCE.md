@@ -26,14 +26,20 @@
 | `pnpm smoke:face --anchor … --images … --negatives …` | Python venv + InsightFace 模型（见 `scripts/face-similarity/README.md`） | 人脸身份相似度**分布**；没给对照图时只输出"未标定"，给误判时退出码 1 |
 | `pnpm smoke:paid` | 火山 Seedance Key（**真金白银**） | 云端轨端到端：提交 / 轮询 / 成片 / 206 Range |
 
-## 三、本地模型可用性（一次性摸底，结果记在 `LOCAL-GPU-DEPLOY.md`）
+## 三、换机器 / 上机第一天的只读体检
+
+| 命令 | 证明什么 |
+|---|---|
+| `pnpm gpu:day-one --base http://127.0.0.1:8188 --dir /` | 真实显存（不信商品页）、内存与磁盘余量、ComfyUI 带不带 H3 节点、权重缺哪几个（给目录）、sidecar 样例可解析。**只读**：不下载不改配置；退出码 0=齐 / 1=有缺口 / 2=还没装 ComfyUI |
+
+## 四、本地模型可用性（一次性摸底，结果记在 `LOCAL-GPU-DEPLOY.md`）
 
 - 视频：Wan2.2 TI2V-5B（本机 3080 10GB，VAEDecodeTiled + fp8 是硬要求）
 - 图像：FLUX.2 Klein（`diffusion_models/flux-2-klein-4b`）
 - 音频：Stable Audio 3 Small（`small_music` / `small_sfx` 各 2.1GB）+ 本机 GPT-SoVITS（`:8000/infer_single`）
 - 这些**不是**本仓的生成能力：仓库里没有音频产物类型，"音频作为生成参考"是明确不做的边界。
 
-## 四、记录约定
+## 五、记录约定
 
 - 证据落 `.tmp/<片>/`（gitignored），结论与数字回填 `PLAN.md` 的台账行；
 - 失败不覆盖：同一件事第二次跑挂了，两次都留着；
