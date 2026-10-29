@@ -1,6 +1,13 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.99 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.100 · 已冻结（变更需先改本文，再改代码）**
+> **V2.100 修订（2026-10-29 · B103 片 B：定妆图失效要说出来）** ——
+>   ① §21-18 `Subject` 新增**读时派生**的可选字段 `anchorAvailable?: boolean`
+>      （`undefined` = 没设锚点；`true` = 可用；`false` = 出过但产物/资产已不在）；
+>   ② 该字段**不入库**：定妆图是产物，会被容量淘汰 —— 入库只会变成需要维护的陈旧状态；
+>   ③ `subjectReferenceOf` 遇到 `anchorAvailable === false` **必须回落第一张参考**
+>      （拿死引用去提交，最后会以"上游报错"收场），界面同时标注"定妆图已失效"；
+>   ④ 锚点在**生成成功后**才写入（早先一提交就写 `task:<id>`，"还在跑的定妆图"也能被拖进节点）。
 > **V2.99 修订（2026-10-29 · N9 选项①：主体定妆图 / 锚点）** ——
 >   ① §21-18 `Subject` 新增 `anchorAssetId?` / `anchorTaskId?` / `anchorSource?` / `anchorUpdatedAt?`；
 >   ② `PATCH /api/subjects/:id` 接受 `anchorAssetId`（`null` = 清除），并规定「换锚点不继承旧 taskId」；
@@ -2772,6 +2779,8 @@ interface Subject {
   anchorTaskId?: string;               // 由哪条任务生成（手动指定时缺省）
   anchorSource?: 'generated' | 'manual';
   anchorUpdatedAt?: number;
+  // ── V2.100：读时派生，不入库 ──
+  anchorAvailable?: boolean;           // undefined=没设锚点 / true=可用 / false=出过但产物已不在
   createdAt: number;     // 服务端时间
 }
 ```

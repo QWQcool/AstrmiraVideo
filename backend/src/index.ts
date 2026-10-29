@@ -432,7 +432,8 @@ const app = Fastify({
   // V2.42（Step 11-S3 片 A）：创作画布文档（整份读写，单用户无归属字段）
   await app.register(createCanvasRoutes());
   // V2.86（D-3）：主体库（跨画布复用；只做溯源，不参与生成参数）
-  await app.register(createSubjectRoutes());
+  // V2.100：主体路由需要查任务与产物文件，才能派生 `anchorAvailable`（定妆图还在不在）
+  await app.register(createSubjectRoutes({ taskStore: store, outputsDir: resolveOutputsDir() }));
   await app.register(createUploadRoutes({ projects }));
   // V2.7（B41）：资产库清单（只读；`@` 提及素材弹层用）
   await app.register(createAssetRoutes());

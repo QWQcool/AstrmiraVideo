@@ -91,6 +91,13 @@ describe('主体 → 节点参考', () => {
     expect(result.references[0]).toMatchObject({ assetId: 'task:t-anchor', subjectId: 's1' });
   });
 
+  it('锚点已失效（产物被清理）→ 回落第一张，不能拿死引用去提交（V2.100）', () => {
+    const dead = { ...anchored(['a1', 'a2'], 'task:gone'), anchorAvailable: false };
+    const result = attachSubjectToReferences([], dead, 'image', 'omni-reference');
+    expect(result.used).toBe('fallback');
+    expect(result.references[0]).toMatchObject({ assetId: 'a1', subjectId: 's1' });
+  });
+
   it('没有定妆图时回落第一张，并如实标 fallback（界面据此提示"未出定妆图"）', () => {
     const result = attachSubjectToReferences(
       [],

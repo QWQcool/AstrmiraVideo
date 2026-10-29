@@ -2604,8 +2604,14 @@ audio.cs-card-media {
   color: var(--text-dim);
 }
 
-.cs-subject-count {
+/* V2.100：出过但产物被清理 —— 用警示色，但别做成错误红（不是失败，只是需要重出） */
+.cs-subject-anchor[data-state='broken'] {
+  color: var(--warn);
+}
 
+.cs-subject-count {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2614,26 +2620,6 @@ audio.cs-card-media {
 .cs-subject-name {
   color: var(--text);
   font-size: var(--fs-note);
-}
-
-.cs-subject-desc,
-.cs-subject-anchor {
-  font-size: var(--fs-micro);
-  line-height: 1.3;
-}
-
-.cs-subject-anchor[data-state='ready'] {
-  color: var(--success);
-}
-
-.cs-subject-anchor[data-state='missing'] {
-  color: var(--text-dim);
-}
-
-.cs-subject-count {
-
-  color: var(--text-dim);
-  font-size: var(--fs-micro);
 }
 
 .cs-subject-actions {

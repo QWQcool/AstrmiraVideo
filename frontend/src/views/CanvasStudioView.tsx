@@ -1856,8 +1856,9 @@ export function CanvasStudioView() {
    * 三个决定，都有理由：
    * 1. **客户端提交**（不是服务端代跑）：引擎选择与凭据都在客户端（BYOK / 多实例），
    *    服务端代跑就得复制一整套选择逻辑，还会在云端轨上替用户花钱；
-   * 2. **锚点先记 `task:<taskId>`**：任务一提交就写，节点立刻能用上；
-   *    文案说"已提交"而不是"已生成"—— 它可能失败，失败时界面会看到任务失败。
+   * 2. **出图成功后才记锚点**（V2.100 改）：早先的版本一提交就写 `task:<id>`，
+   *    于是"还在跑的定妆图"也能被拖进节点 —— 那是一条读不到文件的引用，最后以"上游报错"收场。
+   *    现在等任务到终态：成功才写锚点，失败就说失败（不写、不猜）。
    * 3. **比例 1:1**：定妆图是"看清这张脸"，方形最省像素也最不容易被构图带偏。
    */
   const handleMakeAnchor = useCallback(
@@ -1889,14 +1890,25 @@ export function CanvasStudioView() {
         },
       )
         .then(async (response) => {
-          const saved = await setSubjectAnchor(subject.id, {
-            assetId: `task:${response.taskId}`,
-            taskId: response.taskId,
-          });
-          setSubjects((prev) =>
-            prev.map((item) => (item.id === subject.id ? saved.subject : item)),
-          );
-          setNotice(t('canvas.subject.anchorSubmitted'));
+          // 轮询到终态（本地轨约 15s、云端轨可能 1~2 分钟；超过 6 分钟就当它没成）
+          const deadline = Date.now() + 6 * 60 * 1000;
+          while (Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            const task = await fetchTask(response.taskId);
+            if (task.status === 'succeeded') {
+              const saved = await setSubjectAnchor(subject.id, {
+                assetId: `task:${response.taskId}`,
+                taskId: response.taskId,
+              });
+              setSubjects((prev) => prev.map((item) => (item.id === subject.id ? saved.subject : item)));
+              setNotice(t('canvas.subject.anchorSubmitted'));
+              return;
+            }
+            if (task.status === 'failed' || task.status === 'cancelled') {
+              throw new Error(task.error?.message ?? t('canvas.subject.anchorFailed'));
+            }
+          }
+          throw new Error(t('canvas.subject.anchorFailed'));
         })
         .catch((caught: unknown) => setNotice(describeError(caught)))
         .finally(() => setAnchorBusyId(null));

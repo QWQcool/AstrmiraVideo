@@ -171,16 +171,27 @@ export function CanvasSubjectPanel({
                       ? t('canvas.subject.noAssets')
                       : t('canvas.subject.assets', { count: subject.assetIds.length })}
                   </span>
-                  {/* V2.99：锚点状态必须写出来 —— "用定妆图"和"用随手照片"效果不同 */}
+                  {/* V2.99：锚点状态必须写出来 —— "用定妆图"和"用随手照片"效果不同。
+                      V2.100：多一个"出过但已失效" —— 产物被清理时不能假装还用着定妆图 */}
                   <span
                     className="cs-subject-anchor"
-                    data-state={subject.anchorAssetId === undefined ? 'missing' : 'ready'}
+                    data-state={
+                      anchorBusy
+                        ? 'busy'
+                        : subject.anchorAssetId === undefined
+                          ? 'missing'
+                          : subject.anchorAvailable === false
+                            ? 'broken'
+                            : 'ready'
+                    }
                   >
                     {anchorBusy
                       ? t('canvas.subject.anchorBusy')
                       : subject.anchorAssetId === undefined
                         ? t('canvas.subject.anchorMissing')
-                        : t('canvas.subject.anchorReady')}
+                        : subject.anchorAvailable === false
+                          ? t('canvas.subject.anchorBroken')
+                          : t('canvas.subject.anchorReady')}
                   </span>
                 </div>
               </div>

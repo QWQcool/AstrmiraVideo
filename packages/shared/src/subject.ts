@@ -51,6 +51,16 @@ export const SubjectSchema = z.object({
   anchorTaskId: z.string().min(1).optional(),
   anchorSource: SubjectAnchorSourceSchema.optional(),
   anchorUpdatedAt: z.number().int().nonnegative().optional(),
+  /**
+   * V2.100（B103 片 B）：**锚点现在还能不能用** —— 读时由服务端派生，**不入库**。
+   *
+   * 为什么必须是读时算：定妆图是产物/资产，会被容量淘汰或被人删掉；引用本身永远不报错，
+   * 失效只会在生成时变成"读不到的文件"。`false` 让界面能说"定妆图没了，去重出"，
+   * 而不是让用户面对一句上游报错。
+   *
+   * 三种状态必须能分开：**缺省 = 还没出定妆图**；`true` = 可用；`false` = 出过但已失效。
+   */
+  anchorAvailable: z.boolean().optional(),
   createdAt: z.number().int().nonnegative(),
 });
 
@@ -119,20 +129,23 @@ export const SUBJECT_ANCHOR_PROMPT =
   '角色定妆照：正面、中性表情、纯色浅灰背景、均匀柔光、写实质感、半身、不出现文字与水印';
 
 /**
- * 主体在生成时**实际用哪张图**（V2.99）。
+ * 主体在生成时**实际用哪张图**（V2.99；V2.100 加失效判定）。
  *
- * - `anchor` = 有定妆图，用它（这是用户拍板的目标状态）；
- * - `fallback` = 还没出定妆图，回落第一张参考 —— **界面必须标出来**，
- *   因为"用随手照片"和"用定妆图"效果不同，不能让人以为用了锚点；
+ * - `anchor` = 有定妆图且现在读得到，用它（这是用户拍板的目标状态）；
+ * - `fallback` = 还没出定妆图，**或定妆图已失效**（`anchorAvailable === false`），回落第一张参考
+ *   —— **界面必须标出来**，因为"用随手照片"和"用定妆图"效果不同，不能让人以为用了锚点；
  * - `null` = 这个主体一张图都没有（还不能进节点）。
+ *
+ * 失效的锚点**不能拿去提交**：那会变成一条读不到文件的引用，最后以"上游报错"收场。
  */
 export function subjectReferenceOf(
   subject: Subject,
 ):
   | { assetId: string; kind: 'anchor' | 'fallback' }
   | null {
-  if (subject.anchorAssetId !== undefined) {
-    return { assetId: subject.anchorAssetId, kind: 'anchor' };
+  const anchorUsable = subject.anchorAssetId !== undefined && subject.anchorAvailable !== false;
+  if (anchorUsable) {
+    return { assetId: subject.anchorAssetId as string, kind: 'anchor' };
   }
   const first = subject.assetIds[0];
   return first === undefined ? null : { assetId: first, kind: 'fallback' };

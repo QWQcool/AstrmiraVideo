@@ -9,6 +9,9 @@ import {
   SubjectResponseSchema,
 } from '@astrmira/shared';
 import { createErrorResponse } from '../errors.js';
+import { resolveOutputsDir } from '../server/staticOutputs.js';
+import type { TaskStore } from '../store/taskStore.js';
+import { taskProbe, withAnchorAvailability } from '../subjects/anchorAvailability.js';
 import { SubjectLimitError, SubjectStore, resolveSubjectsFile } from '../store/subjects.js';
 
 /**
@@ -27,17 +30,27 @@ export interface SubjectRoutesDeps {
   /** 测试注入临时文件；生产用 `DATA_DIR/subjects.json` */
   file?: string;
   store?: SubjectStore;
+  /**
+   * V2.100（B103 片 B）：算 `anchorAvailable` 需要查任务与产物文件。
+   * 不传 = 不派生该字段（单测与"只要清单"的调用），字段缺省即"不知道"，界面按"还没出定妆图"处理。
+   */
+  taskStore?: TaskStore;
+  outputsDir?: string;
 }
 
 export const createSubjectRoutes =
   (deps: SubjectRoutesDeps = {}): FastifyPluginAsyncZod =>
   async (app) => {
     const store = deps.store ?? new SubjectStore(deps.file ?? resolveSubjectsFile());
+    /** 缺任一项就不派生 nchorAvailable（宁可'不知道',也不给一个猜出来的'失效'） */
+    const probe = deps.taskStore === undefined ? null : taskProbe(deps.taskStore, deps.outputsDir ?? resolveOutputsDir());
+    const shape = <T extends { anchorAssetId?: string }>(subject: T): T | (T & { anchorAvailable?: boolean }) =>
+      probe === null ? subject : withAnchorAvailability(subject, probe);
 
     app.get(
       '/api/subjects',
       { schema: { response: { 200: SubjectListResponseSchema } } },
-      async () => ({ subjects: store.list() }),
+      async () => ({ subjects: store.list().map((subject) => shape(subject)) }),
     );
 
     app.post(
@@ -50,7 +63,7 @@ export const createSubjectRoutes =
       },
       async (request, reply) => {
         try {
-          return { subject: store.create(request.body) };
+          return { subject: shape(store.create(request.body)) };
         } catch (caught) {
           if (caught instanceof SubjectLimitError) {
             return reply.code(400).send(createErrorResponse('INVALID_REQUEST', caught.message));
@@ -80,7 +93,7 @@ export const createSubjectRoutes =
             .code(404)
             .send(createErrorResponse('PROJECT_NOT_FOUND', '这个主体不存在（或已经被删除）'));
         }
-        return { subject };
+        return { subject: shape(subject) };
       },
     );
 
