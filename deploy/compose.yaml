@@ -47,6 +47,10 @@ services:
       # 运行时数据只走卷：镜像重建不丢任务库与成片（AC3：它们不进镜像）
       - ../data:/app/data
       - ../outputs:/app/outputs
+      # 本地轨的 ComfyUI 模板（V2.101 / 2026-10-30）：模板是**数据不是代码**，
+      # 换模型/换工作流不该重建镜像 —— 挂宿主目录，改模板只要重启容器。
+      # 容器内路径与 .env.deploy 的 COMFYUI_TEMPLATE_DIR 必须一致。
+      - ../deploy/comfyui-templates:/app/comfyui-templates:ro
 
     networks:
       - web
