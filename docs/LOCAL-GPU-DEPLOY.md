@@ -415,3 +415,20 @@ unavailableReasons.push('fl2v / v2v 需要另外的模型（FLF2V / VACE 系列�
   56 帧再次确认 `17n+5` 在**生产**生效（Wan 的 `4n+1` 会给 49）。
 - 能力位自检（容器内）：`available=true`，`modes=["t2v","i2v","t2i","upscale"]`，
   依据是模板声明（`minimax-h3-t2v` → `minimax_h3_fl2va_pruned_int8_convrot`）。
+
+### 附二·3 i2v 生产复验 + 一个只在生产暴露的 bug（2026-10-30，`5725c4a`）
+
+- **i2v 首次在生产失败**：`UNCERTAIN_RESULT: 执行中断且无法确认上游结果：fetch failed`，
+  app 日志里的真因是 `fetch failed: unable to get local issuer certificate`
+  —— `uploadReferenceImage` 拿 `PUBLIC_BASE_URL`（IP 档 Caddy 的**自签证书**）去下载**自己的** `/media/*`，
+  Node 直接拒。**图根本没离开本机**，不该绕公网。
+- 修法：`ComfyUiProvider` 把 `/media/*` 的地址改写到**内部基址**（默认 `http://127.0.0.1:PORT`，
+  可用 `COMFYUI_MEDIA_ORIGIN` 覆盖），`data:` URL 与其他域名原样不动。
+  本地用「故意把 `PUBLIC_BASE_URL` 设成不可达域名」验证过：i2v 照样出片。
+- **修后生产实测**（首帧 = 定妆图 512×512）：
+  `POST /api/generate`（i2v / 2 秒）→ `succeeded`，产物 **832×480 / 56 帧 / 2.33s / h264 + AAC 32kHz 立体声**；
+  **首帧与种子图 SSIM = 0.968**（真的从那张图开始，不是退化成 t2v）。
+- **音频音量终于有对照了**：同一台机器、同一模板，
+  提示词里**明确要声音**（wind / footsteps）时 i2v 均值 **−25.4 dB**（max −10.6），
+  而没提声音的 t2v 是 **−41.5 / −46.8 dB** → **"偏轻"主要是没要求声音，不是模型缺陷**；
+  界面上若要"有声音"，提示词里得写清楚。
