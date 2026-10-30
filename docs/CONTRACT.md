@@ -1,6 +1,11 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.104 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.105 · 已冻结（变更需先改本文，再改代码）**
+> **V2.105 修订（2026-10-30 · 幂等指纹必须包含引擎私有参数 `options`）** ——
+>   生产实测：先要 5s 配乐、再要同一句描述的 10s 配乐，接口**返回同一条任务**，用户拿到 5s 的文件，
+>   **没有任何报错**。根因：秒数/音色按 §30-3 放在信封的 `options` 里，而指纹只算了 `params`。
+>   现在 `fingerprintRequest` = `{prompt, mode, aspectRatio, assets, params, options, provider, projectId}`。
+>   **语义不变**：完全相同的请求仍然幂等（不重复花钱）；变的是"只改时长/音色也算不同请求"。
 > **V2.104 修订（2026-10-30 · Phase 3：首尾帧 `fl2v` 接线）** ——
 >   ① §19-2 的"本仓已接线"集合加入 **`fl2v`**（原来只有 t2v / i2v / t2i / upscale / inpaint / outpaint）；
 >   ② **判定依据不是猜的**：真机 `GET /object_info/MiniMaxH3ImageToVideo` 的 `optional` 里
@@ -888,6 +893,9 @@ export interface VideoGenerateRequest {
   //   fixtureClip —— OI-2 夹具选片（开发期）
   // 背景：2026-09-23 线上故障正是"请求里的 model 无人消费、被 env 覆盖"导致的 404，
   // 因此"请求优先"这条是**契约级**要求，不是实现细节。
+  //
+  // V2.105：`options` **必须进幂等指纹**（与 `params` 同等）。音频的秒数/音色就放在这里，
+  // 不进指纹的后果是"同一段描述只改时长"被去重成上一条任务 —— 用户拿到旧时长的产物且无报错。
   options?: Record<string, unknown>;
 
   // V2.11（台账 B47）：任务归属的项目（见 §12）。

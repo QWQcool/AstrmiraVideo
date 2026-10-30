@@ -74,6 +74,11 @@ export function fingerprintRequest(request: VideoGenerateRequest): string {
     assets: request.assets ?? null,
     params: request.params ?? null,
     provider: request.provider,
+    // V2.105：**引擎私有参数也要进指纹**。音频的秒数/音色就放在 `options` 里
+    // （见 `audioRequestToGenerateRequest`），不进指纹的后果是"同一段描述、只改了时长"
+    // 被去重成上一条任务 —— 用户拿到的是旧时长的文件，而且**没有任何报错**。
+    // 2026-10-30 在生产实测踩到：5s 的配乐请求重发一次 10s，拿回的仍是那条 5s 的。
+    options: request.options ?? null,
     // V2.11（B47）：项目**必须进指纹** —— 否则"同一个提示词在两个项目各提交一次"
     // 会被幂等去重成同一条任务（用户会在第二个项目里看不到刚提交的东西）。
     projectId: normalizeProjectId(request.projectId),

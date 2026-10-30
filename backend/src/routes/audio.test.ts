@@ -2,7 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { audioRequestToGenerateRequest } from '@astrmira/shared';
 import { buildApp } from '../index.js';
+import { fingerprintRequest } from './generate.js';
 
 /**
  * `POST /api/audio`（V2.103 / CONTRACT §30）。
@@ -119,5 +121,36 @@ describe('POST /api/audio · 入口判据', () => {
     // 没配 Key 时 503 先返回还是 404？口径是**先校验项目**（与 /api/generate 一致）
     expect(response.statusCode).toBe(404);
     expect(response.json().code).toBe('PROJECT_NOT_FOUND');
+  });
+});
+
+/**
+ * 幂等指纹（V2.105）。
+ *
+ * 2026-10-30 生产实测踩到的：先要 5s 配乐，再要同一句描述的 10s 配乐 —— 接口**返回了同一条任务**，
+ * 用户拿到的是 5s 的文件，而且没有任何报错。根因是秒数/音色放在信封的 `options` 里，
+ * 而指纹只算了 `params`。这组断言就是钉住"引擎私有参数必须进指纹"。
+ */
+describe('音频的幂等指纹（V2.105）', () => {
+  const bgm = (seconds: number) =>
+    audioRequestToGenerateRequest({
+      mode: 'bgm',
+      engine: 'host-stable-audio',
+      prompt: 'soft piano, no vocals',
+      seconds,
+    });
+
+  it('只改时长 → 指纹不同（否则拿回旧时长的文件）', () => {
+    expect(fingerprintRequest(bgm(5))).not.toBe(fingerprintRequest(bgm(10)));
+  });
+
+  it('请求完全相同 → 指纹相同（幂等仍然生效，不重复花钱）', () => {
+    expect(fingerprintRequest(bgm(5))).toBe(fingerprintRequest(bgm(5)));
+  });
+
+  it('配音只改音色 → 指纹不同（不同音色是不同产物）', () => {
+    const tts = (voice: string) =>
+      audioRequestToGenerateRequest({ mode: 'tts', engine: 'mimo-tts', text: '你好', voice });
+    expect(fingerprintRequest(tts('冰糖'))).not.toBe(fingerprintRequest(tts('茉莉')));
   });
 });
