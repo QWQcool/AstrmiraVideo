@@ -351,9 +351,11 @@ export const AudioPanel: React.FC<{ store: EditStore }> = ({ store }) => {
       </p>
 
       {engineUnavailable ? (
-        <div className="wb-uncertain" data-testid="ed-audio-unavailable" style={{ marginTop: 8 }}>
-          <span className="wb-uncertain-title">{t('edit.audio.unavailable.title')}</span>
-          <span className="wb-uncertain-body">{engineStatus?.reason ?? t('edit.audio.unavailable.body')}</span>
+        // ⚠️ 用专用 class，不复用 `.wb-uncertain`：那条是"导出失败"的红框，
+        // 既会让 UI 冒烟误判（实测踩到），也会让用户以为出了事故。这里是状态提示。
+        <div className="ed-audio-unavailable" data-testid="ed-audio-unavailable" style={{ marginTop: 8 }}>
+          <span className="ed-audio-unavailable-title">{t('edit.audio.unavailable.title')}</span>
+          <span>{engineStatus?.reason ?? t('edit.audio.unavailable.body')}</span>
         </div>
       ) : null}
 

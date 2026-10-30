@@ -2889,3 +2889,20 @@
     max-width: 100%;
   }
 }
+
+/* V2.106：音频引擎不可用 —— 这是**状态提示**，不是错误框。
+   刻意不复用 .wb-uncertain：那条是红框 + ⚠ 的失败样式，UI 冒烟会把它读成"导出失败"
+   （实测踩到：CI 的冒烟在没配 MIMO_API_KEY 时把这条提示当成了导出错误），用户也会以为出了事故。 */
+.ed-audio-unavailable {
+  border-left: 3px solid var(--warn);
+  padding: 8px 0 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ed-audio-unavailable-title {
+  font-family: var(--serif);
+  font-size: var(--fs-body);
+  color: var(--warn);
+}
