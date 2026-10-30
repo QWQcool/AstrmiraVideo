@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { COMFY_WIRED_MODES, alignFramesTo, parseTemplateDeclaration } from './comfyuiProtocol.js';
+import {
+  COMFY_WIRED_MODES,
+  alignFramesTo,
+  parseTemplateDeclaration,
+  renderWorkflow,
+} from './comfyuiProtocol.js';
 
 /**
  * `docs/templates/minimax-h3-t2v.meta.json` —— **上机当天直接抄过去用的 sidecar**。
@@ -47,5 +52,35 @@ describe('MiniMax H3 的 sidecar 样例（docs/templates）', () => {
     // 5 秒 @24fps = 120 → 124（5.17s），不是 Wan 的 121
     expect(alignFramesTo(120, declaration.frameAlign)).toBe(124);
     expect(alignFramesTo(120)).toBe(121);
+  });
+
+  it('t2v 时 LoadImage 被丢掉，指向它的 first_frame **也要一起消失**（否则上游拒收）', () => {
+    const template = JSON.parse(
+      readFileSync(path.resolve(process.cwd(), '..', 'deploy', 'comfyui-templates', 'minimax-h3-t2v.api.json'), 'utf8'),
+    );
+    const values = {
+      UNET_NAME: 'minimax_h3_fl2va_pruned_int8_convrot.safetensors',
+      WEIGHT_DTYPE: 'default',
+      CLIP_NAME: 'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors',
+      CLIP_TYPE: 'minimax',
+      VAE_NAME: 'minimax_h3_video_vae_fp16.safetensors',
+      PROMPT: 'x',
+      WIDTH: 864,
+      HEIGHT: 480,
+      FRAMES: 124,
+      FPS: 24,
+      SEED: 1,
+      STEPS: 20,
+      OUTPUT_PREFIX: 'astrmira-test',
+    };
+
+    const t2v = renderWorkflow(template, values);
+    expect(t2v['6']).toBeUndefined();
+    expect(t2v['5'].inputs['first_frame']).toBeUndefined(); // 真机踩过：留着就是 validating inner node: '6'
+    expect(t2v['14'].inputs['fps']).toBe(24);
+
+    const i2v = renderWorkflow(template, { ...values, START_IMAGE_NAME: 'uploaded.png' });
+    expect(i2v['6'].class_type).toBe('LoadImage');
+    expect(i2v['5'].inputs['first_frame']).toEqual(['6', 0]);
   });
 });

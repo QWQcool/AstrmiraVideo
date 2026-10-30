@@ -823,12 +823,16 @@ function asNodeLink(value: unknown): [string, number] | null {
 
 export function renderWorkflow(template: WorkflowTemplate, values: WorkflowValues): ComfyWorkflow {
   const workflow: ComfyWorkflow = {};
+  /** 被 `_dropWhenMissing` 丢掉的节点 —— 指向它们的输入也要一起消失，否则上游报 "validating inner node: '6'" */
+  const dropped = new Set<string>();
+
   for (const [nodeId, node] of Object.entries(template)) {
     const dropWhenMissing = node['_dropWhenMissing'];
     if (
       Array.isArray(dropWhenMissing) &&
       dropWhenMissing.some((key) => values[String(key)] === undefined)
     ) {
+      dropped.add(nodeId);
       continue; // 规则 3：条件节点
     }
     const classType = node['class_type'];
@@ -836,6 +840,18 @@ export function renderWorkflow(template: WorkflowTemplate, values: WorkflowValue
     const inputs = renderValue(node['inputs'], values);
     if (typeof inputs !== 'object' || inputs === null) continue;
     workflow[nodeId] = { class_type: classType, inputs: inputs as ComfyNodeInputs };
+  }
+
+  // 规则 3 的补完（V2.101 / 2026-10-30 真机）：条件节点消失后，**下游指向它的输入必须一起删掉**。
+  // 踩过的实际症状：H3 模板里 t2v 丢掉 LoadImage(6)，但 MiniMaxH3ImageToVideo 还写着
+  // `first_frame: ["6",0]`，ComfyUI 直接拒收 —— `Exception when validating inner node: '6'`。
+  if (dropped.size > 0) {
+    for (const node of Object.values(workflow)) {
+      for (const [key, value] of Object.entries(node.inputs)) {
+        const link = asNodeLink(value);
+        if (link !== null && dropped.has(link[0])) delete node.inputs[key];
+      }
+    }
   }
   return workflow;
 }

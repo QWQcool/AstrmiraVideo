@@ -385,4 +385,20 @@ unavailableReasons.push('fl2v / v2v 需要另外的模型（FLF2V / VACE 系列�
 **接进站点的模板**：`deploy/comfyui-templates/minimax-h3-t2v.api.json` + `.meta.json`
 （按上面真实接线写的：`UNETLoader → CLIPLoader(minimax) → MiniMaxH3ImageToVideo → BasicGuider/KSamplerSelect/BasicScheduler/SamplerCustomAdvanced → VAEDecode + VAEDecodeAudio → CreateVideo → SaveVideo`）。
 
-**未做 / 待办**：`ref2va`（多参考）权重没下；`fl2v` / `r2v` 本仓未接输入通道；站点↔GPU 隧道未搭（ComfyUI 只监听回环）。
+**未做 / 待办**：`ref2va`（多参考）权重没下；`fl2v` / `r2v` 本仓未接输入通道。
+
+### 附二·1 端到端（**走产品路由**，2026-10-30 验证）
+
+- **隧道**：站点 `43.228.79.210` 用专用密钥 `~/.ssh/astrmira_gpu` 反连 GPU，
+  `ssh -N -L 172.18.0.1:18188:127.0.0.1:8188`，**绑在 docker 网关而不是 0.0.0.0**（ComfyUI 无鉴权，不能暴露公网）；
+  容器内实测能读到 `comfyui_version 0.43.0`。
+- **本机验证**（先不动生产）：本地后端 `COMFYUI_BASE_URL=http://127.0.0.1:<隧道>` +
+  `COMFYUI_TEMPLATE_DIR=deploy/comfyui-templates` + `COMFYUI_TEMPLATE=minimax-h3-t2v`，
+  走 `POST /api/generate`（t2v，`durationSec=2`）：
+  `POST /api/generate → 轮询（进度来自 ComfyUI websocket：5%→100%）→ succeeded`，
+  产物 **832×480 / 56 帧 / 2.33s / h264 + AAC 32kHz 立体声**（434 KB）。
+- **56 帧就是 `17n+5` 的证明**：2 秒 @24fps = 48 → 声明式对齐后提交 **56**（Wan 的 `4n+1` 会给 49）。
+- 过程中真机抓到一个模板机制的洞并已修：`_dropWhenMissing` 丢掉的节点，**下游指向它的输入没被一起删**，
+  ComfyUI 直接拒收（`Exception when validating inner node: '6'`）。`renderWorkflow` 现在会把这类输入一并删除。
+- **还没做**：站点容器侧的 env（`COMFYUI_BASE_URL` / `COMFYUI_TEMPLATE_DIR`）与模板目录挂载，
+  以及一次正式部署 —— 这些会改生产配置，等确认后一次做。
