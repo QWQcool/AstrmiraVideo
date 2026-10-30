@@ -121,6 +121,15 @@ export interface ComfyUiProviderOptions {
   resolveAssetUrl?: (assetId: string) => Promise<string | null>;
   /** S9 修正：`task:<taskId>` 引用 → 上游可访问地址（t2i 任务产物作 i2v 首帧；V2.6 通道补 ComfyUI 侧） */
   resolveTaskVideoUrl?: (taskId: string) => Promise<TaskVideoResolution>;
+  /**
+   * 取**自己的** `/media/*` 时用的内部基址（V2.101.1 / 2026-10-30 生产实测）。
+   *
+   * 为什么必须有：`resolveAssetUrl` 给的是**公网**地址（云端轨要它给上游下载）。
+   * 本地轨却是由**我们自己**去把那张图下回来再上传给 ComfyUI —— 绕公网等于让 Node 去校验
+   * Caddy 给 IP 档签的自签证书，实测报 `fetch failed: unable to get local issuer certificate`（i2v 直接失败）。
+   * 默认取 `http://127.0.0.1:${PORT}`（容器内恒为 3000），可用 `COMFYUI_MEDIA_ORIGIN` 覆盖。
+   */
+  mediaOrigin?: string;
   /** `/object_info` 的缓存时长（测试可设 0 强制每次重探） */
   inventoryTtlMs?: number;
 }
@@ -287,6 +296,8 @@ export class ComfyUiProvider implements VideoProvider {
   private readonly outputPrefix: string;
   private readonly resolveAssetUrl?: (assetId: string) => Promise<string | null>;
   private readonly resolveTaskVideoUrl?: (taskId: string) => Promise<TaskVideoResolution>;
+  /** 取自己的 `/media/*` 时用的内部基址（见选项注释：绕开公网自签证书） */
+  private readonly mediaOrigin: string;
   /** V2.82：实时进度（WS）；缺省 = 没有进度，`progressPercent` 恒 0 */
   private readonly progress?: ComfyProgressSource;
   private readonly inventoryTtlMs: number;
@@ -316,6 +327,11 @@ export class ComfyUiProvider implements VideoProvider {
     if (options.resolveTaskVideoUrl !== undefined) {
       this.resolveTaskVideoUrl = options.resolveTaskVideoUrl;
     }
+    this.mediaOrigin = (
+      options.mediaOrigin ??
+      process.env.COMFYUI_MEDIA_ORIGIN ??
+      `http://127.0.0.1:${process.env.PORT ?? '3000'}`
+    ).replace(/\/$/, '');
     if (options.template !== undefined) this.injectedTemplate = options.template;
     if (options.declaration !== undefined) this.injectedDeclaration = options.declaration;
     if (options.progress !== undefined) this.progress = options.progress;
@@ -710,6 +726,23 @@ export class ComfyUiProvider implements VideoProvider {
   private readonly pendingWarnings = new Map<string, string[]>();
 
   /**
+   * 把**我们自己的** `/media/*` 地址换成内部基址（V2.101.1）。
+   *
+   * 只换 `/media/*`：`data:` URL、上游地址、以及别的路径一律**原样返回** —— 这里不做"猜"，
+   * 猜错了会把图发到不该去的地方。返回的地址只用于**本服务自己下载**，不会交给 ComfyUI。
+   */
+  private toInternalMediaUrl(url: string): string {
+    if (url.startsWith('data:')) return url;
+    try {
+      const parsed = new URL(url);
+      if (!parsed.pathname.startsWith('/media/')) return url;
+      return `${this.mediaOrigin}${parsed.pathname}${parsed.search}`;
+    } catch {
+      return url;
+    }
+  }
+
+  /**
    * 把参考图**下载下来再上传**给 ComfyUI（它只认自己 input 目录里的文件）。
    *
    * V2.76：从"只传首帧"扩成"传任意一张参考图"—— 多参考时逐张调用（顺序由 `order` 决定）。
@@ -744,8 +777,10 @@ export class ComfyUiProvider implements VideoProvider {
     }
     if (url === null) throw new Error(`首帧资产不存在或不可读：${assetId}`);
 
-    const media = await this.fetchImpl(url);
-    if (!media.ok) throw new Error(`下载首帧失败：${url} → HTTP ${media.status}`);
+    // 自己的 `/media/*` 走**内部**基址：公网地址要过一次 Caddy 自签证书，Node 会直接拒（实测 i2v 全挂）
+    const downloadUrl = this.toInternalMediaUrl(url);
+    const media = await this.fetchImpl(downloadUrl);
+    if (!media.ok) throw new Error(`下载首帧失败：${downloadUrl} → HTTP ${media.status}`);
     const buffer = Buffer.from(await media.arrayBuffer());
 
     const form = new FormData();
