@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import {
+  AUDIO_ENGINE_IDS,
+  AudioEnginesResponseSchema,
   AudioGenerateRequestSchema,
   ErrorResponseSchema,
   GenerateResponseSchema,
@@ -47,6 +49,53 @@ export interface AudioRoutesDeps {
 export const createAudioRoutes =
   (deps: AudioRoutesDeps): FastifyPluginAsyncZod =>
   async (app) => {
+    /**
+     * 引擎现在能不能用（V2.106）。
+     *
+     * 为什么不是"看配置猜"：配了 Key 不等于能出音频，`COMFYUI_AUDIO_BASE` 指过去的那台
+     * 也不一定装了 Stable Audio 权重（2026-10-30 生产实测踩到过：视频轨那台 checkpoints 是空的）。
+     * 所以这里问的是 provider 自己的 `checkHealth()` —— 它答"此刻能不能跑"，并给出缺什么。
+     *
+     * 代价：面板挂载时会真的连一次 ComfyUI（本机几百毫秒）。可接受 ——
+     * 比"按钮亮着、点了才 503"好得多。
+     */
+    app.get(
+      '/api/audio/engines',
+      {
+        schema: {
+          response: { 200: AudioEnginesResponseSchema },
+        },
+      },
+      async () => {
+        const engines = await Promise.all(
+          AUDIO_ENGINE_IDS.map(async (id) => {
+            const provider = deps.resolveProvider(id);
+            if (provider === null) {
+              return {
+                engine: id,
+                available: false,
+                reason:
+                  id === 'mimo-tts'
+                    ? '没有配置 MIMO_API_KEY：配音走第三方云，必须有 Key'
+                    : '没有配置 COMFYUI_AUDIO_BASE：配乐/音效要在装了 Stable Audio 的 ComfyUI 上跑',
+              };
+            }
+            try {
+              const health = await provider.checkHealth();
+              return {
+                engine: id,
+                available: health.available,
+                ...(health.reason === undefined ? {} : { reason: health.reason }),
+              };
+            } catch (error) {
+              return { engine: id, available: false, reason: (error as Error).message };
+            }
+          }),
+        );
+        return { engines };
+      },
+    );
+
     app.post(
       '/api/audio',
       {

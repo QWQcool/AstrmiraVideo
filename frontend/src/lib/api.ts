@@ -20,6 +20,7 @@ import {
   HistoryResponseSchema,
   KeyVerifyResponseSchema,
   LogDeleteResponseSchema,
+  AudioEnginesResponseSchema,
   LogListResponseSchema,
   OperationResultSchema,
   ProjectListResponseSchema,
@@ -34,6 +35,7 @@ import {
 import type {
   AgentPlanRequest,
   AgentPlanResponse,
+  AudioEnginesResponse,
   AudioGenerateRequest,
   AssetListResponse,
   CanvasAgentRequest,
@@ -308,6 +310,16 @@ export function submitEdit(script: EditScript): Promise<GenerateResponse> {
  */
 export function submitAudio(body: AudioGenerateRequest): Promise<GenerateResponse> {
   return request('/api/audio', GenerateResponseSchema, { method: 'POST', body });
+}
+
+/**
+ * 音频引擎此刻能不能用（V2.106）。
+ *
+ * 面板挂载时问一次：它答的是"配置 + 模型都到位了吗"，而不只是"有没有 Key"。
+ * 不用可用的引擎亮着按钮、点了才 503 —— 那是最糟的一种"看起来能用"。
+ */
+export function fetchAudioEngines(signal?: AbortSignal): Promise<AudioEnginesResponse> {
+  return request('/api/audio/engines', AudioEnginesResponseSchema, { signal });
 }
 
 export function fetchTask(taskId: string, signal?: AbortSignal): Promise<TaskProgress> {

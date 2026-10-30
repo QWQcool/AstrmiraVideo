@@ -62,6 +62,27 @@ export const AUDIO_ENGINES = {
 export const AudioEngineSchema = z.enum(['mimo-tts', 'host-stable-audio']);
 export type AudioEngine = z.infer<typeof AudioEngineSchema>;
 
+/** 全部音频引擎（顺序 = 表的书写顺序；`GET /api/audio/engines` 按它逐条答"此刻能不能用"） */
+export const AUDIO_ENGINE_IDS = AudioEngineSchema.options;
+
+/**
+ * 一个引擎**此刻**能不能用（V2.106 / `GET /api/audio/engines`）。
+ *
+ * ⚠️ 与"配了没配"不同：配了 Key 不等于能出音频，`COMFYUI_AUDIO_BASE` 指过去的那台
+ * 也不一定装了 Stable Audio 权重。`reason` 就是**缺什么**的原话，界面直接显示。
+ */
+export const AudioEngineStatusSchema = z.object({
+  engine: AudioEngineSchema,
+  available: z.boolean(),
+  reason: z.string().optional(),
+});
+export type AudioEngineStatus = z.infer<typeof AudioEngineStatusSchema>;
+
+export const AudioEnginesResponseSchema = z.object({
+  engines: z.array(AudioEngineStatusSchema),
+});
+export type AudioEnginesResponse = z.infer<typeof AudioEnginesResponseSchema>;
+
 /** 引擎支不支持这个模式（表驱动，不猜） */
 export function audioEngineSupports(engine: AudioEngine, mode: AudioMode): boolean {
   return (AUDIO_ENGINES[engine].modes as readonly AudioMode[]).includes(mode);

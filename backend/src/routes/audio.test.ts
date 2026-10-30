@@ -131,6 +131,22 @@ describe('POST /api/audio · 入口判据', () => {
  * 用户拿到的是 5s 的文件，而且没有任何报错。根因是秒数/音色放在信封的 `options` 里，
  * 而指纹只算了 `params`。这组断言就是钉住"引擎私有参数必须进指纹"。
  */
+describe('GET /api/audio/engines（V2.106）', () => {
+  it('一个引擎都没配 → 两条都如实不可用，且说清缺哪个 env', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/audio/engines' });
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { engines: { engine: string; available: boolean; reason?: string }[] };
+    expect(body.engines.map((entry) => entry.engine)).toEqual(['mimo-tts', 'host-stable-audio']);
+    for (const entry of body.engines) {
+      expect(entry.available).toBe(false);
+      expect(entry.reason ?? '').not.toBe('');
+    }
+    const text = JSON.stringify(body);
+    expect(text).toContain('MIMO_API_KEY');
+    expect(text).toContain('COMFYUI_AUDIO_BASE');
+  });
+});
+
 describe('音频的幂等指纹（V2.105）', () => {
   const bgm = (seconds: number) =>
     audioRequestToGenerateRequest({

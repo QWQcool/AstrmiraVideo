@@ -7,13 +7,15 @@ import {
   MAX_AUDIO_TEXT_CHARS,
   MIN_AUDIO_SECONDS,
   audioEnginesFor,
+  type AudioEngineStatus,
   type AudioGenerateRequest,
   type AudioMode,
   type TaskProgress,
 } from '@astrmira/shared';
-import { ApiError, fetchTask, resolveMediaUrl, submitAudio } from '../lib/api';
+import { ApiError, fetchAudioEngines, fetchTask, resolveMediaUrl, submitAudio } from '../lib/api';
 import { Eyebrow } from '../components/Eyebrow';
 import { useTranslate } from '../lib/i18n';
+import { planAudioPlacement } from './audioPlacement';
 import { clipGeometry, contentEndFrame, findClip } from './model';
 import { probeAudioDurationFrames } from './mediaProbe';
 import type { EditStore } from './store';
@@ -42,8 +44,6 @@ import { useEditStore } from './store';
 const POLL_INTERVAL_MS = 1200;
 /** 本机 Stable Audio 冷态实测 39–47s；给到 5 分钟（含队列等待） */
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
-const FADE_IN_MAX = 8;
-const FADE_OUT_MAX = 15;
 
 type Stage = 'idle' | 'running' | 'placing';
 
@@ -87,6 +87,27 @@ export const AudioPanel: React.FC<{ store: EditStore }> = ({ store }) => {
   const info = engine === undefined ? null : AUDIO_ENGINES[engine];
   const busy = stage !== 'idle';
 
+  /**
+   * 引擎**此刻**能不能用（V2.106）。挂载时问一次 `/api/audio/engines`。
+   *
+   * 查不到（接口挂了 / 老服务端）**不拦**：`engineStatus === null` 时按钮照常可点，
+   * 真跑不了会收到 503 的原话 —— "少拦一次"比"拿网络抖动当不可用"好。
+   */
+  const [engineStatuses, setEngineStatuses] = useState<AudioEngineStatus[] | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchAudioEngines(controller.signal)
+      .then((response) => {
+        if (!controller.signal.aborted) setEngineStatuses(response.engines);
+      })
+      .catch(() => {
+        /* 静默：让点击后的 503 说话 */
+      });
+    return () => controller.abort();
+  }, []);
+  const engineStatus = engineStatuses?.find((entry) => entry.engine === engine) ?? null;
+  const engineUnavailable = engineStatus !== null && !engineStatus.available;
+
   // 轮询计时器：给用户一个"真的在等"的读数（不编百分比 —— 音频模型不报进度）
   useEffect(() => {
     if (stage !== 'running') {
@@ -106,39 +127,48 @@ export const AudioPanel: React.FC<{ store: EditStore }> = ({ store }) => {
   }, [stage]);
 
   /**
-   * 落轨：把生成好的音频放到音效轨 0 帧，裁到片长，加淡入淡出。
-   * 返回给人看的一句话（"落到了第几条音效轨"）。
+   * 落轨：把生成好的音频放到音效轨，按需要**铺满片长**，最后一段裁到片长，加淡入淡出。
+   *
+   * 三条规则（V2.106 起）：
+   * 1. **人声只放一次**（重复念同一句没有意义），超出片长就裁；
+   * 2. **配乐/音效循环铺满**：生成 30s 而片子 90s 时，铺 3 段首尾相接 ——
+   *    段与段之间不淡，否则每 30 秒掉一次音量（听起来像断了）；只有首段淡入、末段淡出；
+   * 3. **音量**：配乐/音效 0.35（垫底），配音 1.0 —— 依据是 Stable Audio 峰值接近满刻度。
    */
   const placeOnTimeline = async (task: Pick<TaskProgress, 'taskId' | 'outputAudioUrl'>): Promise<string> => {
     const url = resolveMediaUrl(task.outputAudioUrl);
     if (url === null) throw new Error(t('edit.audio.error.noOutput'));
 
     const durationFrames = await probeAudioDurationFrames(url, project.fps);
-    const clipId = store.addAudioAt(
-      {
-        taskId: task.taskId,
-        url,
-        durationFrames,
-        name: `${mode} · ${task.taskId.slice(0, 8)}`,
-      },
-      0,
-    );
+    if (durationFrames <= 0) throw new Error(t('edit.audio.error.noOutput'));
 
-    const placed = store.getState().project;
-    const found = findClip(placed, clipId);
-    if (found === null) return t('edit.audio.placed', { seconds: (durationFrames / project.fps).toFixed(1) });
+    // 排布规则在纯函数里（可断言）：人声只放一次，配乐/音效循环铺满
+    const placement = planAudioPlacement(filmFrames, durationFrames, mode !== 'tts');
+    if (placement.segments.length === 0) throw new Error(t('edit.audio.error.noOutput'));
 
-    const excess = durationFrames - filmFrames;
-    const finalFrames = excess > 0 ? filmFrames : durationFrames;
-    if (excess > 0) store.trimClip(clipId, 'right', -excess, clipGeometry(found.clip));
+    const name = `${mode} · ${task.taskId.slice(0, 8)}`;
+    for (const segment of placement.segments) {
+      const clipId = store.addAudioAt({ taskId: task.taskId, url, durationFrames, name }, segment.atFrame);
+      const placed = store.getState().project;
+      const found = findClip(placed, clipId);
+      if (found === null) continue;
 
-    store.updateSelectedClip({
-      kind: 'audio',
-      fadeInFrames: Math.min(FADE_IN_MAX, Math.floor(finalFrames / 4)),
-      fadeOutFrames: Math.min(FADE_OUT_MAX, Math.floor(finalFrames / 3)),
-    });
+      // 末段被裁短时从右边裁掉多余部分（否则导出时长会被撑长）
+      const excess = durationFrames - segment.frames;
+      if (excess > 0) store.trimClip(clipId, 'right', -excess, clipGeometry(found.clip));
 
-    return t('edit.audio.placed', { seconds: (finalFrames / project.fps).toFixed(1) });
+      store.updateSelectedClip({
+        kind: 'audio',
+        volume: placement.volume,
+        fadeInFrames: segment.fadeInFrames,
+        fadeOutFrames: segment.fadeOutFrames,
+      });
+    }
+
+    const seconds = (placement.coveredFrames / project.fps).toFixed(1);
+    return placement.segments.length > 1
+      ? t('edit.audio.placedLooped', { seconds, count: placement.segments.length })
+      : t('edit.audio.placed', { seconds });
   };
 
   const handleGenerate = async (): Promise<void> => {
@@ -187,6 +217,7 @@ export const AudioPanel: React.FC<{ store: EditStore }> = ({ store }) => {
   const canSubmit =
     !busy &&
     engine !== undefined &&
+    !engineUnavailable &&
     (mode === 'tts' ? text.trim() !== '' : prompt.trim() !== '');
   const submitLabel =
     stage === 'running'
@@ -318,6 +349,13 @@ export const AudioPanel: React.FC<{ store: EditStore }> = ({ store }) => {
       <p className="wb-note" style={{ marginTop: 8 }}>
         {t('edit.audio.autoPlace')}
       </p>
+
+      {engineUnavailable ? (
+        <div className="wb-uncertain" data-testid="ed-audio-unavailable" style={{ marginTop: 8 }}>
+          <span className="wb-uncertain-title">{t('edit.audio.unavailable.title')}</span>
+          <span className="wb-uncertain-body">{engineStatus?.reason ?? t('edit.audio.unavailable.body')}</span>
+        </div>
+      ) : null}
 
       {info === null ? null : (
         <div className="wb-note" data-testid="ed-audio-privacy" style={{ marginTop: 8 }}>

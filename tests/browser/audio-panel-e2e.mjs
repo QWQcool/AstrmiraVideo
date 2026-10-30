@@ -253,6 +253,17 @@ try {
     '配乐落在 0 帧（不用手拖）',
   );
 
+  // ①b V2.106：**配乐默认音量 0.35**（Stable Audio 峰值 −0.0~−2.3dB，满音量混旁白会削波）。
+  // 这里读出来断言，然后**拧回 1.0** 再导出 —— 下面那条"两层声音"的判据是按满音量标定的：
+  // 用 0.35 去量只会得到 1.3dB（2026-10-30 实测），那是判据口径变了，不是"配乐没进成片"。
+  // 默认值有它自己的断言（上一行），两件事分开量。
+  await audioClips.first().click({ timeout: 20_000 });
+  const bedVolumeInput = page.locator('[data-testid=ed-inspector] input.ed-field-number').first();
+  const bedDefaultVolume = Number(await bedVolumeInput.inputValue());
+  check(Math.abs(bedDefaultVolume - 0.35) < 0.001, `配乐默认音量 0.35（实际 ${bedDefaultVolume}）`);
+  await bedVolumeInput.fill('1');
+  await bedVolumeInput.dispatchEvent('change');
+
   // ② 配音：MiMo（第三方云 —— 隐私必须写在按钮旁边）
   await panel.getByRole('button', { name: '配音' }).click();
   const ttsPrivacy = await panel.locator('[data-testid=ed-audio-privacy]').innerText();
