@@ -141,9 +141,25 @@ export interface ComfyModelMatch {
  * ## 判定优先级（V2.39）
  * `sidecar 声明` > 文件名启发式（缺声明时才用）—— 缺声明**不是错误**（老模板照旧可用）。
  */
+/**
+ * 帧数对齐规则：`length % mod === offset`（V2.101 / 2026-10-30 真机）。
+ *
+ * 为什么要有它：`4n+1` 是 **Wan 的时序要求**，不是所有模型的。MiniMax H3 的官方模板里
+ * 帧数是 `max(5, round(sec*24)) + (5 - n % 17) % 17` —— 也就是 **17n+5**。
+ * 以前这个对齐写死在 `alignFrames()` 里，换模型就只能改代码（而 D53 的原则是"换模型不改代码"）。
+ */
+export interface FrameAlign {
+  /** 模数（H3 = 17） */
+  mod: number;
+  /** 余数（H3 = 5） */
+  offset: number;
+}
+
 export interface ComfyTemplateDeclaration {
   /** 这套模板能做哪些模式（会与 `COMFY_WIRED_MODES` 取交集，交集外**如实剔除**） */
   modes: GenerationMode[];
+  /** 帧数对齐（缺省 = Wan 的 `4n+1`，即老行为一字不变） */
+  frameAlign?: FrameAlign;
   /** 挑模型文件的关键词（缺省 = 内置关键词 `ti2v` / `umt5` / `wan`） */
   modelMatch?: ComfyModelMatch;
   /** 给人看的名字（进自检结论） */
@@ -213,6 +229,22 @@ export function parseTemplateDeclaration(
       throw new Error(`${source} 的 referenceImage 必须是布尔值`);
     }
     if (referenceImage) declaration.referenceImage = true;
+  }
+  // V2.101：帧数对齐（H3 是 17n+5，不是 Wan 的 4n+1）—— 写错就提交不上去，所以形状必须严格
+  const frameAlignRaw = asRecord(record['frameAlign']);
+  if (record['frameAlign'] !== undefined && frameAlignRaw === null) {
+    throw new Error(`${source} 的 frameAlign 必须是对象（例：{"mod":17,"offset":5}）`);
+  }
+  if (frameAlignRaw !== null) {
+    const mod = frameAlignRaw['mod'];
+    const offset = frameAlignRaw['offset'];
+    if (typeof mod !== 'number' || !Number.isInteger(mod) || mod < 2) {
+      throw new Error(`${source} 的 frameAlign.mod 必须是 ≥2 的整数`);
+    }
+    if (typeof offset !== 'number' || !Number.isInteger(offset) || offset < 0 || offset >= mod) {
+      throw new Error(`${source} 的 frameAlign.offset 必须是 0..${mod - 1} 的整数`);
+    }
+    declaration.frameAlign = { mod, offset };
   }
   return declaration;
 }
@@ -491,6 +523,21 @@ export function alignFrames(value: number): number {
   const clamped = Math.max(1, Math.round(value));
   const blocks = Math.round((clamped - 1) / FRAME_STEP);
   return Math.max(FRAME_STEP + 1, blocks * FRAME_STEP + 1);
+}
+
+/**
+ * 按**模板声明**对齐帧数（V2.101）：给了 `frameAlign` 就按它的 `mod/offset`，没给就走 Wan 的 `4n+1`。
+ *
+ * 与 `alignFrames` 一样**向上取到最近的合法值**（宁可略长，也不让成片比请求短一截）：
+ * H3 的合法序列是 5 / 22 / 39 / 56 / 73 / 90 / 107 / 124 …，
+ * 5 秒 @24fps = 120 → **124**（5.17s），对齐结果再喂一次也不会变（幂等）。
+ */
+export function alignFramesTo(value: number, align?: FrameAlign): number {
+  if (align === undefined) return alignFrames(value);
+  const { mod, offset } = align;
+  const target = Math.max(offset, Math.ceil(value));
+  const delta = (offset - (target % mod) + mod) % mod;
+  return target + delta;
 }
 
 /**
@@ -1040,6 +1087,8 @@ export interface ComfyWorkflowInput {
   width: number;
   height: number;
   frames: number;
+  /** 模板声明的帧数对齐规则（V2.101；缺省 = Wan 的 `4n+1`） */
+  frameAlign?: FrameAlign;
   fps?: number;
   seed: number;
   steps?: number;
@@ -1105,7 +1154,7 @@ export function buildComfyWorkflow(
     NEGATIVE_PROMPT: input.negativePrompt,
     WIDTH: alignDimension(input.width),
     HEIGHT: alignDimension(input.height),
-    FRAMES: alignFrames(input.frames),
+    FRAMES: alignFramesTo(input.frames, input.frameAlign),
     FPS: input.fps ?? COMFY_FPS,
     SEED: input.seed,
     STEPS: input.steps ?? COMFY_DEFAULT_STEPS,

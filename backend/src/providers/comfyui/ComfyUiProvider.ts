@@ -658,6 +658,10 @@ export class ComfyUiProvider implements VideoProvider {
       width: dimensions.width,
       height: dimensions.height,
       frames,
+      // V2.101：帧数对齐由**模板声明**决定（H3 是 17n+5，Wan 是 4n+1）
+      ...(target.loaded.declaration?.frameAlign === undefined
+        ? {}
+        : { frameAlign: target.loaded.declaration.frameAlign }),
       fps: this.tuning.fps,
       steps: this.tuning.steps,
       cfg: this.tuning.cfg,

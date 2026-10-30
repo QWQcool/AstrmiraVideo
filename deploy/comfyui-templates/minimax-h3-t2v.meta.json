@@ -1,5 +1,6 @@
 {
   "modes": ["t2v", "i2v"],
+  "frameAlign": { "mod": 17, "offset": 5 },
   "modelMatch": {
     "unet": "minimax_h3",
     "clip": "qwen3vl_32b_minimax_h3",

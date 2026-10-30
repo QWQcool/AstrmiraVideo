@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { COMFY_WIRED_MODES, parseTemplateDeclaration } from './comfyuiProtocol.js';
+import { COMFY_WIRED_MODES, alignFramesTo, parseTemplateDeclaration } from './comfyuiProtocol.js';
 
 /**
  * `docs/templates/minimax-h3-t2v.meta.json` —— **上机当天直接抄过去用的 sidecar**。
@@ -40,5 +40,12 @@ describe('MiniMax H3 的 sidecar 样例（docs/templates）', () => {
     const notes = declaration.notes ?? '';
     expect(notes).toContain('{{START_IMAGE');
     expect(notes).toContain('fl2v');
+  });
+
+  it('帧数对齐是 **17n+5**（Wan 的 4n+1 会把 H3 的长度提交错）', () => {
+    expect(declaration.frameAlign).toEqual({ mod: 17, offset: 5 });
+    // 5 秒 @24fps = 120 → 124（5.17s），不是 Wan 的 121
+    expect(alignFramesTo(120, declaration.frameAlign)).toBe(124);
+    expect(alignFramesTo(120)).toBe(121);
   });
 });
