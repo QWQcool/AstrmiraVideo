@@ -500,7 +500,44 @@ MOSS-Image：
 2. 部署到算力服务器时用**满血 BF16**：`moss_image_sft_bf16` + `qwen3.5_9b_bf16` + `flux2-vae`（约 27.8GB），建议 **48GB+ 显存**；10GB 量化版只留在本地评估。H3 与满血 MOSS 不要挤同一张 48GB 卡同时跑。
 3. 可选模板已放在 `deploy/comfyui-templates/moss-image-t2i.*`；用独立 ComfyUI 实例 + `COMFYUI_TEMPLATE_DIR` 启用，具体见同目录 README。
 4. 8-step DMD LoRA 是社区蒸馏，不是官方 50 步质量承诺；生产基线用官方 50 步，DMD 只作可选加速对照；文字/版式仍需人工复核。
-5. 本次只验证了普通 prompt 和一张中文海报；**layout JSON/bbox 尚未实测**，不作为已支持能力。
+5. ~~本次只验证了普通 prompt 和一张中文海报；layout JSON/bbox 尚未实测~~ → **2026-10-30 已实测**（见 §7-1）：两框样例按框落位，判据是分区均值 RGB 而不是肉眼。
+
+### 6.1 layout JSON（bbox）实测（2026-10-30，满血 BF16 / 4080 32GB）
+
+**格式不是猜的**：ComfyUI 0.43 的 `comfy_extras/nodes_moss_image.py` 里
+`MOSSImageLayoutPrompt.execute()` 就是把这个 dict `json.dumps` 后喂给 `CLIPTextEncode`：
+
+```json
+{
+  "summary": { "caption": "<整图描述>" },
+  "items": [
+    { "label": "object", "caption": "a glossy red sphere", "bbox": [-115, -471, 173, -123] }
+  ],
+  "bbox_coord_space": "abs_centralized",
+  "bbox_format": "yxyx"
+}
+```
+
+- 节点内部接受的入参是 **0–1000 归一化 `[y0, x0, y1, x1]`**，再换成"**以画布中心为原点**的像素"
+  （`floor(y0*h/1000) - h//2` 这种取整，写代码时要一模一样，差 1px 无所谓、坐标系搞反就全错）；
+- `label` 三档：`object` / `character`（要在 `character_boxes` 里点号声明）/ `text`（`text` 字段会被渲染成字）；
+- 还有可选 `palette`（`color_palette`）与 `MOSSImageControl` 的 color/depth 控制（LoRA 适配器，本轮未测）。
+
+**真机样例**（可复跑：`node scripts/moss-layout-sample.mjs --base http://127.0.0.1:<ComfyUI>`）：
+1024×576、50 步、cfg 3（`moss-image-t2i-full.api.json`），两次跑 **43.3s / 37.7s**；
+左框 `[40..380, 300..800]`、右框 `[620..960, 300..800]`（0–1000 口径），两框各压成 1 像素求均值：
+
+| 次 | 左框均值 | 右框均值 | 全图 |
+|---|---|---|---|
+| 1 | **rgb(206,71,64)** 偏红 | **rgb(74,114,182)** 偏蓝 | rgb(203,182,199) |
+| 2 | **rgb(218,55,53)** 偏红 | **rgb(71,116,189)** 偏蓝 | rgb(209,186,205) |
+
+→ **边界框被遵守**，不是"看起来差不多"；两次数字相差在噪声量级，判据稳定。
+证据：`.tmp/e2e/moss-layout.png` + `moss-layout.json`。
+
+**对我们的意义**：画布 `layout{x,y,width,height}` → `(x - frame.x)/frame.w*1000` 就是这套 0–1000 口径，
+换算是一次线性映射，没有隐藏语义。**但要不要做成产品能力（画布框 → 布局提示词 → 直出）仍是产品决策**，
+本仓当前只是把事实登记在这里。
 
 ## 6. 复现命令（隔离实例）
 
@@ -522,7 +559,7 @@ python main.py --listen 127.0.0.1 --port 8189 --lowvram
 - 没有官方速度/显存 benchmark，以上是本机观察值；
 - 没有 FID/CLIP/人工偏好等定量评测；
 - 只测了一张中文海报，文字仍有装饰性错字；
-- layout JSON（bbox）没有实测；
+- ~~layout JSON（bbox）没有实测~~ → **2026-10-30 已实测通过**（§6.1：两框样例，分区均值 RGB 判据）；仍未测的是 `palette`、`character` 标签与 color/depth 适配器；
 - 8-step DMD 为社区版本，后续换 LoRA/权重需重测；
 - 10GB 卡首次加载慢、显存余量小，不适合作为默认高并发服务；
 - 满血 BF16 的显存/速度/50 步质量尚未在 48GB+ 机器上实测；本文只证明量化版能跑、文字能力有优势。
