@@ -150,6 +150,30 @@
 
 **结论（自用）**：现在**一个都不用急着装**。等 32GB 机器到手，按需顺序是 ① Stable Audio 3.0 Small（一个模型同时管 BGM + 音效，8GB 就能跑，把音效轨从"只能传"变成"能生成"）→ ② Qwen3-TTS 0.6B（配音）→ ③ LatentSync 1.5（要数字人才上）。
 
+**2026-10-30 补充：三条音频路径已经各自跑通，别再混为一谈**
+
+| 路径 | 谁在做 | 能做什么 | 不能做什么 |
+|---|---|---|---|
+| **H3 同期声** | 视频模型自己出（`VAEDecodeAudio` → `CreateVideo`） | 与画面**联合生成**的立体声：环境声、动作声、氛围配乐；**跟着镜头走**，天然同步 | 只随视频出（2–5 秒窗口）；**不能单独要一条 30 秒 BGM**；不能只重出声音不重出画面；音量强依赖提示词（实测 −25.4dB vs −41.5dB） |
+| **Stable Audio 3 Small（本地）** | 独立音频模型 | 单独的 BGM / 音效，长度可控（实测 15–20s），可单独重做、可循环铺满整条片子 | 不知道画面内容（要靠提示词描述） |
+| **MiMo-TTS（云端）/ GPT-SoVITS（本地）** | 语音合成 | 旁白 / 台词，可指定音色与情绪 | 不产生音乐与音效 |
+
+所以我上一轮说的"音频偏轻"只针对**第 1 条**；想让片子有 30 秒配乐，得用第 2 条，不能指望 H3 一路出到底。
+
+**小米 MiMo TTS 真机实测（2026-10-30，云端，OpenAI 兼容）**
+
+- 端点 `POST https://api.xiaomimimo.com/v1/chat/completions`，`model: mimo-v2.5-tts`；
+  `messages: [ {role:'user', content:'<情绪/风格指令>'}, {role:'assistant', content:'<要念的文本>'} ]`，
+  `audio: { format:'wav', voice:'冰糖' }` → 音频在 `choices[0].message.audio.data`（base64 wav）。
+- 音色：中文 `冰糖`(女) / `茉莉`(女) / `苏打`(男) / `白桦`(男)；英文 `Mia` / `Chloe` / `Milo` / `Dean`。
+- 实测（三条，均 24kHz 单声道 pcm_s16le）：冰糖 6.72s 音频 **3.4s**；苏打 5.28s / **1.9s**；Mia 6.88s / **2.1s**
+  → 约 **2–3.5× 实时**，音量 −19.8dB 均值（健康）。
+- Key：本机用户环境变量 `MiMo_API_Key`（53 字符）；**站点服务器上没有** ——
+  要走产品化必须显式放进服务器 env 或走 BYOK，且必须如实告诉用户"文本会离开本机"（这是第三方云）。
+
+**本机还有一套离线配音（GPT-SoVITS）**：48kHz、可克隆音色、不出网；MiMo 胜在"一句话就能指定情绪"且无需 GPU。
+两条都留着：要隐私/音色克隆用本地，要快速出旁白用 MiMo。
+
 **本机实测（2026-10-29，RTX 3080 10GB，东西全在 D 盘）**：
 
 - **TTS 不用装**：本机早就有 GPT-SoVITS 特化包（`D:\TTS\GSVI\GPT-SoVITS-1007-cu124`，自带 Python/PyTorch/cu124，3 个音色：爱丽丝 中/日、白子 中文）。起 API：`D:\TTS\start-gsvi-api.bat`（`runtime\python.exe gsvi.py -p 8000`），接口 `POST http://127.0.0.1:8000/infer_single`，请求体 `{version:'v4', model_name:'蔚蓝档案-中文-爱丽丝', prompt_text_lang:'中文', emotion:'默认', text, text_lang:'中文'}` → 返回 `{"msg":"合成成功","audio_url":"http://0.0.0.0:8000/outputs/<hash>.wav"}`（把 `0.0.0.0` 换成 `127.0.0.1` 再 GET 就是 wav）。实测：2.56s 中文（热 4s / 首 22s，首含模型加载）、12.28s 长句 **14.4s**（≈1.17× 实时）、跨语种（日语模型念中文）3.52s 音频 7s；产物 **48kHz 单声道 pcm_s16le**，均值 −19.8 ~ −21.5dB（不是静音）。
