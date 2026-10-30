@@ -432,3 +432,25 @@ unavailableReasons.push('fl2v / v2v 需要另外的模型（FLF2V / VACE 系列�
   提示词里**明确要声音**（wind / footsteps）时 i2v 均值 **−25.4 dB**（max −10.6），
   而没提声音的 t2v 是 **−41.5 / −46.8 dB** → **"偏轻"主要是没要求声音，不是模型缺陷**；
   界面上若要"有声音"，提示词里得写清楚。
+
+### 附二·4 换机器时的接入（`deploy/gpu-link.sh`，一条命令）
+
+今天这套（生成密钥 → 装公钥 → 写 systemd → 探活）已固化成脚本，在**站点服务器**上跑：
+
+```bash
+scp deploy/gpu-link.sh root@<site>:/root/
+ssh root@<site> 'bash /root/gpu-link.sh --gpu-host <gpu> --gpu-port <port> --copy-id'   # 首次：装公钥（问一次 GPU 密码）
+ssh root@<site> 'bash /root/gpu-link.sh --gpu-host <gpu> --gpu-port <port>'             # 之后：幂等，只重启+探活
+```
+
+它做的五件事，顺序固定：① 绑定地址默认取**应用容器的 docker 网关**（绝不 0.0.0.0 —— ComfyUI 无鉴权）；
+② 专用密钥 `~/.ssh/astrmira_gpu`；③ 密钥登录探测（失败时打印要追加的 authorized_keys 行，不静默继续）；
+④ 写 `astrmira-comfyui-tunnel.service`（`Restart=always`）并重启；⑤ **宿主机 + 应用容器两头探活**
+（容器能连才算通），最后打印该写进 `.env.deploy` 的那几行。
+
+2026-10-30 在线上实跑（幂等路径）：绑定 `172.18.0.1:18188`、密钥复用、服务 `active`（NRestarts=0）、
+宿主机 HTTP 200、容器探活 OK。
+
+**界面上也已加耗时预期**（`canvas.studio.etaLocal`）：本地轨的节点参数条会按"分辨率 × 时长"给出
+"约 N 分钟（按真机实测）· 首次再加 1–2 分钟加载模型" —— 系数取自 864×480×124 帧 = 293s 采样
+（5.7e-6 秒/(像素·帧)，含约 8% 解码开销）。不给预期的话，用户会把"5 秒片要 5 分钟"当成卡死。

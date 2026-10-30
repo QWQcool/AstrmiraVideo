@@ -1776,6 +1776,16 @@ audio.cs-card-media {
   font-size: var(--fs-note);
 }
 
+/* V2.101：本地轨的耗时预期。一行、低调，但必须看得见 —— 5 秒片要 5 分钟，
+   不说的话用户会以为任务卡住了（这正是这条提示存在的唯一理由）。 */
+.cs-eta-hint {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
 /* V2.50：图片节点只显示实际图片尺寸（1024 系），不再摆视频清晰度档 */
 .cs-toolbar-static {
   display: inline-flex;

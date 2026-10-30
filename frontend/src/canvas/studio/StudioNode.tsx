@@ -378,6 +378,29 @@ export function StudioNode({ id, selected }: NodeProps) {
             : t('common.cost.estimated', { amount: formatYuan(estimate.yuan) })
           : t('canvas.studio.priceLocal');
 
+  /**
+   * 本地轨的**耗时预期**（V2.101 / 2026-10-30 真机）。
+   *
+   * 为什么必须说出来：云端是"几秒到几十秒"，本地 32GB 卡上是**5 秒片子约 5 分钟**（864×480），
+   * 不给预期的话，用户会以为是卡住了。系数来自真机实测：
+   * 864×480×124 帧 = 293s 采样（14.65 s/it × 20 步）+ 约 8% 解码开销 → ≈ 5.7e-6 秒/(像素·帧)。
+   * 首帧加载模型（20GB 扩散 + 15GB 编码器）另算 1~2 分钟，单独写在文案里，不折进估算。
+   */
+  const localEta =
+    node.type === 'video' && !isHttpProvider && provider !== 'cloud-volcano-seedance'
+      ? (() => {
+          const size = resolveTargetSize(canvasAspectRatio(node), canvasResolutionTier(node));
+          const seconds = canvasDurationSec(node);
+          const secondsOfCompute = size.width * size.height * seconds * 24 * 5.7e-6 * 1.08;
+          return {
+            minutes: Math.max(0.5, Math.round((secondsOfCompute / 60) * 2) / 2),
+            width: size.width,
+            height: size.height,
+            seconds,
+          };
+        })()
+      : null;
+
   // V2.51：ComfyUI 与 HTTP 用同一份 modes 判定；缺省 = 未自检，不据此过滤
   const comfyEngines = comfyUiEngineOptions(providerStatus)
     .filter((option) =>
@@ -859,6 +882,17 @@ export function StudioNode({ id, selected }: NodeProps) {
                   </select>
                 </label>
               </div>
+
+              {localEta === null ? null : (
+                <p className="cs-eta-hint" data-testid="cs-local-eta">
+                  {t('canvas.studio.etaLocal', {
+                    minutes: localEta.minutes,
+                    w: localEta.width,
+                    h: localEta.height,
+                    d: localEta.seconds,
+                  })}
+                </p>
+              )}
 
               <div className="cs-toolbar-actions">
                 {mediaUrl === null ? null : (

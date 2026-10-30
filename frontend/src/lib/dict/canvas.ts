@@ -185,6 +185,9 @@ export const CANVAS_ZH = {
   'canvas.studio.issue.provider': '这个引擎当前不可用（见设置里的引擎状态）',
   'canvas.studio.openByok': '去设置',
   'canvas.studio.priceLocal': '本地轨：无 API 费用',
+  // 本地轨慢是事实（32GB 卡上 5 秒片子约 5 分钟），不给预期就会被当成"卡住了"
+  'canvas.studio.etaLocal':
+    '本地轨约 {minutes} 分钟（{w}×{h} / {d}s，按真机实测）；首次再加 1–2 分钟加载模型',
   'canvas.studio.pricePending': '待核算',
   'canvas.studio.pickerTitle': '从资产库添加',
   'canvas.studio.pickerReferenceTitle': '添加参考',
@@ -861,6 +864,8 @@ export const CANVAS_EN = {
   'canvas.studio.issue.provider': 'This engine is unavailable right now (see the engine status in settings)',
   'canvas.studio.openByok': 'Open settings',
   'canvas.studio.priceLocal': 'Local track: no API cost',
+  'canvas.studio.etaLocal':
+    'Local track ≈ {minutes} min ({w}×{h} / {d}s, measured on a real machine); the first run adds 1–2 min to load models',
   'canvas.studio.pricePending': 'Not priced',
   'canvas.studio.pickerTitle': 'Add from assets',
   'canvas.studio.pickerReferenceTitle': 'Add references',
