@@ -402,3 +402,16 @@ unavailableReasons.push('fl2v / v2v 需要另外的模型（FLF2V / VACE 系列�
   ComfyUI 直接拒收（`Exception when validating inner node: '6'`）。`renderWorkflow` 现在会把这类输入一并删除。
 - **还没做**：站点容器侧的 env（`COMFYUI_BASE_URL` / `COMFYUI_TEMPLATE_DIR`）与模板目录挂载，
   以及一次正式部署 —— 这些会改生产配置，等确认后一次做。
+
+### 附二·2 生产已接通（2026-10-30，`c0c7e14` 部署后）
+
+- 站点 `.env.deploy` 增：`EXPOSE_HOST_LOCAL_TRACK=1`、`COMFYUI_BASE_URL=http://172.18.0.1:18188`、
+  `COMFYUI_TEMPLATE_DIR=/app/comfyui-templates`、`COMFYUI_TEMPLATE=minimax-h3-t2v`；
+  `deploy/compose.yaml` 把宿主 `deploy/comfyui-templates` 只读挂进容器（模板是数据，不重建镜像）。
+- 隧道进 systemd（`astrmira-comfyui-tunnel.service`，`Restart=always`），绑 `172.18.0.1:18188`；
+  旧的临时 nohup 已清掉，端口归服务持有。
+- **生产实测**：容器内 `POST /api/generate`（t2v / `durationSec=2`）→ 进度走 ComfyUI websocket（0/30/55/80/100%）
+  → `succeeded` → `/media/0eef8e07-….mp4`；取回 `ffprobe`：**832×480 / 56 帧 / 2.33s / h264 + AAC 32kHz 立体声 / 343 KB**。
+  56 帧再次确认 `17n+5` 在**生产**生效（Wan 的 `4n+1` 会给 49）。
+- 能力位自检（容器内）：`available=true`，`modes=["t2v","i2v","t2i","upscale"]`，
+  依据是模板声明（`minimax-h3-t2v` → `minimax_h3_fl2va_pruned_int8_convrot`）。
