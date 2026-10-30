@@ -114,6 +114,10 @@ export interface ComfyModels {
 export const COMFY_WIRED_MODES: readonly GenerationMode[] = [
   't2v',
   'i2v',
+  // V2.104：首尾帧接线 —— 真机查过 `MiniMaxH3ImageToVideo` 有**可选** `last_frame` 输入口
+  // （`GET /object_info/MiniMaxH3ImageToVideo` → required 有 clip/vae/prompt/width/height/length，
+  //  optional 是 `first_frame` + `last_frame`）。所以"塞得进去"是事实，不是声明。
+  'fl2v',
   't2i',
   'upscale',
   'inpaint',
@@ -465,6 +469,11 @@ function resolveDeclaredModes(
       mode === 'inpaint';
     if (needsFirstFrame && !placeholders.has('START_IMAGE') && !placeholders.has('START_IMAGE_NAME')) {
       rejected.push(`${mode}（模板里没有 START_IMAGE / START_IMAGE_NAME 占位，我们没有地方塞首帧）`);
+      continue;
+    }
+    // V2.104：首尾帧还要**尾帧槽**（有首帧没尾帧 = 只能做 i2v，那不是 fl2v）
+    if (mode === 'fl2v' && !placeholders.has('LAST_IMAGE') && !placeholders.has('LAST_IMAGE_NAME')) {
+      rejected.push('fl2v（模板里没有 LAST_IMAGE / LAST_IMAGE_NAME 占位，我们没有地方塞尾帧）');
       continue;
     }
     // V2.78：局部重绘还要一份蒙版（没有 MASK_IMAGE_NAME 就没地方塞蒙版）
@@ -1114,6 +1123,14 @@ export interface ComfyWorkflowInput {
   /** i2v 的首帧在 ComfyUI 里的名字（`LoadImage.image`；由上传接口返回） */
   startImageName?: string;
   /**
+   * V2.104：**尾帧**在 ComfyUI 里的名字（`fl2v` 用）。
+   *
+   * 与 `startImageName` 走同一条上传通道，但落进**另一个** LoadImage 节点 ——
+   * 尾帧槽没有被填时那个节点整个消失，`last_frame` 这个键也随之删掉（模板占位符规则 2），
+   * 于是同一份模板既能做 i2v 也能做 fl2v。
+   */
+  lastImageName?: string;
+  /**
    * 多参考（V2.76 / B 路线）：按 `order` 排好的图片名。
    *
    * - 1 张：只用 `{{START_IMAGE_NAME}}`；
@@ -1160,6 +1177,8 @@ export function buildComfyWorkflow(
   template: WorkflowTemplate = WAN22_TI2V_5B_TEMPLATE,
 ): ComfyWorkflow {
   const references = input.referenceImageNames ?? [];
+  const startName = references[0] ?? input.startImageName;
+  const lastName = input.lastImageName;
   const rendered = renderWorkflow(template, {
     UNET_NAME: input.models.unet,
     CLIP_NAME: input.models.clip,
@@ -1178,7 +1197,9 @@ export function buildComfyWorkflow(
     SHIFT: input.shift ?? COMFY_DEFAULT_SHIFT,
     OUTPUT_PREFIX: input.outputPrefix,
     // t2v 时这两个都是 undefined → 键被删、`LoadImage` 节点也被删（模板里的 _dropWhenMissing）
-    START_IMAGE_NAME: references[0] ?? input.startImageName,
+    START_IMAGE_NAME: startName,
+    // V2.104：尾帧（fl2v）—— 缺省时键被删、尾帧 LoadImage 节点也被删，模板退回 i2v/t2v 形态
+    LAST_IMAGE_NAME: lastName,
     // V2.76：第二张参考（模板只有两个槽时用；>2 张的其余由 appendReferenceChain 追加）
     REFERENCE_IMAGE_NAME: references[1],
     // V2.77：放大模板的两个旋钮（别的模板里没有这两个占位符，值会被忽略）
@@ -1193,12 +1214,41 @@ export function buildComfyWorkflow(
     PAD_RIGHT: input.pad?.right ?? 0,
     PAD_BOTTOM: input.pad?.bottom ?? 0,
     PAD_FEATHERING: input.pad?.feathering ?? 40,
-    // ⚠️ `56` 是**内置模板里 LoadImage 的节点 id** —— 写自定义模板的人只要保证"有一个输入图节点"
-    // 并把它的连接写进模板（本行只在 i2v 时给内置模板用）
-    START_IMAGE: (references[0] ?? input.startImageName) === undefined ? undefined : ['56', 0],
+    // 连接目标按**模板自己的节点 id** 找（V2.104 起不再写死 `56`）：
+    // 自定义模板只要有一个 `LoadImage.image = "{{START_IMAGE_NAME}}"` 的节点就会被认出来。
+    START_IMAGE: startName === undefined ? undefined : [loadImageNodeIdFor(template, 'START_IMAGE_NAME') ?? '56', 0],
+    // V2.104：尾帧同理（找不到节点就给 undefined → 键被删 —— 宁可退化成 i2v，也不给一条坏连线）
+    LAST_IMAGE:
+      lastName === undefined
+        ? undefined
+        : (() => {
+            const id = loadImageNodeIdFor(template, 'LAST_IMAGE_NAME');
+            return id === null ? undefined : [id, 0];
+          })(),
   });
   // 追加链只新增 `{class_type, inputs}` 形状的节点，结果仍是 ComfyWorkflow
   return (references.length > 2 ? appendReferenceChain(rendered, references) : rendered) as ComfyWorkflow;
+}
+
+/**
+ * 模板里"负责某张图"的 `LoadImage` 节点 id（V2.104）。
+ *
+ * 为什么不能像以前那样写死 `'56'`：那是**内置 Wan 模板**的节点号。用户换一份模板
+ * （H3 的首帧是节点 6、尾帧是新加的 16）时，写死的连线会把"尾帧"接到一个不存在的节点上 ——
+ * 提交被拒，报的还是一句 node_errors。按占位符反查节点号，模板就能自己决定编号。
+ */
+export function loadImageNodeIdFor(
+  template: WorkflowTemplate,
+  imagePlaceholder: 'START_IMAGE_NAME' | 'LAST_IMAGE_NAME' | 'REFERENCE_IMAGE_NAME' | 'MASK_IMAGE_NAME',
+): string | null {
+  const wanted = `{{${imagePlaceholder}}}`;
+  for (const [id, node] of Object.entries(template)) {
+    if (node['class_type'] !== 'LoadImage' && node['class_type'] !== 'LoadImageMask') continue;
+    const inputs = node['inputs'];
+    if (typeof inputs !== 'object' || inputs === null) continue;
+    if ((inputs as Record<string, unknown>)['image'] === wanted) return id;
+  }
+  return null;
 }
 
 /** 模板能静态吃几张参考图（0 = 没有输入槽） */

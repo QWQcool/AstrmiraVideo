@@ -25,6 +25,7 @@
 | `pnpm smoke:audio` | MiMo Key（或 `--narration`）+ 本机 ComfyUI 带 Stable Audio（或 `--bgm`）+ `pnpm build` | **声音分层**：真实 TTS 旁白 + 真实音乐模型配乐 → `POST /api/upload` → 剪辑台音效轨叠加 → 浏览器导出两次（只差配乐）→ ffprobe + 窄带频谱证明**两层各自可归因**（旁白 1kHz 高出对照带 ≥6dB；人声结束后配乐比静音高 ≥10dB；人声期间 100Hz 高 ≥3dB）。证据 `.tmp/e2e/phase1-audio-layers.json` |
 | `pnpm smoke:audio:panel` | 同上 | **一条龙（V2.103）**：剪辑台「声音」面板里写台词/配乐描述 → `POST /api/audio` → 任务轮询 → **自动落到音效轨**（0 帧、裁到片长、带淡入淡出，配乐与配音各占一条轨）→ 导出两次（只差配乐）→ ffprobe + 频谱归因（100Hz 比"只有旁白"高 ≥3dB；旁白 1kHz 高出对照带 ≥6dB）。顺带断言界面上的**隐私标注**（配音=第三方云 / 配乐=本机）。证据 `.tmp/e2e/phase2-audio-panel.json` |
 | `pnpm smoke:image --seed <照片>` | 同上（`--asset <id>` 亦可） | 超清 2× / 蒙版重绘（内外 PSNR）/ 扩图（几何 + 核心区 + 新区域标准差）**看像素** |
+| `pnpm smoke:fl2v -- --base <ComfyUI> --first <首帧.png> --last <尾帧.png>` | H3 权重 + `deploy/comfyui-templates/minimax-h3-t2v.*` + `pnpm build` | **首尾帧接线（V2.104）**：用仓库自己的 `buildComfyWorkflow` 装配 → 两个 `LoadImage` 且 `last_frame` 指向尾帧节点 → 上游接受 → **相对 SSIM 归属**（首帧更像图A、尾帧更像图B；尾帧是模型生成的中间态，绝对相似度本来就低，别拿阈值卡）。证据 `.tmp/e2e/fl2v-acceptance.json` |
 | `pnpm smoke:face --anchor … --images … --negatives …` | Python venv + InsightFace 模型（见 `scripts/face-similarity/README.md`） | 人脸身份相似度**分布**；没给对照图时只输出"未标定"，给误判时退出码 1 |
 | `pnpm smoke:paid` | 火山 Seedance Key（**真金白银**） | 云端轨端到端：提交 / 轮询 / 成片 / 206 Range |
 

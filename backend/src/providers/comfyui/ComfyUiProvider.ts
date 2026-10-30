@@ -556,6 +556,15 @@ export class ComfyUiProvider implements VideoProvider {
         'i2v（图生视频）需要首帧：请在参考素材里选一张图片',
       );
     }
+    // V2.104：首尾帧**两张都要** —— 少一张就不是 fl2v（只有首帧那是 i2v，只有尾帧没意义）
+    if (request.mode === 'fl2v') {
+      if ((request.assets?.firstFrameImage ?? '') === '') {
+        throw new ProviderFailureError('INVALID_REQUEST', '首尾帧需要首帧：assets.firstFrameImage');
+      }
+      if ((request.assets?.lastFrameImage ?? '') === '') {
+        throw new ProviderFailureError('INVALID_REQUEST', '首尾帧需要尾帧：assets.lastFrameImage');
+      }
+    }
     if (request.mode === 'upscale' && (request.assets?.firstFrameImage ?? '') === '') {
       throw new ProviderFailureError(
         'INVALID_REQUEST',
@@ -653,6 +662,8 @@ export class ComfyUiProvider implements VideoProvider {
       referenceAssets.length > 0
         ? await Promise.all(referenceAssets.map((assetId) => this.uploadReferenceImage(assetId)))
         : request.mode === 'i2v' ||
+            // V2.104：`fl2v` 的首帧也走这条（尾帧在下面单独上传）
+            request.mode === 'fl2v' ||
             request.mode === 'upscale' ||
             request.mode === 'inpaint' ||
             request.mode === 'outpaint' ||
@@ -660,6 +671,11 @@ export class ComfyUiProvider implements VideoProvider {
           ? [await this.uploadReferenceImage(request.assets?.firstFrameImage ?? '')]
           : [];
     const startImageName = imageNames[0];
+    // V2.104：尾帧单独一个槽（同一份模板靠占位符决定它是 i2v 还是 fl2v）
+    const lastImageName =
+      request.mode === 'fl2v'
+        ? await this.uploadReferenceImage(request.assets?.lastFrameImage ?? '')
+        : undefined;
     // V2.78：蒙版与底图同一条上传通道（同一份 input 目录，ComfyUI 才读得到）
     const maskImageName =
       request.mode === 'inpaint'
@@ -686,6 +702,7 @@ export class ComfyUiProvider implements VideoProvider {
       dtype: this.tuning.dtype,
       outputPrefix: this.outputPrefix,
       ...(startImageName === undefined ? {} : { startImageName }),
+      ...(lastImageName === undefined ? {} : { lastImageName }),
       ...(imageNames.length === 0 ? {} : { referenceImageNames: imageNames }),
       // V2.77：放大模板的两个旋钮（其它模板没有这两个占位符，传了也不影响）
       ...(request.mode === 'upscale'

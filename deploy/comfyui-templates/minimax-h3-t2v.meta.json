@@ -1,5 +1,5 @@
 {
-  "modes": ["t2v", "i2v"],
+  "modes": ["t2v", "i2v", "fl2v"],
   "frameAlign": { "mod": 17, "offset": 5 },
   "modelMatch": {
     "unet": "minimax_h3",
@@ -7,6 +7,6 @@
     "vae": "minimax_h3_video_vae",
     "clipType": "minimax"
   },
-  "label": "MiniMax H3（本地轨 · 视频 + 原生立体声）",
-  "notes": "2026-10-30 真机跑通（RTX 4080 32GB / ComfyUI 0.43.0，20 步 res_multistep）：608×352×56 帧（2.33s）78.2s；864×480×124 帧（5.17s）317.7s（采样 14.65 s/it，显存峰值 31.9GB/32GB）。产物 h264 @24fps + AAC 32kHz 立体声。i2v 通过 {{START_IMAGE_NAME}} 注入首帧（对应 MiniMaxH3ImageToVideo.first_frame，t2v 时该节点被 _dropWhenMissing 丢掉）。⚠️ 三点如实登记：① H3 帧数在官方模板里按 17n+5 对齐，本仓 alignFrames 目前是 Wan 的 4n+1，接站前必须按模板声明改；② 模板自带 VAELoader 引用 minimax_h3_video_vae_int8_convrot，我们下的是 fp16，模板里写实际文件名；③ 音频轨存在但偏轻（两条均值 -50.7 / -46.8dB），是否与提示词或参考有关待再测。首尾帧（fl2v）与多参考（r2v）本仓未接线，声明里写了也会被剔除。"
+  "label": "MiniMax H3（本地轨 · 视频 + 原生立体声 · 首帧 / 首尾帧）",
+  "notes": "2026-10-30 真机跑通（RTX 4080 32GB / ComfyUI 0.43.0，20 步 res_multistep）：608×352×56 帧（2.33s）78.2s；864×480×124 帧（5.17s）317.7s（采样 14.65 s/it，显存峰值 31.9GB/32GB）。产物 h264 @24fps + AAC 32kHz 立体声。首帧走节点 6 的 LoadImage（{{START_IMAGE_NAME}} → MiniMaxH3ImageToVideo.first_frame），t2v 时该节点被 _dropWhenMissing 丢掉。V2.104 起接上首尾帧 fl2v：节点 16 是尾帧 LoadImage（{{LAST_IMAGE_NAME}}），Node5.last_frame 用 {{LAST_IMAGE}} 占位（值 = 节点 16 的连线；没给尾帧时键被删、节点 16 也被删，模板退回 i2v/t2v）。依据是真机 /object_info：MiniMaxH3ImageToVideo 的 optional 里同时有 first_frame 与 last_frame。⚠️ 如实登记：① H3 帧数按 17n+5 对齐（已由 frameAlign 声明，不再写死 4n+1）；② 模板自带 VAELoader 引用 minimax_h3_video_vae_int8_convrot，我们下的是 fp16，模板里写实际文件名；③ 音频轨存在但偏轻（两条均值 -50.7 / -46.8dB），音量强依赖提示词；④ 多参考（r2v，MiniMaxH3ReferenceToVideo）本仓仍未接线，声明了也会被剔除。"
 }

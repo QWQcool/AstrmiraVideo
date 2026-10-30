@@ -28,17 +28,29 @@
   "5": {
     "class_type": "MiniMaxH3ImageToVideo",
     "inputs": {
-      "clip": ["2", 0],
-      "vae": ["3", 0],
+      "clip": [
+        "2",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ],
       "prompt": "{{PROMPT}}",
       "width": "{{WIDTH}}",
       "height": "{{HEIGHT}}",
       "length": "{{FRAMES}}",
-      "first_frame": ["6", 0]
+      "first_frame": [
+        "6",
+        0
+      ],
+      "last_frame": "{{LAST_IMAGE}}"
     }
   },
   "6": {
-    "_dropWhenMissing": ["START_IMAGE_NAME"],
+    "_dropWhenMissing": [
+      "START_IMAGE_NAME"
+    ],
     "class_type": "LoadImage",
     "inputs": {
       "image": "{{START_IMAGE_NAME}}"
@@ -47,8 +59,14 @@
   "7": {
     "class_type": "BasicGuider",
     "inputs": {
-      "model": ["1", 0],
-      "conditioning": ["5", 0]
+      "model": [
+        "1",
+        0
+      ],
+      "conditioning": [
+        "5",
+        0
+      ]
     }
   },
   "8": {
@@ -60,10 +78,13 @@
   "9": {
     "class_type": "BasicScheduler",
     "inputs": {
-      "model": ["1", 0],
+      "model": [
+        "1",
+        0
+      ],
       "scheduler": "simple",
       "steps": "{{STEPS}}",
-      "denoise": 1.0
+      "denoise": 1
     }
   },
   "10": {
@@ -75,42 +96,87 @@
   "11": {
     "class_type": "SamplerCustomAdvanced",
     "inputs": {
-      "noise": ["10", 0],
-      "guider": ["7", 0],
-      "sampler": ["8", 0],
-      "sigmas": ["9", 0],
-      "latent_image": ["5", 1]
+      "noise": [
+        "10",
+        0
+      ],
+      "guider": [
+        "7",
+        0
+      ],
+      "sampler": [
+        "8",
+        0
+      ],
+      "sigmas": [
+        "9",
+        0
+      ],
+      "latent_image": [
+        "5",
+        1
+      ]
     }
   },
   "12": {
     "class_type": "VAEDecode",
     "inputs": {
-      "samples": ["11", 0],
-      "vae": ["3", 0]
+      "samples": [
+        "11",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
     }
   },
   "13": {
     "class_type": "VAEDecodeAudio",
     "inputs": {
-      "samples": ["11", 0],
-      "vae": ["4", 0]
+      "samples": [
+        "11",
+        0
+      ],
+      "vae": [
+        "4",
+        0
+      ]
     }
   },
   "14": {
     "class_type": "CreateVideo",
     "inputs": {
-      "images": ["12", 0],
-      "audio": ["13", 0],
+      "images": [
+        "12",
+        0
+      ],
+      "audio": [
+        "13",
+        0
+      ],
       "fps": "{{FPS}}"
     }
   },
   "15": {
     "class_type": "SaveVideo",
     "inputs": {
-      "video": ["14", 0],
+      "video": [
+        "14",
+        0
+      ],
       "filename_prefix": "{{OUTPUT_PREFIX}}",
       "format": "auto",
       "codec": "auto"
+    }
+  },
+  "16": {
+    "_dropWhenMissing": [
+      "LAST_IMAGE_NAME"
+    ],
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{LAST_IMAGE_NAME}}"
     }
   }
 }

@@ -115,7 +115,9 @@ describe('ComfyUI 协议 · 模型挑选与能力位', () => {
     expect(caps.unavailableReasons.join('')).toContain('VAEDecodeTiled');
   });
 
-  it('fl2v / v2v 一律不在能力位里（需要另外的模型），且原因如实写着', () => {
+  it('**缺声明时**不会给 fl2v / v2v（文件名猜不出模板有没有尾帧槽），原因如实写着', () => {
+    // V2.104：fl2v 已经接线，但那是"模板声明 + 有 LAST_IMAGE 占位"才能成立的组合；
+    // 只凭文件名猜不出这一点，所以启发式路径**仍然不给** fl2v（宁可少报，不可假可用）。
     const caps = comfyCapabilities(objectInfo(), MODELS);
     expect(caps.modes).not.toContain('v2v');
     expect(caps.modes).not.toContain('fl2v');
@@ -161,18 +163,20 @@ describe('ComfyUI 协议 · 模板声明（V2.39）', () => {
       modes: ['t2v'],
     });
     const reasons = caps.unavailableReasons.join('；');
-    expect(reasons).toContain('fl2v / v2v'); // 本仓未接线（与模板无关）
+    // V2.104 起 fl2v 已接线；仍未接线的是 v2v（参考视频）与三个音频模式（走音频轨，不经 ComfyUI 视频模板）
+    expect(reasons).toContain('v2v');
+    expect(reasons).not.toContain('fl2v / v2v');
     expect(reasons).toContain('没有声明 i2v'); // 这份模板没声明
   });
 
-  it('声明里的 **fl2v / v2v 被如实剔除**（本仓还没接首尾帧 / 参考视频的输入通道）', () => {
+  it('声明了 fl2v 但模板**没有尾帧占位** → 如实剔除并点出缺 LAST_IMAGE', () => {
     const caps = comfyCapabilities(objectInfo(), H3_MODELS, WAN22_TI2V_5B_TEMPLATE, {
       modes: ['t2v', 'i2v', 'fl2v', 'v2v'],
     });
     expect(caps.modes).toEqual(['t2v', 'i2v']);
     const reasons = caps.unavailableReasons.join('');
-    expect(reasons).toContain('fl2v');
-    expect(reasons).toContain('§19-8');
+    expect(reasons).toContain('LAST_IMAGE'); // 缺尾帧槽
+    expect(reasons).toContain('§19-8'); // v2v 仍未接线
   });
 
   it('声明 `i2v` 但模板里**没有首帧占位** → 该模式被剔除（不报假可用）', () => {

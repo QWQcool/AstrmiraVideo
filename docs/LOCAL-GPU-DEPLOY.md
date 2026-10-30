@@ -457,6 +457,46 @@ unavailableReasons.push('fl2v / v2v 需要另外的模型（FLF2V / VACE 系列�
   而没提声音的 t2v 是 **−41.5 / −46.8 dB** → **"偏轻"主要是没要求声音，不是模型缺陷**；
   界面上若要"有声音"，提示词里得写清楚。
 
+### 附二·3b 首尾帧 `fl2v` 真机验收（2026-10-30，契约 V2.104）
+
+- **先查能力，再写代码**：`GET /object_info/MiniMaxH3ImageToVideo` →
+  `required = clip / vae / prompt / width / height / length`，`optional = first_frame / last_frame`。
+  也就是说**模型的输入口本来就有尾帧**，缺的只是我们这一侧把它塞进去。
+- **模板怎么接**（`deploy/comfyui-templates/minimax-h3-t2v.api.json`）：
+  新增节点 **16** = `LoadImage{ image: "{{LAST_IMAGE_NAME}}" }` + `_dropWhenMissing`;
+  主节点 5 加 `last_frame: "{{LAST_IMAGE}}"`（占位符整值替换成 `["16", 0]`）。
+  没给尾帧时**键被删、节点 16 也被删**，同一份模板退回 i2v。
+- **一个隐患顺手修掉**：连接目标原先是写死的 `['56', 0]`（内置 Wan 模板的 LoadImage 节点号）。
+  换成用户模板（H3 首帧是 6、尾帧是 16）后它会指向不存在的节点。现在按
+  "哪个 LoadImage 用了这个占位符"反查（`loadImageNodeIdFor`）。
+- **验收命令**（可复跑）：
+
+```bash
+# 本地先建一条隧道到 GPU 机的 8188（ComfyUI 只监听回环）
+python .tmp/ssh-forward.py <gpu-host> <ssh-port> root 18188 8188 &
+pnpm build     # ⚠️ 脚本读 backend/dist —— 只跑 tsc --noEmit 会用旧代码，见下面的坑
+pnpm smoke:fl2v -- --base http://127.0.0.1:18188 \
+  --first .tmp/e2e/b103-anchor-scene1.png --last .tmp/e2e/b103-anchor-scene2.png
+```
+
+- **实测（608×352 × 124 帧 = 17n+5，20 步）**：
+  出片 **173.0s**（模型已热；同参数**冷态** 294.7s），产物 **5.17s / 124 帧 / 带 AAC 音轨**；
+  接线自检 = 2 个 `LoadImage` 且 `last_frame → ["16",0] → b103-anchor-scene2.png`。
+- **归属判据用相对 SSIM**（尾帧是模型生成的中间态，绝对值本来就低）：
+
+| 量 | 图A（首帧目标） | 图B（尾帧目标） |
+|---|---|---|
+| 视频**首帧** | **0.9706** | 0.1108 |
+| 视频**尾帧** | 0.1475 | **0.2631** |
+
+  两个排序都成立 → **两张图都被吃进去了**。这里**不设绝对阈值**：
+  0.2631 看着不高，但它是"生成出来的中间态 vs 目标图"，与 B103 片 C 人脸相似度那次
+  「单阈值不可用、只看相对」是同一条纪律。
+- ⚠️ **踩到的坑（值得写下来）**：第一次跑出来"首帧很准、尾帧完全不像"，差点判成"模型不吃尾帧"——
+  实际是**跑的是旧的 `backend/dist`**（改了 `comfyuiProtocol.ts` 却只跑了 `tsc --noEmit`，
+  没 `build`），装配出来的工作流里根本没有节点 16。现在脚本第一步就打印
+  "N 个 LoadImage，last_frame = …"，就是为了让这种"代码没生效"当场可见。
+
 ### 附二·4 换机器时的接入（`deploy/gpu-link.sh`，一条命令）
 
 今天这套（生成密钥 → 装公钥 → 写 systemd → 探活）已固化成脚本，在**站点服务器**上跑：

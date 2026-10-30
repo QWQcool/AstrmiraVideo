@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   COMFY_WIRED_MODES,
   alignFramesTo,
+  buildComfyWorkflow,
   parseTemplateDeclaration,
   renderWorkflow,
 } from './comfyuiProtocol.js';
@@ -24,12 +25,12 @@ describe('MiniMax H3 的 sidecar 样例（docs/templates）', () => {
   const file = path.resolve(process.cwd(), '..', 'deploy', 'comfyui-templates', 'minimax-h3-t2v.meta.json');
   const declaration = parseTemplateDeclaration(JSON.parse(readFileSync(file, 'utf8')), file);
 
-  it('能被解析，且声明了 t2v / i2v', () => {
-    expect(declaration.modes).toEqual(['t2v', 'i2v']);
+  it('能被解析，且声明了 t2v / i2v / fl2v（V2.104 起首尾帧已接线）', () => {
+    expect(declaration.modes).toEqual(['t2v', 'i2v', 'fl2v']);
     expect(declaration.label).toContain('MiniMax H3');
   });
 
-  it('声明的模式**全部在本仓已接线**（fl2v / v2v 没接线，所以不该出现在文件里）', () => {
+  it('声明的模式**全部在本仓已接线**（v2v 没接线，所以不该出现在文件里）', () => {
     for (const mode of declaration.modes) {
       expect(COMFY_WIRED_MODES).toContain(mode);
     }
@@ -41,9 +42,10 @@ describe('MiniMax H3 的 sidecar 样例（docs/templates）', () => {
     expect(declaration.modelMatch?.vae).toContain('minimax_h3');
   });
 
-  it('notes 里写明了两件现场会踩的事（占位符 + fl2v 未接线）', () => {
+  it('notes 里写明了两件现场会踩的事（首帧占位符 + 首尾帧怎么接的）', () => {
     const notes = declaration.notes ?? '';
     expect(notes).toContain('{{START_IMAGE');
+    expect(notes).toContain('{{LAST_IMAGE');
     expect(notes).toContain('fl2v');
   });
 
@@ -82,5 +84,76 @@ describe('MiniMax H3 的 sidecar 样例（docs/templates）', () => {
     const i2v = renderWorkflow(template, { ...values, START_IMAGE_NAME: 'uploaded.png' });
     expect(i2v['6'].class_type).toBe('LoadImage');
     expect(i2v['5'].inputs['first_frame']).toEqual(['6', 0]);
+  });
+
+  /**
+   * V2.104：首尾帧接线。模板里尾帧是**另一个** LoadImage（节点 16），
+   * `last_frame` 用占位符（值 = 连线）而不是写死 `["16",0]` ——
+   * 这样"没给尾帧"时键会被自动删掉，模板退回 i2v，不会留下一条指向已删节点的连线。
+   */
+  it('fl2v：首帧与尾帧各占一个 LoadImage，last_frame 指向尾帧节点', () => {
+    const template = JSON.parse(
+      readFileSync(path.resolve(process.cwd(), '..', 'deploy', 'comfyui-templates', 'minimax-h3-t2v.api.json'), 'utf8'),
+    );
+    const workflow = buildComfyWorkflow(
+      {
+        models: {
+          unet: 'minimax_h3_fl2va_pruned_int8_convrot.safetensors',
+          clip: 'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors',
+          clipType: 'minimax',
+          vae: 'minimax_h3_video_vae_fp16.safetensors',
+        },
+        prompt: '从雪地走到咖啡馆',
+        negativePrompt: '',
+        mode: 'fl2v',
+        width: 832,
+        height: 480,
+        frames: 56,
+        seed: 7,
+        dtype: 'default',
+        startImageName: 'first.png',
+        lastImageName: 'last.png',
+        outputPrefix: 'astrmira-test',
+      },
+      template,
+    );
+
+    expect(workflow['6']?.class_type).toBe('LoadImage');
+    expect(workflow['16']?.class_type).toBe('LoadImage');
+    expect(workflow['6']?.inputs['image']).toBe('first.png');
+    expect(workflow['16']?.inputs['image']).toBe('last.png');
+    expect(workflow['5']?.inputs['first_frame']).toEqual(['6', 0]);
+    expect(workflow['5']?.inputs['last_frame']).toEqual(['16', 0]);
+  });
+
+  it('没有尾帧时：节点 16 与 last_frame 一起消失（同一份模板退回 i2v）', () => {
+    const template = JSON.parse(
+      readFileSync(path.resolve(process.cwd(), '..', 'deploy', 'comfyui-templates', 'minimax-h3-t2v.api.json'), 'utf8'),
+    );
+    const workflow = buildComfyWorkflow(
+      {
+        models: {
+          unet: 'minimax_h3_fl2va_pruned_int8_convrot.safetensors',
+          clip: 'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors',
+          clipType: 'minimax',
+          vae: 'minimax_h3_video_vae_fp16.safetensors',
+        },
+        prompt: 'x',
+        negativePrompt: '',
+        mode: 'i2v',
+        width: 832,
+        height: 480,
+        frames: 56,
+        seed: 7,
+        dtype: 'default',
+        startImageName: 'first.png',
+        outputPrefix: 'astrmira-test',
+      },
+      template,
+    );
+
+    expect(workflow['16']).toBeUndefined();
+    expect(workflow['5']?.inputs['last_frame']).toBeUndefined();
+    expect(workflow['5']?.inputs['first_frame']).toEqual(['6', 0]);
   });
 });
