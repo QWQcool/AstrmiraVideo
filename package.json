@@ -33,6 +33,7 @@
     "deploy:check": "node scripts/deploy-check.mjs",
     "bench": "node scripts/bench.mjs",
     "test:browser:audio": "node tests/browser/edit-audio.mjs",
+    "smoke:audio": "node tests/browser/edit-audio-layers.mjs",
     "gpu:day-one": "node scripts/gpu-day-one.mjs"
   },
   "devDependencies": {

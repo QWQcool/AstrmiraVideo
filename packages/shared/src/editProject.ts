@@ -492,15 +492,25 @@ export function addCaptionClip(
   return { project: appendClipToTrack(project, 'caption', clip), clipId: clip.id };
 }
 
-/** 添加音效片段（P3）：素材取自成片（`/media/*`），默认追加在音效轨末尾 */
+/**
+ * 添加音效片段（P3 / V2.102 扩为可叠加）：素材取自成片或上传的音频资产。
+ *
+ * - **不给 `atFrame`**：追加到**最后一条**音效轨末尾（V2.10 的老行为，一字不变）；
+ * - **给了 `atFrame`**：优先放到"这一段放得下"（区间不相交）的第一条音效轨；
+ *   全都放不下就**新开一条** —— 这是"配乐垫底 + 旁白压在上面"能表达出来的前提。
+ *
+ * 为什么不干脆全塞一条轨里：同轨重叠在数据上是合法的（见 `moveClip`），但界面上两个块会
+ * 叠在同一行、点不到下面那个。分轨是**可操作性**问题，不是数据问题。
+ */
 export function addAudioClip(
   project: EditProject,
   source: EditClipSource,
   atFrame?: number,
 ): { project: EditProject; clipId: string } {
-  const track = trackOfKind(project, 'audio');
+  const audioTracks = project.tracks.filter((track) => track.kind === 'audio');
+  const lastTrack = audioTracks[audioTracks.length - 1];
   const start =
-    atFrame ?? (track?.clips ?? []).reduce((end, clip) => Math.max(end, clipEndFrame(clip)), 0);
+    atFrame ?? (lastTrack?.clips ?? []).reduce((end, clip) => Math.max(end, clipEndFrame(clip)), 0);
   const clip: AudioClip = {
     kind: 'audio',
     id: uid('clip'),
@@ -510,7 +520,34 @@ export function addAudioClip(
     volume: 1,
     source,
   };
-  return { project: appendClipToTrack(project, 'audio', clip), clipId: clip.id };
+
+  // 追加语义（无 atFrame）：沿用"最后一条轨 + 末尾"，不参与空位搜索
+  if (atFrame === undefined) {
+    return { project: appendAudioClipToTrack(project, lastTrack, clip), clipId: clip.id };
+  }
+
+  const clipEnd = clip.startFrame + clip.durationFrames;
+  const host = audioTracks.find((track) =>
+    track.clips.every((other) => clipEndFrame(other) <= clip.startFrame || other.startFrame >= clipEnd),
+  );
+  return { project: appendAudioClipToTrack(project, host ?? null, clip), clipId: clip.id };
+}
+
+/** 追加到指定音效轨；`null` = 新开一条（内部用） */
+function appendAudioClipToTrack(
+  project: EditProject,
+  track: EditTrack | null,
+  clip: AudioClip,
+): EditProject {
+  if (track === null) {
+    return { ...project, tracks: [...project.tracks, { id: uid('track'), kind: 'audio', clips: [clip] }] };
+  }
+  return {
+    ...project,
+    tracks: project.tracks.map((item) =>
+      item.id === track.id ? { ...item, clips: [...item.clips, clip] } : item,
+    ),
+  };
 }
 
 /** 往某类轨道追加片段（轨不存在时创建；内部用） */
@@ -672,14 +709,27 @@ export function neighborBounds(
   return { prevEnd, nextStart };
 }
 
-/** 移动 clip 到指定起点（取整；钳制在「0 点 ~ 同轨邻居空隙」内，空隙放不下则原地不动） */
+/**
+ * 移动 clip 到指定起点（取整）。
+ *
+ * - **视频 / 字幕 / 转场**：钳制在「0 点 ~ 同轨邻居空隙」内，空隙放不下则原地不动
+ *   （同轨重叠 = 两路画面叠加，剪辑语义是坏的）；
+ * - **音效（V2.102）**：只钳 `≥ 0`，**允许与同轨邻居重叠** —— 音频是相加的，
+ *   "旁白压在配乐上"是正常编辑而不是坏状态。
+ */
 export function moveClip(project: EditProject, clipId: string, toFrame: number): EditProject {
   // 移动 = 破坏参与方转场的相邻性 → 先移除转场并还原布局（与移动同一帧完成，不产生中间态）
   const clean = removeTransitionsInvolving(project, clipId).project;
-  const bounds = neighborBounds(clean, clipId);
-  if (bounds === null) return clean;
   const found = findClip(clean, clipId);
   if (found === null) return clean;
+
+  if (found.clip.kind === 'audio') {
+    const start = Math.max(0, Math.round(toFrame));
+    return mapClip(clean, clipId, (clip) => ({ ...clip, startFrame: start }));
+  }
+
+  const bounds = neighborBounds(clean, clipId);
+  if (bounds === null) return clean;
   const duration = found.clip.durationFrames;
   const maxStart =
     bounds.nextStart === null
@@ -688,6 +738,23 @@ export function moveClip(project: EditProject, clipId: string, toFrame: number):
   if (maxStart < bounds.prevEnd) return clean; // 空隙比 clip 短：哪儿也去不了
   const start = clamp(Math.round(toFrame), bounds.prevEnd, maxStart);
   return mapClip(clean, clipId, (clip) => ({ ...clip, startFrame: start }));
+}
+
+/**
+ * 渲染用的轨道清单（V2.102）：**全部轨道**，按 `TRACK_RENDER_ORDER` 分组排序，
+ * 同类型内保持 `tracks` 数组顺序（= 用户的阅读顺序）。
+ *
+ * 为什么要单独一个函数：渲染层原先写的是 `TRACK_RENDER_ORDER.map(kind => tracks.find(...))`，
+ * 每类只取**第一条** —— 第二条音效轨会被静默丢弃（界面两条都在，成片少一层声音）。
+ */
+export function tracksInRenderOrder(project: EditProject): EditTrack[] {
+  const ordered: EditTrack[] = [];
+  for (const kind of TRACK_RENDER_ORDER) {
+    for (const track of project.tracks) {
+      if (track.kind === kind) ordered.push(track);
+    }
+  }
+  return ordered;
 }
 
 /** clip 的几何快照（拖拽起点处的值；裁剪拖拽以此为基准，避免增量钳制累积误差） */

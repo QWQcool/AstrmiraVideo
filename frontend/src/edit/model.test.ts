@@ -21,6 +21,7 @@ import {
   previewDurationFrames,
   removeClip,
   removeTransition,
+  tracksInRenderOrder,
   transitionWindow,
   trimClip,
   updateClipFields,
@@ -444,6 +445,76 @@ describe('字幕与音效（P3）', () => {
     expect(findClip(two.project, one.clipId)!.clip.startFrame).toBe(0);
     expect(findClip(two.project, two.clipId)!.clip.startFrame).toBe(45);
     expect(two.project.tracks.find((track) => track.kind === 'audio')!.clips).toHaveLength(2);
+  });
+});
+
+/**
+ * V2.102：音效轨可以叠加 —— 这是"旁白 + 配乐同时出声"能表达出来的唯一前提。
+ * 旧模型里第二个片段被 `moveClip` 钳在第一个之后（真机实测：5s 片变 8.04s）。
+ */
+describe('音效轨叠加（V2.102）', () => {
+  const audioSource = (name: string, durationFrames: number) => ({
+    assetId: `asset-${name}`,
+    url: `/media/assets/${name}.wav`,
+    durationFrames,
+  });
+
+  it('atFrame 与已有片段相交 → 新开一条音效轨（旁白压在配乐上）', () => {
+    const base = createProjectFromSource(makeSource());
+    const bgm = addAudioClip(base, audioSource('bgm', 150), 0);
+    const narration = addAudioClip(bgm.project, audioSource('narration', 91), 0);
+    const audioTracks = narration.project.tracks.filter((track) => track.kind === 'audio');
+    expect(audioTracks).toHaveLength(2);
+    expect(findClip(narration.project, bgm.clipId)!.clip.startFrame).toBe(0);
+    expect(findClip(narration.project, narration.clipId)!.clip.startFrame).toBe(0);
+    // 两条轨都通过 schema（服务端 `POST /api/edits/renders` 用同一份校验）
+    expect(EditProjectSchema.safeParse(narration.project).success).toBe(true);
+  });
+
+  it('atFrame 落在空位 → 复用同一条音效轨（不无脑新开轨）', () => {
+    const base = createProjectFromSource(makeSource());
+    const first = addAudioClip(base, audioSource('a', 45), 0);
+    const second = addAudioClip(first.project, audioSource('b', 45), 60);
+    const audioTracks = second.project.tracks.filter((track) => track.kind === 'audio');
+    expect(audioTracks).toHaveLength(1);
+    expect(findClip(second.project, second.clipId)!.clip.startFrame).toBe(60);
+  });
+
+  it('moveClip 对音效片段放开邻居钳制（视频仍然磁吸撞墙）', () => {
+    const base = createProjectFromSource(makeSource());
+    const bgm = addAudioClip(base, audioSource('bgm', 150), 0);
+    // 不加 atFrame → 追加到末尾（91..241 之外）
+    const narration = addAudioClip(bgm.project, audioSource('narr', 91));
+    const appended = findClip(narration.project, narration.clipId)!.clip.startFrame;
+    expect(appended).toBe(150);
+
+    // 音效：拖回 0 叠在配乐上 —— 允许
+    const moved = moveClip(narration.project, narration.clipId, 0);
+    expect(findClip(moved, narration.clipId)!.clip.startFrame).toBe(0);
+
+    // 视频：仍然被邻居挡住（这里没有邻居，用第二段视频验证）
+    const withTwoVideos = addVideoClip(base, { taskId: 'task-b', url: '/media/b.mp4', durationFrames: 60 });
+    const second = findClip(withTwoVideos.project, withTwoVideos.clipId)!.clip;
+    expect(second.startFrame).toBe(150);
+    const clamped = moveClip(withTwoVideos.project, withTwoVideos.clipId, 0);
+    expect(findClip(clamped, withTwoVideos.clipId)!.clip.startFrame).toBe(150);
+  });
+
+  it('tracksInRenderOrder 返回**全部**轨道，按类型分组（同类型保持数组顺序）', () => {
+    const base = createProjectFromSource(makeSource());
+    const bgm = addAudioClip(base, audioSource('bgm', 150), 0);
+    const narration = addAudioClip(bgm.project, audioSource('narr', 91), 0);
+    const ordered = tracksInRenderOrder(narration.project);
+    expect(ordered).toHaveLength(narration.project.tracks.length);
+    expect(ordered.map((track) => track.kind)).toEqual([
+      'video',
+      'transition',
+      'caption',
+      'audio',
+      'audio',
+    ]);
+    // 两条音效轨都在（这正是旧写法 `TRACK_RENDER_ORDER.map(find)` 丢掉的那一条）
+    expect(ordered.filter((track) => track.kind === 'audio')).toHaveLength(2);
   });
 });
 

@@ -2,8 +2,8 @@ import React from 'react';
 import { AbsoluteFill, Sequence, interpolate, useCurrentFrame } from 'remotion';
 import { Audio, Video } from '@remotion/media';
 import {
-  TRACK_RENDER_ORDER,
   audioVolumeProp,
+  tracksInRenderOrder,
   transitionWindow,
   type AudioClip,
   type CaptionClip,
@@ -223,13 +223,12 @@ const AudioClipLayer: React.FC<{ clip: AudioClip; mediaBaseUrl: string }> = ({
 );
 
 export const EditComposition: React.FC<EditCompositionProps> = ({ project, mediaBaseUrl }) => {
-  const renderTracks = TRACK_RENDER_ORDER.map(
-    (kind) => project.tracks.find((track) => track.kind === kind) ?? null,
-  );
+  // V2.102：**遍历全部轨道**（音效轨可以有多条 —— 每类只取第一条会让第二条静默丢失）
+  const renderTracks = tracksInRenderOrder(project);
   return (
     <AbsoluteFill className="ed-comp-root">
       {renderTracks.map((track) => {
-        if (track === null || track.muted === true) return null;
+        if (track.muted === true) return null;
         return track.clips.map((clip) => {
           switch (clip.kind) {
             case 'video': {

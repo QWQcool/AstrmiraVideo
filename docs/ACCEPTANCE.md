@@ -22,6 +22,7 @@
 |---|---|---|
 | `pnpm smoke:comfy -- probe` | 本机 ComfyUI（`COMFYUI_BASE_URL`） | 节点清单、模型与实际出片能力（t2v / i2v） |
 | `pnpm smoke:comfy:e2e` | 同上 + `EXPOSE_HOST_LOCAL_TRACK=1` | **走产品路由**的全链路：能力位 → 提交 → 轮询 → 落盘 → `/media` |
+| `pnpm smoke:audio` | MiMo Key（或 `--narration`）+ 本机 ComfyUI 带 Stable Audio（或 `--bgm`）+ `pnpm build` | **声音分层**：真实 TTS 旁白 + 真实音乐模型配乐 → `POST /api/upload` → 剪辑台音效轨叠加 → 浏览器导出两次（只差配乐）→ ffprobe + 窄带频谱证明**两层各自可归因**（旁白 1kHz 高出对照带 ≥6dB；人声结束后配乐比静音高 ≥10dB；人声期间 100Hz 高 ≥3dB）。证据 `.tmp/e2e/phase1-audio-layers.json` |
 | `pnpm smoke:image --seed <照片>` | 同上（`--asset <id>` 亦可） | 超清 2× / 蒙版重绘（内外 PSNR）/ 扩图（几何 + 核心区 + 新区域标准差）**看像素** |
 | `pnpm smoke:face --anchor … --images … --negatives …` | Python venv + InsightFace 模型（见 `scripts/face-similarity/README.md`） | 人脸身份相似度**分布**；没给对照图时只输出"未标定"，给误判时退出码 1 |
 | `pnpm smoke:paid` | 火山 Seedance Key（**真金白银**） | 云端轨端到端：提交 / 轮询 / 成片 / 206 Range |
@@ -36,8 +37,10 @@
 
 - 视频：Wan2.2 TI2V-5B（本机 3080 10GB，VAEDecodeTiled + fp8 是硬要求）
 - 图像：FLUX.2 Klein（`diffusion_models/flux-2-klein-4b`）
-- 音频：Stable Audio 3 Small（`small_music` / `small_sfx` 各 2.1GB）+ 本机 GPT-SoVITS（`:8000/infer_single`）
-- 这些**不是**本仓的生成能力：仓库里没有音频产物类型，"音频作为生成参考"是明确不做的边界。
+- 音频：Stable Audio 3 Small（`small_music` / `small_sfx` 各 2.1GB）+ 本机 GPT-SoVITS（`:8000/infer_single`）+ 云端 MiMo-TTS
+- **2026-10-30 更新**：音频**已经成为**「能进成片的素材」—— `pnpm smoke:audio` 证明模型出的 wav 经
+  `POST /api/upload` → 剪辑台音效轨 → 浏览器导出，两层声音各自可归因（见上表）。
+  仍未做的是**"音频作为生成参考"**（拿一段 wav 去驱动视频模型）—— 那条边界**不变**。
 
 ## 五、记录约定
 
