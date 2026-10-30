@@ -40,6 +40,7 @@ import { healthRoutes } from './routes/health.js';
 // V2.16（B53）：告警阈值走 shared 的**同一份**解析（env 变量名也定义在那边，一处改、两处生效）
 import { providerBaseType, readThresholdsFromEnv, resolveThresholds } from '@astrmira/shared';
 import { createObservabilityRoutes } from './routes/observability.js';
+import { createAudioRoutes } from './routes/audio.js';
 import { createHistoryRoutes } from './routes/history.js';
 import { createHistoryImportRoutes } from './routes/historyImport.js';
 // V2.16（B53）：readiness 的媒体工具自检（ffmpeg/ffprobe 缺失不降级，但如实陈述）
@@ -425,6 +426,17 @@ const app = Fastify({
       projects,
       // V2.26（A5 片 A）：编排运行（`x-plan-run`）的一次动作豁免冷却
       planRuns,
+    }),
+  );
+
+  // V2.103（Phase 2 · 声音）：音频产物走同一条队列与同一张任务表。
+  // 刻意**不传** cooldown —— 一次剪辑会连出"旁白 + 配乐"，冷却会把第二条挡成 429。
+  await app.register(
+    createAudioRoutes({
+      store,
+      queue,
+      resolveProvider: getProvider,
+      projects,
     }),
   );
   // V2.11（B47）：项目维度（列表 / 新建 / 改名 / 删除空项目）

@@ -35,7 +35,29 @@ export const GenerationModeSchema = z.enum([
   'inpaint',
   // V2.79：扩图（底图 + 四边外扩像素；新区域由模型补画）
   'outpaint',
+  /**
+   * V2.103（Phase 2 · 声音）：**音频产物**三种 —— 配音 / 配乐 / 音效。
+   *
+   * 为什么复用这同一个信封而不是另起一套任务体系：音频产物要**走既有队列与画廊**
+   * （排队、并发互斥、终态通知、历史列表、成本口径全部复用）。
+   * 代价与 `t2i` 当初一样：信封里的画面字段（`aspectRatio`）对音频没有意义 ——
+   * 由 `POST /api/audio` 固定填 `'16:9'`，**服务端与音频 provider 都不读它**，
+   * 不拿它做任何决策（读了它才是错）。
+   *
+   * `prompt` 的语义随 `mode` 变：`tts` = 要念的文本；`bgm`/`sfx` = 音乐/音效描述。
+   */
+  'tts',
+  'bgm',
+  'sfx',
 ]);
+
+/** 音频产物模式（V2.103；与 `GenerationModeSchema` 里的三项同源，供路由与 provider 共用） */
+export const AUDIO_MODES = ['tts', 'bgm', 'sfx'] as const;
+export type AudioMode = (typeof AUDIO_MODES)[number];
+
+export function isAudioMode(value: string): value is AudioMode {
+  return (AUDIO_MODES as readonly string[]).includes(value);
+}
 
 /** 画面比例。1:1 仅云端可选，本地 H3 支持度【待验证】 */
 export const AspectRatioSchema = z.enum(['16:9', '9:16', '1:1']);
@@ -65,6 +87,21 @@ export const PROVIDER_BASE_TYPES = [
   'fixture-local',
   // V2.58（S7-D8）：外部作品导入历史；不参与生成调度，只用于历史展示。
   'imported',
+  /**
+   * V2.103（Phase 2 · 声音）：三个音频引擎。
+   *
+   * 它们**只做音频**（`tts`/`bgm`/`sfx`），视频/图片模式下一律 503 —— 反过来，
+   * 视频引擎收到音频模式也 503。能力位不靠猜，靠 `AUDIO_ENGINES` 那张表。
+   *
+   * `executedBy` 的口径（最要紧）：`mimo-tts` 是**第三方云**，文本会离开这台机器；
+   * `host-stable-audio` 在本机 ComfyUI 跑，数据不出机器。
+   *
+   * ⚠️ **本机配音（GPT-SoVITS）本轮没有接线**（2026-10-30 实测 `/infer_single` 首调 300s
+   * 未返回，日志停在加载 CNHuBERT 之后）—— 所以 `tts` 目前只有云端一条路，
+   * 界面必须把"文本会发到第三方云"说在按钮旁边。没有接线就不进这张表，不假装可用。
+   */
+  'mimo-tts',
+  'host-stable-audio',
 ] as const;
 
 export const ProviderBaseTypeSchema = z.enum(PROVIDER_BASE_TYPES);

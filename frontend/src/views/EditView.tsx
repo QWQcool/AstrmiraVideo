@@ -11,6 +11,7 @@ import { isModalLayerOpen } from '../lib/modalLayer';
 import { navigate, useHashRoute } from '../lib/router';
 import { formatBytes, formatRelativeTime } from '../lib/overviewStats';
 import { DEFAULT_PROJECT_FPS, createProjectFromSource } from '../edit/model';
+import { AudioPanel } from '../edit/AudioPanel';
 import { ExportPanel } from '../edit/ExportPanel';
 import { InspectorPanel } from '../edit/InspectorPanel';
 import { loadEditDraft, saveEditDraft } from '../edit/draft';
@@ -326,6 +327,8 @@ export function EditView() {
 
         <aside className="ed-side">
           {store === null ? null : <InspectorPanel store={store} />}
+          {/* V2.103（Phase 2 · 声音）：配音/配乐 → 自动落轨 */}
+          {store === null ? null : <AudioPanel store={store} />}
           {store === null ? null : <ExportPanel store={store} sourceTaskId={sourceId} />}
 
           <section className="wb-panel ed-side-panel">

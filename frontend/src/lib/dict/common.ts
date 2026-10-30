@@ -21,6 +21,10 @@ export const COMMON_ZH = {
   'common.mode.upscale': '超清放大',
   'common.mode.inpaint': '局部重绘',
   'common.mode.outpaint': '扩图',
+  // V2.103（声音）：音频产物三模式
+  'common.mode.tts': '配音',
+  'common.mode.bgm': '配乐',
+  'common.mode.sfx': '音效',
 
   // ── 任务状态（`TaskProgress['status']`）──
   'common.status.queued': '排队中',
@@ -185,6 +189,9 @@ export const COMMON_EN = {
   'common.mode.upscale': 'Upscale',
   'common.mode.inpaint': 'Inpaint',
   'common.mode.outpaint': 'Outpaint',
+  'common.mode.tts': 'Voice-over',
+  'common.mode.bgm': 'Music',
+  'common.mode.sfx': 'Sound effect',
 
   'common.status.queued': 'Queued',
   'common.status.running': 'Generating',

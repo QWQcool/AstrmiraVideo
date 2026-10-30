@@ -34,6 +34,10 @@ const CANVAS_MODE_LABEL_KEYS: Record<GenerationMode, MessageKey> = {
   upscale: 'common.mode.upscale',
   inpaint: 'common.mode.inpaint',
   outpaint: 'common.mode.outpaint',
+  // V2.103：音频三模式（画布/技能/创作页共用同一张文案键表）
+  tts: 'common.mode.tts',
+  bgm: 'common.mode.bgm',
+  sfx: 'common.mode.sfx',
 };
 
 /**

@@ -17,6 +17,7 @@
  * - cost.ts     → §13 成本口径与提交前预估（V2.12；V2.92 起去掉记账侧，只留估价）
  */
 export * from './request.js';
+export * from './audio.js';
 export * from './resolution.js';
 export * from './status.js';
 export * from './progress.js';

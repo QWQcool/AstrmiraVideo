@@ -34,6 +34,7 @@
     "bench": "node scripts/bench.mjs",
     "test:browser:audio": "node tests/browser/edit-audio.mjs",
     "smoke:audio": "node tests/browser/edit-audio-layers.mjs",
+    "smoke:audio:panel": "node tests/browser/audio-panel-e2e.mjs",
     "gpu:day-one": "node scripts/gpu-day-one.mjs"
   },
   "devDependencies": {

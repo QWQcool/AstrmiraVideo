@@ -11,6 +11,7 @@ import { DEFAULT_COMFY_SERVER_ID, findComfyServer } from './comfyui/comfyuiServe
 import { HttpServiceProvider } from './httpService/HttpServiceProvider.js';
 import { findHttpService } from './httpService/httpServiceProfile.js';
 import { createFaultInjectedProvider, resolveFaultPlanFromEnv } from './withFaultInjection.js';
+import { AudioProvider } from './audio/AudioProvider.js';
 
 /**
  * Provider **唯一注册点**（PLAN §4「Step 2 补充」约束 1）。
@@ -239,7 +240,47 @@ const REGISTRY: Record<ProviderBaseType, ProviderFactory> = {
   'http-service': () => null,
   // V2.58（S7-D8）：导入历史不是可生成 provider；这里只让穷举成立。
   imported: () => null,
+  // V2.103（Phase 2 · 声音）：两个音频引擎（没配就 null → 503，界面如实不可用）
+  'mimo-tts': (ctx) => createMimoProvider(ctx),
+  'host-stable-audio': (ctx) => createStableAudioProvider(ctx),
 };
+
+/**
+ * V2.103（Phase 2 · 声音）：MiMo 云端配音。
+ *
+ * 凭据**只从 env 读**（`MIMO_API_KEY`，兼容本机习惯的 `MiMo_API_Key`）——
+ * 音频轨不是 BYOK 通道：TTS 是"部署者这台机器有没有这条能力"，
+ * 而不是"用户带自己的 Key"（带 Key 的音频 BYOK 要另立契约，本轮不做）。
+ * 没配 → 返回 null → 503，界面如实不可用。
+ */
+function createMimoProvider(_ctx: ProviderResolutionContext): VideoProvider | null {
+  const key = process.env.MIMO_API_KEY?.trim() || process.env.MiMo_API_Key?.trim() || '';
+  if (key === '') return null;
+  return new AudioProvider({
+    id: 'mimo-tts',
+    name: 'MiMo TTS（第三方云）',
+    engine: 'mimo-tts',
+    outputDir: resolveOutputsDir(),
+    mimoKey: key,
+  });
+}
+
+/**
+ * V2.103：本机 Stable Audio（ComfyUI）。地址**必须显式配**（`COMFYUI_AUDIO_BASE`，
+ * 或复用 `COMFYUI_BASE_URL`）—— 与视频轨同一条纪律：不猜"8188 上那个大概就是"。
+ */
+function createStableAudioProvider(_ctx: ProviderResolutionContext): VideoProvider | null {
+  const base =
+    process.env.COMFYUI_AUDIO_BASE?.trim() || process.env.COMFYUI_BASE_URL?.trim() || '';
+  if (base === '') return null;
+  return new AudioProvider({
+    id: 'host-stable-audio',
+    name: 'Stable Audio 3 Small（本机 ComfyUI）',
+    engine: 'host-stable-audio',
+    outputDir: resolveOutputsDir(),
+    comfyBaseUrl: base.replace(/\/+$/, ''),
+  });
+}
 
 /** ⚠️ 测试注入表（生产路径永不写入；见 `__setProviderForTesting`） */
 const testOverrides = new Map<ProviderType, VideoProvider | null>();

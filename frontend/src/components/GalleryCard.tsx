@@ -49,6 +49,9 @@ export function GalleryCard({
   const output = taskOutput(task);
   const videoUrl = output.kind === 'video' ? resolveMediaUrl(output.url) : null;
   const imageUrl = output.kind === 'image' ? resolveMediaUrl(output.url) : null;
+  // V2.103：音频产物（配音/配乐/音效）—— 画廊里**只标图标不内嵌播放器**：
+  // 一张卡上塞 <audio controls> 会把栅格撑坏，试听在剪辑台的配音/配乐面板里做。
+  const isAudio = output.kind === 'audio' && task.status === 'succeeded';
   const thumbnailUrl = resolveMediaUrl(task.thumbnailUrl);
   // `?? ''` 只为满足 <img src> 的类型；真正的分支判据是 `showThumbnail`
   const thumbnailSrc = thumbnailUrl ?? '';
@@ -62,6 +65,10 @@ export function GalleryCard({
     // 图片产物：它本身就是封面（不需要抽帧），点开在中栏看大图
     imageUrl !== null ? (
       <img src={imageUrl} alt="" loading="lazy" decoding="async" />
+    ) : isAudio ? (
+      <span className="wb-card-audio-mark" aria-hidden="true">
+        🎵
+      </span>
     ) : videoUrl === null ? (
       <span>{statusLabel(task.status)}</span>
     ) : showThumbnail ? (

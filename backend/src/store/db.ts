@@ -155,6 +155,10 @@ const COLUMN_MIGRATIONS: ReadonlyArray<{ table: string; column: string; ddl: str
   // 旧行保持 NULL（老任务没探过）—— 与"探不到"同义，界面不猜。
   { table: 'tasks', column: 'output_width', ddl: 'INTEGER' },
   { table: 'tasks', column: 'output_height', ddl: 'INTEGER' },
+  // V2.103（Phase 2 · 声音）：**音频产物**的地址。与 output_video_url / output_image_url
+  // 一样是"至多有一个"。单独立列而不是塞进 output_video_url —— 那会让"打不开的视频"
+  // 变成一次静默错误（§19-5 的同一条教训）。旧行保持 NULL。
+  { table: 'tasks', column: 'output_audio_url', ddl: 'TEXT' },
 ];
 
 function applyColumnMigrations(db: Db): void {

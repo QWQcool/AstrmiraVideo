@@ -260,6 +260,8 @@ export class JobDispatcher {
           // V2.40：图片产物（t2i）走 `imageUrl`；缩略图对图片任务天然为空（图片本身就是封面，
           // 不需要抽帧 —— 上面把 videoUrl 传空串正好让抽帧短路）
           ...(progress.outputImageUrl === undefined ? {} : { imageUrl: progress.outputImageUrl }),
+          // V2.103：音频产物（tts/bgm/sfx）—— 与 videoUrl/imageUrl 一样"至多一个"
+          ...(progress.outputAudioUrl === undefined ? {} : { audioUrl: progress.outputAudioUrl }),
           ...(thumbnailUrl === null ? {} : { thumbnailUrl }),
           // 带上 provider 的终态文案，覆盖轮询阶段残留的"生成中"
           ...(progress.message === undefined ? {} : { message: progress.message }),

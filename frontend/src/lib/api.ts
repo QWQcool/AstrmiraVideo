@@ -34,6 +34,7 @@ import {
 import type {
   AgentPlanRequest,
   AgentPlanResponse,
+  AudioGenerateRequest,
   AssetListResponse,
   CanvasAgentRequest,
   CanvasAgentResponse,
@@ -297,6 +298,16 @@ export function submitGenerate(
  */
 export function submitEdit(script: EditScript): Promise<GenerateResponse> {
   return request('/api/edits', GenerateResponseSchema, { method: 'POST', body: script });
+}
+
+/**
+ * 提交音频任务（V2.103 / CONTRACT §30）。
+ *
+ * 与生成的差别只有两处：路径不同、**不需要凭据**（音频 Key 在服务端 env，
+ * 不是 BYOK —— 见 `AUDIO_ENGINES`）。任务的轮询完全复用 `fetchTask`。
+ */
+export function submitAudio(body: AudioGenerateRequest): Promise<GenerateResponse> {
+  return request('/api/audio', GenerateResponseSchema, { method: 'POST', body });
 }
 
 export function fetchTask(taskId: string, signal?: AbortSignal): Promise<TaskProgress> {

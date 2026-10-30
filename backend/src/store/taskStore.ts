@@ -30,6 +30,11 @@ export interface TaskRecord {
    * 与 `outputVideoUrl` **至多有一个**（写侧保证：provider 按模式只填一个）。
    */
   outputImageUrl?: string;
+  /**
+   * V2.103（Phase 2 · 声音）：**音频产物的地址**（`tts` / `bgm` / `sfx`）。
+   * 与另外两个产物字段**至多有一个**（写侧保证：provider 按模式只填一个）。
+   */
+  outputAudioUrl?: string;
   /** V1.9：成片首帧缩略图（同源 `/media/thumbs/<taskId>.jpg`）；抽帧失败时缺省 */
   thumbnailUrl?: string;
   /**
@@ -86,6 +91,7 @@ interface TaskRow {
   request_snapshot: string;
   output_video_url: string | null;
   output_image_url: string | null;
+  output_audio_url: string | null;
   thumbnail_url: string | null;
   warnings: string | null;
   error: string | null;
@@ -113,6 +119,7 @@ function rowToRecord(row: TaskRow): TaskRecord {
     requestSnapshot: JSON.parse(row.request_snapshot) as VideoGenerateRequest,
     outputVideoUrl: row.output_video_url ?? undefined,
     outputImageUrl: row.output_image_url ?? undefined,
+    outputAudioUrl: row.output_audio_url ?? undefined,
     thumbnailUrl: row.thumbnail_url ?? undefined,
     ...(row.output_width === null || row.output_height === null
       ? {}
@@ -186,6 +193,9 @@ export function toTaskProgress(record: TaskRecord): TaskProgress {
     // V2.40：图片产物（`t2i`）—— 漏了这一行会让"真机出图成功、接口里却看不到产物地址"
     // （正是本片真机验收抓到的第一个缺陷）
     ...(record.outputImageUrl === undefined ? {} : { outputImageUrl: record.outputImageUrl }),
+    // V2.103：音频产物（`tts`/`bgm`/`sfx`）—— 同一个坑再强调一次：漏了这行就是
+    // "真出了音频、接口里却看不到地址"（与 V2.40 图片产物那次一模一样的症状）
+    ...(record.outputAudioUrl === undefined ? {} : { outputAudioUrl: record.outputAudioUrl }),
     ...(record.thumbnailUrl === undefined ? {} : { thumbnailUrl: record.thumbnailUrl }),
     // V2.94（B98 片 B）：实测尺寸（两个数必须同时有；缺一个就整个省略，不给半对数）
     ...(record.outputWidth === undefined || record.outputHeight === undefined
@@ -219,13 +229,15 @@ export class TaskStore {
     this.db
       .prepare(
         `INSERT INTO tasks (task_id, track, provider, status, progress_percent, request_snapshot,
-                            output_video_url, output_image_url, thumbnail_url, warnings, error,
+                            output_video_url, output_image_url, output_audio_url, thumbnail_url,
+                            warnings, error,
                             upstream_task_id,
                             submitting, message, edit_script, edit_origin, extracted_asset_ids,
                             project_id, executed_by, output_width, output_height,
                             created_at, updated_at)
          VALUES (@taskId, @track, @provider, @status, @progressPercent, @requestSnapshot,
-                 @outputVideoUrl, @outputImageUrl, @thumbnailUrl, @warnings, @error, @upstreamTaskId,
+                 @outputVideoUrl, @outputImageUrl, @outputAudioUrl, @thumbnailUrl, @warnings, @error,
+                 @upstreamTaskId,
                  @submitting,
                  @message, @editScript, @editOrigin, @extractedAssetIds, @projectId, @executedBy,
                  @outputWidth, @outputHeight,
@@ -240,6 +252,7 @@ export class TaskStore {
         requestSnapshot: JSON.stringify(record.requestSnapshot),
         outputVideoUrl: record.outputVideoUrl ?? null,
         outputImageUrl: record.outputImageUrl ?? null,
+        outputAudioUrl: record.outputAudioUrl ?? null,
         thumbnailUrl: record.thumbnailUrl ?? null,
         warnings: JSON.stringify(record.warnings),
         error: record.error === undefined ? null : JSON.stringify(record.error),
@@ -280,6 +293,7 @@ export class TaskStore {
         `UPDATE tasks SET track = @track, provider = @provider, status = @status,
                         progress_percent = @progressPercent, request_snapshot = @requestSnapshot,
                         output_video_url = @outputVideoUrl, output_image_url = @outputImageUrl,
+                        output_audio_url = @outputAudioUrl,
                         thumbnail_url = @thumbnailUrl,
                         warnings = @warnings, error = @error,
                          upstream_task_id = @upstreamTaskId, submitting = @submitting,
@@ -300,6 +314,7 @@ export class TaskStore {
         requestSnapshot: JSON.stringify(next.requestSnapshot),
         outputVideoUrl: next.outputVideoUrl ?? null,
         outputImageUrl: next.outputImageUrl ?? null,
+        outputAudioUrl: next.outputAudioUrl ?? null,
         thumbnailUrl: next.thumbnailUrl ?? null,
         warnings: JSON.stringify(next.warnings),
         error: next.error === undefined ? null : JSON.stringify(next.error),
@@ -605,7 +620,8 @@ export class TaskStore {
         `SELECT * FROM tasks
           WHERE status = 'succeeded'
             AND ((output_video_url IS NOT NULL AND output_video_url != '')
-              OR (output_image_url IS NOT NULL AND output_image_url != ''))
+              OR (output_image_url IS NOT NULL AND output_image_url != '')
+              OR (output_audio_url IS NOT NULL AND output_audio_url != ''))
           ORDER BY created_at ASC LIMIT ?`,
       )
       .all(limit) as TaskRow[];

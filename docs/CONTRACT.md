@@ -1,6 +1,17 @@
 # 数据契约与接口定义（CONTRACT）
 
-> **状态：V2.102 · 已冻结（变更需先改本文，再改代码）**
+> **状态：V2.103 · 已冻结（变更需先改本文，再改代码）**
+> **V2.103 修订（2026-10-30 · Phase 2「声音」：音频产物成为一等公民）** ——
+>   ① §1 `GenerationMode` 新增 **`tts` / `bgm` / `sfx`**（复用同一份请求信封，音频任务才能走既有队列与画廊）；
+>   ② §2 `PROVIDER_BASE_TYPES` 新增 **`mimo-tts` / `host-stable-audio`**（只做音频；视频模式一律 503，反之亦然）；
+>   ③ §4 `TaskProgress` 新增**可选** `outputAudioUrl`（与 `outputVideoUrl`/`outputImageUrl` **至多有一个**）；
+>      `taskOutput()` 的优先级 = 视频 > 图片 > 音频；
+>   ④ §4 `resolveExecutedBy`：**`mimo-tts` → `cloud`**（文本会离开这台机器），`host-stable-audio` → `host-local`；
+>   ⑤ §5 新增 **`POST /api/audio`**，契约本体见新开的 **§30**（引擎表 / 隐私与许可 / 状态机 / 落轨规则 / 如实不做）；
+>   ⑥ §11-2 的音效轨叠加语义见 **V2.102**（同一批：没有它，"旁白 + 配乐"根本表达不出来）。
+>   **为什么现在做**：Phase 1 已证明"模型出的 wav 能进成片"（`pnpm smoke:audio`），
+>   但那还要求用户先在外面做好音频再上传、手拖。这一版把中间三段接起来：
+>   **写一句话 → 生成 → 自动落到音效轨**。
 > **V2.102 修订（2026-10-30 · 声音分层：音效轨允许叠加）** ——
 >   ① §11-2 解除一条此前只写在代码里的限制：`tracks` **可以有多条 `audio` 轨**，且
 >      **同一条音效轨上的片段允许重叠**（音频是相加的；视频轨"同轨不许重叠"的磁吸语义不变）；
@@ -1042,6 +1053,9 @@ export interface TaskProgress {
   outputImageUrl?: string;        // V2.40：成功后的**图片**访问直链（`t2i` 任务，`/media/<taskId>.png`）
                                   // 与 outputVideoUrl **至多有一个**（写侧保证；读侧用 `taskOutput()` 收口）
                                   // 同样遵守"文件不存在时省略该字段"
+  outputAudioUrl?: string;        // V2.103：成功后的**音频**访问直链（`tts`/`bgm`/`sfx`，`/media/<taskId>.wav`）
+                                  // 与上面两个**至多有一个**；**绝不把音频写进 outputVideoUrl**
+                                  // （那会变成"任务成功、用户拿到一个播不了的 mp4"，见 §19-5 的同一条教训）
   thumbnailUrl?: string;          // V1.9：成片首帧缩略图（同源 `/media/thumbs/<taskId>.jpg`），画廊封面用
                                   // 可选：抽帧失败 / 旧记录缺该字段时界面回落为 `<video preload="metadata">`
   warnings?: string[];            // 用户可见的非阻断告警（如"素材短于请求时长，已循环播放"、"循环素材自带音轨，已静音"）
@@ -1129,6 +1143,7 @@ export interface AssetListResponse {
 | `GET` | `/api/providers/status` | **本服务本地引擎配置状态**（V1.8：纯配置事实陈述，非硬件探测；**旧名 `/api/system/probe` 已废弃**） |
 | `GET` | `/media/*` | **V1.8 新增**：`outputs/` 静态媒体服务（成片直链，播放器与下载的 **206 Range** 载体）；路径只含服务端生成的随机 ID，不含任何用户输入 |
 | `POST` | `/api/generate` | 创建视频生成任务（凭据经 `X-Provider-Key`，见下方注记段）。**200 → `{ taskId }`**（幂等：同一 `Idempotency-Key` 或缺省指纹重复提交返回同一 `taskId`）；提示词为空或超过 2000 字符 → **400 `PROMPT_REJECTED`**（terminal）；引擎未实现 / 未启用 → **503 `PROVIDER_UNAVAILABLE`**；60s 防抖限流 → 429。**V2.11（B47）**：body 可带可选 `projectId`（缺省 = 默认项目）；**显式给了不存在的项目 → 404 `PROJECT_NOT_FOUND`**（不静默落到默认项目）；`projectId` 进幂等指纹 |
+| `POST` | `/api/audio` | **V2.103 新增（§30）**：创建**音频**任务（配音 `tts` / 配乐 `bgm` / 音效 `sfx`）。body 见 §30；**200 → `{ taskId }`**（幂等：同一 `mode + engine + prompt + options` 的指纹重复提交返回同一 `taskId`，**不重复花钱**）。引擎未配置 → **503 `PROVIDER_UNAVAILABLE`**（`mimo-tts` 要 `MIMO_API_KEY`；`host-stable-audio` 要 `COMFYUI_AUDIO_BASE` 或 `COMFYUI_BASE_URL`）；语义不合法（`tts` 没 `text` / 配乐没 `prompt` / 引擎不支持该模式 / 给了不该给的字段）→ **400 `INVALID_REQUEST`**；项目不存在 → **404 `PROJECT_NOT_FOUND`**。**不挂 60s 冷却**（一次剪辑会连出旁白与配乐，见 §30-4）。产物字段是 `TaskProgress.outputAudioUrl`（§4），**不是** `outputVideoUrl` |
 | `GET` | `/api/tasks/:taskId` | 轮询任务状态与结果。**200 → `TaskProgress`（§4）**；不存在或已清理 → **404 `TASK_NOT_FOUND`** |
 | `GET` | `/api/tasks/:taskId/preview` | **V2.95 新增（B104）**：ComfyUI 的**采样预览帧**（二进制图片，`image/jpeg` 或 `image/png`，`cache-control: no-store`，`x-preview-seq` = 序号）。取不到 → **404 `PREVIEW_UNAVAILABLE`**（任务已结束 / 引擎不是 ComfyUI / 模型不产 latent 预览）。**先看 `TaskProgress.previewSeq` 再决定要不要拉**，别每轮都拉 |
 | `POST` | `/api/tasks/:taskId/cancel` | 取消任务（仅 `queued` / `running` 可取消；已在终态 → `{ ok: false }`）。**200 → `{ ok, taskId }`**。语义是**尽力而为**：服务端把任务置 `cancelled`（此后调度器**不再推进**、也不会被 heartbeat 覆盖），并**通知上游停止**；上游是否真的停止、是否已产生费用，本服务无法代上游保证 —— 前端文案必须如实说明并指向服务商后台核对 |
@@ -3583,3 +3598,79 @@ steps JSON / 时间戳 / failure JSON / assembled_task_id）；任务本体仍�
 - 不自动重提失败步骤（红线；显式 retry 是唯一路径，且换幂等键 = 真新任务）；
 - 不代持任何云端凭据（v1 本地轨无需凭据；云轨接入另立决策）；
 - 不改画布文档（会话与 CanvasDoc 解耦；进度视图读会话，不回写画布）。
+
+---
+
+## 30. 音频产物 `POST /api/audio`（V2.103 新增；Phase 2 · 「声音」）
+
+> **它是什么**：把"生成一段声音"做成产品能力 —— 写一句话（配音）或一句描述（配乐/音效），
+> 服务端出一个 `/media/<taskId>.wav`，前端**自动**把它落到剪辑台音效轨。
+> **它不是什么**：不是"音频作为生成参考"（拿一段 wav 去驱动视频模型）—— 那条边界**不变**。
+
+### 30-1 请求体 `AudioGenerateRequest`
+
+```ts
+export type AudioMode = 'tts' | 'bgm' | 'sfx';           // GenerationMode 里的三项（§1）
+export type AudioEngine = 'mimo-tts' | 'host-stable-audio';
+
+export interface AudioGenerateRequest {
+  mode: AudioMode;
+  engine: AudioEngine;
+  text?: string;        // tts 必填：要念的文本（≤1000 字符）
+  prompt?: string;      // bgm / sfx 必填：给模型的描述（≤500 字符）
+  voice?: string;       // tts 音色；缺省 '冰糖'（本机引擎忽略它）
+  style?: string;       // tts 情绪/风格指令（≤200 字符）
+  seconds?: number;     // bgm / sfx 时长：1~30；tts **不接受**（时长由文本决定）
+  projectId?: string;   // 缺省 = 默认项目
+}
+```
+
+字段**互斥**（都在入口拒，不让上游报错）：`tts` 不吃 `prompt` / `seconds`；`bgm`/`sfx` 不吃 `text` / `voice`。
+引擎必须支持该模式（`AUDIO_ENGINES[engine].modes`）—— 配音没有本地引擎（见 30-6）。
+
+### 30-2 引擎能力表（隐私与许可的**唯一事实源**，`packages/shared/src/audio.ts`）
+
+| 引擎 | 模式 | `executedBy` | 数据去向 | 许可 |
+|---|---|---|---|---|
+| `mimo-tts` | `tts` | `cloud` | **文本发到 api.xiaomimimo.com（第三方云）** | 受服务商条款约束；本仓不分发权重 |
+| `host-stable-audio` | `bgm` / `sfx` | `host-local` | 本机 ComfyUI，**数据不出机器** | Stability AI Community License（自用可以，商用前读协议） |
+
+**界面必须逐字显示这条**（`edit.audio.privacy` 区块直接读表里的 `privacy` / `license`）——
+"文本会离开这台机器"是用户在点按钮**之前**就该知道的事，不能只写在文档里。
+
+### 30-3 产物与状态机
+
+- 产物：`/media/<taskId>.wav`（44.1kHz，MiMo 出来的是 24kHz 单声道，**不重采样** —— 转码会改事实）；
+- 状态：与视频任务**完全相同**（`queued` → `running` → `succeeded` / `failed`），轮询走 `GET /api/tasks/:taskId`；
+- 进度：**不报中间进度**（MiMo 是一次同步调用；Stable Audio 的 ComfyUI 进度事件与视频模板的节点 id 不同，
+  复用它给出的百分比是错的）→ `progressPercent` 在终态之前**恒为 0** + 一句人话。
+  编一个匀速进度条比没有进度条更糟（用户会以为它在跑）。
+- 失败：一律 `UPSTREAM_ERROR` + `terminal`（Key 错 / 模型缺 / 描述被拒，重投同一条不会变好，只会再花一次时间或钱）。
+- 取消：**做不到**。MiMo 的请求已发出、ComfyUI 的重启语义见 §19-6 → `cancel()` 恒返回 `false`，
+  不让界面显示"已取消"而钱已经花掉。
+
+### 30-4 不挂 60s 冷却（刻意，不是遗漏）
+
+一次剪辑往往会**连出"旁白 + 配乐"两条**，而 60s 冷却的粒度是"一次提交" ——
+挂上去第二条必被 429，功能等于拆掉一半。防重复靠**幂等指纹**（`mode + engine + prompt + options`
+→ 同一个 `taskId`），不靠时间窗。代价承认：脚本可以高频刷这个端点（本地 GPU 会排队、云端会花钱），
+自用定位下接受；真要限流另立决策。
+
+### 30-5 落轨（前端，`edit/AudioPanel.tsx`）
+
+落轨规则是**确定**的，不是"猜"：
+
+1. 起点 = **0 帧**；
+2. 目标位置已有片段 → `addAudioClip(atFrame)` **新开一条音效轨**（§11-2 V2.102 的叠加语义）；
+3. 比片子长的音频在落轨时**裁到片长**（否则一条 5s BGM 会把 5s 片子撑成 8s —— 这正是 V2.102 之前的实测症状）；
+4. 淡入 `min(8, 时长/4)` 帧、淡出 `min(15, 时长/3)` 帧（防起止爆音，曲线仍走 §11-2 的 `audioVolumeAt`）。
+
+### 30-6 如实不做
+
+- **本地配音（GPT-SoVITS）没有接线**：2026-10-30 实测 `POST /infer_single` **首调 300s 未返回**
+  （服务日志停在加载 CNHuBERT 之后），所以它**不在引擎表里**、界面也如实写"配音只有云端一条路"。
+  接它需要先解决那个卡住的问题（不在本仓代码范围内）。
+- **不做音频 BYOK**：音频 Key 只在服务端 env（`MIMO_API_KEY`）。理由：TTS 是"这台机器有没有这条能力"，
+  不是"用户带自己的额度"；带 Key 的音频通道要另立契约。
+- **不做音频作为生成参考**（§19-8 的同一条边界）。
+- **不做音频的波形图 / 试听器**：面板给的是"生成 + 落轨"，试听走时间轴播放。

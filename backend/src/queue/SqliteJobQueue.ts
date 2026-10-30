@@ -117,7 +117,14 @@ export class SqliteJobQueue implements JobQueue {
 
   async complete(
     taskId: string,
-    output: { videoUrl: string; imageUrl?: string; thumbnailUrl?: string; message?: string },
+    output: {
+      videoUrl: string;
+      imageUrl?: string;
+      /** V2.103：音频产物（`tts`/`bgm`/`sfx`） */
+      audioUrl?: string;
+      thumbnailUrl?: string;
+      message?: string;
+    },
   ): Promise<void> {
     const before = this.store.get(taskId);
     this.store.update(taskId, {
@@ -128,6 +135,9 @@ export class SqliteJobQueue implements JobQueue {
       ...(output.imageUrl === undefined || output.imageUrl === ''
         ? {}
         : { outputImageUrl: output.imageUrl }),
+      ...(output.audioUrl === undefined || output.audioUrl === ''
+        ? {}
+        : { outputAudioUrl: output.audioUrl }),
       ...(output.thumbnailUrl === undefined ? {} : { thumbnailUrl: output.thumbnailUrl }),
       submitting: false,
       // 终态文案：不传则回落到中性文案。

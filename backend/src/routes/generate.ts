@@ -95,9 +95,10 @@ export function resolveIdempotencyKey(
 
 /** 调度轨判定：云端并发轨 vs 本地单卡互斥轨（PLAN §1 / §6-D26） */
 export function trackFor(provider: ProviderType): TrackId {
+  const base = providerBaseType(provider);
   // V2.47：HTTP 任务服务是远程算力，走 cloud 并发桶（TrackId 不变；executedBy 另判 remote）。
-  return providerBaseType(provider) === 'cloud-volcano-seedance' ||
-    providerBaseType(provider) === 'http-service'
+  // V2.103：MiMo 是云端 API —— 它不占本机 GPU，塞进 local 轨会平白与本地渲染互斥。
+  return base === 'cloud-volcano-seedance' || base === 'http-service' || base === 'mimo-tts'
     ? 'cloud'
     : 'local';
 }

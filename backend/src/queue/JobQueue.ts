@@ -91,7 +91,17 @@ export interface JobQueue {
    */
   complete(
     taskId: string,
-    output: { videoUrl: string; imageUrl?: string; thumbnailUrl?: string; message?: string },
+    output: {
+      videoUrl: string;
+      imageUrl?: string;
+      /**
+       * V2.103：音频产物（`tts` / `bgm` / `sfx`）。
+       * 与 `videoUrl` / `imageUrl` **至多填一个** —— 同一条"产物恰好一个"的纪律。
+       */
+      audioUrl?: string;
+      thumbnailUrl?: string;
+      message?: string;
+    },
   ): Promise<void>;
 
   fail(taskId: string, error: TaskProgress['error']): Promise<void>;

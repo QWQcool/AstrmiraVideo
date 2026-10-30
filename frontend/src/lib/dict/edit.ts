@@ -251,6 +251,34 @@ export const EDIT_ZH = {
 
   // ── 草稿解析（`edit/draft.ts`）──
   'edit.draftProblem': '草稿不是有效的 JSON（可能是手改过或写入中断）',
+
+  // ── 配音 / 配乐面板（V2.103 / Phase 2「声音」，`edit/AudioPanel.tsx`）──
+  'edit.audio.section': '声音',
+  'edit.audio.filmLength': '片长 {seconds}s',
+  'edit.audio.modeAria': '选择声音类型',
+  'edit.audio.text.label': '台词（要念出来的字）',
+  'edit.audio.text.placeholder': '例：雪停以后，院子里只剩那枚红苹果。',
+  'edit.audio.voice.label': '音色',
+  'edit.audio.style.label': '情绪 / 风格指令',
+  'edit.audio.style.placeholder': '例：纪录片旁白，低沉克制',
+  'edit.audio.prompt.label': '描述（给音乐模型）',
+  'edit.audio.prompt.placeholder': '例：warm cinematic ambient score, soft piano, no vocals',
+  'edit.audio.seconds.label': '时长',
+  'edit.audio.seconds.hint': '1–{max} 秒；建议与片长一致',
+  'edit.audio.generate': '生成并落到音效轨',
+  'edit.audio.busy': '生成中… 已等 {seconds}s',
+  'edit.audio.placing': '落轨中…',
+  'edit.audio.autoPlace': '生成完成后自动落到音效轨 0 帧：超出片长会裁到片长，并加淡入淡出。',
+  'edit.audio.engine': '引擎：{engine}',
+  'edit.audio.executedBy.cloud': '第三方云',
+  'edit.audio.executedBy.local': '本机',
+  'edit.audio.localTtsMissing':
+    '本机配音（GPT-SoVITS）本轮未接线（/infer_single 首调实测 300s 未返回），所以配音只有云端一条路。',
+  'edit.audio.placed': '已落到音效轨（{seconds}s，含淡入淡出）',
+  'edit.audio.failed': '生成失败',
+  'edit.audio.error.noOutput': '任务成功了，但没有音频产物地址',
+  'edit.audio.error.failed': '音频生成失败（任务终态失败）',
+  'edit.audio.error.timeout': '等待超时：音频还没出结果，稍后可在生成历史里查看',
 };
 
 export const EDIT_EN = {
@@ -467,4 +495,33 @@ export const EDIT_EN = {
     'Could not read the asset (the file may be gone, or the browser cannot decode it)',
 
   'edit.draftProblem': 'The draft is not valid JSON (edited by hand, or the write was interrupted)',
+
+  // ── Voice-over / music panel (V2.103 / Phase 2 "sound", `edit/AudioPanel.tsx`) ──
+  'edit.audio.section': 'Sound',
+  'edit.audio.filmLength': 'Film {seconds}s',
+  'edit.audio.modeAria': 'Pick a sound type',
+  'edit.audio.text.label': 'Script (the words to speak)',
+  'edit.audio.text.placeholder': 'e.g. After the snow stopped, only that red apple was left in the yard.',
+  'edit.audio.voice.label': 'Voice',
+  'edit.audio.style.label': 'Emotion / style direction',
+  'edit.audio.style.placeholder': 'e.g. documentary narration, low and restrained',
+  'edit.audio.prompt.label': 'Description (for the music model)',
+  'edit.audio.prompt.placeholder': 'e.g. warm cinematic ambient score, soft piano, no vocals',
+  'edit.audio.seconds.label': 'Length',
+  'edit.audio.seconds.hint': '1–{max} seconds; matching the film length is usually right',
+  'edit.audio.generate': 'Generate and drop on the audio track',
+  'edit.audio.busy': 'Generating… {seconds}s elapsed',
+  'edit.audio.placing': 'Placing…',
+  'edit.audio.autoPlace':
+    'When it finishes it lands on frame 0 of the audio track: trimmed to the film length when longer, with fade in/out.',
+  'edit.audio.engine': 'Engine: {engine}',
+  'edit.audio.executedBy.cloud': 'third-party cloud',
+  'edit.audio.executedBy.local': 'this machine',
+  'edit.audio.localTtsMissing':
+    'Local voice-over (GPT-SoVITS) is not wired this round (/infer_single did not answer in 300s), so cloud is the only voice path.',
+  'edit.audio.placed': 'Placed on the audio track ({seconds}s, with fades)',
+  'edit.audio.failed': 'Generation failed',
+  'edit.audio.error.noOutput': 'The task succeeded but carries no audio URL',
+  'edit.audio.error.failed': 'Audio generation failed (task reached a failed terminal state)',
+  'edit.audio.error.timeout': 'Timed out waiting: check the generation history in a moment',
 };

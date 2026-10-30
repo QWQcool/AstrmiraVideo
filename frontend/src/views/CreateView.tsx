@@ -132,6 +132,10 @@ const MODE_KEYS: Record<GenerationMode, MessageKey> = {
   upscale: 'common.mode.upscale',
   inpaint: 'common.mode.inpaint',
   outpaint: 'common.mode.outpaint',
+  // V2.103：音频三模式（画布/技能/创作页共用同一张文案键表）
+  tts: 'common.mode.tts',
+  bgm: 'common.mode.bgm',
+  sfx: 'common.mode.sfx',
 };
 
 const STATUS_KEYS: Record<TaskProgress['status'], MessageKey> = {
@@ -1222,11 +1226,15 @@ export function CreateView() {
 
   const pickFirstMatch = (): void => pickMentionAt(mentionIndex);
 
-  // V2.40：产物可能是视频或图片（`t2i`）—— 用 shared 的 `taskOutput()` 收口
+  // V2.40 / V2.103：产物可能是视频、图片（`t2i`）或**音频**（`tts`/`bgm`/`sfx`）——
+  // 用 shared 的 `taskOutput()` 收口。造梦盒只出画面，音频不会有产物落到这里，
+  // 但类型上必须覆盖（否则将来音频入口复用这个视图时会静默显示"没有产物"）。
   const output = task === null ? { kind: 'none' as const } : taskOutput(task);
   const outputUrl =
-    output.kind === 'video' || output.kind === 'image' ? resolveMediaUrl(output.url) : null;
-  const outputKind: 'video' | 'image' | 'none' = output.kind;
+    output.kind === 'video' || output.kind === 'image' || output.kind === 'audio'
+      ? resolveMediaUrl(output.url)
+      : null;
+  const outputKind: 'video' | 'image' | 'audio' | 'none' = output.kind;
 
   return (
     /* 单列页面容器 `wb-page`，**不是** `wb-main`：后者是工作台三栏栅格

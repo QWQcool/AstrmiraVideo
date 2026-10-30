@@ -172,6 +172,19 @@ export class EditStore {
     return clipId;
   };
 
+  /**
+   * V2.103（声音）：把一段音频**放到指定帧**（配音/配乐面板自动落轨用）。
+   *
+   * 与 `addAudio` 的差别只有落点：这条 API 存在的意义是"不要求用户手拖"。
+   * 目标位置已有片段时 `addAudioClip` 会新开一条音效轨（V2.102），
+   * 所以"配乐垫底 + 旁白压在上面"是一条调用就能表达的。
+   */
+  addAudioAt = (source: EditClipSource, atFrame: number): string => {
+    const { project, clipId } = addAudioClip(this.state.project, source, atFrame);
+    this.mutate(project, { selectedClipId: clipId });
+    return clipId;
+  };
+
   /** 在选中视频片段与其相邻后继之间加转场（失败给提示，不静默） */
   addTransitionAfterSelected = (kind: EditTransitionKind, durationFrames: number): void => {
     const selected = this.state.selectedClipId;

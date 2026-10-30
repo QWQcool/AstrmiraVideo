@@ -112,7 +112,8 @@ export async function runStorageEvict(
     }
 
     // V2.40：产物可能是**视频或图片**（`t2i`）—— 只认 outputVideoUrl 会让图片占的盘永远不回收
-    const mediaUrl = task.outputVideoUrl ?? task.outputImageUrl;
+    // V2.103：音频产物同理（`tts`/`bgm`/`sfx`）—— 漏了这一项，音频占的盘永远不回收
+    const mediaUrl = task.outputVideoUrl ?? task.outputImageUrl ?? task.outputAudioUrl;
     const mediaFile = path.join(options.outputsDir, path.basename(mediaUrl ?? `${task.taskId}.mp4`));
     const thumbFile = path.join(options.outputsDir, THUMBNAIL_DIR_NAME, `${task.taskId}.jpg`);
 
