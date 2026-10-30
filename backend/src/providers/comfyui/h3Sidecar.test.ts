@@ -16,7 +16,7 @@ import { COMFY_WIRED_MODES, parseTemplateDeclaration } from './comfyuiProtocol.j
  * 3. `modelMatch` 的关键词真的是 H3 的文件名片段（`minimax_h3` 那套），不是 Wan 的。
  */
 describe('MiniMax H3 的 sidecar 样例（docs/templates）', () => {
-  const file = path.resolve(process.cwd(), '..', 'docs', 'templates', 'minimax-h3-t2v.meta.json');
+  const file = path.resolve(process.cwd(), '..', 'deploy', 'comfyui-templates', 'minimax-h3-t2v.meta.json');
   const declaration = parseTemplateDeclaration(JSON.parse(readFileSync(file, 'utf8')), file);
 
   it('能被解析，且声明了 t2v / i2v', () => {

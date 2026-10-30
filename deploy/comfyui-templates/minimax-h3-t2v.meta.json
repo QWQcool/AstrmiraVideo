@@ -1,0 +1,11 @@
+{
+  "modes": ["t2v", "i2v"],
+  "modelMatch": {
+    "unet": "minimax_h3",
+    "clip": "qwen3vl_32b_minimax_h3",
+    "vae": "minimax_h3_video_vae",
+    "clipType": "minimax"
+  },
+  "label": "MiniMax H3（本地轨 · 视频 + 原生立体声）",
+  "notes": "2026-10-30 真机跑通（RTX 4080 32GB / ComfyUI 0.43.0，20 步 res_multistep）：608×352×56 帧（2.33s）78.2s；864×480×124 帧（5.17s）317.7s（采样 14.65 s/it，显存峰值 31.9GB/32GB）。产物 h264 @24fps + AAC 32kHz 立体声。i2v 通过 {{START_IMAGE_NAME}} 注入首帧（对应 MiniMaxH3ImageToVideo.first_frame，t2v 时该节点被 _dropWhenMissing 丢掉）。⚠️ 三点如实登记：① H3 帧数在官方模板里按 17n+5 对齐，本仓 alignFrames 目前是 Wan 的 4n+1，接站前必须按模板声明改；② 模板自带 VAELoader 引用 minimax_h3_video_vae_int8_convrot，我们下的是 fp16，模板里写实际文件名；③ 音频轨存在但偏轻（两条均值 -50.7 / -46.8dB），是否与提示词或参考有关待再测。首尾帧（fl2v）与多参考（r2v）本仓未接线，声明里写了也会被剔除。"
+}

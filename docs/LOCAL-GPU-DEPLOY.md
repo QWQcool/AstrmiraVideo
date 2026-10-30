@@ -342,3 +342,47 @@ unavailableReasons.push('fl2v / v2v 需要另外的模型（FLF2V / VACE 系列�
 > ⑤ 另一条环境事实：**`ComfyUI` 当前由本轮启动并保持运行**（`127.0.0.1:8188`，日志在 `.tmp/comfyui-out2.log`），
 >    它是**用户自己的服务** —— 不需要时由用户（或经用户同意）关闭，不由代码擅自停。
 >
+
+---
+
+## 附二：AutoDL 首日实测（2026-10-30，真机数字）
+
+**机器**：`RTX 4080` / **32760 MiB**（`nvidia-smi` 实数，不是商品页）/ 驱动 580.105.08 /
+容器内存 72 GiB / 数据盘 `/root/autodl-tmp` 250 GB（用 93 GB）/ ComfyUI **0.43.0**（**1018** 节点，`--listen 127.0.0.1 --port 8188`）。
+
+**权重（`download-models.log` 末尾 `ALL VERIFIED`，无 `.partial`）**
+
+| 用途 | 文件 | 体积 |
+|---|---|---|
+| H3 扩散 | `diffusion_models/minimax_h3_fl2va_pruned_int8_convrot` | 20 GB |
+| H3 文本编码器 | `text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq` | 15 GB |
+| H3 视频 VAE | `vae/minimax_h3_video_vae_fp16` | 4.9 GB |
+| H3 音频 VAE | `vae/minimax_h3_audio_vae_fp32` | 578 MB |
+| MOSS 扩散 | `diffusion_models/moss_image_sft_bf16` | 9.5 GB |
+| MOSS 文本编码器 | `text_encoders/qwen3.5_9b_bf16` | 18 GB |
+| MOSS VAE | `vae/flux2-vae`（与 FLUX.2 共用） | 321 MB |
+
+**已跑通的实测**
+
+| 模型 | 输入 | 结果 |
+|---|---|---|
+| **MOSS-Image**（先前会话） | 512×512 / 50 步 / euler+simple | **30.0s**，225 KB PNG |
+| **H3** | 608×352 / 56 帧（2.33s）/ 20 步 `res_multistep` | **78.2s**（采样 3.06 s/it，含首次加载 20G+15G），184 KB |
+| **H3** | 864×480 / 124 帧（5.17s）/ 20 步 | **317.7s**（采样 **14.65 s/it**），875 KB |
+
+**产物事实（`ffprobe`）**：`h264` / 24fps / 对应尺寸 + **`aac` 32 kHz 立体声**（H3 原生音频）——
+但音量偏轻：两条的均值 −50.7 dB / −46.8 dB（不是静音，只是小），是否与提示词/参考有关待再测。
+
+**三条新事实（对代码有直接影响）**
+
+1. **H3 的帧数是 `17n+5` 对齐**（官方模板 #132 的表达式 `max(5, round(a*24)) + (5 - max(5, round(a*24)) % 17) % 17`），
+   而本仓 `alignFrames()` 是 Wan 的 `4n+1` —— **接站点前必须按模板声明改**，否则长度不合规。
+2. **H3 走 `SamplerCustomAdvanced`**（`BasicGuider` + `KSamplerSelect("res_multistep")` + `BasicScheduler("simple")`），
+   不是 `KSampler`：没有 `cfg` 这个概念，别把 Wan 的参数硬套过来。
+3. **模板自带引用的是 `minimax_h3_video_vae_int8_convrot`**，我们下的是 **fp16**：用模板时必须把文件名改成实际的，
+   否则 VAELoader 直接报"没有这个文件"。
+
+**接进站点的模板**：`deploy/comfyui-templates/minimax-h3-t2v.api.json` + `.meta.json`
+（按上面真实接线写的：`UNETLoader → CLIPLoader(minimax) → MiniMaxH3ImageToVideo → BasicGuider/KSamplerSelect/BasicScheduler/SamplerCustomAdvanced → VAEDecode + VAEDecodeAudio → CreateVideo → SaveVideo`）。
+
+**未做 / 待办**：`ref2va`（多参考）权重没下；`fl2v` / `r2v` 本仓未接输入通道；站点↔GPU 隧道未搭（ComfyUI 只监听回环）。

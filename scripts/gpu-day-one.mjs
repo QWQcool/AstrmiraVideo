@@ -133,6 +133,11 @@ try {
 
 const nodeNames = Object.keys(objectInfo);
 const has = (name) => nodeNames.includes(name);
+/** 某个枚举型输入的候选值（`/object_info` 里是 `[ [...], {...} ]` 的形状） */
+const enumOf = (node, field) => {
+  const required = objectInfo[node]?.input?.required?.[field];
+  return Array.isArray(required?.[0]) ? required[0] : [];
+};
 say(`节点总数：${nodeNames.length}`);
 
 const REQUIRED_CORE = ['UNETLoader', 'CLIPLoader', 'VAELoader', 'KSampler', 'VAEDecodeTiled'];
@@ -140,22 +145,37 @@ const missingCore = REQUIRED_CORE.filter((name) => !has(name));
 if (missingCore.length === 0) ok(`视频轨必需节点齐（${REQUIRED_CORE.join(' / ')}）`);
 else fail(`缺节点：${missingCore.join('、')}`, 'VAEDecodeTiled 缺失会让 10GB 卡整段解码退化成 CPU，不要回退到 VAEDecode');
 
-const H3_LOCAL_NODES = ['MiniMaxH3ImageToVideo', 'MiniMaxH3ReferenceToVideo', 'EmptyMiniMaxH3LatentAV', 'MiniMaxH3SigmaShift'];
-const missingH3 = H3_LOCAL_NODES.filter((name) => !has(name));
-if (missingH3.length === 0) ok(`H3 本地节点齐（${H3_LOCAL_NODES.join(' / ')}）`);
-else fail(`ComfyUI 缺 H3 节点：${missingH3.join('、')}`, '把 ComfyUI 更新到带 H3 支持的版本（≥0.36 已有）');
+/**
+ * 按**节点家族**判，不按精确名 —— 2026-10-30 的教训：本机 0.36.0 与云机 0.43.0 的节点集合
+ * 都不止"模板里出现的那些"，写死名单会把"有但改名"误报成"缺"。
+ * 判据是"这套工作流至少需要哪一个"，而不是"必须一个不多一个不少"。
+ */
+const H3_REQUIRED = ['MiniMaxH3ImageToVideo', 'EmptyMiniMaxH3LatentAV'];
+const h3Family = nodeNames.filter((name) => /^MiniMaxH3/.test(name) && !/^ComfyCloud/.test(name));
+const missingH3 = H3_REQUIRED.filter((name) => !has(name));
+if (missingH3.length === 0) {
+  ok(`H3 本地节点齐（家族 ${h3Family.length} 个：${h3Family.slice(0, 6).join(' / ')}${h3Family.length > 6 ? ' …' : ''}）`);
+} else {
+  fail(
+    `ComfyUI 缺 H3 关键节点：${missingH3.join('、')}（现有 MiniMaxH3 家族：${h3Family.join(' / ') || '无'}）`,
+    '把 ComfyUI 更新到带 H3 支持的版本（0.36 起已有；云端节点 ComfyCloud* 不算）',
+  );
+}
 
-const mossNodes = nodeNames.filter((name) => /moss/i.test(name));
-if (mossNodes.length > 0) ok(`MOSS-Image 节点在（${mossNodes.slice(0, 3).join(' / ')}…）`);
-else say('· 没有 MOSS-Image 节点：要用它得把 ComfyUI 更新到含该支持的构建（晚于当前 release tag 合并）');
+const mossFamily = nodeNames.filter((name) => /^MOSSImage|^TextEncodeMOSSImage|^ModelMergeMOSSImage/.test(name));
+const clipTypes = enumOf('CLIPLoader', 'type');
+const mossClipType = clipTypes.includes('moss_image');
+if (mossFamily.length > 0 || mossClipType) {
+  ok(
+    `MOSS-Image 可用（专用节点 ${mossFamily.length} 个${mossFamily.length > 0 ? `：${mossFamily.slice(0, 4).join(' / ')}` : ''}` +
+      `${mossClipType ? '；CLIPLoader 支持 type=moss_image' : ''}）—— 实际出图走 UNETLoader + CLIPLoader + EmptyFlux2LatentImage，不需要专用节点`,
+  );
+} else {
+  say('· 没有 MOSS-Image 支持：把 ComfyUI 更新到含该支持的构建（该支持晚于 0.36 的 release tag 合并）');
+}
 
 // ── ④ 模型清单 ───────────────────────────────────────────────────────────
 section('[4] 模型文件（按文件名匹配，缺哪个就说哪个）');
-const enumOf = (node, field) => {
-  const required = objectInfo[node]?.input?.required?.[field];
-  return Array.isArray(required?.[0]) ? required[0] : [];
-};
-
 const unets = enumOf('UNETLoader', 'unet_name');
 const clips = enumOf('CLIPLoader', 'clip_name');
 const vaes = enumOf('VAELoader', 'vae_name');
