@@ -3650,6 +3650,12 @@ export interface AudioGenerateRequest {
 | `mimo-tts` | `tts` | `cloud` | **文本发到 api.xiaomimimo.com（第三方云）** | 受服务商条款约束；本仓不分发权重 |
 | `host-stable-audio` | `bgm` / `sfx` | `host-local` | 本机 ComfyUI，**数据不出机器** | Stability AI Community License（自用可以，商用前读协议） |
 
+**能力位判定（`host-stable-audio`）= 地址 + 权重两件事**：`COMFYUI_AUDIO_BASE` 必须**显式配**
+（**刻意不回退** `COMFYUI_BASE_URL` —— 视频轨那台 ComfyUI 的 `models/checkpoints` 通常是空的，
+回退会让能力位说"能用"、点了才失败）；且这台 ComfyUI 的
+`GET /object_info/CheckpointLoaderSimple` 候选里**必须有**对应权重（`SA3_CKPT_MUSIC` / `SA3_CKPT_SFX`）。
+两道都在 `checkHealth` 里查，提交前再查一次（宁可提交前拒绝，也不让上游回一串 `node_errors`）。
+
 **界面必须逐字显示这条**（`edit.audio.privacy` 区块直接读表里的 `privacy` / `license`）——
 "文本会离开这台机器"是用户在点按钮**之前**就该知道的事，不能只写在文档里。
 

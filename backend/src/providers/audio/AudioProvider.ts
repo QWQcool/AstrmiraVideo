@@ -28,7 +28,11 @@ import { runMediaTool } from '../../lib/ffmpeg.js';
  * 2. **取消做不到**：MiMo 请求已发出、ComfyUI 的重启语义同视频轨（§19-6）——
  *    `cancel()` 恒返回 `false`，不让界面显示"已取消"而钱已经花了。
  * 3. **配置缺失就是没这个能力**：没有 Key / 连不上 ComfyUI → 注册表返回 null，
- *    上层报 `503 PROVIDER_UNAVAILABLE`（`checkHealth` 也给同样的话）。
+ *    上层报 `503 PROVIDER_UNAVAILABLE`（`checkHealth` 也给同样的话）；
+ * 4. **"连得上" ≠ "有模型"**（2026-10-30 生产踩到）：视频轨那台 ComfyUI 的
+ *    `models/checkpoints` 是空的（H3/MOSS 走 `diffusion_models`），只探 `/system_stats`
+ *    会把"没装 Stable Audio"报成可用。所以 `checkHealth` 会查
+ *    `/object_info/CheckpointLoaderSimple` 的候选清单，提交前也会再查一次。
  */
 
 /** 一次生成的上限（Stable Audio 5s 配乐冷态实测 39–47s；给足加载余量） */
@@ -102,19 +106,58 @@ export class AudioProvider implements VideoProvider {
     if (this.comfyBaseUrl === null || this.comfyBaseUrl === '') {
       return {
         available: false,
-        reason: '没有配置 COMFYUI_AUDIO_BASE（或 COMFYUI_BASE_URL）：配乐/音效在本机 ComfyUI 上跑',
+        reason: '没有配置 COMFYUI_AUDIO_BASE：配乐/音效在本机 ComfyUI 上跑（刻意**不**复用 COMFYUI_BASE_URL，见文件头）',
       };
     }
     try {
       const response = await this.fetchImpl(`${this.comfyBaseUrl}/system_stats`, {
         signal: AbortSignal.timeout(4000),
       });
-      return response.ok
-        ? { available: true }
-        : { available: false, reason: `本机 ComfyUI 返回 HTTP ${response.status}` };
+      if (!response.ok) {
+        return { available: false, reason: `本机 ComfyUI 返回 HTTP ${response.status}` };
+      }
+      // 光"连得上"不算可用：这台 ComfyUI 上必须**真的装了** Stable Audio 权重。
+      // 实测踩过：视频轨的 ComfyUI（H3/MOSS，只有 UNETLoader + diffusion_models）与音频轨
+      // 常常不是同一台；只看 /system_stats 会报"可用"，用户点了才发现没模型。
+      const missing = await this.missingCheckpoints();
+      if (missing.length > 0) {
+        return {
+          available: false,
+          reason: `这台 ComfyUI 没装 ${missing.join(' / ')}（Stable Audio 权重要放进 models/checkpoints）`,
+        };
+      }
+      return { available: true };
     } catch (error) {
       return { available: false, reason: `连不上本机 ComfyUI：${(error as Error).message}` };
     }
+  }
+
+  /** 本实例需要的 checkpoint 里，这台 ComfyUI 缺哪几个（探测失败按"缺"处理 —— 宁可少报可用） */
+  private async missingCheckpoints(): Promise<string[]> {
+    const wanted = [this.musicCkpt(), this.sfxCkpt()];
+    try {
+      const response = await this.fetchImpl(
+        `${this.comfyBaseUrl}/object_info/CheckpointLoaderSimple`,
+        { signal: AbortSignal.timeout(6000) },
+      );
+      if (!response.ok) return wanted;
+      const payload = (await response.json()) as {
+        CheckpointLoaderSimple?: { input?: { required?: { ckpt_name?: unknown } } };
+      };
+      const raw = payload.CheckpointLoaderSimple?.input?.required?.ckpt_name;
+      const candidates = Array.isArray(raw) && Array.isArray(raw[0]) ? (raw[0] as string[]) : [];
+      return wanted.filter((name) => !candidates.includes(name));
+    } catch {
+      return wanted;
+    }
+  }
+
+  private musicCkpt(): string {
+    return process.env.SA3_CKPT_MUSIC?.trim() || SA3_DEFAULT_MUSIC;
+  }
+
+  private sfxCkpt(): string {
+    return process.env.SA3_CKPT_SFX?.trim() || SA3_DEFAULT_SFX;
   }
 
   /**
@@ -257,10 +300,17 @@ export class AudioProvider implements VideoProvider {
 
     const seconds = readOptionNumber(request.options, 'seconds') ?? 5;
     const isSfx = request.mode === 'sfx';
-    const ckpt = isSfx
-      ? process.env.SA3_CKPT_SFX?.trim() || SA3_DEFAULT_SFX
-      : process.env.SA3_CKPT_MUSIC?.trim() || SA3_DEFAULT_MUSIC;
+    const ckpt = isSfx ? this.sfxCkpt() : this.musicCkpt();
     const clip = process.env.SA3_CLIP?.trim() || SA3_DEFAULT_CLIP;
+
+    // 提交前把"这台机器上没这个模型"说清楚 —— 让 ComfyUI 去报 node_errors 是在让用户猜
+    const missing = await this.missingCheckpoints();
+    if (missing.includes(ckpt)) {
+      throw new Error(
+        `这台 ComfyUI 没装 ${ckpt}（Stable Audio 权重要放进 models/checkpoints）` +
+          (missing.length > 1 ? `；当前缺：${missing.join(' / ')}` : ''),
+      );
+    }
 
     const submit = await this.fetchImpl(`${base}/prompt`, {
       method: 'POST',

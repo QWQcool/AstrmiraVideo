@@ -190,6 +190,20 @@ describe('AudioProvider · Stable Audio 工作流', () => {
   it('ComfyUI 没产出音频文件 → failed（不编一个成功）', async () => {
     const fetchImpl = (async (input: string | URL | Request) => {
       const url = String(input);
+      if (url.includes('/object_info/CheckpointLoaderSimple')) {
+        return new Response(
+          JSON.stringify({
+            CheckpointLoaderSimple: {
+              input: {
+                required: {
+                  ckpt_name: [['stable_audio_3_small_music.safetensors', 'stable_audio_3_small_sfx.safetensors'], {}],
+                },
+              },
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
       if (url.endsWith('/prompt')) {
         return new Response(JSON.stringify({ prompt_id: 'p-1' }), {
           status: 200,
@@ -225,5 +239,69 @@ describe('AudioProvider · Stable Audio 工作流', () => {
     const progress = await waitTerminal(provider, taskId);
     expect(progress.status).toBe('failed');
     expect(progress.error?.message).toContain('没有产出音频');
+  });
+
+  /**
+   * 2026-10-30 生产踩到的：视频轨那台 ComfyUI 的 `models/checkpoints` 是空的
+   * （H3/MOSS 走 diffusion_models），只看 `/system_stats` 会把"没装 Stable Audio"报成可用。
+   */
+  it('连得上但没装权重 → 能力位如实不可用（不是"点了才失败"）', async () => {
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('/object_info/CheckpointLoaderSimple')) {
+        return new Response(
+          JSON.stringify({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [[], {}] } } } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+
+    const provider = new AudioProvider({
+      id: 'host-stable-audio',
+      name: 'SA3',
+      engine: 'host-stable-audio',
+      outputDir: TMP_OUT,
+      comfyBaseUrl: 'http://127.0.0.1:8190',
+      fetchImpl,
+    });
+    const health = await provider.checkHealth();
+    expect(health.available).toBe(false);
+    expect(health.reason).toContain('stable_audio_3_small_music');
+  });
+
+  it('提交前也拦：没装权重 → failed 且说清缺哪个文件（不让上游报 node_errors）', async () => {
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('/object_info/CheckpointLoaderSimple')) {
+        return new Response(
+          JSON.stringify({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [[], {}] } } } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.endsWith('/prompt')) throw new Error('不该走到提交：应该在校验阶段就失败');
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const provider = new AudioProvider({
+      id: 'host-stable-audio',
+      name: 'SA3',
+      engine: 'host-stable-audio',
+      outputDir: TMP_OUT,
+      comfyBaseUrl: 'http://127.0.0.1:8190',
+      fetchImpl,
+      pollIntervalMs: 5,
+      maxWaitMs: 500,
+    });
+    const { taskId } = await provider.submit({
+      prompt: 'soft piano',
+      mode: 'bgm',
+      aspectRatio: '16:9',
+      provider: 'host-stable-audio',
+      options: { seconds: 5 },
+    });
+    const progress = await waitTerminal(provider, taskId);
+    expect(progress.status).toBe('failed');
+    expect(progress.error?.message).toContain('models/checkpoints');
   });
 });

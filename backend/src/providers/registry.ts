@@ -266,12 +266,15 @@ function createMimoProvider(_ctx: ProviderResolutionContext): VideoProvider | nu
 }
 
 /**
- * V2.103：本机 Stable Audio（ComfyUI）。地址**必须显式配**（`COMFYUI_AUDIO_BASE`，
- * 或复用 `COMFYUI_BASE_URL`）—— 与视频轨同一条纪律：不猜"8188 上那个大概就是"。
+ * V2.103：本机 Stable Audio（ComfyUI）。地址**必须显式配** `COMFYUI_AUDIO_BASE`。
+ *
+ * ⚠️ **刻意不回退 `COMFYUI_BASE_URL`**：那是视频轨那台（H3 / MOSS 只有 `diffusion_models`，
+ * `models/checkpoints` 是空的）。回退的后果不是报错而是**能力位说"能用"、点了才失败** ——
+ * 实测踩到过（2026-10-30 生产）。同一台机器同时跑视频与音频时，把两个 env 写成同一个地址即可，
+ * 那是一次显式决定，不是静默复用。
  */
 function createStableAudioProvider(_ctx: ProviderResolutionContext): VideoProvider | null {
-  const base =
-    process.env.COMFYUI_AUDIO_BASE?.trim() || process.env.COMFYUI_BASE_URL?.trim() || '';
+  const base = process.env.COMFYUI_AUDIO_BASE?.trim() || '';
   if (base === '') return null;
   return new AudioProvider({
     id: 'host-stable-audio',
