@@ -195,6 +195,23 @@
 | `COMFYUI_SERVERS_FILE` | **多台实例**的 JSON：`[{ name, label?, url, template?, 档位… }]` → 每台得到 `host-comfyui:<name>` |
 | `COMFYUI_TEMPLATE` | 模板名（不含扩展名），如 `minimax-h3-t2v` |
 | `COMFYUI_TEMPLATE_DIR` | 你自己的模板目录（运行时读 `<name>.api.json`） |
+| `COMFYUI_AUDIO_BASE` | **音频轨**那台 ComfyUI（配乐/音效）。**刻意不复用** `COMFYUI_BASE_URL`：视频那台通常只有 `diffusion_models`，`models/checkpoints` 是空的（实测 H3/MOSS 的 `ckpt_name` 候选 `[]`） |
+| `SA3_CKPT_MUSIC` / `SA3_CKPT_SFX` | Stable Audio 的两个 checkpoint 文件名（Small 是 **music / sfx 两个文件**，不是一个） |
+| `MIMO_API_KEY` | 云端配音（`mimo-tts`）。**文本会离开这台机器** —— 放不放服务器是部署者的决定；没配就是如实 503 |
+
+⚠️ **重启容器必须带 `--env-file`**，而且 `PUBLIC_BASE_URL` / `CORS_ORIGINS` 在 compose 里是 `${...}`
+**插值**（不是普通 env）：只 `cd /root/astrmira && docker compose up -d app` 会让它们变成空串，
+症状是资产地址退化成内联 data URL、**视频参考会被上游直接拒**。2026-10-30 手动重启踩过一次，
+现在这两个键也写进了 `.env.deploy`（`https://<DEPLOY_HOST>`），与 `deploy.mjs` 的推导值一致，
+所以两种方式重启都对：
+
+```bash
+cd /root/astrmira && docker compose --env-file .env.deploy -f deploy/compose.yaml up -d app
+```
+
+另一个小坑（同一天踩到）：从别处复制来的 Key 尾部带了**两个空格**。`env_file` 解析会 trim，
+但 `.env.deploy` 里留着会误导后来人"容器里的值被改了"——定位方法是比对 **md5 + 长度**
+（`docker exec … printenv MIMO_API_KEY | md5sum`），不要打印密钥本身。
 
 ⚠️ 两条纪律（代码里已实现，别绕过）：
 1. **白名单逐实例**：地址不合规的那一台只是**它自己**不可用（`available:false` + 人话原因），不影响其它；
