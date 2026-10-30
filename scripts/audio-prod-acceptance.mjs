@@ -139,9 +139,11 @@ async function main() {
   const ttsProbe = ffprobe(ttsFile);
   const ttsStream = ttsProbe.streams[0];
   const ttsSeconds = Number(ttsProbe.format?.duration ?? 0);
+  // ⚠️ ffprobe 的 `sample_rate` / `channels` 是**字符串**（"24000"），
+  // 直接和数字比会静默为 false —— 2026-10-30 第一次跑生产就栽在这上面（打印出来是对的，断言红了）。
   check(ttsSeconds > 0.5, `配音产物 ${ttsSeconds.toFixed(2)}s（${ttsStream.codec_name} ${ttsStream.sample_rate}Hz ${ttsStream.channels}ch）`);
-  check(ttsStream.sample_rate === 24000, '配音是 24kHz（MiMo 的实测口径，换了引擎这里会红）');
-  check(ttsStream.channels === 1, '配音是单声道（同上）');
+  check(Number(ttsStream.sample_rate) === 24000, '配音是 24kHz（MiMo 的实测口径，换了引擎这里会红）');
+  check(Number(ttsStream.channels) === 1, '配音是单声道（同上）');
   check(meanVolume(ttsFile) > -45, `配音不是静音（均值 ${meanVolume(ttsFile).toFixed(1)}dB）`);
 
   // ③ 配乐（本机 Stable Audio）
@@ -165,8 +167,8 @@ async function main() {
   const bgmStream = bgmProbe.streams[0];
   const bgmSeconds = Number(bgmProbe.format?.duration ?? 0);
   check(bgmSeconds > 9, `配乐产物 ${bgmSeconds.toFixed(2)}s（要 10s —— V2.105 之前这里会拿回 5s 的缓存）`);
-  check(bgmStream.sample_rate === 44100, '配乐是 44.1kHz（Stable Audio 的口径）');
-  check(bgmStream.channels === 2, '配乐是立体声');
+  check(Number(bgmStream.sample_rate) === 44100, '配乐是 44.1kHz（Stable Audio 的口径）');
+  check(Number(bgmStream.channels) === 2, '配乐是立体声');
 
   writeFileSync(
     path.join(OUT_DIR, 'prod-audio-acceptance.json'),
