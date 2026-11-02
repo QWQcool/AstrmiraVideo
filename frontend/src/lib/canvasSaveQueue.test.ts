@@ -158,4 +158,33 @@ describe('画布保存队列（S4-R1a / V2.48）', () => {
     queue.setRevision(7);
     expect(queue.currentRevision()).toBe(7);
   });
+
+  /**
+   * V2.108：`hasInFlight` 与 `isDirty` **不能互相替代**。
+   * `isDirty()` 在"有请求在飞"时也返回 true，而关标签补发 keepalive PUT 必须能区分这两件事 ——
+   * 两条同 revision 的 PUT 会互相 409，被丢掉的是内容更新的那条。
+   */
+  it('hasInFlight：只在请求真的在飞时为真（isDirty 分不出这个）', async () => {
+    const first = deferred<number>();
+    const save = vi
+      .fn<(doc: CanvasDoc, revision: number) => Promise<number>>()
+      .mockImplementationOnce(() => first.promise);
+    const queue = createCanvasSaveQueue({ save, onState: () => undefined, delayMs: 1 });
+
+    expect(queue.hasInFlight()).toBe(false);
+
+    queue.schedule(docWithName('a'));
+    expect(queue.hasInFlight()).toBe(false);
+    expect(queue.isDirty()).toBe(true);
+
+    await wait(10);
+    // 请求已发出但还没回来：两者都为真
+    expect(queue.hasInFlight()).toBe(true);
+    expect(queue.isDirty()).toBe(true);
+
+    first.resolve(2);
+    await wait(10);
+    expect(queue.hasInFlight()).toBe(false);
+    expect(queue.isDirty()).toBe(false);
+  });
 });

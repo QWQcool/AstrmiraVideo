@@ -38,6 +38,7 @@
     "smoke:fl2v": "node scripts/fl2v-acceptance.mjs",
     "smoke:audio:prod": "node scripts/audio-prod-acceptance.mjs",
     "smoke:offline": "node scripts/offline-acceptance.mjs",
+    "smoke:canvas:save": "node tests/browser/canvas-save-e2e.mjs",
     "gpu:day-one": "node scripts/gpu-day-one.mjs"
   },
   "devDependencies": {

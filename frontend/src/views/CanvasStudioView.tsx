@@ -97,6 +97,11 @@ import {
 import { resolveProviderKey } from '../lib/byok';
 import { comfyUiEngineOptions, httpServiceEngineOptions } from '../lib/engineOptions';
 import { createCanvasSaveQueue, type CanvasSaveState } from '../lib/canvasSaveQueue';
+import {
+  isViewportUnchanged,
+  shouldScheduleSave,
+  shouldSendPageHideSave,
+} from '../lib/canvasSaveDecision';
 import { navigate, parseHash } from '../lib/router';
 import {
   clearCanvasResultHandoff,
@@ -405,7 +410,13 @@ export function CanvasStudioView() {
   const docRef = useRef<CanvasDoc | null>(null);
   const saveQueueRef = useRef<ReturnType<typeof createCanvasSaveQueue> | null>(null);
   /** 打开/新建画布时跳过它自己触发的那次保存（文档刚加载，没有修改） */
-  const skipSaveRef = useRef(false);
+  /**
+   * V2.108：**刚从服务端读回来/新建出来的那份 doc**（对象身份）。
+   *
+   * 它替代了原来的 `skipSaveRef` 一次性布尔闸门 —— 那个闸门不绑文档，谁的 effect 慢一步就吃掉
+   * 用户的第一次真实修改，而且界面还显示"已保存"。身份比较没有"消费"这一步，也就没有竞态。
+   */
+  const loadedDocRef = useRef<CanvasDoc | null>(null);
   /** 切换/新建/删除的互斥：flush 期间用户再点一次不并发执行 */
   const switchingRef = useRef(false);
   const mountedRef = useRef(true);
@@ -482,6 +493,14 @@ export function CanvasStudioView() {
       if (current === null) return;
       const next = mutator(current);
       if (next === current) return;
+      /**
+       * V2.108：一旦发生过任何变更，这份文档就不再是"服务端刚给的那份"。
+       *
+       * 不加这一句会有个不显眼的坑：撤销栈里存的正是变更前的对象，**第一次撤销有可能
+       * 把刚读回来的那个对象原样拿回来** —— 身份相等 → 被当成"刚加载" → 撤销不落盘，
+       * 服务端留着改过的版本，界面却是旧的。清掉基准就没有这个歧义。
+       */
+      loadedDocRef.current = null;
       if (options?.record !== false) {
         historyRef.current = recordCanvasHistory(
           historyRef.current,
@@ -552,7 +571,7 @@ export function CanvasStudioView() {
             throw caught;
           }
         }
-        skipSaveRef.current = true;
+        loadedDocRef.current = next;
         saveQueueRef.current?.setRevision(next.revision);
         setConflict(false);
         docRef.current = next;
@@ -596,7 +615,7 @@ export function CanvasStudioView() {
       const queue = saveQueueRef.current;
       queue?.cancel();
       queue?.setRevision(next.revision);
-      skipSaveRef.current = true;
+      loadedDocRef.current = next;
       docRef.current = next;
       setDoc(next);
       setNodes([]);
@@ -648,7 +667,7 @@ export function CanvasStudioView() {
             setActiveCanvasProject(upsertCanvasProject(loaded, saved.summary), fresh.projectId),
           );
           writeActiveCanvasProjectId(fresh.projectId);
-          skipSaveRef.current = true;
+          loadedDocRef.current = fresh;
           saveQueueRef.current?.setRevision(saved.revision);
           docRef.current = fresh;
           setDoc(fresh);
@@ -766,13 +785,11 @@ export function CanvasStudioView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc?.projectId, layoutKey, setNodes]);
 
-  // 自动保存：队列负责 600ms 去抖与串行化；刚打开/新建的文档跳过首次保存
+  // 自动保存：队列负责 600ms 去抖与串行化。
+  // V2.108：跳过"刚读回来那份"靠**对象身份**（见 loadedDocRef 的注释），不再用一次性布尔闸门。
   useEffect(() => {
     if (doc === null) return;
-    if (skipSaveRef.current) {
-      skipSaveRef.current = false;
-      return;
-    }
+    if (!shouldScheduleSave(doc, loadedDocRef.current)) return;
     saveQueueRef.current?.schedule(doc);
   }, [doc]);
 
@@ -795,7 +812,12 @@ export function CanvasStudioView() {
     const onPageHide = (): void => {
       const current = docRef.current;
       const queue = saveQueueRef.current;
-      if (current === null || queue === null || !queue.isDirty()) return;
+      if (current === null || queue === null) return;
+      // V2.108：**有请求在飞时不再补发**。两条 PUT 用同一个 revision，后到的必然 409 ——
+      // 而被丢掉的恰恰是内容更新的这一发。在飞时交给 beforeunload 的确认框。
+      if (!shouldSendPageHideSave({ isDirty: queue.isDirty(), hasInFlight: queue.hasInFlight() })) {
+        return;
+      }
       void saveCanvasDoc(current, {
         keepalive: true,
         revision: queue.currentRevision(),
@@ -2002,7 +2024,11 @@ export function CanvasStudioView() {
   /** S5-B2：平移/缩放停止后写回视口（不占撤销栈；切画布时避免写错项目） */
   const handleMoveEnd = useCallback(
     (_event: unknown, viewport: Viewport): void => {
-      if (switchingRef.current || skipSaveRef.current) return;
+      if (switchingRef.current) return;
+      const current = docRef.current;
+      // V2.108：视口没变就不写 —— 恢复视口（setViewport）也会触发 onMoveEnd，
+      // 原来每次打开画布都会白写一次盘、顶栏闪一下"保存中"。
+      if (current !== null && isViewportUnchanged(current.viewport, viewport)) return;
       applyDoc(
         (d) => ({
           ...d,
@@ -2255,7 +2281,7 @@ export function CanvasStudioView() {
           : setActiveCanvasProject(upsertCanvasProject(prev, saved.summary), projectIdNext),
       );
       writeActiveCanvasProjectId(projectIdNext);
-      skipSaveRef.current = true;
+      loadedDocRef.current = fresh;
       saveQueueRef.current?.setRevision(saved.revision);
       docRef.current = fresh;
       setDoc(fresh);

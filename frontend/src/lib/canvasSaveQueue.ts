@@ -34,6 +34,12 @@ export interface CanvasSaveQueue {
   settle(): Promise<void>;
   cancel(): void;
   isDirty(): boolean;
+  /**
+   * V2.108：是否有请求在飞。`isDirty()` 把"在飞"也算脏，两者**不能互相替代** ——
+   * 关标签时补发 keepalive PUT 必须知道"现在有没有一条已经发出去的"，否则两条同 revision
+   * 的 PUT 会互相 409，被丢掉的正好是内容更新的那条。
+   */
+  hasInFlight(): boolean;
   /** V2.48：换文档/重载时设置读取到的修订号 */
   setRevision(revision: number): void;
   currentRevision(): number;
@@ -143,6 +149,10 @@ export function createCanvasSaveQueue({
 
     isDirty() {
       return dirty || running !== null;
+    },
+
+    hasInFlight() {
+      return running !== null;
     },
 
     setRevision(next) {
