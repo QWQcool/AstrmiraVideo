@@ -37,6 +37,7 @@
     "smoke:audio:panel": "node tests/browser/audio-panel-e2e.mjs",
     "smoke:fl2v": "node scripts/fl2v-acceptance.mjs",
     "smoke:audio:prod": "node scripts/audio-prod-acceptance.mjs",
+    "smoke:offline": "node scripts/offline-acceptance.mjs",
     "gpu:day-one": "node scripts/gpu-day-one.mjs"
   },
   "devDependencies": {

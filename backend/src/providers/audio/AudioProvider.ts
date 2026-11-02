@@ -128,7 +128,12 @@ export class AudioProvider implements VideoProvider {
       }
       return { available: true };
     } catch (error) {
-      return { available: false, reason: `连不上本机 ComfyUI：${(error as Error).message}` };
+      // 文案带**地址**与最可能的两种原因：GPU 机关机、站点到它的隧道断了。
+      // 只写 "fetch failed" 的话，看日志的人还得去翻 env 才知道它在连哪台机器。
+      return {
+        available: false,
+        reason: `连不上 ${this.comfyBaseUrl} —— GPU 机可能已关机，或站点到它的隧道断了（${(error as Error).message}）`,
+      };
     }
   }
 

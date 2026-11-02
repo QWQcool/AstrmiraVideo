@@ -139,8 +139,33 @@ export const createAudioRoutes =
         const idempotencyKey = fingerprintRequest(envelope);
 
         // 幂等重放优先：同一段文本重复点两次 = 同一条任务（不重复花钱）
+        // ⚠️ 顺序：**先**查重放，**再**看引擎活不活 —— 已经出过的那条任务不该因为引擎临时掉线
+        // 就查不到（用户会以为产物丢了，其实在库里）。
         const existing = deps.store.findTaskIdByIdempotencyKey(idempotencyKey);
         if (existing !== null) return { taskId: existing };
+
+        /**
+         * V2.107：提交前问一次引擎"你现在能不能跑"。
+         *
+         * 为什么必须有（2026-11-02 停机时实测）：GPU 机关机后 `POST /api/audio(bgm)` 仍然
+         * 返回 **200 + taskId**，任务在 0.1s 后 `failed / PROVIDER_UNAVAILABLE` ——
+         * 也就是说"接口说接单了，回头告诉你没做成"，还往任务表里塞了一条脏任务。
+         * 这里提前问一句，答案不可用就直接 503，任务根本不会建。
+         *
+         * 代价：每次提交多一次健康检查（mimo 是纯配置判断；stable-audio 是两次本地 HTTP，
+         * 通的时候约百毫秒、断的时候约几十毫秒）。相对于"排上队再失败"，这笔账划算。
+         */
+        const health = await provider
+          .checkHealth()
+          .catch((error: unknown) => ({ available: false, reason: (error as Error).message }));
+        if (!health.available) {
+          return reply.code(503).send(
+            createErrorResponse(
+              'PROVIDER_UNAVAILABLE',
+              `音频引擎当前不可用：${envelope.provider}（${health.reason ?? '没有给出原因'}）`,
+            ),
+          );
+        }
 
         const taskId = randomUUID();
         await deps.queue.submit({

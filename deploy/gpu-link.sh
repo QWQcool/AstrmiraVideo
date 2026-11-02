@@ -82,6 +82,11 @@ EOF
 fi
 
 # ④ systemd 常驻（Restart=always：GPU 重启/网络抖动后自己回来）
+#
+# ⚠️ `RestartSec` 必须**够长**（V2.107）。原来是 5 秒：GPU 机器一关机，ssh 立刻失败，
+# 于是每 5 秒重连一次 —— 2026-11-02 实测站点上 `NRestarts` 已经是 **42581**，
+# 服务卡在 activating，CPU 与日志白烧。30 秒既不会让恢复变慢（GPU 开机本来就要几十秒），
+# 又保证系统真的挂着的时候不会自我刷屏。配合 systemd 默认的 StartLimit（10s 内 5 次）不会误触。
 cat > "$UNIT" <<EOF
 [Unit]
 Description=AstrmiraVideo site -> GPU ComfyUI tunnel ($BIND -> $GPU_HOST:$GPU_PORT)
@@ -96,7 +101,7 @@ ExecStart=/usr/bin/ssh -N \\
   -o StrictHostKeyChecking=accept-new \\
   -L $BIND:127.0.0.1:8188 $GPU_USER@$GPU_HOST
 Restart=always
-RestartSec=5
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target
