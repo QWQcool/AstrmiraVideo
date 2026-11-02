@@ -234,6 +234,38 @@ try {
 
   const panel = page.locator('[data-testid=ed-audio-panel]');
 
+  /**
+   * V2.112：**偏好记忆** —— 换成茉莉 + 写一句风格，刷新后还在。
+   *
+   * 这条只有真浏览器能验：单测能证明"解析/写入对"，但证明不了"面板真的调了它"。
+   * 断言放在生成之前，是因为它跟引擎能否出音频无关。
+   */
+  await panel.locator('#ed-audio-voice').selectOption('茉莉');
+  await panel.locator('#ed-audio-style').fill('纪录片旁白，低沉克制');
+  await sleep(700); // 去抖 400ms + 余量
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('[data-testid=ed-audio-panel]', { timeout: 60_000 });
+  await sleep(400);
+  check(
+    (await page.locator('#ed-audio-voice').inputValue()) === '茉莉',
+    '刷新后音色还是上次选的（偏好记忆生效）',
+  );
+  check(
+    (await page.locator('#ed-audio-style').inputValue()) === '纪录片旁白，低沉克制',
+    '刷新后风格指令也还在',
+  );
+  check(
+    (await page.locator('#ed-audio-text').inputValue()) === '',
+    '台词**不被记忆**（那是这一条片子的内容，不该跨片留存）',
+  );
+
+  // 刷新会把"静音源片"那一步带回来也可能带不回来（草稿落盘有去抖）：重做一遍，幂等
+  await page.locator('.ed-clip-video').first().click({ timeout: 20_000 });
+  const volumeAfterReload = page.locator('[data-testid=ed-inspector] input.ed-field-number').nth(1);
+  await volumeAfterReload.fill('0');
+  await volumeAfterReload.dispatchEvent('change');
+  await sleep(300);
+
   // ① 配乐：本机 Stable Audio（隐私文案必须是"本机"）
   await panel.getByRole('button', { name: '配乐' }).click();
   const bgmPrivacy = await panel.locator('[data-testid=ed-audio-privacy]').innerText();

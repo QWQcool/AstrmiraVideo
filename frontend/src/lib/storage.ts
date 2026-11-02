@@ -38,6 +38,8 @@ export const STORAGE_KEYS = {
   canvasPlanPrefix: 'astrmira.canvasPlan.',
   /** 当前项目（V2.11 / B47）：缺省 = 默认项目（见 lib/projects.ts 的读取口径） */
   activeProjectId: 'astrmira.activeProjectId',
+  /** 声音面板的偏好（V2.112）：模式 / 音色 / 风格指令（**不存内容，也不存时长**） */
+  audioPrefs: 'astrmira.edit.audioPrefs',
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];

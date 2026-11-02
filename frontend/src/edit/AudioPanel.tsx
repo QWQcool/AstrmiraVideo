@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AUDIO_ENGINES,
   AUDIO_VOICES,
-  DEFAULT_AUDIO_VOICE,
+
   MAX_AUDIO_SECONDS,
   MAX_AUDIO_TEXT_CHARS,
   MIN_AUDIO_SECONDS,
@@ -15,7 +15,14 @@ import {
 import { ApiError, fetchAudioEngines, fetchTask, resolveMediaUrl, submitAudio } from '../lib/api';
 import { Eyebrow } from '../components/Eyebrow';
 import { useTranslate } from '../lib/i18n';
+import type { StorageAccess } from '../lib/storage';
 import { planAudioPlacement } from './audioPlacement';
+import {
+  audioPrefsEqual,
+  readAudioPrefs,
+  writeAudioPrefs,
+  type AudioPrefs,
+} from './audioPrefs';
 import { clipGeometry, contentEndFrame, findClip } from './model';
 import { probeAudioDurationFrames } from './mediaProbe';
 import type { EditStore } from './store';
@@ -65,11 +72,23 @@ export const AudioPanel: React.FC<{ store: EditStore }> = ({ store }) => {
   const t = useTranslate();
   const project = useEditStore(store, (s) => s.project);
 
-  const [mode, setMode] = useState<AudioMode>('tts');
+  /** 偏好记忆的落地位置（`window` 缺失时降级为空实现，读写都静默 no-op） */
+  const storageAccess = useMemo<StorageAccess>(
+    () => ({ local: typeof window === 'undefined' ? undefined : window.localStorage }),
+    [],
+  );
+  const [prefs] = useState(() => readAudioPrefs(storageAccess));
+  const savedPrefsRef = useRef<AudioPrefs>(prefs);
+
+  /**
+   * V2.112：模式 / 音色 / 风格指令来自**上次的选择**（见 `audioPrefs.ts`）。
+   * 台词与配乐描述不记忆 —— 那是这一条片子的内容；时长也不记忆（跟着片子走）。
+   */
+  const [mode, setMode] = useState<AudioMode>(() => prefs.mode);
   const [text, setText] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [voice, setVoice] = useState(DEFAULT_AUDIO_VOICE);
-  const [style, setStyle] = useState('');
+  const [voice, setVoice] = useState(() => prefs.voice);
+  const [style, setStyle] = useState(() => prefs.style);
   const [stage, setStage] = useState<Stage>('idle');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +100,17 @@ export const AudioPanel: React.FC<{ store: EditStore }> = ({ store }) => {
   const [seconds, setSeconds] = useState(() =>
     Math.min(MAX_AUDIO_SECONDS, Math.max(MIN_AUDIO_SECONDS, filmSec)),
   );
+
+  // V2.112：把模式/音色/风格记下来（去抖 400ms，且真的变了才写）
+  useEffect(() => {
+    const next: AudioPrefs = { mode, voice, style };
+    if (audioPrefsEqual(next, savedPrefsRef.current)) return;
+    const timer = window.setTimeout(() => {
+      writeAudioPrefs(storageAccess, next);
+      savedPrefsRef.current = next;
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [mode, voice, style, storageAccess]);
 
   const engines = useMemo(() => audioEnginesFor(mode), [mode]);
   const engine = engines[0];
