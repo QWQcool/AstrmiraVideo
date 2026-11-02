@@ -1,13 +1,14 @@
 # 前端参考图库（docs/assets）
 
-> 用途：前端改版（侧栏布局 / 总览页 / 动效体系）的**视觉与布局参考**，不代表最终设计。
-> 约定：编号即年代顺序；`_mockup_` 是我们自己生成的概念稿，`_ref_` 是成熟产品的真实截图。
-> AI 生成的 mockup 里文字有乱码是正常现象 —— 看布局与氛围，不看文字。
+> 用途：**上手指南用图** + 少量历史参考图。这里的图**不是设计稿的唯一真相** ——
+> 交互规格在 [CREATION-EXPERIENCE-DESIGN.md](../CREATION-EXPERIENCE-DESIGN.md)，
+> 差距审计在 [JIMENG-REFERENCE.md](../JIMENG-REFERENCE.md)。
+> 口径：截图是**证据**，不修图、不摆拍 —— 界面什么样就截什么样。
 
-## ⭐ 上手指南用图（`howto/`，V2.112 起，`docs/GUIDE.md` 用的是这一组）
+## ⭐ 上手指南用图（`howto/`，V2.112 起）
 
-> 生成方式：`pnpm build && node tests/browser/howto-shots.mjs`（隔离实例 + 夹具数据 + 真浏览器）。
-> **改了界面就重跑这个脚本**，不要手截 —— 过期截图会教人点一个不存在的按钮。
+> 生成方式：`pnpm build && pnpm docs:shots`（= `tests/browser/howto-shots.mjs`，隔离实例 + 夹具数据 + 真浏览器）。
+> **改了界面就重跑这个脚本，不要手截** —— 过期截图会教人点一个不存在的按钮。
 
 | 文件 | 内容 |
 |---|---|
@@ -16,61 +17,54 @@
 | `howto/03_edit_timeline.png` | 剪辑台 `#/edit`（多轨时间轴 + 右侧「③ 声音」面板） |
 | `howto/04_audio_panel.png` | 声音面板整块（模式 / 台词 / 音色 / 情绪 / 隐私与许可） |
 
-## 真实界面截图（`ui/`，2026-10-10 起，历史记录）
+## 引擎与工作流示意（GUIDE §一 / §三 用图）
+
+| 文件 | 内容 |
+|---|---|
+| `02_hardware_and_engine_modal.jpg` | 硬件/引擎配置弹层（档位建议的界面投影） |
+| `03_prompt_and_video_workflow.jpg` | 提示词扩写 + 32 倍数裁切的工作流示意 |
+
+> ⚠️ 这两张是 **2026-09 的概念稿**（界面英文、且画了本项目不存在的上游名）。
+> 它们只用来示意"能力位在哪里看、工作流长什么样"，**不代表当前界面**。
+> 当前界面的真实样子看上面的 `howto/`。
+
+## 真实界面截图（`ui/`，2026-10-10，历史记录）
 
 > 生成方式：`node scripts/capture-docs-shots.mjs`（生产形态 + 夹具数据 + 真浏览器，**任何人可复现**）。
-> **口径**：截图是**证据**，不修图、不摆拍 —— 界面什么样就截什么样。
-> `mobile-*.png` 三张是**现状记录**（当前手机端只做到"能看"），刻意不做美化。
-> ⚠️ 2026-11-02 审计：本段原先还链到 `../FRONTEND-REVIEW.md`，该文件**已不存在**（内容并入
-> [PLAN.md](../PLAN.md) §9 与 [GUIDE.md](../GUIDE.md)），链接已移除，别再加回去。
+> ⚠️ 这批图停在 2026-10-10：之后界面改过多轮（侧栏九项、画布、声音面板都不在里面）。
+> **它们不再更新**，保留只为追溯当时的形态。要看现状请用 `howto/`。
 
-| 文件 | 内容 |
+| 文件 | 内容（当时的形态） |
 |---|---|
-| `ui/desktop-01-create.png` | 创作入口 `#/create`（造梦盒：一句话 → 模式推断 + 配方 chips） |
-| `ui/desktop-02-workbench.png` | 专业工作台 `#/workbench`（三栏：提示词与素材槽 / 实时预览 / 任务与画廊） |
-| `ui/desktop-03-overview.png` | 总览 `#/overview`（KPI 卡 + 最近成片 + 操作 feed） |
-| `ui/desktop-04-library.png` | 视频库 `#/library`（筛选排序 + 卡片操作 + 交付包入口） |
-| `ui/desktop-05-edit.png` | 剪辑台 `#/edit?task=…`（Remotion 预览 + 多轨时间轴 + 属性/导出/影片面板） |
-| `ui/desktop-06-canvas.png` | 血缘画布 `#/canvas`（只读；节点=素材/任务，边=派生/抽帧/引用） |
-| `ui/desktop-07-logs.png` | 操作日志 `#/logs`（排错第一站，可按动作/错误码/关键词筛） |
-| `ui/mobile-0{1,2,3}-*.png` | 手机 390×844 现状：创作 / 工作台 / 视频库（**浏览可用、剪辑不可用**） |
+| `ui/desktop-01-create.png` | 创作入口 `#/create` |
+| `ui/desktop-02-workbench.png` | 专业工作台 `#/workbench` |
+| `ui/desktop-03-overview.png` | 总览 `#/overview` |
+| `ui/desktop-04-library.png` | 视频库 `#/library` |
+| `ui/desktop-05-edit.png` | 剪辑台 `#/edit?task=…` |
+| `ui/desktop-06-canvas.png` | 血缘画布（旧只读形态） |
+| `ui/desktop-07-logs.png` | 操作日志 `#/logs` |
+| `ui/mobile-0{1,2,3}-*.png` | 手机 390×844：创作 / 工作台 / 视频库（**浏览可用、剪辑不可用**） |
 
-> ⚠️ **下面 01~03 的 Gemini 概念稿自 2026-10-10 起不再出现在 README**：那张图里有本项目
-> 并不存在的上游名（ComfyUI / MiniMax / Kling）、界面是英文，当作"产品说明"会误导访客。
-> 它们仍作为**历史概念稿**留档（用于追溯当时的布局取向）。
+## 实验与评测图（不进文档正文，只作证据）
 
-## 早期概念稿（Gemini 生成，2026-09 上旬）
-
-| 文件 | 内容 |
+| 目录 | 内容 |
 |---|---|
-| `01_main_workspace.jpg` | 主工作台概念稿（三栏控制台） |
-| `02_hardware_and_engine_modal.jpg` | 硬件/引擎配置弹层概念稿 |
-| `03_prompt_and_video_workflow.jpg` | 提示词与视频工作流概念稿 |
+| `moss-image-eval/` | MOSS 文生图的对照（含中文海报的错字样本） |
+| `multiref-2026-10-27/` | 多参考（r2v）那次压力测试的产物组 |
 
-## V9 改版概念稿（2026-09-23，按"总览 + 可收展侧栏"方向生成）
+## 已删除：11 张概念稿（2026-11-02 瘦身，约 4.6MB）
 
-| 文件 | 内容 | 对应方案 |
+删的是**只在图库索引里登记、正文一处都没引用**的历史概念稿。删掉不心疼的理由：
+它们的用途是"当时布局该怎么摆"，而那些决定已经落进文档正文了。
+
+| 删除 | 原用途 | 决定现在记在哪 |
 |---|---|---|
-| `04_mockup_overview_sidebar.jpg` | **总览页**：侧栏展开（总览/生成工作台/视频库/操作日志/凭据设置），主区 = KPI 卡 + 最近成片九宫格 + 最近操作 feed | 方案 A |
-| `05_mockup_workbench_iconrail.jpg` | **生成工作台**：侧栏收成 56px 图标栏，中央播放器 + 进度环，右侧控制面板（提示词 / 三槽素材 / 四模式 / 画幅 / 时长清晰度 / 生成按钮） | 方案 B |
-| `06_mockup_library_drawer.jpg` | **视频库**：筛选工具条 + 卡片网格（索引号/时长/状态点）+ 右侧详情抽屉（参数 + 复用/下载/删除） | 方案 C |
+| `01_main_workspace.jpg` | 主工作台三栏概念稿 | [CREATION-EXPERIENCE-DESIGN.md](../CREATION-EXPERIENCE-DESIGN.md) §3 页面与视觉规范 |
+| `04~06_mockup_*.jpg` | V9 改版的三个方案（总览 / 工作台 / 视频库） | 已实现的形态以 `howto/` 实截为准 |
+| `07_ref_kling_shell.jpg` | 可灵外壳（图标栏信息密度） | [JIMENG-REFERENCE.md](../JIMENG-REFERENCE.md) |
+| `08_ref_jimeng_hero.jpg` / `09_ref_jimeng_sample_mode.jpg` | 即梦首页与"样片模式" | 同上（观察结论都写成了文字） |
+| `10_ref_shadcn_sidebar.jpg` | 可收展侧栏的成熟变体 | [CREATION-EXPERIENCE-DESIGN.md](../CREATION-EXPERIENCE-DESIGN.md) §4 交互规则 |
+| `11~13_mockup_create_*.png` | Step 8「造梦盒」概念稿（首屏 / `@` 弹层 / 提交后） | 该入口已上线，实截在 `howto/01_create.png` |
 
-## Step 8 · one-for-all 创作入口（B41）概念稿（2026-09-24，AI 生成，布局参考）
-
-| 文件 | 内容 | 对应 EXEC-STEP8 §一 |
-|---|---|---|
-| `11_mockup_create_hero.png` | **`#/create` 首屏「造梦盒」**：居中创作面板 = 发光多行意图输入框 + 配方 chips 横滚 + 「更多设置」收起态 | 1.1 首屏结构 |
-| `12_mockup_create_mentions.png` | **`@` 提及弹层展开**：输入框上方浮层列出资产/成片缩略卡（✂ = 剪辑产物），输入框下方是已选素材 chips | 1.2 提及与模式推断 |
-| `13_mockup_create_result.png` | **提交后内联任务卡**：输入框收成顶部一行，下方出现播放器卡（进度条 + star-gather 微光） | 1.1 提交后不跳走 |
-
-## 成熟产品截图（2026-09-23 实截，仅作布局参考，勿抄视觉资产）
-
-| 文件 | 内容 | 学什么 |
-|---|---|---|
-| `07_ref_kling_shell.jpg` | **可灵**应用外壳：左侧图标栏（创画阁/资产/生成/画布/全部工具）+ 顶部运营位 + 工具入口卡 + 发现流 | 图标栏的信息密度；"队列与历史"作为一级资产的呈现 |
-| `08_ref_jimeng_hero.jpg` | **即梦**匿名首页（登录后才是用户截图里的工作台） | 品牌氛围；与我们的工作台形态区分 |
-| `09_ref_jimeng_sample_mode.jpg` | **即梦"样片模式"**：先看 480P 样片再定高清，降低抽卡成本 | ⚠️ 对我们有产品启发：低成本预览档（与清晰度档、成本表联动） |
-| `10_ref_shadcn_sidebar.jpg` | shadcn/ui 的 Sidebar 区块页 | 可收展侧栏的 8 种成熟变体与交互惯例（rail 态 tooltip、分组、键盘可达） |
-
-> 另参考（未截图，链接即可）：Vercel Geist（排版密度）、Linear（侧栏+快捷键）、Runway（资产库）。
-> jiro.build/components 已排除：它是营销落地页区块库，没有应用型组件。
+> 这条纪律与"一个知识点只有一个所有者"一致：**文档正文写决定，图只负责证明界面长什么样**。
+> 概念稿一旦被实现，它的价值就转移到了实现与实截上。
