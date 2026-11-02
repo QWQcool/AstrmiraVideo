@@ -133,6 +133,10 @@ export const CANVAS_ZH = {
   'canvas.tabs.peerOne': '⚠ 另一个标签页也在编辑这块画布',
   'canvas.tabs.peerMany': '⚠ 还有 {count} 个标签页在编辑这块画布',
   'canvas.tabs.peerHint': '两个标签各存各的：谁后保存谁生效，另一边的改动会被覆盖。建议只留一个标签。',
+  // V2.110：画布已在别处被删 —— 本地内容还能救成一块新画布
+  'canvas.missing.title': '这份画布已经不在了（在别处被删除）：「{name}」本地还有 {nodes} 个节点',
+  'canvas.missing.rescue': '另存为新画布',
+  'canvas.missing.discard': '放弃并返回列表',
   'canvas.studio.add': '添加节点',
   // ── 节点创作与编辑器（S3-B3；CONTRACT §21-10）──
   'canvas.studio.fromAssets': '资产库',
@@ -813,6 +817,10 @@ export const CANVAS_EN = {
   'canvas.tabs.peerMany': '⚠ {count} other tabs are editing this canvas',
   'canvas.tabs.peerHint':
     'Each tab saves on its own: whoever saves last wins and the other side loses its changes. Keep one tab.',
+  'canvas.missing.title':
+    'This canvas is gone (deleted elsewhere): "{name}" still has {nodes} nodes here',
+  'canvas.missing.rescue': 'Save as a new canvas',
+  'canvas.missing.discard': 'Discard and go back',
   'canvas.studio.add': 'Add node',
   'canvas.studio.fromAssets': 'Assets',
   'canvas.studio.dropHint': 'Drop to upload as canvas nodes (image / video / audio)',

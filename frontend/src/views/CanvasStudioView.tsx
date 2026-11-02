@@ -109,6 +109,7 @@ import {
   isPeerMessage,
   type CanvasPeerMessage,
 } from '../lib/canvasTabs';
+import { rescueAsNewCanvas, rescueName } from '../lib/canvasDocRescue';
 import { navigate, parseHash } from '../lib/router';
 import {
   clearCanvasResultHandoff,
@@ -424,6 +425,15 @@ export function CanvasStudioView() {
   /** 本标签的身份（只活在内存里：刷新即换，跨标签不共享） */
   const tabIdRef = useRef(newCanvasProjectId());
   /**
+   * V2.110：重载时发现画布已被删除（404）。非 null 时显示"另存为新画布"横幅 ——
+   * 本地内容还在，但原 id 已经写不回去了（墓碑会拒绝复活）。
+   */
+  const [docMissing, setDocMissing] = useState<{
+    projectId: string;
+    name: string;
+    nodeCount: number;
+  } | null>(null);
+  /**
    * V2.108：**刚从服务端读回来/新建出来的那份 doc**（对象身份）。
    *
    * 它替代了原来的 `skipSaveRef` 一次性布尔闸门 —— 那个闸门不绑文档，谁的 effect 慢一步就吃掉
@@ -642,12 +652,89 @@ export function CanvasStudioView() {
       setReloadNonce((value) => value + 1);
       window.setTimeout(() => restoreCanvasViewport(next), 60);
     } catch (caught) {
+      /**
+       * V2.110：重载时发现**画布已被删掉**（404）。
+       *
+       * 这时候内存里这份内容还有价值，但**再也存不回原 id**（墓碑会拒绝复活）。
+       * 所以不只是一句报错，而是给出「另存为新画布」—— 把手上这份搬到新 projectId。
+       */
+      if (caught instanceof ApiError && caught.failure.status === 404) {
+        setDocMissing({
+          projectId: current.projectId,
+          name: current.name,
+          nodeCount: current.nodes.length,
+        });
+        setError(null);
+        return;
+      }
       setError(describeError(caught));
     } finally {
       switchingRef.current = false;
       setBusy(false);
     }
   }, [restoreCanvasViewport, setNodes]);
+
+  /**
+   * V2.110：把本地这份内容**另存为一块新画布**（画布已在别处被删时唯一的救法）。
+   * 只改身份（projectId / name / revision），节点与连线原样带过去。
+   */
+  const rescueToNewCanvas = useCallback(async (): Promise<void> => {
+    const current = docRef.current;
+    if (current === null || switchingRef.current) return;
+    switchingRef.current = true;
+    setBusy(true);
+    try {
+      const rescued = rescueAsNewCanvas(current, newCanvasProjectId(), rescueName(current.name));
+      const saved = await saveCanvasDoc(rescued, { revision: 1 });
+      const queue = saveQueueRef.current;
+      queue?.cancel();
+      queue?.setRevision(saved.revision);
+      loadedDocRef.current = rescued;
+      docRef.current = rescued;
+      setDoc(rescued);
+      setNodes([]);
+      setSelectedIds([]);
+      setLive({});
+      historyRef.current = createCanvasHistory();
+      setHistoryRev((value) => value + 1);
+      setSaveState('saved');
+      setConflict(false);
+      setError(null);
+      setDocMissing(null);
+      setIndex((prev) =>
+        prev === null
+          ? prev
+          : setActiveCanvasProject(upsertCanvasProject(prev, saved.summary), rescued.projectId),
+      );
+      writeActiveCanvasProjectId(rescued.projectId);
+      window.history.replaceState(
+        null,
+        '',
+        `#/canvas?project=${encodeURIComponent(rescued.projectId)}`,
+      );
+      window.setTimeout(() => restoreCanvasViewport(rescued), 60);
+    } catch (caught) {
+      setError(describeError(caught));
+    } finally {
+      switchingRef.current = false;
+      setBusy(false);
+    }
+  }, [restoreCanvasViewport, setNodes]);
+
+  /** V2.110：放弃本地这份内容，回到画布列表（空态） */
+  const dismissMissingCanvas = useCallback((): void => {
+    saveQueueRef.current?.cancel();
+    docRef.current = null;
+    setDoc(null);
+    setNodes([]);
+    setSelectedIds([]);
+    setLive({});
+    setDocMissing(null);
+    setConflict(false);
+    setError(null);
+    setSaveState('saved');
+    window.history.replaceState(null, '', '#/canvas');
+  }, [setNodes]);
 
   // 首次进入：读索引 → 打开上次的画布（没有就显示空态，不擅自新建）
   useEffect(() => {
@@ -2776,6 +2863,21 @@ export function CanvasStudioView() {
           </button>
         </div>
       </header>
+
+      {/* V2.110：画布已在别处被删 —— 本地内容还在，给一条"另存为新画布"的活路 */}
+      {docMissing === null ? null : (
+        <div className="cs-missing" data-testid="cs-doc-missing" role="status">
+          <span>
+            {t('canvas.missing.title', { name: docMissing.name, nodes: docMissing.nodeCount })}
+          </span>
+          <button type="button" className="cs-missing-rescue" onClick={() => void rescueToNewCanvas()}>
+            {t('canvas.missing.rescue')}
+          </button>
+          <button type="button" className="cs-missing-drop" onClick={dismissMissingCanvas}>
+            {t('canvas.missing.discard')}
+          </button>
+        </div>
+      )}
 
       {error === null ? null : (
         <p className="wb-note cs-error" role="alert">

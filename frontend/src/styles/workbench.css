@@ -2916,3 +2916,30 @@
   font-size: var(--fs-small);
   white-space: nowrap;
 }
+/* V2.110：画布已在别处被删 —— 这是"还有救"的横幅，用 warning 色，不遮住画布 */
+.cs-missing {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--warn);
+  background: var(--gold-tint);
+  color: var(--text);
+  font-size: var(--fs-body);
+}
+
+.cs-missing-rescue,
+.cs-missing-drop {
+  padding: 4px 12px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--warn);
+  background: transparent;
+  color: var(--warn);
+  cursor: pointer;
+}
+
+.cs-missing-drop {
+  border-color: var(--line);
+  color: var(--text-muted);
+}

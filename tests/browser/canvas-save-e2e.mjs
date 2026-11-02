@@ -204,6 +204,44 @@ try {
     .catch(() => false);
   check(peerGone, '关掉另一个标签后提示自动消失（心跳过期，不是粘住）');
 
+  // ③ V2.110：画布在别处被删 → 重载 404 → "另存为新画布"把本地内容救回来
+  const deleted = await fetch(`${baseUrl}/api/canvas/docs/${projectId}`, { method: 'DELETE' });
+  check(deleted.ok, `在别处删掉这块画布（DELETE → ${deleted.status}）`);
+
+  // 再改一次：保存会撞墓碑（409），顶栏出现"重载"
+  await page.locator('.cs-rail-btn').first().click({ timeout: 20_000 });
+  const retry = page.locator('.cs-save-retry');
+  await retry.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => undefined);
+  check(await retry.isVisible(), '删掉后再改一次 → 保存被拒，顶栏出现"重载"');
+  await retry.click({ timeout: 10_000 });
+
+  const missing = page.locator('[data-testid=cs-doc-missing]');
+  const missingShown = await missing
+    .waitFor({ state: 'visible', timeout: 20_000 })
+    .then(() => true)
+    .catch(() => false);
+  check(missingShown, '重载拿到 404 → 出现"画布已不在"的横幅（不是只报一句错）');
+
+  if (missingShown) {
+    const before = puts.length;
+    await page.getByRole('button', { name: /另存为新画布/ }).click({ timeout: 20_000 });
+    // 等新的 PUT（写到新的 projectId）
+    let rescuePut = null;
+    for (let index = 0; index < 80 && rescuePut === null; index += 1) {
+      await page.waitForTimeout(250);
+      rescuePut = puts.slice(before).find((entry) => !entry.url.includes(projectId)) ?? null;
+    }
+    check(rescuePut !== null, '另存为写到了**新的** projectId（不是往墓碑上硬写）');
+    await page.waitForTimeout(1200);
+    const hashAfter = await page.evaluate(() => location.hash);
+    check(
+      hashAfter.includes('project=') && !hashAfter.includes(projectId),
+      `地址已切到新画布（实际 ${hashAfter}）`,
+    );
+    const nodesAfterRescue = await page.locator('.react-flow__node').count();
+    check(nodesAfterRescue >= 2, `救援后节点还在（实际 ${nodesAfterRescue}，删前 1 + 新加 1）`);
+  }
+
   if (failures.length > 0) exitCode = 1;
   console.log(
     `\n${failures.length === 0 ? '✓ 画布保存链路通过' : `✗ 失败 ${failures.length} 项：\n  · ${failures.join('\n  · ')}`}`,
