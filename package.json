@@ -39,6 +39,7 @@
     "smoke:audio:prod": "node scripts/audio-prod-acceptance.mjs",
     "smoke:offline": "node scripts/offline-acceptance.mjs",
     "smoke:canvas:save": "node tests/browser/canvas-save-e2e.mjs",
+    "docs:shots": "node tests/browser/howto-shots.mjs",
     "gpu:day-one": "node scripts/gpu-day-one.mjs"
   },
   "devDependencies": {
