@@ -102,6 +102,13 @@ import {
   shouldScheduleSave,
   shouldSendPageHideSave,
 } from '../lib/canvasSaveDecision';
+import {
+  CANVAS_TAB_CHANNEL,
+  PEER_HEARTBEAT_MS,
+  activePeers,
+  isPeerMessage,
+  type CanvasPeerMessage,
+} from '../lib/canvasTabs';
 import { navigate, parseHash } from '../lib/router';
 import {
   clearCanvasResultHandoff,
@@ -409,7 +416,13 @@ export function CanvasStudioView() {
 
   const docRef = useRef<CanvasDoc | null>(null);
   const saveQueueRef = useRef<ReturnType<typeof createCanvasSaveQueue> | null>(null);
-  /** 打开/新建画布时跳过它自己触发的那次保存（文档刚加载，没有修改） */
+  /**
+   * V2.109：**还有几个标签页也在编辑这块画布**（跨标签心跳）。
+   * 只做提示、不做锁 —— 见 `lib/canvasTabs.ts` 的文件头（为什么不做锁）。
+   */
+  const [peerTabs, setPeerTabs] = useState(0);
+  /** 本标签的身份（只活在内存里：刷新即换，跨标签不共享） */
+  const tabIdRef = useRef(newCanvasProjectId());
   /**
    * V2.108：**刚从服务端读回来/新建出来的那份 doc**（对象身份）。
    *
@@ -801,6 +814,45 @@ export function CanvasStudioView() {
       void saveQueueRef.current?.flush();
     };
   }, []);
+
+  // V2.109：跨标签心跳 —— 频道与定时器都跟着 `projectId` 生灭（切画布即重建）
+  useEffect(() => {
+    const projectId = doc?.projectId;
+    if (projectId === undefined) {
+      setPeerTabs(0);
+      return;
+    }
+    if (typeof BroadcastChannel === 'undefined') return;
+
+    const tabId = tabIdRef.current;
+    const channel = new BroadcastChannel(CANVAS_TAB_CHANNEL);
+    const received: CanvasPeerMessage[] = [];
+    const publish = (): void => {
+      if (!mountedRef.current) return;
+      setPeerTabs(activePeers(received, Date.now(), tabId, projectId).length);
+    };
+
+    channel.onmessage = (event: MessageEvent) => {
+      if (!isPeerMessage(event.data)) return;
+      received.push(event.data);
+      if (received.length > 40) received.splice(0, received.length - 40);
+      publish();
+    };
+    // 每次心跳顺带重算一次：对方**关掉标签**时不会再发消息，只能靠"这条已经过期"来发现
+    const beat = (): void => {
+      channel.postMessage({ tabId, projectId, at: Date.now() });
+      publish();
+    };
+    beat(); // 立刻广播一次：对方不用等一个周期才知道你来了
+    const timer = setInterval(beat, PEER_HEARTBEAT_MS);
+
+    return () => {
+      clearInterval(timer);
+      channel.onmessage = null;
+      channel.close();
+      setPeerTabs(0);
+    };
+  }, [doc?.projectId]);
 
   // 关标签/刷新：有未保存内容时让浏览器确认；pagehide 用 keepalive 再兜一层
   useEffect(() => {
@@ -2612,6 +2664,17 @@ export function CanvasStudioView() {
             >
               {conflict ? t('canvas.studio.reload') : t('canvas.studio.retrySave')}
             </button>
+          ) : null}
+          {/* V2.109：另一个标签也在编辑这块画布。这是**提示**不是锁 —— 文案写清后果 */}
+          {peerTabs > 0 ? (
+            <span
+              className="cs-peers"
+              data-testid="cs-peer-tabs"
+              role="status"
+              title={t('canvas.tabs.peerHint')}
+            >
+              {peerTabs === 1 ? t('canvas.tabs.peerOne') : t('canvas.tabs.peerMany', { count: peerTabs })}
+            </span>
           ) : null}
         </div>
         <div className="cs-top-right">

@@ -153,6 +153,52 @@ describe('画布文档路由', () => {
     expect(index.projects[0].updatedAt).toBe(1_700_000_100_000);
   });
 
+  /**
+   * V2.109：**同内容重放不算冲突**。
+   *
+   * 真实场景是"服务端写成功了、响应在网络上丢了"：客户端拿同一个（此时已过期的）revision
+   * 重试，旧规则必 409 → 前端只能"重载并丢弃本地修改"，而它要保存的内容其实早就落盘了。
+   */
+  it('V2.109：内容相同的重放 → 200（沿用当前 revision），内容不同的旧修订 → 仍然 409', async () => {
+    const { app } = await harness();
+
+    // 1) 建 → rev 2；2) 改成 B → rev 3
+    await app.inject({ method: 'PUT', url: '/api/canvas/docs/proj-1', payload: docFixture() });
+    const second = await app.inject({
+      method: 'PUT',
+      url: '/api/canvas/docs/proj-1',
+      headers: { 'x-canvas-revision': '1' },
+      payload: { ...docFixture(), name: 'B' },
+    });
+    expect(second.statusCode).toBe(200);
+    expect(second.json().revision).toBe(2);
+
+    // 3) "响应丢了"：客户端以为失败，拿 rev 1 把**同样的内容 B** 再发一次
+    const replay = await app.inject({
+      method: 'PUT',
+      url: '/api/canvas/docs/proj-1',
+      headers: { 'x-canvas-revision': '1' },
+      payload: { ...docFixture(), name: 'B' },
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json().revision).toBe(2); // 没有新版本，也没丢内容
+
+    // 4) 同样是旧修订，但内容不同 → 必须还是 409（绝不静默覆盖）
+    const different = await app.inject({
+      method: 'PUT',
+      url: '/api/canvas/docs/proj-1',
+      headers: { 'x-canvas-revision': '1' },
+      payload: { ...docFixture(), name: 'C' },
+    });
+    expect(different.statusCode).toBe(409);
+    expect(different.json().code).toBe('DOC_CONFLICT');
+
+    // 5) 落盘的仍是 B（重放没有把 B 改回去，也没有被 C 覆盖）
+    const read = await app.inject({ method: 'GET', url: '/api/canvas/docs/proj-1' });
+    expect(read.json().name).toBe('B');
+    expect(read.json().revision).toBe(2);
+  });
+
   it('V2.48：已有文档缺修订号 / 旧修订 → 409 DOC_CONFLICT，且不覆盖已保存内容', async () => {
     const { app } = await harness();
     await app.inject({ method: 'PUT', url: '/api/canvas/docs/proj-1', payload: docFixture() });

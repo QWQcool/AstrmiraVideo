@@ -34,6 +34,20 @@ import { canvasWriteBlockedReason } from './canvasWriteBarrier.js';
  * 3. **单用户部署**（D60）：没有 ownerId，目录即归属；`projectId` 只做文件名转义，不做鉴权。
  */
 
+/**
+ * 两份文档的内容是否**完全一致**（V2.109，用于"重放不冲突"）。
+ *
+ * 比的是除 `revision` 外的全部字段：两侧都经过 `CanvasDocSchema.parse`，
+ * 键序由 schema 决定，因此 `JSON.stringify` 可以逐字比较（数组顺序本身有意义，不能排序）。
+ */
+function sameContent(left: CanvasDoc, right: CanvasDoc): boolean {
+  const { revision: leftRevision, ...leftRest } = left;
+  const { revision: rightRevision, ...rightRest } = right;
+  void leftRevision;
+  void rightRevision;
+  return JSON.stringify(leftRest) === JSON.stringify(rightRest);
+}
+
 /** 数据根目录：与 `DATA_DIR` 同一口径（`:memory:` 时给进程级临时目录，避免测试互相污染） */
 export function resolveCanvasDir(): string {
   const override = process.env.DATA_DIR;
@@ -163,6 +177,20 @@ export class CanvasDocStore {
         throw new CanvasDocConflictError('缺少修订号：这个画布已在别处保存过，请重载后再编辑');
       }
       if (expectedRevision !== existing.revision) {
+        /**
+         * V2.109：**内容完全相同的重放不算冲突**。
+         *
+         * 场景：客户端发出保存，服务端**写成功了**，但响应在网络上丢了（超时/连接断开）。
+         * 客户端认为失败 → 用**同一个 revision** 重试 → 旧规则必 409 → 前端只能"重载并丢弃
+         * 本地修改"，而它要保存的内容其实早就落盘了。这条自愈规则把这种情形变成 200。
+         *
+         * 判据是**除 revision 外逐字段相等**（两侧都过 `CanvasDocSchema.parse`，键序由 schema 决定，
+         * 所以 `JSON.stringify` 可比）。内容只要有一处不同（哪怕只是视口）就仍然是 409 ——
+         * 宁可让用户重载，也不静默覆盖别人的修改。
+         */
+        if (sameContent(existing, doc)) {
+          return { summary: canvasDocSummary(existing), revision: existing.revision };
+        }
         throw new CanvasDocConflictError(
           `修订号不匹配（当前 ${existing.revision}，提交 ${expectedRevision}）：请重载后再编辑`,
         );

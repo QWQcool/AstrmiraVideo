@@ -107,12 +107,19 @@ const child = spawn(process.execPath, [BACKEND_ENTRY], {
 });
 
 let browser = null;
+let context = null;
 let exitCode = 0;
 try {
   if (!(await waitForHealth(baseUrl))) throw new Error('后端未在 40s 内就绪');
 
   browser = await chromium.launch({ headless: !HEADED });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 980 } });
+  /**
+   * ⚠️ 必须**同一个 context**：`browser.newPage()` 每次都会新建一个 context，
+   * 而 BroadcastChannel 与 `storage` 事件都按**存储分区**投递 —— 跨 context 就不通。
+   * 第一版用了 `browser.newPage()`，结果"第二个标签"永远收不到心跳（排查了很久）。
+   */
+  context = await browser.newContext({ viewport: { width: 1440, height: 980 } });
+  const page = await context.newPage();
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
@@ -170,6 +177,32 @@ try {
   check(nodesAfter === nodesBefore, `刷新后节点还在（刷新前 ${nodesBefore} → 刷新后 ${nodesAfter}）`);
 
   check(pageErrors.length === 0, `零 pageerror（${pageErrors.length} 条${pageErrors[0] ? `：${pageErrors[0]}` : ''}）`);
+
+  // ② V2.109：第二个标签打开同一块画布 → 两边都要出现"另一个标签也在编辑"
+  const second = await context.newPage();
+  await second.goto(`${baseUrl}/#/canvas?project=${projectId}`, { waitUntil: 'domcontentloaded' });
+  await second.waitForSelector('.cs-page', { timeout: 60_000 });
+
+  const peerVisible = async (target) =>
+    target
+      .waitForSelector('[data-testid=cs-peer-tabs]', { timeout: 20_000 })
+      .then(() => true)
+      .catch(() => false);
+  const firstSeesPeer = await peerVisible(page);
+  const secondSeesPeer = await peerVisible(second);
+  check(firstSeesPeer && secondSeesPeer, '两个标签都提示"另一个标签在编辑"（跨标签心跳）');
+  if (firstSeesPeer) {
+    const text = await page.locator('[data-testid=cs-peer-tabs]').innerText();
+    check(text.includes('标签页'), `提示文案说清是哪个问题（实际「${text.trim()}」）`);
+  }
+
+  // 关掉第二个标签 → 提示应当在一个 TTL 内消失（说明它跟踪的是"活着的心跳"，不是一次性事件）
+  await second.close();
+  const peerGone = await page
+    .waitForSelector('[data-testid=cs-peer-tabs]', { state: 'detached', timeout: 30_000 })
+    .then(() => true)
+    .catch(() => false);
+  check(peerGone, '关掉另一个标签后提示自动消失（心跳过期，不是粘住）');
 
   if (failures.length > 0) exitCode = 1;
   console.log(

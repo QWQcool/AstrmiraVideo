@@ -2906,3 +2906,13 @@
   font-size: var(--fs-body);
   color: var(--warn);
 }
+/* V2.109：另一个标签页也在编辑这块画布 —— 提示性，不用红色（不是错误，是"你会覆盖对方"） */
+.cs-peers {
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: var(--radius-control);
+  border: 1px dashed var(--warn);
+  color: var(--warn);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+}

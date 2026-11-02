@@ -129,6 +129,10 @@ export const CANVAS_ZH = {
   'canvas.studio.conflict': '画布已在别处更新或已删除：请重载后再编辑',
   'canvas.studio.saveBlocked': '保存失败：已留在当前画布，请重试后再切换',
   'canvas.studio.counts': '{nodes} 个节点 · {edges} 条连线',
+  // V2.109：跨标签编辑提示（是**提示**不是锁，文案必须说清后果）
+  'canvas.tabs.peerOne': '⚠ 另一个标签页也在编辑这块画布',
+  'canvas.tabs.peerMany': '⚠ 还有 {count} 个标签页在编辑这块画布',
+  'canvas.tabs.peerHint': '两个标签各存各的：谁后保存谁生效，另一边的改动会被覆盖。建议只留一个标签。',
   'canvas.studio.add': '添加节点',
   // ── 节点创作与编辑器（S3-B3；CONTRACT §21-10）──
   'canvas.studio.fromAssets': '资产库',
@@ -805,6 +809,10 @@ export const CANVAS_EN = {
   'canvas.studio.conflict': 'The canvas changed elsewhere or was deleted — reload before editing',
   'canvas.studio.saveBlocked': 'Save failed: staying on this canvas — retry before switching',
   'canvas.studio.counts': '{nodes} nodes · {edges} edges',
+  'canvas.tabs.peerOne': '⚠ Another tab is editing this canvas',
+  'canvas.tabs.peerMany': '⚠ {count} other tabs are editing this canvas',
+  'canvas.tabs.peerHint':
+    'Each tab saves on its own: whoever saves last wins and the other side loses its changes. Keep one tab.',
   'canvas.studio.add': 'Add node',
   'canvas.studio.fromAssets': 'Assets',
   'canvas.studio.dropHint': 'Drop to upload as canvas nodes (image / video / audio)',
