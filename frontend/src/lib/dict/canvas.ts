@@ -133,6 +133,10 @@ export const CANVAS_ZH = {
   'canvas.tabs.peerOne': '⚠ 另一个标签页也在编辑这块画布',
   'canvas.tabs.peerMany': '⚠ 还有 {count} 个标签页在编辑这块画布',
   'canvas.tabs.peerHint': '两个标签各存各的：谁后保存谁生效，另一边的改动会被覆盖。建议只留一个标签。',
+  // V2.111：提交了但没拿到回执的批次（任务可能已经在跑、甚至在计费）
+  'canvas.reconcile.badge': '⚠ {count} 项待核对',
+  'canvas.reconcile.hint':
+    '这些节点提交过任务，但没拿到任务号（可能当时断网）。任务可能已经在跑 —— 点这里定位到节点，用节点里的「核对」确认，别直接重提。',
   // V2.110：画布已在别处被删 —— 本地内容还能救成一块新画布
   'canvas.missing.title': '这份画布已经不在了（在别处被删除）：「{name}」本地还有 {nodes} 个节点',
   'canvas.missing.rescue': '另存为新画布',
@@ -817,6 +821,9 @@ export const CANVAS_EN = {
   'canvas.tabs.peerMany': '⚠ {count} other tabs are editing this canvas',
   'canvas.tabs.peerHint':
     'Each tab saves on its own: whoever saves last wins and the other side loses its changes. Keep one tab.',
+  'canvas.reconcile.badge': '⚠ {count} to reconcile',
+  'canvas.reconcile.hint':
+    'These nodes submitted a job but never got a task id (the connection probably dropped). The job may already be running -- jump to the node and use its Reconcile button instead of submitting again.',
   'canvas.missing.title':
     'This canvas is gone (deleted elsewhere): "{name}" still has {nodes} nodes here',
   'canvas.missing.rescue': 'Save as a new canvas',

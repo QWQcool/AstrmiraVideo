@@ -2943,3 +2943,15 @@
   border-color: var(--line);
   color: var(--text-muted);
 }
+/* V2.111：待核对徽章 —— 可点，是个"入口"不是装饰 */
+.cs-reconcile {
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--warn);
+  background: transparent;
+  color: var(--warn);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+  cursor: pointer;
+}

@@ -32,7 +32,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 // 用构建产物而不是包名：`tests/` 不在 workspace 依赖里，包名解不到（root node_modules 没有这个链接）
-import { createEmptyCanvasDoc } from '../../packages/shared/dist/index.js';
+import { createCanvasNode, createEmptyCanvasDoc } from '../../packages/shared/dist/index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const BACKEND_ENTRY = path.join(ROOT, 'backend/dist/index.js');
@@ -240,6 +240,60 @@ try {
     );
     const nodesAfterRescue = await page.locator('.react-flow__node').count();
     check(nodesAfterRescue >= 2, `救援后节点还在（实际 ${nodesAfterRescue}，删前 1 + 新加 1）`);
+  }
+
+  // ④ V2.111：手工造一块"提交了但没回执"的画布 → 顶栏必须出现待核对徽章，点它能定位到节点
+  {
+    const reconcileProjectId = 'canvas-reconcile-e2e';
+    const doc = createEmptyCanvasDoc(reconcileProjectId, '待核对验收');
+    const node = createCanvasNode({
+      id: 'node-lost',
+      type: 'video',
+      x: 120,
+      y: 80,
+      title: '丢回执的节点',
+      now: Date.now(),
+    });
+    node.data.batches = [
+      {
+        id: 'batch-lost',
+        createdAt: Date.now() - 60_000,
+        status: 'queued',
+        outputs: [],
+        request: { prompt: '丢回执的提交', mode: 't2v', aspectRatio: '16:9', provider: 'host-comfyui' },
+      },
+    ];
+    doc.nodes = [node];
+    const seeded = await fetch(`${baseUrl}/api/canvas/docs/${reconcileProjectId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(doc),
+    });
+    check(seeded.ok, `造出一块"丢回执"的画布（PUT → ${seeded.status}）`);
+    // ⚠️ 同一个文档里只改 hash 不会重新加载：`goto` 到这里只会触发 hashchange。
+    // 这里要的是"打开另一块画布"，所以显式 reload（顺带也验证了刷新后仍能看见徽章）。
+    await page.goto(`${baseUrl}/#/canvas?project=${reconcileProjectId}`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.cs-page', { timeout: 60_000 });
+    await page.waitForTimeout(1200);
+
+    const badge = page.locator('[data-testid=cs-reconcile]');
+    const badgeShown = await badge
+      .waitFor({ state: 'visible', timeout: 20_000 })
+      .then(() => true)
+      .catch(() => false);
+    check(badgeShown, '顶栏出现"待核对"徽章（不用点开节点也能看见）');
+    if (badgeShown) {
+      const text = await badge.innerText();
+      check(text.includes('1'), `徽章报了数量（实际「${text.trim()}」）`);
+
+      await badge.click({ timeout: 10_000 });
+      await page.waitForTimeout(400);
+      const selected = await page.locator('.react-flow__node.selected').count();
+      check(selected >= 1, `点徽章选中了那个节点（选中 ${selected} 个）`);
+    }
   }
 
   if (failures.length > 0) exitCode = 1;

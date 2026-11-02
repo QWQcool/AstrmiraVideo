@@ -11,6 +11,7 @@ import {
   addCanvasNodesFromAssets,
   canvasActiveTaskNodeIds,
   canvasBatchPatchFromTask,
+  canvasBatchesNeedingReconcile,
   canvasLostActiveTaskNodes,
   canvasNodeActiveBatches,
   canvasNodeVisibleOutput,
@@ -82,6 +83,38 @@ describe('草稿修改（B3）', () => {
     const doc = docWith(nodeOf('n1'));
     expect(updateCanvasNodeDraft(doc, 'n1', { prompt: '' })).toBe(doc);
     expect(updateCanvasNodeDraft(doc, 'ghost', { prompt: 'x' })).toBe(doc);
+  });
+});
+
+describe('待核对的批次（V2.111 / B86）', () => {
+  /** `queued` + 有 request + 没有 taskId = 提交出去但没拿到回执 */
+  const lost = { id: 'b-lost', createdAt: 100, status: 'queued' as const, outputs: [], request: { prompt: 'p' } };
+  const running = { id: 'b-run', createdAt: 200, status: 'running' as const, outputs: [], taskId: 't1' };
+  const queuedWithoutRequest = { id: 'b-old', createdAt: 300, status: 'queued' as const, outputs: [] };
+
+  it('挑出"提交了但没回执"的批次；有 taskId 的、没有 request 的都不算', () => {
+    const doc = docWith(nodeOf('n1'));
+    doc.nodes[0]!.data.batches = [lost, running, queuedWithoutRequest] as never;
+    expect(canvasBatchesNeedingReconcile(doc)).toEqual([
+      { nodeId: 'n1', batchId: 'b-lost', createdAt: 100 },
+    ]);
+  });
+
+  it('最老的排前面（最可能已经跑完、最该先处理）', () => {
+    const older = { ...lost, id: 'b-older', createdAt: 1 };
+    const newer = { ...lost, id: 'b-newer', createdAt: 900 };
+    const doc = docWith(nodeOf('n1'));
+    doc.nodes[0]!.data.batches = [newer, older] as never;
+    expect(canvasBatchesNeedingReconcile(doc).map((item) => item.batchId)).toEqual([
+      'b-older',
+      'b-newer',
+    ]);
+  });
+
+  it('没有这样的批次 → 空数组（顶栏不该出现徽章）', () => {
+    const doc = docWith(nodeOf('n1'));
+    doc.nodes[0]!.data.batches = [running] as never;
+    expect(canvasBatchesNeedingReconcile(doc)).toEqual([]);
   });
 });
 

@@ -71,6 +71,7 @@ import {
   nextCanvasNodePosition,
   nextCanvasNodePositions,
   selectCanvasNodeBatch,
+  canvasBatchesNeedingReconcile,
   patchCanvasBatch,
   removeCanvasNodes,
   renameCanvasDoc,
@@ -720,6 +721,33 @@ export function CanvasStudioView() {
       setBusy(false);
     }
   }, [restoreCanvasViewport, setNodes]);
+
+  /**
+   * V2.111：**待核对的批次** —— 提交出去了但没拿到回执（`queued` + 有 request + 无 taskId）。
+   * 任务可能已经在跑（云端轨甚至已经计费），只是我们不知道 id：既不能轮询，也不该悄悄重提。
+   */
+  const reconcileItems = useMemo(
+    () => (doc === null ? [] : canvasBatchesNeedingReconcile(doc)),
+    [doc],
+  );
+
+  /** 点徽章 → 选中并平移到那个节点（核对按钮在节点里） */
+  const focusReconcileItem = useCallback(
+    (nodeId: string): void => {
+      const node = docRef.current?.nodes.find((entry) => entry.id === nodeId);
+      if (node === undefined) return;
+      setSelectedIds([node.id]);
+      setNodes((prev) => prev.map((entry) => ({ ...entry, selected: entry.id === node.id })));
+      const instance = rfRef.current;
+      if (instance === null) return;
+      instance.setCenter(
+        node.layout.x + node.layout.width / 2,
+        node.layout.y + node.layout.height / 2,
+        { zoom: instance.getZoom(), duration: 220 },
+      );
+    },
+    [setNodes],
+  );
 
   /** V2.110：放弃本地这份内容，回到画布列表（空态） */
   const dismissMissingCanvas = useCallback((): void => {
@@ -2752,6 +2780,18 @@ export function CanvasStudioView() {
               {conflict ? t('canvas.studio.reload') : t('canvas.studio.retrySave')}
             </button>
           ) : null}
+          {/* V2.111：有"提交了但没回执"的批次 —— 不点开节点也能看见 */}
+          {reconcileItems.length === 0 ? null : (
+            <button
+              type="button"
+              className="cs-reconcile"
+              data-testid="cs-reconcile"
+              title={t('canvas.reconcile.hint')}
+              onClick={() => focusReconcileItem(reconcileItems[0]!.nodeId)}
+            >
+              {t('canvas.reconcile.badge', { count: reconcileItems.length })}
+            </button>
+          )}
           {/* V2.109：另一个标签也在编辑这块画布。这是**提示**不是锁 —— 文案写清后果 */}
           {peerTabs > 0 ? (
             <span

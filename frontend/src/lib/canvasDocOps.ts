@@ -456,6 +456,37 @@ export function canvasNodeActiveBatches(node: CanvasDocNode): CanvasNodeBatch[] 
   );
 }
 
+export interface CanvasReconcileItem {
+  nodeId: string;
+  batchId: string;
+  /** 批次创建时刻（界面按它排序：最老的先看） */
+  createdAt: number;
+}
+
+/**
+ * 需要用户**显式核对**的批次（V2.111 / B86 收口）。
+ *
+ * 判据：`status === 'queued'` + **有 `request`** + **没有 `taskId`** ——
+ * 也就是"提交请求发出去了，但没拿到回执"。任务**可能已经在跑**（云端轨甚至已经计费），
+ * 只是我们不知道 id。既不能轮询，也不该悄悄重提（可能重复扣费）。
+ *
+ * 为什么之前没人发现：这种批次只在**点开那个节点**时才显示"核对"按钮。
+ * 页面刷新后用户往往先去干别的，于是它就静静躺在那儿 —— 这条把它摊到顶栏。
+ */
+export function canvasBatchesNeedingReconcile(doc: CanvasDoc): CanvasReconcileItem[] {
+  const items: CanvasReconcileItem[] = [];
+  for (const node of doc.nodes) {
+    for (const batch of node.data.batches) {
+      if (batch.status !== 'queued') continue;
+      if (batch.taskId !== undefined) continue;
+      if (batch.request === undefined) continue; // 旧文档：没有请求快照，无法核对
+      items.push({ nodeId: node.id, batchId: batch.id, createdAt: batch.createdAt ?? 0 });
+    }
+  }
+  // 最老的排前面：它最可能已经跑完、最该先处理
+  return items.sort((left, right) => left.createdAt - right.createdAt);
+}
+
 /** 有在跑任务的节点 id（撤销/删除前的守卫用） */
 export function canvasActiveTaskNodeIds(doc: CanvasDoc): string[] {
   return doc.nodes.filter((node) => canvasNodeActiveBatches(node).length > 0).map((node) => node.id);
