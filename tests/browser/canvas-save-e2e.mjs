@@ -296,6 +296,94 @@ try {
     }
   }
 
+  // ⑤ V2.113：按布局出图 —— 选 1 个文本（整图）+ 2 个图片（框）→ 新节点的提示词是一份布局 JSON
+  {
+    const layoutProjectId = 'canvas-layout-e2e';
+    const doc = createEmptyCanvasDoc(layoutProjectId, '布局出图验收');
+    const brief = createCanvasNode({ id: 'n-brief', type: 'text', x: 40, y: 40, title: '简报', now: Date.now() });
+    brief.data.draft = { ...brief.data.draft, prompt: '白底产品图，柔光' };
+    const left = createCanvasNode({ id: 'n-left', type: 'image', x: 40, y: 320, title: '左', now: Date.now() });
+    left.data.draft = { ...left.data.draft, prompt: '左边一只红球' };
+    const right = createCanvasNode({ id: 'n-right', type: 'image', x: 520, y: 320, title: '右', now: Date.now() });
+    right.data.draft = { ...right.data.draft, prompt: '右边一个蓝方块' };
+    doc.nodes = [brief, left, right];
+    const seeded = await fetch(`${baseUrl}/api/canvas/docs/${layoutProjectId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(doc),
+    });
+    check(seeded.ok, `造出一块"三节点构图"的画布（PUT → ${seeded.status}）`);
+
+    await page.goto(`${baseUrl}/#/canvas?project=${layoutProjectId}`, { waitUntil: 'domcontentloaded' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.cs-page', { timeout: 60_000 });
+    await page.waitForTimeout(1500);
+    check((await page.locator('.react-flow__node').count()) === 3, '三个节点都渲染出来了');
+
+    /**
+     * 选中三个节点：用 **Shift + 拖框**，而不是 Shift + 点。
+     *
+     * 画布没有配 `multiSelectionKeyCode`，@xyflow 的默认里 Shift 是**框选**而不是"追加点选" ——
+     * 第一版用 Shift+点击，结果只选中 1 个（提示原话就是"现在 1 个"），这正是被断言抓到的。
+     */
+    const boxes = await page.locator('.react-flow__node').evaluateAll((elements) =>
+      elements.map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      }),
+    );
+    const minX = Math.min(...boxes.map((box) => box.x)) - 16;
+    const minY = Math.min(...boxes.map((box) => box.y)) - 16;
+    const maxX = Math.max(...boxes.map((box) => box.x + box.width)) + 16;
+    const maxY = Math.max(...boxes.map((box) => box.y + box.height)) + 16;
+    await page.keyboard.down('Shift');
+    await page.mouse.move(minX, minY);
+    await page.mouse.down();
+    await page.mouse.move(maxX, maxY, { steps: 12 });
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+    await page.waitForTimeout(300);
+
+    console.log(`  · 框选中 ${await page.locator('.react-flow__node.selected').count()} 个节点`);
+    await page.locator('[data-testid=cs-layout-generate]').click({ timeout: 15_000 });
+    await page.waitForTimeout(2000); // 建节点 + 先落盘再提交
+    const noticeText = await page
+      .locator('.cs-notice')
+      .innerText()
+      .catch(() => '(无提示)');
+    console.log(`  · 点击后的提示：${noticeText.trim()}`);
+
+    const stored = await (await fetch(`${baseUrl}/api/canvas/docs/${layoutProjectId}`)).json();
+    const layoutNode = (stored.nodes ?? []).find((node) => node.data?.title === '布局出图');
+    check(layoutNode !== undefined, '点一下之后，画布上多了一个"布局出图"节点');
+
+    if (layoutNode !== undefined) {
+      let parsed = null;
+      try {
+        parsed = JSON.parse(layoutNode.data.draft.prompt);
+      } catch {
+        parsed = null;
+      }
+      const items = parsed?.items ?? [];
+      check(items.length === 2, `提示词里恰好两个框（实际 ${items.length}）`);
+      check(
+        parsed?.bbox_coord_space === 'abs_centralized' && parsed?.bbox_format === 'yxyx',
+        `坐标系与真机验证过的那份一致（${parsed?.bbox_coord_space ?? '缺失'} / ${parsed?.bbox_format ?? '缺失'}）`,
+      );
+      check(
+        parsed?.summary?.caption === '白底产品图，柔光',
+        `整图描述来自那个文本节点（${parsed?.summary?.caption ?? '缺失'}）`,
+      );
+      // 左右两个框：左边的 x 一定小于右边（yxyx 里是第 2、4 位）
+      const leftBox = items.find((item) => item.caption === '左边一只红球');
+      const rightBox = items.find((item) => item.caption === '右边一个蓝方块');
+      check(
+        leftBox !== undefined && rightBox !== undefined && leftBox.bbox[1] < rightBox.bbox[1],
+        '左右关系保住了（左框 x0 < 右框 x0）',
+      );
+    }
+  }
+
   if (failures.length > 0) exitCode = 1;
   console.log(
     `\n${failures.length === 0 ? '✓ 画布保存链路通过' : `✗ 失败 ${failures.length} 项：\n  · ${failures.join('\n  · ')}`}`,

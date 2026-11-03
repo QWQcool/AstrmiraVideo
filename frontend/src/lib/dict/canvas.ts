@@ -431,6 +431,15 @@ export const CANVAS_ZH = {
   'canvas.tool.togglePlan.on': '进入编排模式：自己摆节点、连线，然后一次提交',
   'canvas.tool.togglePlan.labelFact': '👁 事实图',
   'canvas.tool.togglePlan.labelPlan': '✎ 编排',
+  // V2.113：按布局出图（画布框 → 布局提示词 → 本机 MOSS）
+  'canvas.layout.label': '按布局出图',
+  'canvas.layout.title':
+    '选一个文本节点写整图描述，再选 ≥2 个有提示词的节点当框 —— 出来的图会按这些框摆放（本机 MOSS 图片模型）',
+  'canvas.layout.nodeTitle': '布局出图',
+  'canvas.layout.issue.needTwoFrames': '至少要有两个写了提示词的节点当框（现在 {count} 个）',
+  'canvas.layout.issue.needSummary':
+    '再选一个文本节点写整图描述：它说明整张图是什么画面，自己不占框',
+  'canvas.layout.issue.tooManySummaries': '只能选一个文本节点当整图描述（选了两个，不知道该听哪句）',
   'canvas.tool.addNode.title': '在视口中心加一个生成节点（加完在右侧写提示词）',
   'canvas.tool.addNode.label': '＋ 节点',
   'canvas.tool.run.noneRunnable': '没有能跑的节点（空提示词 / 被阻断的都不能跑 —— 点节点看原因）',
@@ -1108,6 +1117,16 @@ export const CANVAS_EN = {
   'canvas.tool.togglePlan.on': 'Enter plan mode: place nodes, connect them, then submit in one go',
   'canvas.tool.togglePlan.labelFact': '👁 Fact graph',
   'canvas.tool.togglePlan.labelPlan': '✎ Plan',
+  'canvas.layout.label': 'Compose from layout',
+  'canvas.layout.title':
+    'Pick one text node as the overall description, then two or more nodes with prompts as frames -- the image places things in those frames (local MOSS image model)',
+  'canvas.layout.nodeTitle': 'Layout compose',
+  'canvas.layout.issue.needTwoFrames':
+    'Needs at least two nodes with prompts to act as frames (currently {count})',
+  'canvas.layout.issue.needSummary':
+    'Pick one text node for the overall description: it says what the whole picture is, and does not become a frame',
+  'canvas.layout.issue.tooManySummaries':
+    'Only one text node can be the overall description (two selected, no way to know which)',
   'canvas.tool.addNode.title': 'Add a generate node at the viewport center (write its prompt on the right)',
   'canvas.tool.addNode.label': '＋ Node',
   'canvas.tool.run.noneRunnable':

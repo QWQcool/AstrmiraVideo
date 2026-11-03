@@ -22,6 +22,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import {
   BUILTIN_SKILLS,
+  buildMossLayout,
   createCanvasNode,
   createEmptyCanvasDoc,
   SUBJECT_ANCHOR_PROMPT,
@@ -91,6 +92,7 @@ import {
   buildCanvasUpscaleRequest,
   canvasAspectRatio,
   canvasDefaultProvider,
+  canvasResolution,
   canvasSubmitIssue,
   canvasSubmitIssueText,
   stripCanvasMentions,
@@ -111,6 +113,7 @@ import {
   type CanvasPeerMessage,
 } from '../lib/canvasTabs';
 import { rescueAsNewCanvas, rescueName } from '../lib/canvasDocRescue';
+import { collectLayoutSelection } from '../lib/canvasLayoutSelection';
 import { navigate, parseHash } from '../lib/router';
 import {
   clearCanvasResultHandoff,
@@ -1795,6 +1798,49 @@ export function CanvasStudioView() {
     [applyDoc, byok, t],
   );
 
+  /**
+   * V2.113（B103-10）：「按布局出图」—— 把选中的画布节点算成 MOSS 的布局提示词并提交。
+   *
+   * 三条顺序上的理由：
+   * 1. **先建节点、再算坐标**：像素空间依赖出图尺寸，而出图尺寸由节点自己的画幅决定
+   *    （`canvasResolution` 对图片节点用图片尺寸档）。先算后建会出现"算用 1024、提交用 1024×576"这种错位；
+   * 2. **布局 JSON 写进新节点的提示词**（不是藏进 options）：用户能看见、能改、能复用，
+   *    也才符合"提示词就是提示词"的口径 —— 服务端因此不需要任何新字段；
+   * 3. **算不出来就不建节点**（少于两个框 / 框太小 / 缺整图描述），不留下一个注定失败的草稿。
+   */
+  const handleLayoutGenerate = useCallback((): void => {
+    const current = docRef.current;
+    if (current === null || switchingRef.current) return;
+    const collected = collectLayoutSelection(current, selectedIds);
+    if (!collected.ok) {
+      setNotice(t(`canvas.layout.issue.${collected.issue}`, { count: collected.frameCount }));
+      return;
+    }
+
+    const id = newCanvasProjectId();
+    const at = nextCanvasNodePosition(current);
+    const title = t('canvas.layout.nodeTitle');
+    // 探针节点只为拿尺寸（与真实节点同一套构造，画幅默认值一致）
+    const probe = createCanvasNode({ id, type: 'image', x: at.x, y: at.y, title, now: Date.now() });
+    const built = buildMossLayout({
+      summary: collected.selection.summary,
+      frames: collected.selection.frames,
+      size: canvasResolution(probe),
+    });
+    if (!built.ok) {
+      setNotice(built.reason);
+      return;
+    }
+
+    pendingSelect.current = id;
+    applyDoc((d) =>
+      updateCanvasNodeDraft(addCanvasNode(d, { id, type: 'image', x: at.x, y: at.y, title }).doc, id, {
+        prompt: built.promptText,
+      }),
+    );
+    void submitNode(id);
+  }, [applyDoc, selectedIds, submitNode, t]);
+
   const handleDraftChange = useCallback(
     (nodeId: string, patch: CanvasDraftPatch): void => {
       applyDoc(
@@ -3074,6 +3120,16 @@ export function CanvasStudioView() {
                   {labels[type]}
                 </button>
               ))}
+              {/* V2.113：把选中的框算成布局提示词并出图（选了文本节点就把它当整图描述） */}
+              <button
+                type="button"
+                className="cs-rail-btn"
+                data-testid="cs-layout-generate"
+                title={t('canvas.layout.title')}
+                onClick={handleLayoutGenerate}
+              >
+                {t('canvas.layout.label')}
+              </button>
               <button
                 type="button"
                 className="cs-rail-btn"
