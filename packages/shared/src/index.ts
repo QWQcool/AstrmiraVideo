@@ -42,6 +42,7 @@ export * from './cost.js';
 export * from './metrics.js';
 export * from './canvasPlan.js';
 export * from './canvasDoc.js';
+export * from './canvasLayout.js';
 export * from './subject.js';
 export * from './stats.js';
 export * from './canvasReferenceRules.js';
