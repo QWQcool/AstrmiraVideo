@@ -115,8 +115,9 @@ jobs:
       # `pnpm smoke:ui`（浏览器渲染 / 布局 / 动效 / 控制台零 error）与
       # `frontend/scripts/visual-selfcheck.mjs`（对比度 / 硬编码字号 / keyframes 清单）
       # **已从门禁摘掉**，依据是 AGENTS.md 第 1 条：不为 UI/UX 观感、开屏耗时、截图回归做测试。
-      # 这两样仍留在仓库里，需要时本地手动跑（`pnpm smoke:ui`），不再影响 CI 判定，
-      # 也就不必再为它装 chromium + chrome（那一步曾占掉一次运行的一两分钟）。
+      # 这两样仍留在仓库里，需要时本地手动跑（`pnpm smoke:ui`），不再影响 CI 判定。
+      # 省下的时间**实测**（run 41419487793 的步骤耗时）：装 chromium+chrome **23s** +
+      # UI 冒烟 **33s** + 上传截图 1s ≈ **57 秒**；改后一次 verify 全程 3.4 分钟（run 41789606392）。
 
   # ── CD：手动工作流验证通过后按开关发布到服务器（Step 5）──────────────────
   #
