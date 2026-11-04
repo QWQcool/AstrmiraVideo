@@ -33,9 +33,19 @@
 | 每条验收命令证明什么、前提是什么 | [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) |
 | 当前计划、决策记录、待办台账 | [docs/PLAN.md](docs/PLAN.md) |
 
-### 3. 现有测试与新规则的关系（如实说明）
+### 3. 现有 UI/UX 检查的处置（2026-11-04 已执行，选 B）
 
-仓库里已经存在几处**按旧习惯**写的 UI/UX 类检查 —— `scripts/visual-selfcheck.mjs`
-（对比度/硬编码字号/动效清单）、`pnpm smoke:ui` 里的动效与布局断言、`docs/assets/howto/` 的截图脚本。
-**新规则不追溯删改**：它们已经在跑、也没有造成损失，按"不主动扩大"处理。
-要不要把它们从门禁里摘掉，需要仓库主人单独决定（改了会影响 CI 的通过判据）。
+旧习惯留下的三样 —— `scripts/visual-selfcheck.mjs`（对比度/硬编码字号/动效清单）、
+`pnpm smoke:ui`（浏览器渲染 / 布局 / 动效 / 控制台）、`docs/assets/howto/` 截图脚本 ——
+**已从门禁摘掉**，但**文件保留**：
+
+| 项 | 现在的地位 |
+|---|---|
+| `pnpm smoke:ui` | 本地可选项（想看渲染结果时手动跑），**不在 CI、也不在提交前必过项** |
+| `frontend/scripts/visual-selfcheck.mjs` | 同上；`pnpm --filter frontend test` 已不再附带它 |
+| `tests/browser/howto-shots.mjs` | 文档截图工具，跟门禁无关 |
+| `tests/browser/*-e2e.mjs`（画布保存、音频面板等） | **仍然有效**：它们验的是数据/产物正确性，不是观感 —— 需要真机或本地生产形态时手动跑 |
+
+顺带修掉一个被这次改动暴露的洞：`pnpm test:coverage` 只过滤后端，**前端单测此前从未进过 CI**；
+摘掉 UI 冒烟后前端会彻底没有门禁，所以 CI 显式补了 `pnpm --filter frontend test`。
+门禁现状见根 [README](README.md)「协作约定」第 6 条。

@@ -10,9 +10,9 @@
 | `pnpm lint` | 静态检查 0 error（`--deny-warnings`） |
 | `pnpm type` | 三个包 `tsc --noEmit` 全过 |
 | `pnpm test:contract` | 契约层：路由 / 错误码 / 三态 `disposition` 与 CONTRACT.md 一致 |
-| `pnpm test` | 后端 + 前端单测 |
-| `pnpm build` | 三包构建产物；**`smoke:ui` 跑的是 dist，不 build 会拿旧包跑出假结论** |
-| `pnpm smoke:ui` | 前端真实浏览器：三栏 / 首屏连通 / 抽屉 / 素材槽与画廊封面 / 中英双语 / 控制台零 error（约 10 分钟） |
+| `pnpm test` | 后端 + 前端单测（= CI 的那两步；`test:coverage` 只跑后端带门限） |
+| `pnpm build` | 三包构建产物；部署用的就是它，构建挂了应该在 verify 阶段红 |
+| ~~`pnpm smoke:ui`~~ | **不在门禁里**（2026-11-04 起，见 [AGENTS.md](../AGENTS.md) 第 1 条）。仍是本地可选项：想看"浏览器里真渲染了吗"时手动跑，它不作为提交/部署的判据 |
 | `pnpm test:browser:agent` `test:browser:runs` `test:browser:media` `test:browser:edges` | 会话详情、创作会话、血缘画布等真实浏览器行为 |
 | `pnpm test:browser:audio` | **剪辑台音效轨**：加进去的 BGM 真的进了导出成片（1000Hz 窄带 ≥ 对照带 +6dB），且源片音轨仍在（2026-10-29 新增） |
 

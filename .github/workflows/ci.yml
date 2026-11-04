@@ -1,6 +1,10 @@
 name: CI
 
-# CI 三件套（PLAN §6-D14 / PLAN §4 Step 2-AC8）：lint / type / test，外加契约层专项。
+# CI 门禁：lint / type / 契约层 / 后端测试（含覆盖率）/ 前端单测 / 构建。
+#
+# 2026-11-04：**UI 冒烟与视觉自检已从门禁摘掉**（AGENTS.md 第 1 条：不为 UI/UX 观感、
+# 开屏耗时、截图回归做测试）。同时补上前端单测 —— 此前 `test:coverage` 只跑后端，
+# 前端单测从未进过 CI，摘掉冒烟后会出现"前端零门禁"的真空。
 #
 # 2026-10-22：自动触发已暂停（Actions 配额原因），当前只能手动 workflow_dispatch。
 # 恢复自动的判断依据与具体改法见文件末尾注释。
@@ -90,44 +94,29 @@ jobs:
       - name: 契约层测试
         run: pnpm test:contract
 
-      # 全部测试 = 后端（含 `src/e2e/` 的真实 TCP 端到端：监听 + 206 Range + ffprobe）
-      # + 前端（单测 + 视觉自检）。
+      # 后端全部测试（含 `src/e2e/` 的真实 TCP 端到端：监听 + 206 Range + ffprobe）。
       # CI 刻意走 `test:coverage` 而不是 `test`：这样**覆盖率门限与测试在同一趟内判定**，
       # 不必为覆盖率再跑一遍套件（键模块的文件级阈值见 backend/vitest.config.ts）。
       # 本地开发仍用 `pnpm test`（不插桩，更快）；要门限时用 `pnpm test:coverage`。
-      - name: 全部测试（含覆盖率门限）
+      - name: 后端测试（含覆盖率门限）
         run: pnpm test:coverage
 
-      # ── 生产形态 UI 冒烟（PLAN §9-B9 的视觉固化项）──────────────────────────
-      # 它测的是**浏览器里真的渲染出来了**：三栏骨架 / 首屏连通 / 字体自托管 /
-      # 控制台零 error。以 NODE_ENV=production 起后端，因此**生产 CSP 是真的生效的**
-      # —— 2026-09-22 正是这条抓到了「index.html 外链 Google Fonts 被 CSP 拦掉」的真实缺陷。
-      # 与"截图基线比对"的取舍（不做像素比对）见 scripts/smoke-ui.mjs 头注释。
-      - name: 构建产物（UI 冒烟需要 backend/dist 与 frontend/dist）
+      # ⚠️ 2026-11-04 补的一个洞：`test:coverage` 只过滤 backend，
+      # 也就是说**前端单测此前根本没在 CI 里跑过**。摘掉 UI 冒烟之后前端会彻底没有门禁，
+      # 所以这里显式补上（约 3 秒，纯逻辑断言，不是 UI 测试）。
+      - name: 前端单测
+        run: pnpm --filter frontend test
+
+      # 构建仍要验：部署产物就是它，构建挂了应该在 verify 阶段红，而不是在服务器上红。
+      - name: 构建
         run: pnpm build
 
-      # 同时装 chromium 与 **chrome**：
-      # - chromium：其余段落用（与历史一致）；
-      # - chrome（Chrome for Testing）：浏览器端导出段落（[6f]/[6g]）**必需** ——
-      #   开源 Chromium 构建不含 H.264 专有编解码器，WebCodecs 编码不可用，导出永远不出结果
-      #   （2026-09-24 起 CI 一直红在这里，2026-10-08 定位；真实用户用的是 Chrome / Edge）。
-      - name: 安装 chromium + chrome（UI 冒烟用）
-        run: pnpm exec playwright install --with-deps chromium chrome
-
-      - name: UI 冒烟（生产形态 + 控制台零 error）
-        run: pnpm smoke:ui
-        env:
-          # 用 Chrome 跑冒烟 = 对着"真实用户浏览器能力"验（含 H.264 编码）
-          SMOKE_CHANNEL: chrome
-
-      # 截图只作留档（人看），不参与判定
-      - name: 上传 UI 冒烟截图
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ui-smoke-screenshots
-          path: artifacts/ui-smoke/
-          if-no-files-found: ignore
+      # ── 2026-11-04 起不在这里跑 UI 冒烟 ────────────────────────────────────
+      # `pnpm smoke:ui`（浏览器渲染 / 布局 / 动效 / 控制台零 error）与
+      # `frontend/scripts/visual-selfcheck.mjs`（对比度 / 硬编码字号 / keyframes 清单）
+      # **已从门禁摘掉**，依据是 AGENTS.md 第 1 条：不为 UI/UX 观感、开屏耗时、截图回归做测试。
+      # 这两样仍留在仓库里，需要时本地手动跑（`pnpm smoke:ui`），不再影响 CI 判定，
+      # 也就不必再为它装 chromium + chrome（那一步曾占掉一次运行的一两分钟）。
 
   # ── CD：手动工作流验证通过后按开关发布到服务器（Step 5）──────────────────
   #

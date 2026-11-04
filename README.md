@@ -66,7 +66,7 @@ pnpm dev                      # backend + frontend（Vite 热更）
 
 # 按"线上那份形态"在本机验收（单进程托管 API + /media + 前端产物）
 pnpm build && pnpm serve:local   # → http://127.0.0.1:3000（--fixture 可零成本造验收数据）
-pnpm smoke:ui                    # 真 Chrome 跑一遍生产形态的 UI 冒烟
+pnpm smoke:ui                    # 可选：真 Chrome 跑一遍生产形态的 UI 冒烟（**不在 CI 门禁里**，见 AGENTS.md 第 1 条）
 ```
 
 **验收命令一览**（每条都写明"证明什么"，见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)）：
@@ -152,9 +152,12 @@ scripts/           本地托管、UI 冒烟、ComfyUI 验收、部署
 3. **数字必须真实**：耗时、成本、成功率都从真实记录来；口径句由服务端下发，界面不自己写一版。
 4. **原子提交**：一项一个 commit，写完就推；不攒一坨。
 5. **注释写"为什么"**，不写"做了什么"。
-6. **门禁**：`pnpm lint && pnpm type && pnpm test:contract && pnpm --filter backend test && pnpm --filter frontend test`；
-   改前端后必须 `pnpm build` 再 `pnpm smoke:ui`（冒烟跑的是 dist）。
-7. **删功能要连根**：路由 / 契约 / 表 / 字典 / 冒烟断言 / 视觉自检清单一起删，否则会留"半个功能"。
+6. **门禁**：`pnpm lint && pnpm type && pnpm test:contract && pnpm test:coverage && pnpm --filter frontend test && pnpm build`
+   （与 CI 一致）。**`pnpm smoke:ui` 与视觉自检不在门禁里** —— 见 [AGENTS.md](AGENTS.md) 第 1 条，
+   它们是本地可选项，别拿它们当提交前的必过关卡。
+7. **删功能要连根**：路由 / 契约 / 表 / 字典 / 验收断言一起删，否则会留"半个功能"。
+8. **做好测什么、不测什么**：只测"错了会丢数据 / 花错钱 / 给出错结论"的东西，
+   UI 观感与开屏耗时**不测**（[AGENTS.md](AGENTS.md) 第 1 条）。
 
 ## License
 
